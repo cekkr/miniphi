@@ -1,151 +1,139 @@
-import LMStudioManager from './lmstudio-api.js';
-import { Chat } from '@lmstudio/sdk';
-import { Transform } from 'stream';
-
-const PHI4_SYSTEM_PROMPT = 
-  "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. Please structure your response into two main sections Thought and Solution using the specified format think Thought section think Solution section.";
+import { Chat } from "@lmstudio/sdk";
+import { Readable } from "stream";
+import LMStudioManager from "./lmstudio-api.js";
+import Phi4StreamParser from "./phi4-stream-parser.js";
 
 const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
+const DEFAULT_SYSTEM_PROMPT =
+  "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. Please structure your response into two main sections: Thought and Solution using the specified format: <think> Thought section </think> Solution section.";
 
-class Phi4StreamParser extends Transform {
-  constructor(onThink) {
-    super({ readableObjectMode: true, writableObjectMode: true });
-    this.state = 'INITIAL'; // 'INITIAL', 'THINKING', 'SOLUTION'
-    this.buffer = '';
-    this.thoughtBuffer = '';
-    this.onThink = onThink;
-  }
-
-  _transform(chunk, encoding, callback) {
-    const token = chunk.content || '';
-    if (this.state === 'SOLUTION') {
-      this.push(chunk);
-      return callback();
-    }
-    this.buffer += token;
-
-    if (this.state === 'INITIAL') {
-      const thinkStart = 'think';
-      if (this.buffer.includes(thinkStart)) {
-        this.state = 'THINKING';
-        this.thoughtBuffer = this.buffer.slice(this.buffer.indexOf(thinkStart));
-        this.buffer = '';
-      }
-    }
-    if (this.state === 'THINKING') {
-      this.thoughtBuffer += token;
-      const thinkEnd = 'think';
-      if (this.thoughtBuffer.includes(thinkEnd, 1)) { // Find the closing tag after the opening
-        this.state = 'SOLUTION';
-        const endIdx = this.thoughtBuffer.indexOf(thinkEnd, 1) + thinkEnd.length;
-        const fullThought = this.thoughtBuffer.slice(0, endIdx);
-        if (this.onThink) this.onThink(fullThought);
-        // Push remaining as solution
-        const solutionStart = this.thoughtBuffer.slice(endIdx);
-        if (solutionStart.length > 0) this.push({ content: solutionStart });
-        this.thoughtBuffer = '';
-      }
-    }
-    callback();
-  }
-
-  _flush(callback) {
-    if (this.state === 'INITIAL' && this.buffer.length) {
-      this.push({ content: this.buffer });
-    } else if (this.state === 'THINKING') {
-      if (this.onThink) this.onThink(this.thoughtBuffer);
-    }
-    callback();
-  }
-}
-
+/**
+ * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
+ * <think> parsing and streaming support). Relies on LMStudioManager for the actual model handles.
+ */
 export class Phi4Handler {
-  constructor(manager) {
+  /**
+   * @param {LMStudioManager} manager
+   * @param {{ systemPrompt?: string }} [options]
+   */
+  constructor(manager = new LMStudioManager(), options = undefined) {
     this.manager = manager;
     this.model = null;
-    this.chatHistory = [{ role: 'system', content: PHI4_SYSTEM_PROMPT }];
+    this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+    this.chatHistory = [{ role: "system", content: this.systemPrompt }];
   }
 
-  async load(config = {}) {
+  /**
+   * Loads Phi-4 Reasoning Plus with the requested configuration (defaults to 32k context).
+   * @param {import("@lmstudio/sdk").LLMLoadModelConfig} [config]
+   */
+  async load(config = undefined) {
     this.model = await this.manager.getModel(MODEL_KEY, {
       contextLength: 32768,
-      ...config,
+      ...(config ?? {}),
     });
   }
 
+  /**
+   * Ejects the Phi-4 model and resets history cache.
+   */
   async eject() {
     await this.manager.ejectModel(MODEL_KEY);
     this.model = null;
+    this.clearHistory();
   }
 
+  /**
+   * Resets the chat history while preserving the mandatory Phi system prompt.
+   */
   clearHistory() {
-    this.chatHistory = [{ role: 'system', content: PHI4_SYSTEM_PROMPT }];
+    this.chatHistory = [{ role: "system", content: this.systemPrompt }];
   }
 
+  /**
+   * Streams a Phi-4 response while emitting think & solution tokens separately via callbacks.
+   *
+   * @param {string} prompt user prompt
+   * @param {(token: string) => void} [onToken] solution token callback
+   * @param {(thought: string) => void} [onThink] reasoning block callback
+   * @param {(error: string) => void} [onError] error callback
+   * @returns {Promise<string>} assistant response content
+   */
   async chatStream(prompt, onToken, onThink, onError) {
     if (!this.model) {
-      if (onError) onError("Model not loaded. Call load first.");
-      return;
+      const error = new Error("Model not loaded. Call load() before chatStream().");
+      if (onError) {
+        onError(error.message);
+      }
+      throw error;
     }
-    this.chatHistory.push({ role: 'user', content: prompt });
+    if (!prompt || !prompt.trim()) {
+      throw new Error("Prompt is required.");
+    }
+
+    this.chatHistory.push({ role: "user", content: prompt });
+
     try {
-      this.chatHistory = await this._truncateHistory();
+      this.chatHistory = await this.#truncateHistory();
       const chat = Chat.from(this.chatHistory);
-      const stream = await this.model.respond(chat);
+      const prediction = this.model.respond(chat);
 
       const parser = new Phi4StreamParser(onThink);
-      let assistantResponse = '';
-      const solutionStream = stream.pipeThrough(parser);
+      const readable = Readable.from(prediction);
+      const solutionStream = readable.pipe(parser);
+
+      let assistantResponse = "";
 
       for await (const fragment of solutionStream) {
-        const token = fragment.content;
+        const token = fragment?.content ?? "";
+        if (!token) continue;
         if (onToken) onToken(token);
         assistantResponse += token;
       }
+
       if (assistantResponse.length > 0) {
-        this.chatHistory.push({ role: 'assistant', content: assistantResponse });
+        this.chatHistory.push({ role: "assistant", content: assistantResponse });
       }
-    } catch (err) {
-      if (onError) onError(err.message);
-      this.chatHistory.pop(); // Remove user message if error
+
+      return assistantResponse;
+    } catch (error) {
+      this.chatHistory.pop(); // remove user entry to preserve state
+      const message = error instanceof Error ? error.message : String(error);
+      if (onError) onError(message);
+      throw error;
     }
   }
 
-  async _truncateHistory() {
-    if (!this.model) throw new Error("Model not set for history truncation");
-    const maxTokens = (await this.model.getContextLength()) - 2048;
+  /**
+   * Ensures chat history remains within the model's context window by trimming the oldest turns.
+   * @returns {Promise<import("@lmstudio/sdk").MessageLike[]>}
+   */
+  async #truncateHistory() {
+    if (!this.model) {
+      throw new Error("Cannot truncate history without a loaded model.");
+    }
+
+    const reservedForResponse = 2048;
+    const contextLength = await this.model.getContextLength();
+    const maxTokens = Math.max(1024, contextLength - reservedForResponse);
+
     const systemPrompt = this.chatHistory[0];
     const mutableHistory = this.chatHistory.slice(1);
     const truncatedHistory = [systemPrompt];
 
     for (let i = mutableHistory.length - 1; i >= 0; i--) {
-      const messagesToTest = [systemPrompt, ...mutableHistory.slice(i)];
-      const chat = Chat.from(messagesToTest);
+      const candidateHistory = [systemPrompt, ...mutableHistory.slice(i)];
+      const chat = Chat.from(candidateHistory);
       const formatted = await this.model.applyPromptTemplate(chat);
       const tokenCount = await this.model.countTokens(formatted);
-      if (tokenCount > maxTokens) break;
+      if (tokenCount > maxTokens) {
+        break;
+      }
       truncatedHistory.splice(1, 0, mutableHistory[i]);
     }
+
     return truncatedHistory;
   }
 }
 
 export default Phi4Handler;
-
-/* Example usage:
-
-import LMStudioManager from './lmstudio-api.js';
-import Phi4Handler from './lms-phi4.js';
-
-const manager = new LMStudioManager();
-const phi4 = new Phi4Handler(manager);
-
-await phi4.load(); // Optionally pass config, e.g., {gpu: 'auto', contextLength: 32768}
-await phi4.chatStream(
-  "Explain the Riemann Hypothesis.",
-  token => process.stdout.write(token),
-  thought => console.log("THINK BLOCK:", thought),
-  err => console.error("Error:", err)
-);
-
-*/
