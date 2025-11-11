@@ -1,2 +1,85 @@
-# miniphi
-Like codex, but locally
+# MiniPhi
+
+> Local, Phi-4-powered command and log analysis that compresses everything before it thinks.
+
+MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-reasoning-plus` model to run CLI commands, capture gigantic outputs, compress them aggressively (Python- and JS-assisted), and feed Phi-4 reasoning streams back to you in real time. The project grew out of the research documented in `AI_REFERENCE.md` and the design paper `docs/NodeJS LM Studio API Integration.md`, and its code lives under `src/`.
+
+## Highlights
+- **JIT model logistics.** `src/libs/lmstudio-api.js` keeps LM Studio models hot-loaded with exact context/gpu settings.
+- **Reasoning-aware streaming.** `src/libs/lms-phi4.js` enforces the Phi "<think>...</think> + solution" format and can stream both reasoning and answers.
+- **Lossy-but-smart compression.** JavaScript heuristics plus `log_summarizer.py` (Python stdlib only) reduce hundreds of thousands of lines to ~1K tokens.
+- **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
+- **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
+
+## Architecture at a Glance
+| Layer | File(s) | Purpose |
+| --- | --- | --- |
+| Layer 1 - LMStudioManager | `src/libs/lmstudio-api.js` | Load/eject LM Studio models with cached configs, enforce context/gpu budgets. |
+| Layer 2 - Phi4Handler | `src/libs/lms-phi4.js`, `src/libs/phi4-stream-parser.js` | Maintain Phi system prompt, trim history to fit the window, split `<think>` and solution tokens while streaming. |
+| Layer 2.5 - Compression Stack | `src/libs/efficient-log-analyzer.js`, `src/libs/python-log-summarizer.js`, `log_summarizer.py`, `src/libs/stream-analyzer.js` | Capture stdout/stderr incrementally, apply heuristics or recursive Python summaries, construct the final Phi prompt. |
+| Layer 3 - CLI Orchestration (in progress) | CLI planning is outlined in `docs/miniphi-cli-implementation.md` and `AI_REFERENCE.md` | Future work: multi-task orchestration, memory consolidation, config profiles. |
+
+For the deeper architectural rationale (REST vs SDKs, LM Studio lifecycle, compression strategies) see `docs/NodeJS LM Studio API Integration.md` and `docs/miniphi-cli-implementation.md`.
+
+## Requirements
+1. **Node.js 18+** (ES modules, async iteration).
+2. **LM Studio desktop app** with the server running and `microsoft/Phi-4-reasoning-plus` downloaded. MiniPhi uses the official `@lmstudio/sdk`.
+3. **Python 3.9+** available as `python`, `py`, or `python3` for `log_summarizer.py`. Override via `--python-script` when needed.
+4. Adequate local VRAM/system RAM-MiniPhi defaults to a 32K context window (`--context-length` to change).
+
+## Installation
+```bash
+git clone https://github.com/cekkr/miniphi.git
+cd miniphi
+npm install
+```
+Keep `log_summarizer.py` in the project root (or provide its path with `--python-script`).
+
+## Running the CLI
+
+### Execute and analyze a command
+```bash
+node src/index.js run --cmd "npm test" --task "Analyze failures and propose fixes"
+```
+- Streams stdout/stderr, recursively compresses the transcript, then streams Phi-4's reasoning and solution.
+- Use `--cwd` to change the execution directory and `--timeout <ms>` for long-running tasks.
+- Disable live model output with `--no-stream` and skip the JSON footer with `--no-summary`.
+
+### Analyze an existing log file
+```bash
+node src/index.js analyze-file --file ./logs/build.log --task "Summarize build issues"
+```
+- Processes the file chunk-by-chunk (default 2,000 lines) via `StreamAnalyzer`, summarizes each chunk with Python, and hands the merged digest to Phi-4.
+- Control chunk sizing via `--chunk-size <lines>` and summarization depth via `--summary-levels <n>`.
+
+### Frequently used options
+| Flag | Description |
+| --- | --- |
+| `--context-length <tokens>` | Override the Phi-4 context (default 32768). |
+| `--gpu <mode>` | Forward GPU config to LM Studio (`auto`, `cpu`, `cuda:0`, etc.). |
+| `--summary-levels <n>` | Depth of recursive summarization (default 3). |
+| `--python-script <path>` | Custom path to `log_summarizer.py`. |
+| `--verbose` | Print capture progress and reasoning blocks to the console. |
+
+## Example Workflow
+1. Start LM Studio, load/download Phi-4 reasoning-plus, and enable the local server.
+2. From your repo, run `node src/index.js run --cmd "npm run lint" --task "Explain any lint errors"` with `--verbose`.
+3. Watch MiniPhi stream lint output, see Python compression status, and observe Phi's `<think>` reasoning block (only when verbose).
+4. Copy the streamed solution or inspect the JSON footer to log compression stats (`linesAnalyzed`, `compressedTokens`).
+5. Repeat with `analyze-file` for build logs, test snapshots, or any text artifact.
+
+## Documentation Map
+- `AI_REFERENCE.md` - short status update plus near-term roadmap.
+- `docs/NodeJS LM Studio API Integration.md` - detailed research on using the LM Studio SDK vs REST APIs.
+- `docs/miniphi-cli-implementation.md` - CLI behavior, compression algorithms, and example pipelines.
+- `log_summarizer.py` - Python reference implementation for recursive hierarchical summaries.
+
+## Current Status & Next Steps
+Per `AI_REFERENCE.md`:
+- OK Layered LM Studio stack (`LMStudioManager`, `Phi4Handler`, `EfficientLogAnalyzer`) is functional with streaming Phi-4 responses.
+- WARNING No persistence layer yet; conversation history resets once the process exits.
+- WARNING No automated tests; rely on manual verification when changing compression heuristics or Phi prompts.
+- UNDER CONSTRUCTION Next milestones: full Layer 3 orchestration, structured config profiles, richer summarization backends, CLI packaging (`npm bin`), and better error diagnostics/telemetry.
+
+## License
+MiniPhi is released under the ISC License (`LICENSE`).
