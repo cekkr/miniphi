@@ -1,3 +1,7 @@
+# After a prompt
+- Update AI_REFERENCE.md references and next step.
+- Update README.md with updated documentation for humans.
+
 # MiniPhi Reference
 
 ## Current Status
