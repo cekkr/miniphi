@@ -122,6 +122,7 @@ export default class EfficientLogAnalyzer {
       prompt,
       linesAnalyzed: lines.length,
       compressedTokens: compression.tokens,
+      compressedContent: compression.content,
       analysis,
     };
   }
@@ -173,6 +174,7 @@ export default class EfficientLogAnalyzer {
       prompt,
       linesAnalyzed: totalLines,
       compressedTokens: tokens,
+      compressedContent: formatted,
       analysis,
     };
   }

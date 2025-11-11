@@ -9,6 +9,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Reasoning-aware streaming.** `src/libs/lms-phi4.js` enforces the Phi "<think>...</think> + solution" format and can stream both reasoning and answers.
 - **Lossy-but-smart compression.** JavaScript heuristics plus `log_summarizer.py` (Python stdlib only) reduce hundreds of thousands of lines to ~1K tokens.
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
+- **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 
 ## Architecture at a Glance
@@ -18,6 +19,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 | Layer 2 - Phi4Handler | `src/libs/lms-phi4.js`, `src/libs/phi4-stream-parser.js` | Maintain Phi system prompt, trim history to fit the window, split `<think>` and solution tokens while streaming. |
 | Layer 2.5 - Compression Stack | `src/libs/efficient-log-analyzer.js`, `src/libs/python-log-summarizer.js`, `log_summarizer.py`, `src/libs/stream-analyzer.js` | Capture stdout/stderr incrementally, apply heuristics or recursive Python summaries, construct the final Phi prompt. |
 | Layer 3 - CLI Orchestration (in progress) | CLI planning is outlined in `docs/miniphi-cli-implementation.md` and `AI_REFERENCE.md` | Future work: multi-task orchestration, memory consolidation, config profiles. |
+| Layer 3 - Memory & Indexes | `src/libs/miniphi-memory.js`, `.miniphi/` | Hidden working directory containing executions, knowledge snapshots, TODO queues, and recursive JSON indexes. |
 
 For the deeper architectural rationale (REST vs SDKs, LM Studio lifecycle, compression strategies) see `docs/NodeJS LM Studio API Integration.md` and `docs/miniphi-cli-implementation.md`.
 
@@ -68,18 +70,25 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 4. Copy the streamed solution or inspect the JSON footer to log compression stats (`linesAnalyzed`, `compressedTokens`).
 5. Repeat with `analyze-file` for build logs, test snapshots, or any text artifact.
 
+## Hidden `.miniphi` Workspace
+- MiniPhi now maintains a hidden `.miniphi/` directory at the nearest project root (or reuses an existing one if you invoke the CLI from a subfolder). Every execution creates an `executions/<id>/` archive with `execution.json`, `prompt.json`, `analysis.json`, `compression.json`, and chunked `segments/segment-###.json` files so you can rehydrate any prompt without rerunning the command.
+- Global memory lives in JSON ledgers: `prompts.json` (prompt history + hashes), `knowledge.json` (condensed insights), and `todo.json` (auto-extracted next steps). Each file is mirrored by a recursive index under `indices/` for faster lookups.
+- `index.json` at the root links the entire structure so other tooling can crawl memory without guessing file names.
+- Use `--verbose` to see where the run was archived (path is relative to your current shell). The data is plain JSON, so you can feed it into future orchestration layers or external dashboards.
+
 ## Documentation Map
 - `AI_REFERENCE.md` - short status update plus near-term roadmap.
 - `docs/NodeJS LM Studio API Integration.md` - detailed research on using the LM Studio SDK vs REST APIs.
 - `docs/miniphi-cli-implementation.md` - CLI behavior, compression algorithms, and example pipelines.
+- `src/libs/miniphi-memory.js` - `.miniphi` directory manager (execution archives, indexes, persistent TODOs).
 - `log_summarizer.py` - Python reference implementation for recursive hierarchical summaries.
 
 ## Current Status & Next Steps
 Per `AI_REFERENCE.md`:
 - OK Layered LM Studio stack (`LMStudioManager`, `Phi4Handler`, `EfficientLogAnalyzer`) is functional with streaming Phi-4 responses.
-- WARNING No persistence layer yet; conversation history resets once the process exits.
+- OK Hidden `.miniphi/` memory + indexes capture every execution, prompt, and auto-derived TODO across local runs.
 - WARNING No automated tests; rely on manual verification when changing compression heuristics or Phi prompts.
-- UNDER CONSTRUCTION Next milestones: full Layer 3 orchestration, structured config profiles, richer summarization backends, CLI packaging (`npm bin`), and better error diagnostics/telemetry.
+- UNDER CONSTRUCTION Next milestones: hook the persisted memory into multi-task orchestration, add structured config profiles, richer summarization backends, CLI packaging (`npm bin`), and better error diagnostics/telemetry (plus retention policies for the `.miniphi` store).
 
 ## License
 MiniPhi is released under the ISC License (`LICENSE`).

@@ -6,6 +6,7 @@ import LMStudioManager from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
+import MiniPhiMemory from "./libs/miniphi-memory.js";
 
 const COMMANDS = new Set(["run", "analyze-file"]);
 
@@ -40,6 +41,9 @@ async function main() {
   const summarizer = new PythonLogSummarizer(options["python-script"]);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
 
+  let stateManager;
+  const archiveMetadata = {};
+
   try {
     await phi4.load({ contextLength, gpu });
     let result;
@@ -51,6 +55,10 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+       archiveMetadata.command = cmd;
+       archiveMetadata.cwd = cwd;
+       stateManager = new MiniPhiMemory(cwd);
+       await stateManager.prepare();
       result = await analyzer.analyzeCommandOutput(cmd, task, {
         summaryLevels,
         verbose,
@@ -69,11 +77,32 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
 
+      archiveMetadata.filePath = filePath;
+      archiveMetadata.cwd = path.dirname(filePath);
+      stateManager = new MiniPhiMemory(archiveMetadata.cwd);
+      await stateManager.prepare();
       result = await analyzer.analyzeLogFile(filePath, task, {
         summaryLevels,
         streamOutput,
         maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
       });
+    }
+
+    if (stateManager && result) {
+      const archive = await stateManager.persistExecution({
+        mode: command,
+        task,
+        command: archiveMetadata.command,
+        filePath: archiveMetadata.filePath,
+        cwd: archiveMetadata.cwd,
+        summaryLevels,
+        contextLength,
+        result,
+      });
+      if (archive && options.verbose) {
+        const relativePath = path.relative(process.cwd(), archive.path);
+        console.log(`[MiniPhi] Execution archived under ${relativePath || archive.path}`);
+      }
     }
 
     if (!options["no-summary"]) {
