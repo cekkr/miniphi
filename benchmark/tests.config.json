@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "samples-bash-explain",
+      "description": "Traverse the Bash sample repository up to depth 1 and emit high level EXPLAIN reports under samples/bash-results.",
+      "command": "node benchmark/scripts/bash-flow-explain.js",
+      "cwd": ".",
+      "timeoutMs": 900000,
+      "logDir": "samples-bash"
+    }
+  ]
+}

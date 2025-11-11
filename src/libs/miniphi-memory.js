@@ -21,6 +21,7 @@ export default class MiniPhiMemory {
 
     this.executionsDir = path.join(this.baseDir, "executions");
     this.indicesDir = path.join(this.baseDir, "indices");
+    this.healthDir = path.join(this.baseDir, "health");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -28,6 +29,7 @@ export default class MiniPhiMemory {
     this.rootIndexFile = path.join(this.baseDir, "index.json");
     this.executionsIndexFile = path.join(this.indicesDir, "executions-index.json");
     this.knowledgeIndexFile = path.join(this.indicesDir, "knowledge-index.json");
+    this.resourceUsageFile = path.join(this.healthDir, "resource-usage.json");
 
     this.prepared = false;
   }
@@ -42,12 +44,14 @@ export default class MiniPhiMemory {
 
     await fs.promises.mkdir(this.executionsDir, { recursive: true });
     await fs.promises.mkdir(this.indicesDir, { recursive: true });
+    await fs.promises.mkdir(this.healthDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
     await this.#ensureFile(this.todoFile, { items: [] });
     await this.#ensureFile(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
     await this.#ensureFile(this.knowledgeIndexFile, { entries: [] });
+    await this.#ensureFile(this.resourceUsageFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -55,6 +59,7 @@ export default class MiniPhiMemory {
         { name: "knowledge", file: this.#relative(this.knowledgeIndexFile) },
         { name: "prompts", file: this.#relative(this.promptsFile) },
         { name: "todo", file: this.#relative(this.todoFile) },
+        { name: "health", file: this.#relative(this.resourceUsageFile) },
       ],
     });
 
@@ -105,6 +110,7 @@ export default class MiniPhiMemory {
       contextLength: payload.contextLength ?? null,
       linesAnalyzed: payload.result.linesAnalyzed,
       compressedTokens: payload.result.compressedTokens,
+      resourceUsage: payload.resourceUsage ?? null,
       createdAt: timestamp,
     };
 
@@ -382,6 +388,7 @@ export default class MiniPhiMemory {
       { name: "knowledge", file: this.#relative(this.knowledgeIndexFile) },
       { name: "prompts", file: this.#relative(this.promptsFile) },
       { name: "todo", file: this.#relative(this.todoFile) },
+      { name: "health", file: this.#relative(this.resourceUsageFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }

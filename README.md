@@ -10,6 +10,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Lossy-but-smart compression.** JavaScript heuristics plus `log_summarizer.py` (Python stdlib only) reduce hundreds of thousands of lines to ~1K tokens.
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
+- **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 
 ## Architecture at a Glance
@@ -61,7 +62,14 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 | `--gpu <mode>` | Forward GPU config to LM Studio (`auto`, `cpu`, `cuda:0`, etc.). |
 | `--summary-levels <n>` | Depth of recursive summarization (default 3). |
 | `--python-script <path>` | Custom path to `log_summarizer.py`. |
+| `--max-memory-percent <n>` / `--max-cpu-percent <n>` / `--max-vram-percent <n>` | Emit warnings and archive stats when the given limit is exceeded. |
+| `--resource-sample-interval <ms>` | Change the sampling cadence for the resource monitor (default 5s). |
 | `--verbose` | Print capture progress and reasoning blocks to the console. |
+
+### Resource monitoring
+- Every `run`/`analyze-file` session bootstraps `ResourceMonitor`, which samples system RAM, CPU, and VRAM using the best strategy available for your OS (`nvidia-smi`, PowerShell CIM, or `system_profiler`).
+- Breaching a threshold surfaces `[MiniPhi][Resources]` warnings and appends the session to `.miniphi/health/resource-usage.json`, giving you per-run statistics (min/avg/max) plus the last 20 samples for trend analysis.
+- Tune limits with the `--max-*-percent` flags or disable background sampling by setting a large `--resource-sample-interval`.
 
 ## Example Workflow
 1. Start LM Studio, load/download Phi-4 reasoning-plus, and enable the local server.
@@ -73,8 +81,14 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 ## Hidden `.miniphi` Workspace
 - MiniPhi now maintains a hidden `.miniphi/` directory at the nearest project root (or reuses an existing one if you invoke the CLI from a subfolder). Every execution creates an `executions/<id>/` archive with `execution.json`, `prompt.json`, `analysis.json`, `compression.json`, and chunked `segments/segment-###.json` files so you can rehydrate any prompt without rerunning the command.
 - Global memory lives in JSON ledgers: `prompts.json` (prompt history + hashes), `knowledge.json` (condensed insights), and `todo.json` (auto-extracted next steps). Each file is mirrored by a recursive index under `indices/` for faster lookups.
+- `health/resource-usage.json` keeps the last 50 resource-monitor snapshots (averages plus the final samples) so it is easy to correlate Phi work with system strain.
 - `index.json` at the root links the entire structure so other tooling can crawl memory without guessing file names.
 - Use `--verbose` to see where the run was archived (path is relative to your current shell). The data is plain JSON, so you can feed it into future orchestration layers or external dashboards.
+
+## Benchmark Harness & Samples
+- `node benchmark/run-tests.js` runs repeatable sample/benchmark suites (defined in `benchmark/tests.config.json`) with hardened logging: every line is timestamped and flushed into `benchmark/logs/<test-name>/<ISO>.log`, and each test inherits the 15-minute safety timeout described in `WHY_SAMPLES.md`.
+- `benchmark/scripts/bash-flow-explain.js` is the first automated sample: it traverses `samples/bash` up to depth 1, builds a `main`-anchored call graph, and writes `samples/bash-results/EXPLAIN-###.md` files for later AI-assisted analysis.
+- Pass specific test names (e.g. `node benchmark/run-tests.js samples-bash-explain`) or use `--list` to discover suites; add future tests to `benchmark/tests.config.json` to get logging + resource tracking for free.
 
 ## Documentation Map
 - `AI_REFERENCE.md` - short status update plus near-term roadmap.

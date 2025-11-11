@@ -7,6 +7,7 @@ import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
+import ResourceMonitor from "./libs/resource-monitor.js";
 
 const COMMANDS = new Set(["run", "analyze-file"]);
 
@@ -34,6 +35,7 @@ async function main() {
   const gpu = options.gpu ?? "auto";
   const timeout = options.timeout ? Number(options.timeout) : 60000;
   const task = options.task ?? "Provide a precise technical analysis of the captured output.";
+  const resourceConfig = buildResourceConfig(options);
 
   const manager = new LMStudioManager();
   const phi4 = new Phi4Handler(manager);
@@ -43,6 +45,51 @@ async function main() {
 
   let stateManager;
   const archiveMetadata = {};
+  let resourceMonitor;
+  let resourceSummary = null;
+  const initializeResourceMonitor = async (label) => {
+    if (resourceMonitor) {
+      return;
+    }
+    const historyFile = stateManager?.resourceUsageFile ?? null;
+    resourceMonitor = new ResourceMonitor({
+      ...resourceConfig,
+      historyFile,
+      label,
+    });
+    try {
+      await resourceMonitor.start(label);
+    } catch (error) {
+      resourceMonitor = null;
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Resource monitor failed to start: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  };
+  const stopResourceMonitorIfNeeded = async () => {
+    if (!resourceMonitor || resourceSummary) {
+      return resourceSummary;
+    }
+    try {
+      resourceSummary = await resourceMonitor.stop();
+      if (resourceSummary?.summary?.warnings?.length) {
+        for (const warning of resourceSummary.summary.warnings) {
+          console.warn(`[MiniPhi][Resources] ${warning}`);
+        }
+      }
+      if (resourceSummary?.persisted?.path && verbose) {
+        const rel = path.relative(process.cwd(), resourceSummary.persisted.path);
+        console.log(`[MiniPhi] Resource usage appended to ${rel || resourceSummary.persisted.path}`);
+      }
+    } catch (error) {
+      console.warn(
+        `[MiniPhi] Unable to finalize resource monitor: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return resourceSummary;
+  };
 
   try {
     await phi4.load({ contextLength, gpu });
@@ -55,10 +102,11 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-       archiveMetadata.command = cmd;
-       archiveMetadata.cwd = cwd;
-       stateManager = new MiniPhiMemory(cwd);
-       await stateManager.prepare();
+      archiveMetadata.command = cmd;
+      archiveMetadata.cwd = cwd;
+      stateManager = new MiniPhiMemory(cwd);
+      await stateManager.prepare();
+      await initializeResourceMonitor(`run:${cmd}`);
       result = await analyzer.analyzeCommandOutput(cmd, task, {
         summaryLevels,
         verbose,
@@ -81,12 +129,15 @@ async function main() {
       archiveMetadata.cwd = path.dirname(filePath);
       stateManager = new MiniPhiMemory(archiveMetadata.cwd);
       await stateManager.prepare();
+      await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
       result = await analyzer.analyzeLogFile(filePath, task, {
         summaryLevels,
         streamOutput,
         maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
       });
     }
+
+    await stopResourceMonitorIfNeeded();
 
     if (stateManager && result) {
       const archive = await stateManager.persistExecution({
@@ -97,6 +148,7 @@ async function main() {
         cwd: archiveMetadata.cwd,
         summaryLevels,
         contextLength,
+        resourceUsage: resourceSummary?.summary ?? null,
         result,
       });
       if (archive && options.verbose) {
@@ -124,6 +176,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     try {
+      await stopResourceMonitorIfNeeded();
       await phi4.eject();
     } catch {
       // no-op
@@ -190,6 +243,42 @@ function parseArgs(tokens) {
   return { options, positionals };
 }
 
+function buildResourceConfig(cliOptions) {
+  const parsePercent = (value) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return undefined;
+    }
+    return Math.min(100, Math.max(1, numeric));
+  };
+  const parseInterval = (value) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 250) {
+      return undefined;
+    }
+    return numeric;
+  };
+
+  const thresholds = {};
+  const memory = parsePercent(cliOptions["max-memory-percent"]);
+  const cpu = parsePercent(cliOptions["max-cpu-percent"]);
+  const vram = parsePercent(cliOptions["max-vram-percent"]);
+  if (typeof memory === "number") thresholds.memory = memory;
+  if (typeof cpu === "number") thresholds.cpu = cpu;
+  if (typeof vram === "number") thresholds.vram = vram;
+
+  return {
+    thresholds,
+    sampleInterval: parseInterval(cliOptions["resource-sample-interval"]),
+  };
+}
+
 function printHelp() {
   console.log(`MiniPhi CLI
 
@@ -206,6 +295,10 @@ Options:
   --context-length <tokens>    Override Phi-4 context length (default: 32768)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
   --timeout <ms>               Command timeout in milliseconds (default: 60000)
+  --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%
+  --max-cpu-percent <n>        Trigger warnings when CPU usage exceeds <n>%
+  --max-vram-percent <n>       Trigger warnings when VRAM usage exceeds <n>%
+  --resource-sample-interval <ms>  Resource sampling cadence (default: 5000)
   --python-script <path>       Custom path to log_summarizer.py
   --chunk-size <lines>         Chunk size when analyzing files (default: 2000)
   --verbose                    Print progress details
