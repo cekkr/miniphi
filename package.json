@@ -1,0 +1,28 @@
+{
+  "name": "miniphi",
+  "version": "0.1.0",
+  "description": "Local codex-like library",
+  "main": "src/index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cekkr/miniphi.git"
+  },
+  "keywords": [
+    "codex",
+    "local",
+    "phi",
+    "lmstudio"
+  ],
+  "author": "Riccardo Cecchini",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cekkr/miniphi/issues"
+  },
+  "homepage": "https://github.com/cekkr/miniphi#readme"
+}
