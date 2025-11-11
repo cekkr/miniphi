@@ -5,6 +5,10 @@ const DEFAULT_LOAD_CONFIG = {
   gpu: "auto",
   ttl: 300,
 };
+const DEFAULT_LMSTUDIO_BASE_URL = "http://127.0.0.1:1234";
+const DEFAULT_MODEL_KEY = "microsoft/phi-4-reasoning-plus";
+const DEFAULT_CONTEXT_LENGTH = 4096;
+const DEFAULT_REST_TIMEOUT_MS = 30000;
 
 /**
  * Layer 1 manager that encapsulates LM Studio client interactions and
@@ -111,6 +115,265 @@ export class LMStudioManager {
     }
 
     return Object.entries(requested).every(([key, value]) => cached[key] === value);
+  }
+}
+
+/**
+ * Lightweight REST client for LM Studio's native /api/v0 endpoints.
+ * Complements the SDK-based LMStudioManager with diagnostics and non-SDK workflows.
+ */
+export class LMStudioRestClient {
+  /**
+   * @param {{
+   *   baseUrl?: string,
+   *   apiVersion?: string,
+   *   timeoutMs?: number,
+   *   defaultModel?: string,
+   *   fetchImpl?: typeof fetch
+   * }} [options]
+   */
+  constructor(options = undefined) {
+    this.baseUrl = this.#normalizeBaseUrl(
+      options?.baseUrl ?? process.env.LMSTUDIO_REST_URL ?? DEFAULT_LMSTUDIO_BASE_URL,
+    );
+    this.apiVersion = this.#normalizeApiVersion(options?.apiVersion ?? "v0");
+    this.timeoutMs = options?.timeoutMs ?? DEFAULT_REST_TIMEOUT_MS;
+    this.defaultModel = options?.defaultModel ?? DEFAULT_MODEL_KEY;
+    this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
+    this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
+
+    if (!this.fetchImpl) {
+      throw new Error(
+        "Global fetch implementation not found. Provide options.fetchImpl when constructing LMStudioRestClient.",
+      );
+    }
+  }
+
+  /**
+   * Lists every model (downloaded + currently loaded) known by LM Studio.
+   * @returns {Promise<object>}
+   */
+  async listModels() {
+    return this.#request("/models");
+  }
+
+  /**
+   * Retrieves detailed information about a single model.
+   * @param {string} modelKey
+   */
+  async getModel(modelKey = this.defaultModel) {
+    if (!modelKey) {
+      throw new Error("modelKey is required to query model details.");
+    }
+    const encoded = encodeURIComponent(modelKey);
+    return this.#request(`/models/${encoded}`);
+  }
+
+  /**
+   * Calls POST /chat/completions with the provided payload.
+   *
+   * @param {{
+   *   model?: string,
+   *   messages: Array<{ role: string, content: string }>,
+   *   temperature?: number,
+   *   max_tokens?: number,
+   *   stream?: boolean,
+   *   [key: string]: unknown
+   * }} payload
+   */
+  async createChatCompletion(payload) {
+    if (!payload?.messages || payload.messages.length === 0) {
+      throw new Error("messages array is required for chat completions.");
+    }
+    const body = {
+      stream: false,
+      max_tokens: -1,
+      model: payload.model ?? this.defaultModel,
+      ...payload,
+    };
+    return this.#post("/chat/completions", body);
+  }
+
+  /**
+   * Calls POST /completions with the provided payload.
+   *
+   * @param {{
+   *   model?: string,
+   *   prompt: string,
+   *   temperature?: number,
+   *   max_tokens?: number,
+   *   stream?: boolean,
+   *   stop?: string | string[],
+   *   [key: string]: unknown
+   * }} payload
+   */
+  async createCompletion(payload) {
+    if (!payload?.prompt) {
+      throw new Error("prompt is required for text completions.");
+    }
+    const body = {
+      stream: false,
+      max_tokens: -1,
+      model: payload.model ?? this.defaultModel,
+      ...payload,
+    };
+    return this.#post("/completions", body);
+  }
+
+  /**
+   * Calls POST /embeddings with the provided payload.
+   *
+   * @param {{
+   *   model?: string,
+   *   input: string | string[],
+   *   [key: string]: unknown
+   * }} payload
+   */
+  async createEmbedding(payload) {
+    if (payload?.input === undefined) {
+      throw new Error("input is required for embeddings.");
+    }
+    const body = {
+      model: payload.model ?? this.defaultModel,
+      ...payload,
+    };
+    return this.#post("/embeddings", body);
+  }
+
+  /**
+   * Convenience helper to update the default model + context metadata.
+   * @param {string} model
+   * @param {number} [contextLength]
+   */
+  setDefaultModel(model, contextLength = undefined) {
+    if (!model) {
+      throw new Error("model is required.");
+    }
+    this.defaultModel = model;
+    this.defaultContextLength = contextLength ?? DEFAULT_CONTEXT_LENGTH;
+  }
+
+  /**
+   * @param {string} path
+   * @returns {Promise<object | string | null>}
+   */
+  async #request(path) {
+    const url = this.#buildUrl(path);
+    return this.#execute(url, { method: "GET" });
+  }
+
+  /**
+   * @param {string} path
+   * @param {Record<string, unknown>} body
+   */
+  async #post(path, body) {
+    const url = this.#buildUrl(path);
+    return this.#execute(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * @param {string} url
+   * @param {RequestInit} init
+   */
+  async #execute(url, init) {
+    const controller =
+      typeof AbortController !== "undefined" && this.timeoutMs > 0
+        ? new AbortController()
+        : undefined;
+    const timeoutId =
+      controller && this.timeoutMs > 0
+        ? setTimeout(() => controller.abort(), this.timeoutMs)
+        : undefined;
+
+    try {
+      const response = await this.fetchImpl(url, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          ...(init.headers ?? {}),
+        },
+        signal: controller?.signal,
+      });
+
+      const raw = await response.text();
+      const data = this.#parseJson(raw);
+
+      if (!response.ok) {
+        const message = data?.error?.message ?? data?.error ?? raw || "Unknown error";
+        const error = new Error(
+          `LM Studio REST request failed (${response.status} ${response.statusText}): ${message}`,
+        );
+        error.status = response.status;
+        error.body = data ?? raw;
+        throw error;
+      }
+
+      return data ?? raw;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error(
+          `LM Studio REST request timed out after ${this.timeoutMs}ms (url: ${url}).`,
+        );
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  /**
+   * @param {string} maybePath
+   */
+  #buildUrl(maybePath) {
+    if (!maybePath) {
+      throw new Error("Path is required.");
+    }
+    if (/^https?:\/\//i.test(maybePath)) {
+      return maybePath;
+    }
+
+    const relativePath = maybePath.startsWith("/") ? maybePath.slice(1) : maybePath;
+    return `${this.baseUrl}/api/${this.apiVersion}/${relativePath}`;
+  }
+
+  /**
+   * @param {string} baseUrl
+   */
+  #normalizeBaseUrl(baseUrl) {
+    if (!baseUrl) {
+      return DEFAULT_LMSTUDIO_BASE_URL;
+    }
+    return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  }
+
+  /**
+   * @param {string} apiVersion
+   */
+  #normalizeApiVersion(apiVersion) {
+    return apiVersion.replace(/^\/+|\/+$/g, "");
+  }
+
+  /**
+   * @param {string} text
+   * @returns {any}
+   */
+  #parseJson(text) {
+    if (!text) {
+      return null;
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
   }
 }
 

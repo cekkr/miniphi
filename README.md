@@ -6,6 +6,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 
 ## Highlights
 - **JIT model logistics.** `src/libs/lmstudio-api.js` keeps LM Studio models hot-loaded with exact context/gpu settings.
+- **Native REST diagnostics.** `LMStudioRestClient` (same module) speaks LM Studio's `/api/v0` endpoints (see `docs/APIs/REST API v0 _ LM Studio Docs.html`) so we can sanity-check the local server at `http://127.0.0.1:1234`, inspect model metadata (default `microsoft/phi-4-reasoning-plus`, 4096-token baseline), and run lightweight chat/completion/embedding probes outside the SDK.
 - **Reasoning-aware streaming.** `src/libs/lms-phi4.js` enforces the Phi "<think>...</think> + solution" format and can stream both reasoning and answers.
 - **Lossy-but-smart compression.** JavaScript heuristics plus `log_summarizer.py` (Python stdlib only) reduce hundreds of thousands of lines to ~1K tokens.
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
@@ -26,7 +27,7 @@ For the deeper architectural rationale (REST vs SDKs, LM Studio lifecycle, compr
 
 ## Requirements
 1. **Node.js 18+** (ES modules, async iteration).
-2. **LM Studio desktop app** with the server running and `microsoft/Phi-4-reasoning-plus` downloaded. MiniPhi uses the official `@lmstudio/sdk`.
+2. **LM Studio desktop app** with the server running and `microsoft/Phi-4-reasoning-plus` downloaded. MiniPhi uses the official `@lmstudio/sdk`, but also hits the native REST API snapshot under `http://127.0.0.1:1234` for diagnostics (changing context length still requires a model reload; the server defaults to 4096 tokens until you do).
 3. **Python 3.9+** available as `python`, `py`, or `python3` for `log_summarizer.py`. Override via `--python-script` when needed.
 4. Adequate local VRAM/system RAM-MiniPhi defaults to a 32K context window (`--context-length` to change).
 
@@ -93,6 +94,7 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 ## Documentation Map
 - `AI_REFERENCE.md` - short status update plus near-term roadmap.
 - `docs/NodeJS LM Studio API Integration.md` - detailed research on using the LM Studio SDK vs REST APIs.
+- `docs/APIs/REST API v0 _ LM Studio Docs.html` - offline copy of LM Studio's native REST API reference used by `LMStudioRestClient`.
 - `docs/miniphi-cli-implementation.md` - CLI behavior, compression algorithms, and example pipelines.
 - `src/libs/miniphi-memory.js` - `.miniphi` directory manager (execution archives, indexes, persistent TODOs).
 - `log_summarizer.py` - Python reference implementation for recursive hierarchical summaries.

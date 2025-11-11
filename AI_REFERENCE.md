@@ -6,6 +6,7 @@
 
 ## Current Status
 - Layered LM Studio stack is live: `LMStudioManager` (JIT loading), `Phi4Handler` (reasoning-aware streaming) and `EfficientLogAnalyzer` (compression + Phi-4 orchestration) sit under `src/`.
+- Native `/api/v0` instrumentation landed in `LMStudioRestClient` (`src/libs/lmstudio-api.js`), wrapping the docs in `docs/APIs/REST API v0 _ LM Studio Docs.html` so we can list/check models, run synchronous chat/completion/embedding calls, and capture runtime stats directly from the default server (`http://127.0.0.1:1234`, `microsoft/phi-4-reasoning-plus`, 4096-token baseline unless the model is reloaded).
 - Cross-platform command runner (`CliExecutor`), streaming file utilities, and Python-backed summarizer script (`log_summarizer.py`) enable analysis of arbitrarily large logs/CLI outputs.
 - `src/index.js` exposes two modes: `run` (execute + analyze a command) and `analyze-file` (summarize existing logs). Both automatically stream Phi-4 solutions unless `--no-stream` is provided.
 - Default workflow: `node src/index.js run --cmd "npm test" --task "Analyze failures"` -> auto execute, compress, and reason using Phi-4 (requires LM Studio server + Phi-4 reasoning-plus downloaded).
@@ -27,6 +28,6 @@
 1. Wire the `.miniphi/` indexes into an actual Layer 3 orchestrator: retrieval-augmented prompting, task trees, and resumable progress tracking.
 2. Add structured config + profiles (JSON/YAML) so teams can predefine tasks, context budgets, GPU/offload prefs, CLI presets, and retention policies for the memory store.
 3. Integrate richer summarization backends (node embeddings, semantic chunking) and expose file/directory analyzers described in `docs/miniphi-cli-implementation.md`.
-4. Hardening: add smoke tests (mock LM Studio), richer error diagnostics (server unreachable, model missing), telemetry hooks for compression/token metrics, and `.miniphi` health checks/pruning tools.
+4. Hardening: add smoke tests (mock LM Studio), richer error diagnostics (server unreachable, model missing), telemetry hooks for compression/token metrics, `.miniphi` health checks/pruning tools, and pre-flight REST diagnostics (list models + context) before orchestrations kick off.
 5. Package as an npm bin (e.g., `miniphi`) and document LM Studio + Python prerequisites plus the new persistence workspace expectations for smoother adoption.
 6. Grow the benchmark suite beyond `samples/bash` (e.g., synthetic GPU-stress cases, LM Studio failure drills) and wire log outputs back into `.miniphi/health` for consolidated observability.
