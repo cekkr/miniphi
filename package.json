@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Local codex-like library",
   "main": "src/index.js",
+  "type": "module",
   "directories": {
     "doc": "docs"
   },
