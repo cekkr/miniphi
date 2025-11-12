@@ -89,6 +89,8 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 ## Benchmark Harness & Samples
 - `node benchmark/run-tests.js` runs repeatable sample/benchmark suites (defined in `benchmark/tests.config.json`) with hardened logging: every line is timestamped and flushed into `benchmark/logs/<test-name>/<ISO>.log`, and each test inherits the 15-minute safety timeout described in `WHY_SAMPLES.md`.
 - `benchmark/scripts/bash-flow-explain.js` is the first automated sample: it traverses `samples/bash` up to depth 1, builds a `main`-anchored call graph, and writes `samples/bash-results/EXPLAIN-###.md` files for later AI-assisted analysis.
+- The latest manual pass, `samples/bash-results/EXPLAIN-003.md`, drills into `shell.c → eval.c → execute_cmd.c`, documents how `main` hands off to `reader_loop`/`execute_simple_command`, and ends with a benchmark-specific “Next Steps” list that is now mirrored in `AI_REFERENCE.md`.
+- `npm run benchmark:windows` wraps `benchmark/run-tests.js` and then feeds the freshest `EXPLAIN-###.md` into `node src/index.js analyze-file` using the stored Windows prompt preset (`docs/prompts/windows-benchmark-default.md`), so you get a “realtime implementation + next steps” summary without retyping the task each run.
 - Pass specific test names (e.g. `node benchmark/run-tests.js samples-bash-explain`) or use `--list` to discover suites; add future tests to `benchmark/tests.config.json` to get logging + resource tracking for free.
 
 ## Documentation Map
@@ -98,6 +100,8 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 - `docs/miniphi-cli-implementation.md` - CLI behavior, compression algorithms, and example pipelines.
 - `src/libs/miniphi-memory.js` - `.miniphi` directory manager (execution archives, indexes, persistent TODOs).
 - `log_summarizer.py` - Python reference implementation for recursive hierarchical summaries.
+- `docs/os-defaults/windows.md` - canonical LM Studio + CLI defaults for the Windows helper workflow (ports, models, helper commands).
+- `docs/prompts/windows-benchmark-default.md` - reusable prompt preset consumed by `npm run benchmark:windows`.
 
 ## Current Status & Next Steps
 Per `AI_REFERENCE.md`:

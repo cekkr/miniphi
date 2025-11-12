@@ -4,6 +4,7 @@ import path from "path";
 
 const SAMPLE_ROOT = path.resolve("samples/bash");
 const RESULT_DIR = path.resolve("samples/bash-results");
+const MIRROR_DIR = path.resolve(".miniphi/benchmarks/bash");
 const DEPTH_LIMIT = 1;
 const STOP_WORDS = new Set([
   "if",
@@ -20,6 +21,23 @@ const STOP_WORDS = new Set([
   "goto",
   "main",
 ]);
+const FOCUS_FUNCTIONS = [
+  {
+    file: "shell.c",
+    function: "main",
+    label: "shell.c::main (entry pipeline)",
+  },
+  {
+    file: "eval.c",
+    function: "reader_loop",
+    label: "eval.c::reader_loop (command dispatcher)",
+  },
+  {
+    file: "execute_cmd.c",
+    function: "execute_command_internal",
+    label: "execute_cmd.c::execute_command_internal (executor core)",
+  },
+];
 
 const log = (message) => {
   console.log(`[${new Date().toISOString()}] [BashExplain] ${message}`);
@@ -63,9 +81,10 @@ async function main() {
     });
   }
 
-  const markdown = buildReport(entries, files);
-  const targetPath = await writeReport(markdown);
+  const markdown = buildReport(entries, files, sources);
+  const { fileName, targetPath } = await writeReport(markdown);
   log(`Generated ${path.relative(process.cwd(), targetPath)}`);
+  await mirrorReport(markdown, fileName);
 }
 
 async function collectCFiles(root, depthLimit, currentDepth = 0, acc = []) {
@@ -89,28 +108,110 @@ async function collectCFiles(root, depthLimit, currentDepth = 0, acc = []) {
 }
 
 function extractFunctionMeta(source, functionName) {
-  const regex = new RegExp(`\\b${functionName}\\s*\\([^)]*\\)\\s*{`, "m");
-  const match = regex.exec(source);
-  if (!match) {
-    return null;
-  }
-  const header = match[0];
-  const signature = header.replace("{", "").trim();
-  const line = source.slice(0, match.index).split(/\r?\n/).length;
-  let depth = 1;
-  let cursor = match.index + header.length;
-  let body = "";
-  while (cursor < source.length && depth > 0) {
-    const char = source[cursor++];
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
+  const commentRanges = computeCommentRanges(source);
+  const regex = new RegExp(
+    `^\\s*(?:[A-Za-z_][A-Za-z0-9_\\s\\*]*\\s+)?${functionName}\\s*\\([^)]*\\)`,
+    "gm",
+  );
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    if (isWithinRanges(match.index, commentRanges)) {
+      continue;
     }
-    body += char;
+    const signature = match[0].trim();
+    let cursor = match.index + match[0].length;
+    while (cursor < source.length && source[cursor] !== "{") {
+      cursor += 1;
+    }
+    if (cursor >= source.length) {
+      return null;
+    }
+    const line = source.slice(0, match.index).split(/\r?\n/).length;
+    let depth = 1;
+    let index = cursor + 1;
+    let body = "";
+    while (index < source.length && depth > 0) {
+      const char = source[index++];
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+      body += char;
+    }
+    body = body.slice(0, Math.max(0, body.length - 1));
+    return { signature, line, body };
   }
-  body = body.slice(0, Math.max(0, body.length - 1));
-  return { signature, line, body };
+  return null;
+}
+
+function computeCommentRanges(source) {
+  const ranges = [];
+  let i = 0;
+  let inBlock = false;
+  let inLine = false;
+  let inString = null;
+  let blockStart = -1;
+  let lineStart = -1;
+  while (i < source.length) {
+    const char = source[i];
+    const next = source[i + 1];
+    if (inString) {
+      if (char === "\\" && i + 1 < source.length) {
+        i += 2;
+        continue;
+      }
+      if (char === inString) {
+        inString = null;
+      }
+      i += 1;
+      continue;
+    }
+    if (!inBlock && !inLine && (char === '"' || char === "'")) {
+      inString = char;
+      i += 1;
+      continue;
+    }
+    if (!inBlock && !inLine && char === "/" && next === "*") {
+      inBlock = true;
+      blockStart = i;
+      i += 2;
+      continue;
+    }
+    if (inBlock && char === "*" && next === "/") {
+      ranges.push({ start: blockStart, end: i + 2 });
+      inBlock = false;
+      i += 2;
+      continue;
+    }
+    if (!inBlock && !inLine && char === "/" && next === "/") {
+      inLine = true;
+      lineStart = i;
+      i += 2;
+      continue;
+    }
+    if (inLine && char === "\n") {
+      ranges.push({ start: lineStart, end: i });
+      inLine = false;
+    }
+    i += 1;
+  }
+  if (inBlock) {
+    ranges.push({ start: blockStart, end: source.length });
+  }
+  if (inLine) {
+    ranges.push({ start: lineStart, end: source.length });
+  }
+  return ranges;
+}
+
+function isWithinRanges(index, ranges) {
+  for (const range of ranges) {
+    if (index >= range.start && index < range.end) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function summarizeCalls(body, sources) {
@@ -157,7 +258,7 @@ function locateDefinition(name, sources) {
   return null;
 }
 
-function buildReport(entries, files) {
+function buildReport(entries, files, sources) {
   const lines = [];
   lines.push("# Bash Sample Execution Flow\n");
   lines.push(`- Generated at: ${new Date().toISOString()}`);
@@ -191,8 +292,124 @@ function buildReport(entries, files) {
     }
   }
 
+  appendAggregatedInsights(lines, entries);
+  appendFocusSections(lines, sources);
+
   lines.push("\n---\nReport crafted by benchmark/scripts/bash-flow-explain.js.");
   return lines.join("\n");
+}
+
+function appendAggregatedInsights(lines, entries) {
+  if (!entries.length) {
+    return;
+  }
+  lines.push("\n---\n## Global Observations");
+  const aggregated = new Map();
+  const unresolved = new Map();
+  for (const entry of entries) {
+    for (const call of entry.calls) {
+      aggregated.set(call.name, (aggregated.get(call.name) ?? 0) + call.count);
+      if (!call.definition) {
+        unresolved.set(call.name, (unresolved.get(call.name) ?? 0) + call.count);
+      }
+    }
+  }
+  const topGlobal = [...aggregated.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10);
+  lines.push("\n**Top call targets across depth-1 scan**");
+  for (const [name, count] of topGlobal) {
+    const unresolvedMark = unresolved.has(name) ? " _(definition outside depth)_" : "";
+    lines.push(`- \`${name}()\`: ${count} hits${unresolvedMark}`);
+  }
+  if (unresolved.size) {
+    const frequentUnknown = [...unresolved.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5);
+    lines.push("\n**Follow-up candidates (missing definitions within depth limit)**");
+    for (const [name, count] of frequentUnknown) {
+      lines.push(`- \`${name}()\`: ${count} reference(s) without a local definition`);
+    }
+  }
+}
+
+function appendFocusSections(lines, sources) {
+  const sections = [];
+  for (const focus of FOCUS_FUNCTIONS) {
+    const filePath = path.join(SAMPLE_ROOT, focus.file);
+    const source = sources.get(filePath);
+    if (!source) {
+      continue;
+    }
+    const meta = extractFunctionMeta(source, focus.function);
+    if (!meta) {
+      continue;
+    }
+    const callSummary = summarizeCalls(meta.body, sources);
+    sections.push({
+      ...focus,
+      signature: meta.signature,
+      line: meta.line,
+      callSummary,
+      bodyLines: meta.body.split(/\r?\n/).length,
+      highlights: deriveHighlights(meta.body, focus.function),
+    });
+  }
+
+  if (!sections.length) {
+    return;
+  }
+
+  lines.push("\n---\n## Focus Functions (depth ≤ 1)");
+  for (const section of sections) {
+    lines.push(`\n### ${section.label}`);
+    lines.push(`- File: \`${section.file}\` (line ${section.line})`);
+    lines.push(`- Signature: \`${section.signature}\``);
+    lines.push(`- Body length: ${section.bodyLines} line(s)`);
+    if (section.highlights.length) {
+      lines.push("- Highlights:");
+      for (const note of section.highlights) {
+        lines.push(`  - ${note}`);
+      }
+    }
+    if (section.callSummary.length === 0) {
+      lines.push("\n_No additional direct calls detected within focus body._");
+      continue;
+    }
+    lines.push("\n**Direct call activity (top 15)**");
+    for (const call of section.callSummary.slice(0, 15)) {
+      const descriptor = call.definition
+        ? `→ ${call.definition.signature} (${call.definition.file}:${call.definition.line})`
+        : "→ definition not found within depth";
+      lines.push(`- \`${call.name}()\` × ${call.count} ${descriptor}`);
+    }
+  }
+}
+
+function deriveHighlights(body, functionName = "") {
+  const notes = [];
+  if (/setjmp/.test(body)) {
+    notes.push("Protects execution with `setjmp`/`longjmp` for error recovery.");
+  }
+  if (functionName !== "reader_loop" && /reader_loop/.test(body)) {
+    notes.push("Transfers control to `reader_loop()` to consume parsed commands.");
+  }
+  if (functionName !== "execute_command_internal" && /execute_command_internal/.test(body)) {
+    notes.push("Delegates complex dispatch to `execute_command_internal()`.");
+  }
+  if (/do_redirections/.test(body)) {
+    notes.push("Performs redirect setup via `do_redirections()` before exec paths.");
+  }
+  if (/run_pending_traps/.test(body)) {
+    notes.push("Ensures pending traps run before continuing execution.");
+  }
+  if (/run_startup_files/.test(body)) {
+    notes.push("Handles interactive/login startup files prior to main loop.");
+  }
+  if (/with_input_from_string/.test(body)) {
+    notes.push("Supports `-c` string execution paths via `with_input_from_string()`.");
+  }
+  return notes.length ? notes : ["No heuristically-detected highlights within focus window."];
 }
 
 async function writeReport(content) {
@@ -200,7 +417,7 @@ async function writeReport(content) {
   const fileName = `EXPLAIN-${String(nextIndex).padStart(3, "0")}.md`;
   const targetPath = path.join(RESULT_DIR, fileName);
   await fs.promises.writeFile(targetPath, content, "utf8");
-  return targetPath;
+  return { targetPath, fileName };
 }
 
 async function nextExplainIndex() {
@@ -226,6 +443,21 @@ async function nextExplainIndex() {
 
 async function ensureDirectory(dir) {
   await fs.promises.mkdir(dir, { recursive: true });
+}
+
+async function mirrorReport(content, fileName) {
+  try {
+    await ensureDirectory(MIRROR_DIR);
+    const targetPath = path.join(MIRROR_DIR, fileName);
+    await fs.promises.writeFile(targetPath, content, "utf8");
+    log(`Mirrored report to ${path.relative(process.cwd(), targetPath)}`);
+  } catch (error) {
+    log(
+      `WARN: Unable to mirror EXPLAIN output into .miniphi workspace: ${
+        error instanceof Error ? error.message : error
+      }`,
+    );
+  }
 }
 
 main().catch((error) => {

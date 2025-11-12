@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "benchmark": "node benchmark/run-tests.js"
+    "benchmark": "node benchmark/run-tests.js",
+    "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose"
   },
   "repository": {
     "type": "git",
