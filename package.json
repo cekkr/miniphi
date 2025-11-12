@@ -29,6 +29,8 @@
   },
   "homepage": "https://github.com/cekkr/miniphi#readme",
   "dependencies": {
-    "@lmstudio/sdk": "^1.5.0"
+    "@lmstudio/sdk": "^1.5.0",
+    "tree-sitter-c": "^0.24.1",
+    "web-tree-sitter": "^0.25.10"
   }
 }
