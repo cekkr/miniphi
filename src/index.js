@@ -8,6 +8,7 @@ import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
 import ResourceMonitor from "./libs/resource-monitor.js";
+import PromptRecorder from "./libs/prompt-recorder.js";
 
 const COMMANDS = new Set(["run", "analyze-file"]);
 
@@ -54,6 +55,7 @@ async function main() {
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
 
   let stateManager;
+  let promptRecorder = null;
   const archiveMetadata = { promptId };
   let resourceMonitor;
   let resourceSummary = null;
@@ -112,25 +114,41 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-      archiveMetadata.command = cmd;
-      archiveMetadata.cwd = cwd;
-      stateManager = new MiniPhiMemory(cwd);
-      await stateManager.prepare();
-      if (promptId) {
-        const history = await stateManager.loadPromptSession(promptId);
-        if (history) {
-          phi4.setHistory(history);
+        archiveMetadata.command = cmd;
+        archiveMetadata.cwd = cwd;
+        stateManager = new MiniPhiMemory(cwd);
+        await stateManager.prepare();
+        promptRecorder = new PromptRecorder(stateManager.baseDir);
+        await promptRecorder.prepare();
+        phi4.setPromptRecorder(promptRecorder);
+        if (verbose) {
+          console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
         }
-      }
-      await initializeResourceMonitor(`run:${cmd}`);
-      result = await analyzer.analyzeCommandOutput(cmd, task, {
-        summaryLevels,
-        verbose,
-        streamOutput,
-        cwd,
-        timeout,
-        sessionDeadline,
-      });
+        if (promptId) {
+          const history = await stateManager.loadPromptSession(promptId);
+          if (history) {
+            phi4.setHistory(history);
+          }
+        }
+        await initializeResourceMonitor(`run:${cmd}`);
+        result = await analyzer.analyzeCommandOutput(cmd, task, {
+          summaryLevels,
+          verbose,
+          streamOutput,
+          cwd,
+          timeout,
+          sessionDeadline,
+          promptContext: {
+            scope: "main",
+            label: task,
+            mainPromptId: promptGroupId,
+            metadata: {
+              mode: "run",
+              command: cmd,
+              cwd,
+            },
+          },
+        });
     } else if (command === "analyze-file") {
       const fileFromFlag = options.file ?? options.path ?? positionals[0];
       if (!fileFromFlag) {
@@ -142,24 +160,39 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
 
-      archiveMetadata.filePath = filePath;
-      archiveMetadata.cwd = path.dirname(filePath);
-      stateManager = new MiniPhiMemory(archiveMetadata.cwd);
-      await stateManager.prepare();
-      if (promptId) {
-        const history = await stateManager.loadPromptSession(promptId);
-        if (history) {
-          phi4.setHistory(history);
+        archiveMetadata.filePath = filePath;
+        archiveMetadata.cwd = path.dirname(filePath);
+        stateManager = new MiniPhiMemory(archiveMetadata.cwd);
+        await stateManager.prepare();
+        promptRecorder = new PromptRecorder(stateManager.baseDir);
+        await promptRecorder.prepare();
+        phi4.setPromptRecorder(promptRecorder);
+        if (verbose) {
+          console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
         }
+        if (promptId) {
+          const history = await stateManager.loadPromptSession(promptId);
+          if (history) {
+            phi4.setHistory(history);
+          }
+        }
+        await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
+        result = await analyzer.analyzeLogFile(filePath, task, {
+          summaryLevels,
+          streamOutput,
+          maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
+          sessionDeadline,
+          promptContext: {
+            scope: "main",
+            label: task,
+            mainPromptId: promptGroupId,
+            metadata: {
+              mode: "analyze-file",
+              filePath,
+            },
+          },
+        });
       }
-      await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
-      result = await analyzer.analyzeLogFile(filePath, task, {
-        summaryLevels,
-        streamOutput,
-        maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
-        sessionDeadline,
-      });
-    }
 
     await stopResourceMonitorIfNeeded();
 
@@ -339,3 +372,5 @@ Options:
 }
 
 main();
+  const promptGroupId =
+    promptId ?? `auto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;

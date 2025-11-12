@@ -11,9 +11,16 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Lossy-but-smart compression.** JavaScript heuristics plus `log_summarizer.py` (Python stdlib only) reduce hundreds of thousands of lines to ~1K tokens.
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
+- **Structured prompt transcripts.** `src/libs/prompt-recorder.js` records each LM Studio exchange (MiniPhi’s main prompt plus every sub-prompt) as JSON under `.miniphi/prompt-exchanges/`, so you can audit or replay prompts one by one.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
 - **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can't hang the process).
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
+
+### Prompt Taxonomy & Recordings
+MiniPhi now distinguishes between the **main prompt** (the single prompt generated per CLI invocation) and the **sub prompts** (each LM Studio API call issued while satisfying that run). Every exchange is written to `.miniphi/prompt-exchanges/<id>.json` with a `scope` field (`"main"` or `"sub"`), the request payload, streamed reasoning, and the final response. The companion `.miniphi/prompt-exchanges/index.json` file lists the latest exchanges and their `mainPromptId`, making it easy to:
+- Inspect exactly what the model received (system prompt + history) versus what it answered.
+- Diff or replay a single sub prompt by launching a fresh Node process pointed at the saved JSON.
+- Track iterative improvements by grouping multiple runs under the same `--prompt-id` or by referencing the auto-generated `mainPromptId`.
 
 ## Architecture at a Glance
 | Layer | File(s) | Purpose |

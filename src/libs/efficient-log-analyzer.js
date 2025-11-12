@@ -22,6 +22,7 @@ export default class EfficientLogAnalyzer {
       cwd = process.cwd(),
       timeout = 60000,
       sessionDeadline = undefined,
+      promptContext = undefined,
     } = options ?? {};
 
     if (verbose) {
@@ -112,6 +113,7 @@ export default class EfficientLogAnalyzer {
       (err) => {
         throw new Error(`Phi-4 inference error: ${err}`);
       },
+      promptContext,
     );
 
     if (streamOutput) {
@@ -130,7 +132,12 @@ export default class EfficientLogAnalyzer {
   }
 
   async analyzeLogFile(filePath, task, options = undefined) {
-    const { summaryLevels = 3, streamOutput = true, sessionDeadline = undefined } = options ?? {};
+    const {
+      summaryLevels = 3,
+      streamOutput = true,
+      sessionDeadline = undefined,
+      promptContext = undefined,
+    } = options ?? {};
     const { chunks } = await this.summarizer.summarizeFile(filePath, {
       maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
       recursionLevels: summaryLevels,
@@ -165,6 +172,7 @@ export default class EfficientLogAnalyzer {
       (err) => {
         throw new Error(`Phi-4 inference error: ${err}`);
       },
+      promptContext,
     );
 
     if (streamOutput) {

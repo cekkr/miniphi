@@ -1,5 +1,6 @@
 import { Chat } from "@lmstudio/sdk";
 import { Readable } from "stream";
+import { randomUUID } from "crypto";
 import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 
@@ -24,6 +25,7 @@ export class Phi4Handler {
         ? options.promptTimeoutMs
         : null;
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
+    this.promptRecorder = options?.promptRecorder ?? null;
   }
 
   /**
@@ -54,15 +56,24 @@ export class Phi4Handler {
   }
 
   /**
+   * Allows downstream callers to start/stop prompt recording dynamically.
+   * @param {import("./prompt-recorder.js").default | null} recorder
+   */
+  setPromptRecorder(recorder) {
+    this.promptRecorder = recorder ?? null;
+  }
+
+  /**
    * Streams a Phi-4 response while emitting think & solution tokens separately via callbacks.
    *
    * @param {string} prompt user prompt
    * @param {(token: string) => void} [onToken] solution token callback
    * @param {(thought: string) => void} [onThink] reasoning block callback
    * @param {(error: string) => void} [onError] error callback
+   * @param {object} [traceOptions] metadata for prompt logging
    * @returns {Promise<string>} assistant response content
    */
-  async chatStream(prompt, onToken, onThink, onError) {
+  async chatStream(prompt, onToken, onThink, onError, traceOptions = undefined) {
     if (!this.model) {
       const error = new Error("Model not loaded. Call load() before chatStream().");
       if (onError) {
@@ -76,15 +87,27 @@ export class Phi4Handler {
 
     this.chatHistory.push({ role: "user", content: prompt });
 
+    const traceContext = this.#buildTraceContext(traceOptions);
+    const startedAt = Date.now();
+    const capturedThoughts = [];
+    let requestSnapshot = null;
+    let result = "";
+
     try {
       this.chatHistory = await this.#truncateHistory();
+      requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext);
       const chat = Chat.from(this.chatHistory);
       const prediction = this.model.respond(chat);
-      const parser = new Phi4StreamParser(onThink);
+      const parser = new Phi4StreamParser((thought) => {
+        capturedThoughts.push(thought);
+        if (onThink) {
+          onThink(thought);
+        }
+      });
       const readable = Readable.from(prediction);
       const solutionStream = readable.pipe(parser);
 
-      const result = await this.#withPromptTimeout(async () => {
+      result = await this.#withPromptTimeout(async () => {
         let assistantResponse = "";
         for await (const fragment of solutionStream) {
           const token = fragment?.content ?? "";
@@ -107,11 +130,24 @@ export class Phi4Handler {
         this.chatHistory.push({ role: "assistant", content: result });
       }
 
+      await this.#recordPromptExchange(traceContext, requestSnapshot, {
+        text: result,
+        reasoning: capturedThoughts,
+        startedAt,
+        finishedAt: Date.now(),
+      });
+
       return result;
     } catch (error) {
       this.chatHistory.pop(); // remove user entry to preserve state
       const message = error instanceof Error ? error.message : String(error);
       if (onError) onError(message);
+      await this.#recordPromptExchange(traceContext, requestSnapshot, {
+        text: result,
+        reasoning: capturedThoughts,
+        startedAt,
+        finishedAt: Date.now(),
+      }, message);
       throw error;
     }
   }
@@ -208,6 +244,84 @@ export class Phi4Handler {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  #buildTraceContext(options) {
+    const scope = options?.scope === "main" ? "main" : "sub";
+    const subPromptId = options?.subPromptId ?? randomUUID();
+    return {
+      scope,
+      label: options?.label ?? null,
+      metadata: options?.metadata ?? null,
+      mainPromptId: options?.mainPromptId ?? null,
+      subPromptId,
+    };
+  }
+
+  #buildRequestSnapshot(prompt, traceContext) {
+    const messages = this.chatHistory.map((entry) => ({
+      role: entry.role,
+      content: entry.content,
+    }));
+    return {
+      id: traceContext.subPromptId,
+      model: MODEL_KEY,
+      systemPrompt: this.systemPrompt,
+      historyLength: messages.length,
+      promptChars: prompt.length,
+      messages,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  async #recordPromptExchange(traceContext, requestSnapshot, responseSnapshot, errorMessage = null) {
+    if (!this.promptRecorder || !requestSnapshot) {
+      return;
+    }
+    try {
+      await this.promptRecorder.record({
+        scope: traceContext.scope,
+        label: traceContext.label,
+        mainPromptId: traceContext.mainPromptId,
+        subPromptId: traceContext.subPromptId,
+        metadata: traceContext.metadata
+          ? {
+              ...traceContext.metadata,
+              durationMs:
+                responseSnapshot?.finishedAt && responseSnapshot?.startedAt
+                  ? responseSnapshot.finishedAt - responseSnapshot.startedAt
+                  : undefined,
+            }
+          : {
+              durationMs:
+                responseSnapshot?.finishedAt && responseSnapshot?.startedAt
+                  ? responseSnapshot.finishedAt - responseSnapshot.startedAt
+                  : undefined,
+            },
+        request: {
+          ...requestSnapshot,
+        },
+        response: responseSnapshot
+          ? {
+              ...responseSnapshot,
+              tokensApprox: this.#approximateTokens(responseSnapshot.text ?? ""),
+              reasoningCount: responseSnapshot.reasoning?.length ?? 0,
+            }
+          : null,
+        error: errorMessage,
+      });
+    } catch (error) {
+      // Recording failures should not interrupt inference.
+      const message = error instanceof Error ? error.message : String(error);
+      process.emitWarning(message, "PromptRecorder");
+    }
+  }
+
+  #approximateTokens(text) {
+    if (!text) {
+      return 0;
+    }
+    return Math.max(1, Math.ceil(text.length / 4));
   }
 }
 
