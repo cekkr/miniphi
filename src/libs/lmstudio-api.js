@@ -305,7 +305,7 @@ export class LMStudioRestClient {
       const data = this.#parseJson(raw);
 
       if (!response.ok) {
-        const message = data?.error?.message ?? data?.error ?? raw || "Unknown error";
+        const message = data?.error?.message ?? data?.error ?? raw ?? "Unknown error";
         const error = new Error(
           `LM Studio REST request failed (${response.status} ${response.statusText}): ${message}`,
         );
