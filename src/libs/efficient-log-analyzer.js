@@ -21,6 +21,7 @@ export default class EfficientLogAnalyzer {
       streamOutput = true,
       cwd = process.cwd(),
       timeout = 60000,
+      sessionDeadline = undefined,
     } = options ?? {};
 
     if (verbose) {
@@ -92,6 +93,7 @@ export default class EfficientLogAnalyzer {
     }
 
     let analysis = "";
+    this.#applyPromptTimeout(sessionDeadline);
     await this.phi4.chatStream(
       prompt,
       (token) => {
@@ -128,7 +130,7 @@ export default class EfficientLogAnalyzer {
   }
 
   async analyzeLogFile(filePath, task, options = undefined) {
-    const { summaryLevels = 3, streamOutput = true } = options ?? {};
+    const { summaryLevels = 3, streamOutput = true, sessionDeadline = undefined } = options ?? {};
     const { chunks } = await this.summarizer.summarizeFile(filePath, {
       maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
       recursionLevels: summaryLevels,
@@ -150,6 +152,7 @@ export default class EfficientLogAnalyzer {
     });
 
     let analysis = "";
+    this.#applyPromptTimeout(sessionDeadline);
     await this.phi4.chatStream(
       prompt,
       (token) => {
@@ -275,5 +278,16 @@ ${compressedContent}
     const approxCompressedLines = compressedTokens / 4;
     const ratio = totalLines / Math.max(1, approxCompressedLines);
     return `${ratio.toFixed(1)}x`;
+  }
+  #applyPromptTimeout(sessionDeadline) {
+    if (!sessionDeadline) {
+      this.phi4.setPromptTimeout(null);
+      return;
+    }
+    const remaining = sessionDeadline - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
+    }
+    this.phi4.setPromptTimeout(remaining);
   }
 }

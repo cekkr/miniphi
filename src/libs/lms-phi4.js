@@ -5,7 +5,6 @@ import Phi4StreamParser from "./phi4-stream-parser.js";
 
 const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
 const DEFAULT_SYSTEM_PROMPT = "You are a agent project source code helper:";
-const DEFAULT_PROMPT_TIMEOUT_MS = Number(process.env.MINIPHI_PROMPT_TIMEOUT_MS ?? 20 * 60 * 1000);
 
 /**
  * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
@@ -23,7 +22,7 @@ export class Phi4Handler {
     this.promptTimeoutMs =
       typeof options?.promptTimeoutMs === "number" && Number.isFinite(options.promptTimeoutMs)
         ? options.promptTimeoutMs
-        : DEFAULT_PROMPT_TIMEOUT_MS;
+        : null;
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
   }
 
@@ -146,6 +145,46 @@ export class Phi4Handler {
     }
 
     return truncatedHistory;
+  }
+
+  setPromptTimeout(timeoutMs) {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      this.promptTimeoutMs = null;
+      return;
+    }
+    this.promptTimeoutMs = timeoutMs;
+  }
+
+  getHistory() {
+    return this.chatHistory.map((entry) => ({
+      role: entry.role,
+      content: entry.content,
+    }));
+  }
+
+  setHistory(history) {
+    if (!Array.isArray(history) || history.length === 0) {
+      this.clearHistory();
+      return;
+    }
+    const sanitized = history
+      .map((entry) => {
+        if (!entry || typeof entry.role !== "string" || typeof entry.content !== "string") {
+          return null;
+        }
+        return { role: entry.role, content: entry.content };
+      })
+      .filter(Boolean);
+    if (sanitized.length === 0) {
+      this.clearHistory();
+      return;
+    }
+    if (sanitized[0].role !== "system") {
+      sanitized.unshift({ role: "system", content: this.systemPrompt });
+    } else {
+      this.systemPrompt = sanitized[0].content;
+    }
+    this.chatHistory = sanitized;
   }
 
   async #withPromptTimeout(task, onTimeout) {

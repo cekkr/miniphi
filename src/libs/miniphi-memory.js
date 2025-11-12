@@ -22,6 +22,7 @@ export default class MiniPhiMemory {
     this.executionsDir = path.join(this.baseDir, "executions");
     this.indicesDir = path.join(this.baseDir, "indices");
     this.healthDir = path.join(this.baseDir, "health");
+    this.sessionsDir = path.join(this.baseDir, "prompt-sessions");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -30,6 +31,7 @@ export default class MiniPhiMemory {
     this.executionsIndexFile = path.join(this.indicesDir, "executions-index.json");
     this.knowledgeIndexFile = path.join(this.indicesDir, "knowledge-index.json");
     this.resourceUsageFile = path.join(this.healthDir, "resource-usage.json");
+    this.promptSessionsIndexFile = path.join(this.indicesDir, "prompt-sessions-index.json");
 
     this.prepared = false;
   }
@@ -45,6 +47,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.executionsDir, { recursive: true });
     await fs.promises.mkdir(this.indicesDir, { recursive: true });
     await fs.promises.mkdir(this.healthDir, { recursive: true });
+    await fs.promises.mkdir(this.sessionsDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -52,6 +55,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
     await this.#ensureFile(this.knowledgeIndexFile, { entries: [] });
     await this.#ensureFile(this.resourceUsageFile, { entries: [] });
+    await this.#ensureFile(this.promptSessionsIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -60,6 +64,7 @@ export default class MiniPhiMemory {
         { name: "prompts", file: this.#relative(this.promptsFile) },
         { name: "todo", file: this.#relative(this.todoFile) },
         { name: "health", file: this.#relative(this.resourceUsageFile) },
+        { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
       ],
     });
 
@@ -67,7 +72,7 @@ export default class MiniPhiMemory {
     return this.baseDir;
   }
 
-  /**
+ /**
    * Persists a single MiniPhi execution (run or analyze-file) and updates indexes/knowledge.
    * @param {{
    *   mode: "run" | "analyze-file",
@@ -77,6 +82,7 @@ export default class MiniPhiMemory {
    *   cwd?: string,
    *   summaryLevels?: number,
    *   contextLength?: number,
+   *   promptId?: string,
    *   result: {
    *     prompt: string,
    *     analysis: string,
@@ -111,6 +117,7 @@ export default class MiniPhiMemory {
       linesAnalyzed: payload.result.linesAnalyzed,
       compressedTokens: payload.result.compressedTokens,
       resourceUsage: payload.resourceUsage ?? null,
+      promptId: payload.promptId ?? null,
       createdAt: timestamp,
     };
 
@@ -173,6 +180,49 @@ export default class MiniPhiMemory {
     return { id: executionId, path: executionDir };
   }
 
+  async loadPromptSession(promptId) {
+    if (!promptId) {
+      return null;
+    }
+    await this.prepare();
+    const safeId = this.#sanitizeId(promptId);
+    const sessionFile = path.join(this.sessionsDir, `${safeId}.json`);
+    try {
+      const data = await this.#readJSON(sessionFile, null);
+      if (data && Array.isArray(data.history)) {
+        return data.history;
+      }
+    } catch {
+      // ignore malformed sessions
+    }
+    return null;
+  }
+
+  async savePromptSession(promptId, history) {
+    if (!promptId) {
+      return;
+    }
+    await this.prepare();
+    const safeId = this.#sanitizeId(promptId);
+    const sessionFile = path.join(this.sessionsDir, `${safeId}.json`);
+    await this.#writeJSON(sessionFile, {
+      id: promptId,
+      savedAt: new Date().toISOString(),
+      history: Array.isArray(history) ? history : [],
+    });
+    const index = await this.#readJSON(this.promptSessionsIndexFile, { entries: [] });
+    const filtered = index.entries.filter((entry) => entry.id !== promptId);
+    filtered.unshift({
+      id: promptId,
+      file: this.#relative(sessionFile),
+      updatedAt: new Date().toISOString(),
+      size: Array.isArray(history) ? history.length : 0,
+    });
+    index.entries = filtered.slice(0, 200);
+    await this.#writeJSON(this.promptSessionsIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
   #findExistingMiniPhi(startDir) {
     let current = startDir;
     const { root } = path.parse(current);
@@ -196,8 +246,15 @@ export default class MiniPhiMemory {
 
     while (true) {
       if (fs.existsSync(path.join(current, "package.json")) || fs.existsSync(path.join(current, ".git"))) {
-        return current;
-      }
+    return current;
+  }
+
+  #sanitizeId(raw) {
+    if (!raw) {
+      return "";
+    }
+    return raw.replace(/[^A-Za-z0-9._-]/g, "_");
+  }
       if (current === root) {
         break;
       }
@@ -287,6 +344,7 @@ export default class MiniPhiMemory {
       task: payload.task,
       promptHash: this.#hashText(payload.result.prompt ?? payload.task ?? ""),
       promptFile: this.#relative(promptFile),
+      promptId: payload.promptId ?? null,
       createdAt: timestamp,
     };
 
@@ -389,6 +447,7 @@ export default class MiniPhiMemory {
       { name: "prompts", file: this.#relative(this.promptsFile) },
       { name: "todo", file: this.#relative(this.todoFile) },
       { name: "health", file: this.#relative(this.resourceUsageFile) },
+      { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }

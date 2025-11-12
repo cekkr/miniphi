@@ -35,6 +35,16 @@ async function main() {
   const gpu = options.gpu ?? "auto";
   const timeout = options.timeout ? Number(options.timeout) : 60000;
   const task = options.task ?? "Provide a precise technical analysis of the captured output.";
+  let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
+  if (promptId === "") {
+    promptId = null;
+  }
+  const sessionTimeoutMs = options["session-timeout"] ? Number(options["session-timeout"]) : null;
+  if (sessionTimeoutMs !== null && (!Number.isFinite(sessionTimeoutMs) || sessionTimeoutMs <= 0)) {
+    throw new Error("--session-timeout expects a positive number of milliseconds.");
+  }
+  const runStart = Date.now();
+  const sessionDeadline = sessionTimeoutMs ? runStart + sessionTimeoutMs : null;
   const resourceConfig = buildResourceConfig(options);
 
   const manager = new LMStudioManager();
@@ -44,7 +54,7 @@ async function main() {
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
 
   let stateManager;
-  const archiveMetadata = {};
+  const archiveMetadata = { promptId };
   let resourceMonitor;
   let resourceSummary = null;
   const initializeResourceMonitor = async (label) => {
@@ -106,6 +116,12 @@ async function main() {
       archiveMetadata.cwd = cwd;
       stateManager = new MiniPhiMemory(cwd);
       await stateManager.prepare();
+      if (promptId) {
+        const history = await stateManager.loadPromptSession(promptId);
+        if (history) {
+          phi4.setHistory(history);
+        }
+      }
       await initializeResourceMonitor(`run:${cmd}`);
       result = await analyzer.analyzeCommandOutput(cmd, task, {
         summaryLevels,
@@ -113,6 +129,7 @@ async function main() {
         streamOutput,
         cwd,
         timeout,
+        sessionDeadline,
       });
     } else if (command === "analyze-file") {
       const fileFromFlag = options.file ?? options.path ?? positionals[0];
@@ -129,11 +146,18 @@ async function main() {
       archiveMetadata.cwd = path.dirname(filePath);
       stateManager = new MiniPhiMemory(archiveMetadata.cwd);
       await stateManager.prepare();
+      if (promptId) {
+        const history = await stateManager.loadPromptSession(promptId);
+        if (history) {
+          phi4.setHistory(history);
+        }
+      }
       await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
       result = await analyzer.analyzeLogFile(filePath, task, {
         summaryLevels,
         streamOutput,
         maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
+        sessionDeadline,
       });
     }
 
@@ -150,6 +174,7 @@ async function main() {
         contextLength,
         resourceUsage: resourceSummary?.summary ?? null,
         result,
+        promptId,
       });
       if (archive && options.verbose) {
         const relativePath = path.relative(process.cwd(), archive.path);
@@ -176,6 +201,9 @@ async function main() {
     process.exitCode = 1;
   } finally {
     try {
+      if (promptId && stateManager) {
+        await stateManager.savePromptSession(promptId, phi4.getHistory());
+      }
       await stopResourceMonitorIfNeeded();
       await phi4.eject();
     } catch {
@@ -304,6 +332,8 @@ Options:
   --verbose                    Print progress details
   --no-stream                  Disable live streaming of Phi-4 output
   --no-summary                 Skip JSON summary footer
+  --prompt-id <id>             Attach/continue a prompt session (persists LM history)
+  --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
   --help                       Show this help message
 `);
 }

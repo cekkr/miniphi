@@ -31,7 +31,7 @@ async function main() {
   const snippets = await Promise.all(selectedFiles.map((file) => readSnippet(file.absolute)));
 
   const manager = new LMStudioManager();
-  const phi4 = new Phi4Handler(manager, { promptTimeoutMs: 20 * 60 * 1000 });
+  const phi4 = new Phi4Handler(manager);
   const stats = [];
   const transcripts = [];
   const insightLog = [];

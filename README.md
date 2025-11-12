@@ -12,7 +12,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
-- **Prompt safety net.** `Phi4Handler` enforces a 20-minute cap per model interaction (override via `MINIPHI_PROMPT_TIMEOUT_MS`) so recursive analyses cannot hang indefinitely.
+- **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can't hang the process).
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 
 ## Architecture at a Glance
@@ -31,6 +31,26 @@ For the deeper architectural rationale (REST vs SDKs, LM Studio lifecycle, compr
 2. **LM Studio desktop app** with the server running and `microsoft/Phi-4-reasoning-plus` downloaded. MiniPhi uses the official `@lmstudio/sdk`, but also hits the native REST API snapshot under `http://127.0.0.1:1234` for diagnostics (changing context length still requires a model reload; the server defaults to 4096 tokens until you do).
 3. **Python 3.9+** available as `python`, `py`, or `python3` for `log_summarizer.py`. Override via `--python-script` when needed.
 4. Adequate local VRAM/system RAM-MiniPhi defaults to a 32K context window (`--context-length` to change).
+
+### LM Studio REST sanity check
+Before running MiniPhi, you can validate that LM Studio is serving Phi-4 locally by issuing a quick curl request:
+
+```bash
+curl http://127.0.0.1:1234/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "microsoft/phi-4-reasoning-plus",
+    "messages": [
+      { "role": "system", "content": "Always answer in rhymes. Today is Thursday" },
+      { "role": "user", "content": "What day is it today?" }
+    ],
+    "temperature": 0.7,
+    "max_tokens": -1,
+    "stream": false
+  }'
+```
+
+You should see a JSON response from LM Studio; if not, ensure the desktop app has the REST server enabled on `http://127.0.0.1:1234`.
 
 ## Installation
 ```bash
@@ -66,7 +86,13 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 | `--python-script <path>` | Custom path to `log_summarizer.py`. |
 | `--max-memory-percent <n>` / `--max-cpu-percent <n>` / `--max-vram-percent <n>` | Emit warnings and archive stats when the given limit is exceeded. |
 | `--resource-sample-interval <ms>` | Change the sampling cadence for the resource monitor (default 5s). |
+| `--prompt-id <id>` | Attach/continue a prompt session so you can resume the same Phi-4 conversation across commands. |
+| `--session-timeout <ms>` | Hard limit for the entire MiniPhi run; remaining time is enforced per Phi-4 prompt. |
 | `--verbose` | Print capture progress and reasoning blocks to the console. |
+
+### Prompt sessions & process-level timeouts
+- **Prompt sessions.** Supply `--prompt-id my-bash-audit` to persist Phi-4 chat history under `.miniphi/prompt-sessions/my-bash-audit.json`. Subsequent `run`/`analyze-file` invocations with the same ID pick up right where the previous reasoning left off, enabling step-by-step analysis across different Node.js scripts or terminals.
+- **Session timeout.** Use `--session-timeout 1200000` (20 minutes in ms) when you want MiniPhi to abort the entire run if it takes too long. The remaining budget is calculated before every Phi-4 call, so long shell commands or recursive prompt batches can’t hang forever, yet you keep full control by leaving the flag unset.
 
 ### Resource monitoring
 - Every `run`/`analyze-file` session bootstraps `ResourceMonitor`, which samples system RAM, CPU, and VRAM using the best strategy available for your OS (`nvidia-smi`, PowerShell CIM, or `system_profiler`).
@@ -85,6 +111,7 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 - Global memory lives in JSON ledgers: `prompts.json` (prompt history + hashes), `knowledge.json` (condensed insights), and `todo.json` (auto-extracted next steps). Each file is mirrored by a recursive index under `indices/` for faster lookups.
 - `health/resource-usage.json` keeps the last 50 resource-monitor snapshots (averages plus the final samples) so it is easy to correlate Phi work with system strain.
 - `index.json` at the root links the entire structure so other tooling can crawl memory without guessing file names.
+- `prompt-sessions/<id>.json` stores the serialized Phi-4 chat history for every `--prompt-id`, making it easy to resume or inspect a multi-stage reasoning thread.
 - Use `--verbose` to see where the run was archived (path is relative to your current shell). The data is plain JSON, so you can feed it into future orchestration layers or external dashboards.
 
 ## Benchmark Harness & Samples

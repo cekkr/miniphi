@@ -97,6 +97,10 @@
 - "Memory consolidation and summarization for agents" [49][52][55]
 - "Agent state management & conversational context" [36][38][40][42]
 - "Semantic chunking best practices" [23][26][27][30]
+- "Phi-4 reasoning model and technical details" [48][51][57][60]
+- "Memory consolidation and summarization for agents" [49][52][55]
+- "Agent state management & conversational context" [36][38][40][42]
+- "Semantic chunking best practices" [23][26][27][30]
 
 
 # MiniPhi: Detailed Implementation Guide - Compression Tools & Architecture Integration
@@ -3056,3 +3060,17 @@ main().catch(console.error);
 ✅ **Encoding Fixes**: CRLF, UTF-8 BOM handling
 ✅ **Python Integration**: Subprocess-based summarization
 ✅ **Real-time Streaming**: Phi-4 analysis as output arrives
+
+---
+
+## Prompt Sessions & Run-Level Timeouts
+
+- `--prompt-id <id>` tells the CLI to persist Phi-4 chat history under `.miniphi/prompt-sessions/<id>.json`. Reuse the ID in future invocations (or custom scripts) to resume the same reasoning thread—ideal for step-by-step audits that span multiple commands.
+- `MiniPhiMemory` exposes `loadPromptSession` / `savePromptSession`, making it trivial for bespoke Node.js utilities to orchestrate multi-phase prompts while staying in sync with the `.miniphi` workspace.
+- `--session-timeout <ms>` applies a single wall-clock budget to the entire process. `EfficientLogAnalyzer` computes the remaining time before each `phi4.chatStream` call and forwards the value through `Phi4Handler.setPromptTimeout`, so nested prompts cannot exceed the user-supplied cap yet no default limit is imposed.
+
+---
+
+## References & Further Reading
+- "Prompt compression and context engineering in LLM" [28][31][35]
+- "Hierarchical agents and task decomposition" [43][44][46][53]
