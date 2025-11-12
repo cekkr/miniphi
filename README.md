@@ -12,6 +12,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
+- **Prompt safety net.** `Phi4Handler` enforces a 20-minute cap per model interaction (override via `MINIPHI_PROMPT_TIMEOUT_MS`) so recursive analyses cannot hang indefinitely.
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 
 ## Architecture at a Glance
@@ -89,6 +90,7 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 ## Benchmark Harness & Samples
 - `node benchmark/run-tests.js` runs repeatable sample/benchmark suites (defined in `benchmark/tests.config.json`) with hardened logging: every line is timestamped and flushed into `benchmark/logs/<test-name>/<ISO>.log`, and each test inherits the 15-minute safety timeout described in `WHY_SAMPLES.md`.
 - `benchmark/scripts/bash-flow-explain.js` now uses `web-tree-sitter` (plus a macro-aware fallback) to traverse `samples/bash` up to depth 1, expand the `shell.c::main → reader_loop → execute_command_internal` flow in execution order, and emit `samples/bash-results/EXPLAIN-###.md` call-walk reports for reuse by the orchestrator.
+- `benchmark/scripts/bash-recursive-prompts.js` loads Phi-4 via LM Studio, builds a depth-1 directory tree, recursively feeds file snippets to the model, records per-stage stats (prompt/response size + duration), and writes AI-style dossiers under `samples/bash-results/RECURSIVE-###.md` (mirrored into `.miniphi/benchmarks/bash/`).
 - The latest manual pass, `samples/bash-results/EXPLAIN-003.md`, drills into `shell.c → eval.c → execute_cmd.c`, documents how `main` hands off to `reader_loop`/`execute_simple_command`, and ends with a benchmark-specific “Next Steps” list that is now mirrored in `AI_REFERENCE.md`.
 - `npm run benchmark:windows` wraps `benchmark/run-tests.js` and then feeds the freshest `EXPLAIN-###.md` into `node src/index.js analyze-file` using the stored Windows prompt preset (`docs/prompts/windows-benchmark-default.md`), so you get a “realtime implementation + next steps” summary without retyping the task each run.
 - Pass specific test names (e.g. `node benchmark/run-tests.js samples-bash-explain`) or use `--list` to discover suites; add future tests to `benchmark/tests.config.json` to get logging + resource tracking for free.

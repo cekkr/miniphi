@@ -7,6 +7,14 @@
       "cwd": ".",
       "timeoutMs": 900000,
       "logDir": "samples-bash"
+    },
+    {
+      "name": "samples-bash-recursive-prompts",
+      "description": "Run recursive Phi-4 prompts over the Bash sample (directory tree + targeted files) and archive AI-style reports.",
+      "command": "node benchmark/scripts/bash-recursive-prompts.js",
+      "cwd": ".",
+      "timeoutMs": 900000,
+      "logDir": "samples-bash"
     }
   ]
 }

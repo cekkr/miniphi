@@ -4,8 +4,8 @@ import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 
 const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
-const DEFAULT_SYSTEM_PROMPT =
-  "You are a agent project source code helper:";
+const DEFAULT_SYSTEM_PROMPT = "You are a agent project source code helper:";
+const DEFAULT_PROMPT_TIMEOUT_MS = Number(process.env.MINIPHI_PROMPT_TIMEOUT_MS ?? 20 * 60 * 1000);
 
 /**
  * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
@@ -20,6 +20,10 @@ export class Phi4Handler {
     this.manager = manager;
     this.model = null;
     this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+    this.promptTimeoutMs =
+      typeof options?.promptTimeoutMs === "number" && Number.isFinite(options.promptTimeoutMs)
+        ? options.promptTimeoutMs
+        : DEFAULT_PROMPT_TIMEOUT_MS;
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
   }
 
@@ -77,25 +81,34 @@ export class Phi4Handler {
       this.chatHistory = await this.#truncateHistory();
       const chat = Chat.from(this.chatHistory);
       const prediction = this.model.respond(chat);
-
       const parser = new Phi4StreamParser(onThink);
       const readable = Readable.from(prediction);
       const solutionStream = readable.pipe(parser);
 
-      let assistantResponse = "";
+      const result = await this.#withPromptTimeout(async () => {
+        let assistantResponse = "";
+        for await (const fragment of solutionStream) {
+          const token = fragment?.content ?? "";
+          if (!token) continue;
+          if (onToken) onToken(token);
+          assistantResponse += token;
+        }
+        return assistantResponse;
+      }, () => {
+        if (typeof prediction?.return === "function") {
+          try {
+            prediction.return();
+          } catch {
+            // ignore prediction cancellation errors
+          }
+        }
+      });
 
-      for await (const fragment of solutionStream) {
-        const token = fragment?.content ?? "";
-        if (!token) continue;
-        if (onToken) onToken(token);
-        assistantResponse += token;
+      if (result.length > 0) {
+        this.chatHistory.push({ role: "assistant", content: result });
       }
 
-      if (assistantResponse.length > 0) {
-        this.chatHistory.push({ role: "assistant", content: assistantResponse });
-      }
-
-      return assistantResponse;
+      return result;
     } catch (error) {
       this.chatHistory.pop(); // remove user entry to preserve state
       const message = error instanceof Error ? error.message : String(error);
@@ -133,6 +146,29 @@ export class Phi4Handler {
     }
 
     return truncatedHistory;
+  }
+
+  async #withPromptTimeout(task, onTimeout) {
+    const timeoutMs = this.promptTimeoutMs;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return task();
+    }
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        if (onTimeout) {
+          onTimeout();
+        }
+        const minutes = Math.round((timeoutMs / 60000) * 10) / 10;
+        reject(new Error(`Phi-4 prompt session exceeded ${minutes} minute limit.`));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([task(), timeoutPromise]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
