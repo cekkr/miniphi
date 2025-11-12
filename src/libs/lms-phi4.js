@@ -5,7 +5,7 @@ import Phi4StreamParser from "./phi4-stream-parser.js";
 
 const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
 const DEFAULT_SYSTEM_PROMPT =
-  "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. Please structure your response into two main sections: Thought and Solution using the specified format: <think> Thought section </think> Solution section.";
+  "You are a agent project source code helper:";
 
 /**
  * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
