@@ -13,6 +13,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
 - **Structured prompt transcripts.** `src/libs/prompt-recorder.js` records each LM Studio exchange (MiniPhi’s main prompt plus every sub-prompt) as JSON under `.miniphi/prompt-exchanges/`, so you can audit or replay prompts one by one.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
+- **Config-driven defaults.** Drop a `config.json` (copy `config.example.json`) or pass `--config`/`MINIPHI_CONFIG` to predefine the LM Studio endpoint, prompt defaults, and resource thresholds instead of repeating flags every time.
 - **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can't hang the process).
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 
@@ -67,7 +68,26 @@ npm install
 ```
 Keep `log_summarizer.py` in the project root (or provide its path with `--python-script`).
 
+For a global install run `npm install -g .` from the project root (or `npm install -g miniphi` once it is published). That exposes the `miniphi` command so you can skip the `node src/index.js` prefix, and `npx miniphi ...` works as well for one-off invocations.
+
+## Optional configuration file
+
+MiniPhi searches for `miniphi.config.json` or `config.json` starting from your current directory and climbing toward the filesystem root. Override the discovery process with `--config <path>` or by setting `MINIPHI_CONFIG`/`MINIPHI_CONFIG_PATH` if you want to keep a config outside of the project tree.
+
+Copy `config.example.json` to `config.json` and tune the keys you care about:
+
+| Section | Purpose |
+| --- | --- |
+| `lmStudio.clientOptions` | Forward options (e.g., `baseUrl`, bearer tokens) to `@lmstudio/sdk` so MiniPhi knows where to reach your LM Studio server. |
+| `lmStudio.prompt` | Override the Phi-4 system prompt or set `timeoutMs` for each generated prompt. |
+| `defaults` | Predefine `task`, `contextLength`, `gpu`, `timeout`, `summaryLevels`, `chunkSize`, `sessionTimeout`, or a persisted `promptId`. Missing values fall back to the CLI defaults listed below. |
+| `resourceMonitor` | Set default `maxMemoryPercent`, `maxCpuPercent`, `maxVramPercent`, and `sampleIntervalMs` thresholds for the resource guard rails. |
+| `pythonScript` | Point to a custom `log_summarizer.py` location instead of relying on the project root copy. |
+
+Every field is optional; MiniPhi merges the config with CLI flags with CLI flags taking precedence.
+
 ## Running the CLI
+If you installed MiniPhi globally (`npm install -g .` or `npm install -g miniphi`) or you prefer `npx`, replace `node src/index.js` with `miniphi` in the examples below (`miniphi run ...`, `miniphi analyze-file ...`).
 
 ### Execute and analyze a command
 ```bash

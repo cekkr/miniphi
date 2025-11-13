@@ -9,8 +9,22 @@ import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
 import ResourceMonitor from "./libs/resource-monitor.js";
 import PromptRecorder from "./libs/prompt-recorder.js";
+import { loadConfig } from "./libs/config-loader.js";
 
 const COMMANDS = new Set(["run", "analyze-file"]);
+
+const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
+
+function parseNumericSetting(value, label) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    throw new Error(`${label} expects a finite number.`);
+  }
+  return numeric;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -31,27 +45,96 @@ async function main() {
   const { options, positionals } = parseArgs(rest);
   const verbose = Boolean(options.verbose);
   const streamOutput = !options["no-stream"];
-  const summaryLevels = options["summary-levels"] ? Number(options["summary-levels"]) : 3;
-  const contextLength = options["context-length"] ? Number(options["context-length"]) : 32768;
-  const gpu = options.gpu ?? "auto";
-  const timeout = options.timeout ? Number(options.timeout) : 60000;
-  const task = options.task ?? "Provide a precise technical analysis of the captured output.";
+
+  let configResult;
+  try {
+    configResult = loadConfig(options.config);
+  } catch (error) {
+    console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+    return;
+  }
+  const configData = configResult?.data ?? {};
+  const configPath = configResult?.path ?? null;
+  if (configPath && verbose) {
+    const relPath = path.relative(process.cwd(), configPath) || configPath;
+    console.log(`[MiniPhi] Loaded configuration from ${relPath}`);
+  }
+
+  const defaults = configData.defaults ?? {};
+  const promptDefaults = configData.prompt ?? configData.lmStudio?.prompt ?? {};
+  const pythonScriptPath =
+    options["python-script"] ?? configData.pythonScript ?? defaults.pythonScript;
+
+  const summaryLevels =
+    parseNumericSetting(options["summary-levels"], "--summary-levels") ??
+    parseNumericSetting(defaults.summaryLevels, "config.defaults.summaryLevels") ??
+    3;
+
+  const contextLength =
+    parseNumericSetting(options["context-length"], "--context-length") ??
+    parseNumericSetting(defaults.contextLength, "config.defaults.contextLength") ??
+    32768;
+
+  const gpu = options.gpu ?? defaults.gpu ?? "auto";
+
+  const timeout =
+    parseNumericSetting(options.timeout, "--timeout") ??
+    parseNumericSetting(defaults.timeout, "config.defaults.timeout") ??
+    60000;
+
+  const task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
+
   let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
+  if (!promptId && typeof defaults.promptId === "string") {
+    promptId = defaults.promptId.trim();
+  }
   if (promptId === "") {
     promptId = null;
   }
-  const sessionTimeoutMs = options["session-timeout"] ? Number(options["session-timeout"]) : null;
-  if (sessionTimeoutMs !== null && (!Number.isFinite(sessionTimeoutMs) || sessionTimeoutMs <= 0)) {
+  const promptGroupId =
+    promptId ?? `auto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const sessionTimeoutValue =
+    parseNumericSetting(options["session-timeout"], "--session-timeout") ??
+    parseNumericSetting(defaults.sessionTimeout, "config.defaults.sessionTimeout");
+  if (sessionTimeoutValue !== undefined && sessionTimeoutValue <= 0) {
     throw new Error("--session-timeout expects a positive number of milliseconds.");
   }
+  const sessionTimeoutMs = sessionTimeoutValue ?? null;
   const runStart = Date.now();
   const sessionDeadline = sessionTimeoutMs ? runStart + sessionTimeoutMs : null;
-  const resourceConfig = buildResourceConfig(options);
 
-  const manager = new LMStudioManager();
-  const phi4 = new Phi4Handler(manager);
+  const chunkSize =
+    parseNumericSetting(options["chunk-size"], "--chunk-size") ??
+    parseNumericSetting(defaults.chunkSize, "config.defaults.chunkSize");
+
+  const resourceDefaults = {};
+  const resourceSource = configData.resourceMonitor ?? {};
+  if (typeof resourceSource.maxMemoryPercent !== "undefined") {
+    resourceDefaults["max-memory-percent"] = resourceSource.maxMemoryPercent;
+  }
+  if (typeof resourceSource.maxCpuPercent !== "undefined") {
+    resourceDefaults["max-cpu-percent"] = resourceSource.maxCpuPercent;
+  }
+  if (typeof resourceSource.maxVramPercent !== "undefined") {
+    resourceDefaults["max-vram-percent"] = resourceSource.maxVramPercent;
+  }
+  if (typeof resourceSource.sampleIntervalMs !== "undefined") {
+    resourceDefaults["resource-sample-interval"] = resourceSource.sampleIntervalMs;
+  }
+  const resourceConfig = buildResourceConfig({
+    ...resourceDefaults,
+    ...options,
+  });
+
+  const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
+  const phi4 = new Phi4Handler(manager, {
+    systemPrompt: promptDefaults.system,
+    promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+  });
   const cli = new CliExecutor();
-  const summarizer = new PythonLogSummarizer(options["python-script"]);
+  const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
 
   let stateManager;
@@ -180,7 +263,7 @@ async function main() {
         result = await analyzer.analyzeLogFile(filePath, task, {
           summaryLevels,
           streamOutput,
-          maxLinesPerChunk: options["chunk-size"] ? Number(options["chunk-size"]) : undefined,
+          maxLinesPerChunk: chunkSize,
           sessionDeadline,
           promptContext: {
             scope: "main",
@@ -351,6 +434,7 @@ Options:
   --cmd <command>              Command to execute in run mode
   --file <path>                File to analyze in analyze-file mode
   --task <description>         Task instructions for Phi-4
+  --config <path>              Path to optional config.json (searches upward by default)
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override Phi-4 context length (default: 32768)
@@ -372,5 +456,3 @@ Options:
 }
 
 main();
-  const promptGroupId =
-    promptId ?? `auto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;

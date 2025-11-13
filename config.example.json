@@ -1,0 +1,27 @@
+{
+  "lmStudio": {
+    "clientOptions": {
+      "baseUrl": "http://127.0.0.1:1234"
+    },
+    "prompt": {
+      "system": "You are a friendly yet precise project maintenance assistant.",
+      "timeoutMs": 45000
+    }
+  },
+  "defaults": {
+    "task": "Provide a precise technical analysis of the captured output.",
+    "contextLength": 32768,
+    "gpu": "auto",
+    "timeout": 60000,
+    "summaryLevels": 3,
+    "chunkSize": 2000,
+    "sessionTimeout": 1200000
+  },
+  "resourceMonitor": {
+    "maxMemoryPercent": 85,
+    "maxCpuPercent": 90,
+    "maxVramPercent": 80,
+    "sampleIntervalMs": 5000
+  },
+  "pythonScript": "./log_summarizer.py"
+}

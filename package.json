@@ -12,6 +12,9 @@
     "benchmark": "node benchmark/run-tests.js",
     "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose"
   },
+  "bin": {
+    "miniphi": "src/index.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cekkr/miniphi.git"
