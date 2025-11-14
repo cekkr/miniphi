@@ -22,8 +22,9 @@
 - `benchmark/scripts/bash-flow-explain.js` now uses `web-tree-sitter` (with a macro-aware fallback for `shell.c::main`) to emit depth-limited, ordered call-flow walkthroughs for the Bash sample; EXPLAIN-012.md is the latest AST-backed baseline mirrored under `.miniphi/benchmarks/bash/`.
 - `benchmark/scripts/bash-recursive-prompts.js` orchestrates Phi-4 over REST-accessible LM Studio (http://127.0.0.1:1234), walks the Bash directory tree, recursively feeds file snippets, honors any supplied session timeout, and records per-stage stats into `RECURSIVE-###.md` dossiers.
 - Prompt sessions can now be resumed via `--prompt-id <id>` (history lives under `.miniphi/prompt-sessions/`), and operators may optionally cap an entire MiniPhi run with `--session-timeout <ms>`—the remaining budget is propagated to each Phi-4 call.
-- Baseline benchmark harness: `node benchmark/run-tests.js` loads `benchmark/tests.config.json`, enforces 15-minute caps, timestamps stdout/stderr, and currently runs the `samples/bash` EXPLAIN generator into `samples/bash-results/`.
-- Manual benchmark cycle `samples/bash-results/EXPLAIN-003.md` (depth-1 review of `shell.c → eval.c → execute_cmd.c`) is now available for reuse and includes a benchmark-specific follow-up list that feeds into the roadmap below.
+- Baseline benchmark harness: `node benchmark/run-tests.js` loads `benchmark/tests.config.json`, enforces 15-minute caps, timestamps stdout/stderr, and currently runs the `samples/bash` EXPLAIN generator into timestamped directories under `samples/benchmark/bash/<dd-mm-yy_mm-hh>/`.
+- Each benchmark run now receives its own subfolder named after the execution timestamp following the `dd-mm-yy_mm-hh` rule (minutes precede hours to avoid collisions when multiple runs land in the same hour).
+- Manual benchmark cycle `samples/benchmark/bash/14-11-25_38-05/EXPLAIN-003.md` (depth-1 review of `shell.c → eval.c → execute_cmd.c`) is now available for reuse and includes a benchmark-specific follow-up list that feeds into the roadmap below.
 
 ## Issues & Constraints
 - Persistence is local JSON only: `.miniphi/` has no pruning, encryption, or sync/export tooling yet, so long projects can grow large and data stays on-disk per machine.

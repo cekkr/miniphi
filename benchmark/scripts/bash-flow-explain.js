@@ -4,7 +4,8 @@ import path from "path";
 import { Language, Parser } from "web-tree-sitter";
 
 const SAMPLE_ROOT = path.resolve("samples/bash");
-const RESULT_DIR = path.resolve("samples/bash-results");
+const BENCHMARK_SUITE_DIR = path.resolve("samples/benchmark/bash");
+const RESULT_DIR = path.join(BENCHMARK_SUITE_DIR, buildTimestampLabel());
 const MIRROR_DIR = path.resolve(".miniphi/benchmarks/bash");
 const DEPTH_LIMIT = 1;
 const FLOW_DEPTH = 2;
@@ -88,6 +89,7 @@ async function main() {
   }
 
   log(`Scanning ${SAMPLE_ROOT} (depth limit ${DEPTH_LIMIT})`);
+  await ensureDirectory(BENCHMARK_SUITE_DIR);
   await ensureDirectory(RESULT_DIR);
   const files = await collectCFiles(SAMPLE_ROOT, DEPTH_LIMIT);
   if (files.length === 0) {
@@ -720,24 +722,21 @@ async function writeReport(content) {
 }
 
 async function nextExplainIndex() {
-  try {
-    const files = await fs.promises.readdir(RESULT_DIR);
-    const numbers = files
-      .map((name) => {
-        const match = name.match(/EXPLAIN-(\d+)\.md/i);
-        return match ? Number(match[1]) : null;
-      })
-      .filter((value) => Number.isFinite(value));
-    if (!numbers.length) {
-      return 1;
-    }
-    return Math.max(...numbers) + 1;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return 1;
-    }
-    throw error;
+  const runDirs = await listBenchmarkRunDirs();
+  const numbers = [];
+  for (const dir of runDirs) {
+    const files = await fs.promises.readdir(dir);
+    files.forEach((name) => {
+      const match = name.match(/EXPLAIN-(\d+)\.md/i);
+      if (match) {
+        numbers.push(Number(match[1]));
+      }
+    });
   }
+  if (!numbers.length) {
+    return 1;
+  }
+  return Math.max(...numbers) + 1;
 }
 
 async function ensureDirectory(dir) {
@@ -761,6 +760,28 @@ async function mirrorReport(content, fileName) {
 
 function toPosix(input) {
   return input.split(path.sep).join("/");
+}
+
+function buildTimestampLabel(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const day = pad(date.getDate());
+  const month = pad(date.getMonth() + 1);
+  const year = String(date.getFullYear()).slice(-2);
+  const minutes = pad(date.getMinutes());
+  const hours = pad(date.getHours());
+  return `${day}-${month}-${year}_${minutes}-${hours}`;
+}
+
+async function listBenchmarkRunDirs() {
+  try {
+    const entries = await fs.promises.readdir(BENCHMARK_SUITE_DIR, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(BENCHMARK_SUITE_DIR, entry.name));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
 }
 
 main().catch((error) => {

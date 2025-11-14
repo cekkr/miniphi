@@ -215,4 +215,4 @@ These next steps are carried into `AI_REFERENCE.md` to keep the roadmap consiste
 
 ---
 
-*Report authored during the “samples/bash” benchmark cycle requested in `WHY_SAMPLES.md`. Stored under `samples/bash-results/EXPLAIN-003.md` for future aggregation.* 
+*Report authored during the “samples/bash” benchmark cycle requested in `WHY_SAMPLES.md`. Stored under `samples/benchmark/bash/14-11-25_38-05/EXPLAIN-003.md` for future aggregation.*

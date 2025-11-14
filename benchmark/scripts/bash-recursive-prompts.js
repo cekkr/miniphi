@@ -7,7 +7,8 @@ import LMStudioManager from "../../src/libs/lmstudio-api.js";
 import PromptRecorder from "../../src/libs/prompt-recorder.js";
 
 const SAMPLE_ROOT = path.resolve("samples/bash");
-const RESULT_DIR = path.resolve("samples/bash-results");
+const BENCHMARK_SUITE_DIR = path.resolve("samples/benchmark/bash");
+const RESULT_DIR = path.join(BENCHMARK_SUITE_DIR, buildTimestampLabel());
 const MIRROR_DIR = path.resolve(".miniphi/benchmarks/bash");
 const MAX_DEPTH = 1;
 const MAX_FILE_COUNT = 6;
@@ -17,6 +18,7 @@ const BENCHMARK_WORKSPACE = path.resolve(".miniphi/benchmarks");
 
 async function main() {
   console.log(`[RecursivePrompt] Source root: ${SAMPLE_ROOT}`);
+  await ensureDirectory(BENCHMARK_SUITE_DIR);
   await ensureDirectory(RESULT_DIR);
   await ensureDirectory(MIRROR_DIR);
   await ensureDirectory(BENCHMARK_WORKSPACE);
@@ -396,24 +398,21 @@ async function writeReport(content) {
 }
 
 async function nextRecursiveIndex() {
-  try {
-    const files = await fs.promises.readdir(RESULT_DIR);
-    const numbers = files
-      .map((name) => {
-        const match = name.match(/RECURSIVE-(\d+)\.md/i);
-        return match ? Number(match[1]) : null;
-      })
-      .filter((value) => Number.isFinite(value));
-    if (!numbers.length) {
-      return 1;
-    }
-    return Math.max(...numbers) + 1;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return 1;
-    }
-    throw error;
+  const runDirs = await listBenchmarkRunDirs();
+  const numbers = [];
+  for (const dir of runDirs) {
+    const files = await fs.promises.readdir(dir);
+    files.forEach((name) => {
+      const match = name.match(/RECURSIVE-(\d+)\.md/i);
+      if (match) {
+        numbers.push(Number(match[1]));
+      }
+    });
   }
+  if (!numbers.length) {
+    return 1;
+  }
+  return Math.max(...numbers) + 1;
 }
 
 async function ensureDirectory(dir) {
@@ -436,3 +435,25 @@ main().catch((error) => {
   console.error(`[RecursivePrompt] Unexpected failure: ${error instanceof Error ? error.stack : error}`);
   process.exitCode = 1;
 });
+
+function buildTimestampLabel(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const day = pad(date.getDate());
+  const month = pad(date.getMonth() + 1);
+  const year = String(date.getFullYear()).slice(-2);
+  const minutes = pad(date.getMinutes());
+  const hours = pad(date.getHours());
+  return `${day}-${month}-${year}_${minutes}-${hours}`;
+}
+
+async function listBenchmarkRunDirs() {
+  try {
+    const entries = await fs.promises.readdir(BENCHMARK_SUITE_DIR, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(BENCHMARK_SUITE_DIR, entry.name));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}

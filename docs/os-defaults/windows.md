@@ -26,7 +26,7 @@ These defaults capture the environment assumed by the Windows helper scripts and
 ## Benchmark Workflow Helpers
 - Run the Bash sample benchmark plus automated summary: `npm run benchmark:windows`
 - Raw benchmark only: `npm run benchmark -- samples-bash-explain`
-- Latest EXPLAIN output location: `samples/bash-results/`
+- Latest EXPLAIN output location: `samples/benchmark/bash/<dd-mm-yy_mm-hh>/`
 - Prompt preset: `docs/prompts/windows-benchmark-default.md`
 - Logs: `benchmark/logs/samples-bash/<timestamp>.log`
 

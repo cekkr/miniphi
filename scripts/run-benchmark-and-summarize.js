@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 
-const RESULTS_DIR = path.resolve("samples/bash-results");
+const RESULTS_DIR = path.resolve("samples/benchmark/bash");
 const DEFAULT_TEST = "samples-bash-explain";
 const DEFAULT_PROMPT_FILE = path.resolve("docs/prompts/windows-benchmark-default.md");
 
@@ -81,26 +81,24 @@ function parseArgs(tokens) {
 }
 
 async function findLatestExplain() {
-  try {
-    const files = await fs.promises.readdir(RESULTS_DIR);
-    const explainFiles = files.filter((name) => /^EXPLAIN-\d+\.md$/i.test(name));
-    let latestFile = null;
-    let latestMTime = 0;
-    for (const file of explainFiles) {
-      const filePath = path.join(RESULTS_DIR, file);
+  const runDirs = await listRunDirs();
+  let latestFile = null;
+  let latestMTime = 0;
+  for (const dir of runDirs) {
+    const files = await fs.promises.readdir(dir);
+    for (const name of files) {
+      if (!/^EXPLAIN-\d+\.md$/i.test(name)) {
+        continue;
+      }
+      const filePath = path.join(dir, name);
       const stat = await fs.promises.stat(filePath);
       if (stat.mtimeMs >= latestMTime) {
         latestMTime = stat.mtimeMs;
         latestFile = filePath;
       }
     }
-    return latestFile;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
   }
+  return latestFile;
 }
 
 async function readPrompt(promptPath) {
@@ -140,3 +138,15 @@ main().catch((error) => {
   console.error(`[BenchmarkWorkflow] ${error instanceof Error ? error.stack : error}`);
   process.exitCode = 1;
 });
+
+async function listRunDirs() {
+  try {
+    const entries = await fs.promises.readdir(RESULTS_DIR, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(RESULTS_DIR, entry.name));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
