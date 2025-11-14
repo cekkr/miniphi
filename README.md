@@ -14,8 +14,11 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Structured prompt transcripts.** `src/libs/prompt-recorder.js` records each LM Studio exchange (MiniPhi’s main prompt plus every sub-prompt) as JSON under `.miniphi/prompt-exchanges/`, so you can audit or replay prompts one by one.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
 - **Config-driven defaults.** Drop a `config.json` (copy `config.example.json`) or pass `--config`/`MINIPHI_CONFIG` to predefine the LM Studio endpoint, prompt defaults, and resource thresholds instead of repeating flags every time.
-- **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can't hang the process).
+- **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can’t hang the process).
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
+- **Web research snapshots.** `node src/index.js web-research "query"` fetches structured DuckDuckGo results, prints them inline, and stores the report (plus optional raw payloads) under `.miniphi/research/` for later retrieval.
+- **.miniphi history notes.** `node src/index.js history-notes --label "post-upgrade"` scans `.miniphi`, records last-modified timestamps, and (when available) last git authors/commits so you can diff workspace evolution across runs.
+- **Code↔markdown recomposition tests.** `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` converts source code into markdown files, rebuilds code from the generated docs, compares the result, and emits a per-step benchmark report.
 
 ### Prompt Taxonomy & Recordings
 MiniPhi now distinguishes between the **main prompt** (the single prompt generated per CLI invocation) and the **sub prompts** (each LM Studio API call issued while satisfying that run). Every exchange is written to `.miniphi/prompt-exchanges/<id>.json` with a `scope` field (`"main"` or `"sub"`), the request payload, streamed reasoning, and the final response. The companion `.miniphi/prompt-exchanges/index.json` file lists the latest exchanges and their `mainPromptId`, making it easy to:
@@ -116,6 +119,28 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 | `--prompt-id <id>` | Attach/continue a prompt session so you can resume the same Phi-4 conversation across commands. |
 | `--session-timeout <ms>` | Hard limit for the entire MiniPhi run; remaining time is enforced per Phi-4 prompt. |
 | `--verbose` | Print capture progress and reasoning blocks to the console. |
+
+### Capture quick web research
+```bash
+node src/index.js web-research "phi-4 reasoning roadmap" --max-results 5
+```
+- Uses DuckDuckGo’s Instant Answer API to grab quick snippets + URLs, prints them to the console, and stores the JSON snapshot under `.miniphi/research/`.
+- Pass `--query-file queries.txt` for newline-delimited batch queries, `--note` to annotate the snapshot, and `--no-save` if you just want the console output.
+
+### Snapshot .miniphi history
+```bash
+node src/index.js history-notes --label "post-benchmark" --no-git
+```
+- Walks the `.miniphi` directory, records file sizes + last-modified timestamps, and (when available) attaches the latest git commit/author touching each file.
+- Outputs both JSON and Markdown summaries inside `.miniphi/history-notes/`, making it easy to diff MiniPhi’s internal state between runs.
+
+### Benchmark code ↔ markdown recomposition
+```bash
+node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
+```
+- Step 1 converts the files under `code/` into markdown sheets (with front matter + fenced code blocks) inside the sample’s `descriptions/` folder.
+- Step 2 rebuilds code from each markdown file into `reconstructed/`, then Step 3 compares the reconstructed files against the originals.
+- Every run writes a `recompose-report.json` summary (counts, timings, mismatch stats) so you can diff code→markdown→code fidelity over time.
 
 ### Prompt sessions & process-level timeouts
 - **Prompt sessions.** Supply `--prompt-id my-bash-audit` to persist Phi-4 chat history under `.miniphi/prompt-sessions/my-bash-audit.json`. Subsequent `run`/`analyze-file` invocations with the same ID pick up right where the previous reasoning left off, enabling step-by-step analysis across different Node.js scripts or terminals.

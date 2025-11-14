@@ -13,6 +13,9 @@
 - Python dependency: CLI auto-detects `python3`, `python`, or `py`; override path via `--python-script`. Summaries live under project root.
 - Hidden `.miniphi/` workspace (managed by `MiniPhiMemory`) snapshots every execution: prompts, compression chunks, analysis, recursive indexes, and auto-extracted TODO lists for future orchestration reuse.
 - Structured prompt recorder: every LM Studio exchange (tagged `scope: "main"` for the MiniPhi prompt vs `scope: "sub"` for each LM Studio API call) is now mirrored as JSON under `.miniphi/prompt-exchanges/`, making it trivial to inspect or replay individual sub-prompts in separate Node processes.
+- Research snapshotter: the `web-research` command uses DuckDuckGo’s Instant Answer API to capture short web briefs, prints them inline, and stores normalized results (plus optional raw payloads) under `.miniphi/research/` for reuse in future prompts.
+- History note taker: `history-notes` walks `.miniphi/`, records file sizes + last-modified timestamps, attaches git metadata when available, and emits Markdown/JSON notes inside `.miniphi/history-notes/` so teams can audit workspace drift alongside user edit dates.
+- Code↔markdown benchmarking harness: the `recompose` command (with the new `samples/recompose/hello-flow` project) converts source files into markdown descriptions, rebuilds code from those descriptions, compares the output, and writes step-by-step telemetry into `recompose-report.json`.
 - Resource monitor + health archive: `ResourceMonitor` samples RAM/CPU/VRAM on Windows/macOS/Linux, emits warnings via new CLI flags, and persists rollups under `.miniphi/health/resource-usage.json`.
 - Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) now lets teams pin the LM Studio endpoint, prompt defaults, and resource thresholds without re-entering the same flags every run.
 - A new `bin` entry exposes the `miniphi` command when the package is installed globally, so `miniphi run ...` or `miniphi analyze-file ...` behave like `node src/index.js ...`.
@@ -45,3 +48,6 @@
 10. Document the LM Studio + Python prerequisites, `.miniphi` workspace expectations, and the new `miniphi` command so adopters know how to install and configure the CLI.
 11. Grow the benchmark suite beyond `samples/bash` (e.g., synthetic GPU-stress cases, LM Studio failure drills) and wire log outputs back into `.miniphi/health` for consolidated observability.
 12. Add a CLI helper to replay or diff `.miniphi/prompt-exchanges/*.json` records so operators can iterate on each sub-prompt without rerunning the entire parent MiniPhi command.
+13. Extend `web-research` with additional providers (local docs, offline corpora, cached citations) and feed the saved research snapshots directly into `run`/`analyze-file` prompts.
+14. Layer diff tooling atop `.miniphi/history-notes` so operators can compare two snapshots (JSON or Markdown) and pinpoint which executions/health files changed between runs.
+15. Build richer recomposition suites under `samples/recompose/*` (multi-language projects, deeply nested directories) and surface automated mismatch diffs when the round-trip diverges from the canonical code.

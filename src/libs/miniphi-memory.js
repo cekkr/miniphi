@@ -23,6 +23,8 @@ export default class MiniPhiMemory {
     this.indicesDir = path.join(this.baseDir, "indices");
     this.healthDir = path.join(this.baseDir, "health");
     this.sessionsDir = path.join(this.baseDir, "prompt-sessions");
+    this.researchDir = path.join(this.baseDir, "research");
+    this.historyNotesDir = path.join(this.baseDir, "history-notes");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -32,6 +34,8 @@ export default class MiniPhiMemory {
     this.knowledgeIndexFile = path.join(this.indicesDir, "knowledge-index.json");
     this.resourceUsageFile = path.join(this.healthDir, "resource-usage.json");
     this.promptSessionsIndexFile = path.join(this.indicesDir, "prompt-sessions-index.json");
+    this.researchIndexFile = path.join(this.indicesDir, "research-index.json");
+    this.historyNotesIndexFile = path.join(this.indicesDir, "history-notes-index.json");
 
     this.prepared = false;
   }
@@ -48,6 +52,8 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.indicesDir, { recursive: true });
     await fs.promises.mkdir(this.healthDir, { recursive: true });
     await fs.promises.mkdir(this.sessionsDir, { recursive: true });
+    await fs.promises.mkdir(this.researchDir, { recursive: true });
+    await fs.promises.mkdir(this.historyNotesDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -56,6 +62,8 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.knowledgeIndexFile, { entries: [] });
     await this.#ensureFile(this.resourceUsageFile, { entries: [] });
     await this.#ensureFile(this.promptSessionsIndexFile, { entries: [] });
+    await this.#ensureFile(this.researchIndexFile, { entries: [] });
+    await this.#ensureFile(this.historyNotesIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -65,10 +73,13 @@ export default class MiniPhiMemory {
         { name: "todo", file: this.#relative(this.todoFile) },
         { name: "health", file: this.#relative(this.resourceUsageFile) },
         { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
+        { name: "research", file: this.#relative(this.researchIndexFile) },
+        { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
       ],
     });
 
     this.prepared = true;
+    await this.#updateRootIndex();
     return this.baseDir;
   }
 
@@ -246,7 +257,14 @@ export default class MiniPhiMemory {
 
     while (true) {
       if (fs.existsSync(path.join(current, "package.json")) || fs.existsSync(path.join(current, ".git"))) {
-    return current;
+        return current;
+      }
+      if (current === root) {
+        break;
+      }
+      current = path.dirname(current);
+    }
+    return startDir;
   }
 
   #sanitizeId(raw) {
@@ -254,13 +272,6 @@ export default class MiniPhiMemory {
       return "";
     }
     return raw.replace(/[^A-Za-z0-9._-]/g, "_");
-  }
-      if (current === root) {
-        break;
-      }
-      current = path.dirname(current);
-    }
-    return startDir;
   }
 
   async #ensureFile(filePath, defaultValue) {
@@ -448,12 +459,120 @@ export default class MiniPhiMemory {
       { name: "todo", file: this.#relative(this.todoFile) },
       { name: "health", file: this.#relative(this.resourceUsageFile) },
       { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
+      { name: "research", file: this.#relative(this.researchIndexFile) },
+      { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }
 
+  async saveResearchReport(report) {
+    if (!report) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = report.savedAt ?? new Date().toISOString();
+    const normalized = {
+      ...report,
+      id: report.id ?? randomUUID(),
+      savedAt: timestamp,
+    };
+    const slug = this.#slugify(normalized.query ?? "research");
+    const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
+    const jsonPath = path.join(this.researchDir, `${baseName}.json`);
+    await this.#writeJSON(jsonPath, normalized);
+    await this.#updateResearchIndex({
+      id: normalized.id,
+      query: normalized.query,
+      provider: normalized.provider ?? "duckduckgo",
+      savedAt: normalized.savedAt,
+      results: normalized.results?.length ?? 0,
+      file: this.#relative(jsonPath),
+    });
+    return { path: jsonPath, id: normalized.id };
+  }
+
+  async saveHistoryNote(note, markdownContent) {
+    if (!note) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = note.generatedAt ?? new Date().toISOString();
+    const normalized = {
+      ...note,
+      id: note.id ?? randomUUID(),
+      generatedAt: timestamp,
+    };
+    const slug = this.#slugify(normalized.label ?? "history");
+    const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
+    const jsonPath = path.join(this.historyNotesDir, `${baseName}.json`);
+    const markdownPath = markdownContent ? path.join(this.historyNotesDir, `${baseName}.md`) : null;
+    await this.#writeJSON(jsonPath, normalized);
+    if (markdownPath) {
+      await fs.promises.writeFile(markdownPath, markdownContent, "utf8");
+    }
+    await this.#updateHistoryNotesIndex({
+      id: normalized.id,
+      generatedAt: normalized.generatedAt,
+      changed: normalized.changedFiles?.length ?? 0,
+      added: normalized.addedFiles?.length ?? 0,
+      removed: normalized.removedFiles?.length ?? 0,
+      file: this.#relative(jsonPath),
+      markdown: markdownPath ? this.#relative(markdownPath) : null,
+    });
+    return { jsonPath, markdownPath, id: normalized.id };
+  }
+
+  async loadLatestHistoryNote() {
+    await this.prepare();
+    let files = [];
+    try {
+      files = await fs.promises.readdir(this.historyNotesDir);
+    } catch {
+      return null;
+    }
+    const jsonFiles = files.filter((file) => file.endsWith(".json")).sort();
+    if (jsonFiles.length === 0) {
+      return null;
+    }
+    const latest = jsonFiles[jsonFiles.length - 1];
+    const fullPath = path.join(this.historyNotesDir, latest);
+    const data = await this.#readJSON(fullPath, null);
+    if (!data) {
+      return null;
+    }
+    return { data, path: fullPath };
+  }
+
+  async #updateResearchIndex(entry) {
+    const index = await this.#readJSON(this.researchIndexFile, { entries: [] });
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.researchIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
+  async #updateHistoryNotesIndex(entry) {
+    const index = await this.#readJSON(this.historyNotesIndexFile, { entries: [] });
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.historyNotesIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
   #hashText(text) {
     return createHash("sha1").update(text ?? "", "utf8").digest("hex");
+  }
+
+  #slugify(text) {
+    const normalized = (text ?? "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return normalized.slice(0, 48) || "note";
   }
 
   #extractNextActions(analysis = "") {
