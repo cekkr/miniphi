@@ -14,3 +14,17 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 ```
 
 This command wipes previous markdown/code outputs, converts each file under `code/` into markdown natural language descriptions without code snippets, rebuilds code from the markdown, compares the round-trip fidelity, and stores a step-by-step report alongside the sample.
+
+## Timestamped benchmark batches
+
+Use the dedicated helper to create WHY_SAMPLES-friendly runs without hand-rolling timestamps:
+
+```bash
+node src/index.js benchmark recompose --directions roundtrip,code-to-markdown,markdown-to-code --repeat 2 --clean
+```
+
+Each invocation writes `RUN-###.{json,log}` pairs under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`. Summaries for a given batch can be produced with:
+
+```bash
+node src/index.js benchmark analyze samples/benchmark/recompose/<dd-mm-yy_mm-hh>
+```

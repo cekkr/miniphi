@@ -1,0 +1,18 @@
+{
+  "direction": "code-to-markdown",
+  "sampleDir": "samples/recompose/hello-flow",
+  "codeDir": "samples/recompose/hello-flow/code",
+  "descriptionsDir": "samples/recompose/hello-flow/descriptions",
+  "outputDir": "samples/recompose/hello-flow/reconstructed",
+  "steps": [
+    {
+      "phase": "code-to-markdown",
+      "durationMs": 3,
+      "discovered": 4,
+      "converted": 4,
+      "skipped": 0,
+      "outputDir": "samples/recompose/hello-flow/descriptions"
+    }
+  ],
+  "generatedAt": "2025-11-15T23:26:53.574Z"
+}

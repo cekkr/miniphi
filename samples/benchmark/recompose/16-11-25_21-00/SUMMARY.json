@@ -1,0 +1,86 @@
+{
+  "analyzedAt": "2025-11-15T23:27:31.582Z",
+  "directory": "/home/riccardo/Sources/GitHub/miniphi/samples/benchmark/recompose/16-11-25_21-00",
+  "totalRuns": 3,
+  "sampleDirs": [
+    "samples/recompose/hello-flow"
+  ],
+  "directions": {
+    "roundtrip": {
+      "runs": 1,
+      "phases": {
+        "code-to-markdown": {
+          "averageMs": 4,
+          "minMs": 4,
+          "maxMs": 4,
+          "runs": 1
+        },
+        "markdown-to-code": {
+          "averageMs": 2,
+          "minMs": 2,
+          "maxMs": 2,
+          "runs": 1
+        },
+        "comparison": {
+          "averageMs": 2,
+          "minMs": 2,
+          "maxMs": 2,
+          "runs": 1
+        }
+      },
+      "warningRuns": 0,
+      "totalWarnings": 0,
+      "mismatchRuns": 0,
+      "totalMismatches": 0
+    },
+    "code-to-markdown": {
+      "runs": 1,
+      "phases": {
+        "code-to-markdown": {
+          "averageMs": 4,
+          "minMs": 4,
+          "maxMs": 4,
+          "runs": 1
+        }
+      },
+      "warningRuns": 0,
+      "totalWarnings": 0,
+      "mismatchRuns": 0,
+      "totalMismatches": 0
+    },
+    "markdown-to-code": {
+      "runs": 1,
+      "phases": {
+        "markdown-to-code": {
+          "averageMs": 3,
+          "minMs": 3,
+          "maxMs": 3,
+          "runs": 1
+        }
+      },
+      "warningRuns": 0,
+      "totalWarnings": 0,
+      "mismatchRuns": 0,
+      "totalMismatches": 0
+    }
+  },
+  "warningRuns": [],
+  "mismatchRuns": [],
+  "runs": [
+    {
+      "file": "/home/riccardo/Sources/GitHub/miniphi/samples/benchmark/recompose/16-11-25_21-00/ROUNDTRIP-001.json",
+      "direction": "roundtrip",
+      "generatedAt": "2025-11-15T23:21:50.409Z"
+    },
+    {
+      "file": "/home/riccardo/Sources/GitHub/miniphi/samples/benchmark/recompose/16-11-25_21-00/CODE-TO-MD-002.json",
+      "direction": "code-to-markdown",
+      "generatedAt": "2025-11-15T23:21:56.027Z"
+    },
+    {
+      "file": "/home/riccardo/Sources/GitHub/miniphi/samples/benchmark/recompose/16-11-25_21-00/MD-TO-CODE-003.json",
+      "direction": "markdown-to-code",
+      "generatedAt": "2025-11-15T23:21:59.141Z"
+    }
+  ]
+}

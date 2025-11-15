@@ -13,11 +13,13 @@ import PromptRecorder from "./libs/prompt-recorder.js";
 import WebResearcher from "./libs/web-researcher.js";
 import HistoryNotesManager from "./libs/history-notes.js";
 import RecomposeTester from "./libs/recompose-tester.js";
+import RecomposeBenchmarkRunner from "./libs/recompose-benchmark-runner.js";
+import BenchmarkAnalyzer from "./libs/benchmark-analyzer.js";
 import { loadConfig } from "./libs/config-loader.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 
-const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose"]);
+const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose", "benchmark"]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +159,10 @@ async function main() {
 
   if (command === "recompose") {
     await handleRecompose({ options, positionals, verbose });
+    return;
+  }
+  if (command === "benchmark") {
+    await handleBenchmark({ options, positionals, verbose });
     return;
   }
 
@@ -586,6 +592,45 @@ async function handleRecompose({ options, positionals, verbose }) {
   console.log(`[MiniPhi][Recompose] Report saved to ${rel || reportPath}`);
 }
 
+async function handleBenchmark({ options, positionals }) {
+  const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
+  if (mode === "analyze") {
+    const target = options.path ?? options.dir ?? positionals[1] ?? null;
+    if (!target) {
+      throw new Error("benchmark analyze requires --path <dir> or a positional directory argument.");
+    }
+    const analyzer = new BenchmarkAnalyzer();
+    await analyzer.analyzeDirectory(target);
+    return;
+  }
+
+  if (mode !== "recompose") {
+    throw new Error(`Unsupported benchmark mode "${mode}". Expected "recompose" or "analyze".`);
+  }
+
+  const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? null;
+  const benchmarkRoot = options["benchmark-root"];
+  const runner = new RecomposeBenchmarkRunner({
+    sampleDir: sampleArg,
+    benchmarkRoot,
+  });
+  const directionsValue = options.directions ?? options.direction ?? "roundtrip";
+  const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
+  const repeat = Number(options.repeat ?? 1);
+  const runPrefix = options["run-prefix"] ?? "RUN";
+  const clean = Boolean(options.clean);
+  const timestamp = options.timestamp ?? undefined;
+  const result = await runner.runSeries({
+    directions,
+    repeat,
+    clean,
+    timestamp,
+    runPrefix,
+  });
+  const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
+  console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
+}
+
 function parseArgs(tokens) {
   const options = {};
   const positionals = [];
@@ -690,6 +735,7 @@ Usage:
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js history-notes --label "post benchmark"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
+  node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
 
 Options:
   --cmd <command>              Command to execute in run mode
@@ -737,6 +783,18 @@ Recompose benchmarks:
   --clean                      Remove generated description/output directories before running
   --report <path>              Persist benchmark report JSON to a custom path
   --help                       Show this help message
+
+Benchmark helper:
+  benchmark recompose [sample]  Run timestamped benchmark batches (defaults to hello-flow sample)
+    --sample <path>             Override sample directory
+    --benchmark-root <path>     Directory used to store timestamped runs (default: samples/benchmark/recompose)
+    --directions <list>         Comma-separated directions to execute (default: roundtrip)
+    --repeat <n>                Repeat the direction list n times (default: 1)
+    --run-prefix <text>         Prefix for run artifacts (default: RUN)
+    --timestamp <value>         Pin a timestamp folder (default: current time)
+    --clean                     Perform clean before each run
+  benchmark analyze [dir]       Summarize existing JSON reports under the directory
+    --path <dir>                Directory containing RUN-###.json files (positional also accepted)
 `);
 }
 
