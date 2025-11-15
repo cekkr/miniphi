@@ -1,5 +1,5 @@
 # Next Steps
 
-- [ ] Restore a proper Node.js toolchain (npm + @lmstudio/sdk, better-sqlite3, tree-sitter deps) so that LM Studio features and scoring pipelines run without the new fallback warnings.
-- [ ] Document and/or automate Node binary discovery so the CLI can default to the LM Studio embedded runtime when the system node is missing, preventing manual path overrides during benchmarks.
-- [ ] Consider lazily importing LM Studio handlers only for commands that need them to avoid loading the optional dependency at process start; this would shave a few hundred milliseconds off recompose-only benchmarks.
+- [ ] Add a `miniphi benchmark recompose` helper (or CLI flag) that automatically stamps `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/RUN-###.{json,log}` so manual timestamping isn’t required for each roundtrip.
+- [ ] Build a small analyzer that scans the timestamped JSON reports and surfaces trends (avg duration, mismatches, warning spikes) between successive runs.
+- [ ] Extend `samples/recompose/hello-flow` (or add a new sibling sample) with more files/layers to better stress-test markdown↔code fidelity and expose throughput bottlenecks.
