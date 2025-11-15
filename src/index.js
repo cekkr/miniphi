@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import CliExecutor from "./libs/cli-executor.js";
 import LMStudioManager from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
@@ -14,10 +15,21 @@ import HistoryNotesManager from "./libs/history-notes.js";
 import RecomposeTester from "./libs/recompose-tester.js";
 import { loadConfig } from "./libs/config-loader.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
+import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 
 const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose"]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const PROMPT_DB_PATH = path.join(PROJECT_ROOT, "miniphi-prompts.db");
+const PROMPT_SCORING_SYSTEM_PROMPT = [
+  "You grade MiniPhi prompt effectiveness.",
+  "Given an objective, workspace context, prompt text, and the assistant response, you must return JSON with:",
+  "score (0-100), prompt_category, summary, follow_up_needed, follow_up_reason, tags, recommended_prompt_pattern, series_strategy.",
+  "Focus on whether the response satisfied the objective and whether another prompt is required.",
+  "Return JSON only.",
+].join(" ");
 
 function parseNumericSetting(value, label) {
   if (value === undefined || value === null || value === "") {
@@ -49,6 +61,7 @@ async function main() {
   const { options, positionals } = parseArgs(rest);
   const verbose = Boolean(options.verbose);
   const streamOutput = !options["no-stream"];
+  const debugLm = Boolean(options["debug-lm"]);
 
   let configResult;
   try {
@@ -156,6 +169,30 @@ async function main() {
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
   const workspaceProfiler = new WorkspaceProfiler();
+  let performanceTracker = null;
+  let scoringPhi = null;
+
+  try {
+    const tracker = new PromptPerformanceTracker({
+      dbPath: PROMPT_DB_PATH,
+      debug: debugLm,
+    });
+    await tracker.prepare();
+    performanceTracker = tracker;
+    if (verbose) {
+      const relDb = path.relative(process.cwd(), PROMPT_DB_PATH) || PROMPT_DB_PATH;
+      console.log(`[MiniPhi] Prompt scoring database ready at ${relDb}`);
+    }
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Prompt scoring disabled: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+  if (performanceTracker) {
+    phi4.setPerformanceTracker(performanceTracker);
+  }
 
   let stateManager;
   let promptRecorder = null;
@@ -221,6 +258,41 @@ async function main() {
 
   try {
     await phi4.load({ contextLength, gpu });
+    if (performanceTracker) {
+      scoringPhi = new Phi4Handler(manager, {
+        systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
+      });
+      try {
+        await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
+        performanceTracker.setSemanticEvaluator(async (evaluationPrompt, parentTrace) => {
+          scoringPhi.clearHistory();
+          return scoringPhi.chatStream(
+            evaluationPrompt,
+            undefined,
+            undefined,
+            undefined,
+            {
+              scope: "sub",
+              label: "prompt-scoring",
+              metadata: {
+                mode: "prompt-evaluator",
+                workspaceType: parentTrace?.metadata?.workspaceType ?? null,
+                objective: parentTrace?.label ?? null,
+              },
+            },
+          );
+        });
+      } catch (error) {
+        scoringPhi = null;
+        performanceTracker.setSemanticEvaluator(null);
+        if (verbose) {
+          console.warn(
+            `[MiniPhi] Prompt scoring evaluator disabled: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      }
+    }
+
     let result;
 
     if (command === "run") {
@@ -264,7 +336,8 @@ async function main() {
               mode: "run",
               command: cmd,
               cwd,
-              workspaceType: workspaceContext?.classification?.domain ?? null,
+              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+              workspaceSummary: workspaceContext?.summary ?? null,
             },
           },
         });
@@ -311,7 +384,9 @@ async function main() {
             metadata: {
               mode: "analyze-file",
               filePath,
-              workspaceType: workspaceContext?.classification?.domain ?? null,
+              cwd: analyzeCwd,
+              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+              workspaceSummary: workspaceContext?.summary ?? null,
             },
           },
         });
@@ -362,6 +437,12 @@ async function main() {
       }
       await stopResourceMonitorIfNeeded();
       await phi4.eject();
+      if (scoringPhi) {
+        await scoringPhi.eject();
+      }
+      if (performanceTracker) {
+        performanceTracker.dispose();
+      }
     } catch {
       // no-op
     }
@@ -631,6 +712,7 @@ Options:
   --no-summary                 Skip JSON summary footer
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
+  --debug-lm                   Print each objective + prompt when scoring is running
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)

@@ -12,6 +12,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Cross-platform CLI execution.** `src/libs/cli-executor.js` normalizes shells on Windows/macOS/Linux and streams stdout/stderr.
 - **Persistent command memory.** Every run drops prompts, compressed context, analysis, and follow-up TODOs into a hidden `.miniphi/` workspace for later retrieval.
 - **Structured prompt transcripts.** `src/libs/prompt-recorder.js` records each LM Studio exchange (MiniPhi’s main prompt plus every sub-prompt) as JSON under `.miniphi/prompt-exchanges/`, so you can audit or replay prompts one by one.
+- **Prompt performance scoring.** `src/libs/prompt-performance-tracker.js` keeps a global `miniphi-prompts.db` SQLite database in the project root, auto-scores each prompt/response pair (including Phi-4-powered semantic evaluations), and snapshots the best-performing prompt compositions per workspace/objective so you can iterate on what works. Pass `--debug-lm` to log every objective + prompt as they’re graded.
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
 - **Config-driven defaults.** Drop a `config.json` (copy `config.example.json`) or pass `--config`/`MINIPHI_CONFIG` to predefine the LM Studio endpoint, prompt defaults, and resource thresholds instead of repeating flags every time.
 - **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can’t hang the process).
@@ -119,6 +120,7 @@ node src/index.js analyze-file --file ./logs/build.log --task "Summarize build i
 | `--resource-sample-interval <ms>` | Change the sampling cadence for the resource monitor (default 5s). |
 | `--prompt-id <id>` | Attach/continue a prompt session so you can resume the same Phi-4 conversation across commands. |
 | `--session-timeout <ms>` | Hard limit for the entire MiniPhi run; remaining time is enforced per Phi-4 prompt. |
+| `--debug-lm` | Print each objective + prompt instrumented by the prompt scoring system (and verify writes to `miniphi-prompts.db`). |
 | `--verbose` | Print capture progress and reasoning blocks to the console. |
 
 ### Capture quick web research
@@ -146,6 +148,12 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 ### Prompt sessions & process-level timeouts
 - **Prompt sessions.** Supply `--prompt-id my-bash-audit` to persist Phi-4 chat history under `.miniphi/prompt-sessions/my-bash-audit.json`. Subsequent `run`/`analyze-file` invocations with the same ID pick up right where the previous reasoning left off, enabling step-by-step analysis across different Node.js scripts or terminals.
 - **Session timeout.** Use `--session-timeout 1200000` (20 minutes in ms) when you want MiniPhi to abort the entire run if it takes too long. The remaining budget is calculated before every Phi-4 call, so long shell commands or recursive prompt batches can’t hang forever, yet you keep full control by leaving the flag unset.
+
+### Prompt performance scoring
+- Every Phi-4 prompt (main + sub) is mirrored into a project-level SQLite database (`miniphi-prompts.db`) managed by `PromptPerformanceTracker`. Each row stores the objective, workspace fingerprint, score, follow-up likelihood, and serialized evaluation metadata so you can mine high-performing prompt structures across repos.
+- A dedicated Phi-4 scoring prompt (`prompt-scoring` scope) grades how well the assistant response satisfied the stated objective, whether multi-step follow-ups are required, and which prompt patterns/tags describe the interaction. When Phi-4 is unavailable, MiniPhi falls back to heuristics but still records summaries.
+- `best_prompt_snapshots` consolidates each workspace/objective combination into a JSON blob (rolling averages, best prompt text, follow-up rate, and any recommended series strategy) so other tooling can query the DB without replaying every exchange.
+- Pass `--debug-lm` to dump the current objective + prompt text to stdout as soon as it is queued for scoring, making it easy to correlate console logs with DB rows.
 
 ### Resource monitoring
 - Every `run`/`analyze-file` session bootstraps `ResourceMonitor`, which samples system RAM, CPU, and VRAM using the best strategy available for your OS (`nvidia-smi`, PowerShell CIM, or `system_profiler`).

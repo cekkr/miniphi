@@ -32,6 +32,7 @@ export class Phi4Handler {
         : null;
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
     this.promptRecorder = options?.promptRecorder ?? null;
+    this.performanceTracker = options?.performanceTracker ?? null;
   }
 
   /**
@@ -67,6 +68,14 @@ export class Phi4Handler {
    */
   setPromptRecorder(recorder) {
     this.promptRecorder = recorder ?? null;
+  }
+
+  /**
+   * Enables or disables the prompt performance tracker.
+   * @param {import("./prompt-performance-tracker.js").default | null} tracker
+   */
+  setPerformanceTracker(tracker) {
+    this.performanceTracker = tracker ?? null;
   }
 
   /**
@@ -136,24 +145,55 @@ export class Phi4Handler {
         this.chatHistory.push({ role: "assistant", content: result });
       }
 
+      const finishedAt = Date.now();
       await this.#recordPromptExchange(traceContext, requestSnapshot, {
         text: result,
         reasoning: capturedThoughts,
         startedAt,
-        finishedAt: Date.now(),
+        finishedAt,
       });
+      await this.#trackPromptPerformance(
+        traceContext,
+        requestSnapshot,
+        {
+          text: result,
+          reasoning: capturedThoughts,
+          startedAt,
+          finishedAt,
+          tokensApprox: this.#approximateTokens(result),
+        },
+        null,
+      );
 
       return result;
     } catch (error) {
       this.chatHistory.pop(); // remove user entry to preserve state
       const message = error instanceof Error ? error.message : String(error);
       if (onError) onError(message);
-      await this.#recordPromptExchange(traceContext, requestSnapshot, {
-        text: result,
-        reasoning: capturedThoughts,
-        startedAt,
-        finishedAt: Date.now(),
-      }, message);
+      const finishedAt = Date.now();
+      await this.#recordPromptExchange(
+        traceContext,
+        requestSnapshot,
+        {
+          text: result,
+          reasoning: capturedThoughts,
+          startedAt,
+          finishedAt,
+        },
+        message,
+      );
+      await this.#trackPromptPerformance(
+        traceContext,
+        requestSnapshot,
+        {
+          text: result,
+          reasoning: capturedThoughts,
+          startedAt,
+          finishedAt,
+          tokensApprox: this.#approximateTokens(result),
+        },
+        message,
+      );
       throw error;
     }
   }
@@ -275,6 +315,7 @@ export class Phi4Handler {
       systemPrompt: this.systemPrompt,
       historyLength: messages.length,
       promptChars: prompt.length,
+       promptText: prompt,
       messages,
       createdAt: new Date().toISOString(),
     };
@@ -320,6 +361,23 @@ export class Phi4Handler {
       // Recording failures should not interrupt inference.
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptRecorder");
+    }
+  }
+
+  async #trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {
+    if (!this.performanceTracker || !requestSnapshot) {
+      return;
+    }
+    try {
+      await this.performanceTracker.track({
+        traceContext,
+        request: requestSnapshot,
+        response: responseSnapshot,
+        error: errorMessage ?? null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.emitWarning(message, "PromptPerformanceTracker");
     }
   }
 
