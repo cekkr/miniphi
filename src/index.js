@@ -13,6 +13,7 @@ import WebResearcher from "./libs/web-researcher.js";
 import HistoryNotesManager from "./libs/history-notes.js";
 import RecomposeTester from "./libs/recompose-tester.js";
 import { loadConfig } from "./libs/config-loader.js";
+import WorkspaceProfiler from "./libs/workspace-profiler.js";
 
 const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose"]);
 
@@ -154,6 +155,7 @@ async function main() {
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
+  const workspaceProfiler = new WorkspaceProfiler();
 
   let stateManager;
   let promptRecorder = null;
@@ -204,6 +206,19 @@ async function main() {
     return resourceSummary;
   };
 
+  const describeWorkspace = (dir) => {
+    try {
+      return workspaceProfiler.describe(dir);
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Workspace profiling failed for ${dir}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+      return null;
+    }
+  };
+
   try {
     await phi4.load({ contextLength, gpu });
     let result;
@@ -215,6 +230,7 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+      const workspaceContext = describeWorkspace(cwd);
         archiveMetadata.command = cmd;
         archiveMetadata.cwd = cwd;
         stateManager = new MiniPhiMemory(cwd);
@@ -239,6 +255,7 @@ async function main() {
           cwd,
           timeout,
           sessionDeadline,
+          workspaceContext,
           promptContext: {
             scope: "main",
             label: task,
@@ -247,6 +264,7 @@ async function main() {
               mode: "run",
               command: cmd,
               cwd,
+              workspaceType: workspaceContext?.classification?.domain ?? null,
             },
           },
         });
@@ -260,6 +278,8 @@ async function main() {
       if (!fs.existsSync(filePath)) {
         throw new Error(`File not found: ${filePath}`);
       }
+      const analyzeCwd = path.dirname(filePath);
+      const workspaceContext = describeWorkspace(analyzeCwd);
 
         archiveMetadata.filePath = filePath;
         archiveMetadata.cwd = path.dirname(filePath);
@@ -283,6 +303,7 @@ async function main() {
           streamOutput,
           maxLinesPerChunk: chunkSize,
           sessionDeadline,
+          workspaceContext,
           promptContext: {
             scope: "main",
             label: task,
@@ -290,6 +311,7 @@ async function main() {
             metadata: {
               mode: "analyze-file",
               filePath,
+              workspaceType: workspaceContext?.classification?.domain ?? null,
             },
           },
         });

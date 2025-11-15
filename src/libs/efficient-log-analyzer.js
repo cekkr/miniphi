@@ -23,6 +23,7 @@ export default class EfficientLogAnalyzer {
       timeout = 60000,
       sessionDeadline = undefined,
       promptContext = undefined,
+      workspaceContext = undefined,
     } = options ?? {};
 
     if (verbose) {
@@ -84,10 +85,19 @@ export default class EfficientLogAnalyzer {
     }
 
     const compression = await this.#compressLines(lines, summaryLevels, verbose);
-    const prompt = this.generateSmartPrompt(task, compression.content, lines.length, {
-      originalSize: totalSize,
-      compressedTokens: compression.tokens,
-    });
+    const prompt = this.generateSmartPrompt(
+      task,
+      compression.content,
+      lines.length,
+      {
+        originalSize: totalSize,
+        compressedTokens: compression.tokens,
+      },
+      {
+        workspaceSummary: workspaceContext?.summary ?? null,
+        workspaceType: workspaceContext?.classification?.label ?? null,
+      },
+    );
 
     if (verbose) {
       console.log(`\n[MiniPhi] Dispatching analysis to Phi-4 (~${compression.tokens} tokens)\n`);
@@ -128,6 +138,7 @@ export default class EfficientLogAnalyzer {
       compressedTokens: compression.tokens,
       compressedContent: compression.content,
       analysis,
+      workspaceContext: workspaceContext ?? null,
     };
   }
 
@@ -137,6 +148,7 @@ export default class EfficientLogAnalyzer {
       streamOutput = true,
       sessionDeadline = undefined,
       promptContext = undefined,
+      workspaceContext = undefined,
     } = options ?? {};
     const { chunks } = await this.summarizer.summarizeFile(filePath, {
       maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
@@ -153,10 +165,19 @@ export default class EfficientLogAnalyzer {
       .join("\n");
 
     const tokens = Math.max(1, Math.ceil(formatted.length / 4));
-    const prompt = this.generateSmartPrompt(task, formatted, totalLines || 1, {
-      compressedTokens: tokens,
-      originalSize: totalLines * 4,
-    });
+    const prompt = this.generateSmartPrompt(
+      task,
+      formatted,
+      totalLines || 1,
+      {
+        compressedTokens: tokens,
+        originalSize: totalLines * 4,
+      },
+      {
+        workspaceSummary: workspaceContext?.summary ?? null,
+        workspaceType: workspaceContext?.classification?.label ?? null,
+      },
+    );
 
     let analysis = "";
     this.#applyPromptTimeout(sessionDeadline);
@@ -187,6 +208,7 @@ export default class EfficientLogAnalyzer {
       compressedTokens: tokens,
       compressedContent: formatted,
       analysis,
+      workspaceContext: workspaceContext ?? null,
     };
   }
 
@@ -229,10 +251,12 @@ export default class EfficientLogAnalyzer {
     return formatted;
   }
 
-  generateSmartPrompt(task, compressedContent, totalLines, metadata) {
+  generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
+    const contextSupplement = this.#formatContextSupplement(extraContext);
+    const contextBlock = contextSupplement ? `\n${contextSupplement}` : "";
     return `# Log/Output Analysis Task
 
-**Task:** ${task}
+**Task:** ${task}${contextBlock}
 
 **Dataset:**
 - Total lines: ${totalLines}
@@ -286,6 +310,23 @@ ${compressedContent}
     const approxCompressedLines = compressedTokens / 4;
     const ratio = totalLines / Math.max(1, approxCompressedLines);
     return `${ratio.toFixed(1)}x`;
+  }
+
+  #formatContextSupplement(extraContext) {
+    if (!extraContext) {
+      return "";
+    }
+    const lines = [];
+    if (extraContext.workspaceType) {
+      lines.push(`**Workspace type detected:** ${extraContext.workspaceType}`);
+    }
+    if (extraContext.workspaceSummary) {
+      lines.push(extraContext.workspaceSummary);
+    }
+    if (!lines.length) {
+      return "";
+    }
+    return `${lines.join("\n")}\n`;
   }
   #applyPromptTimeout(sessionDeadline) {
     if (!sessionDeadline) {

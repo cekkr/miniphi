@@ -15,6 +15,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Resource guard rails.** `src/libs/resource-monitor.js` samples RAM/CPU/VRAM usage, surfaces warnings during runs, and archives usage stats under `.miniphi/health/`.
 - **Config-driven defaults.** Drop a `config.json` (copy `config.example.json`) or pass `--config`/`MINIPHI_CONFIG` to predefine the LM Studio endpoint, prompt defaults, and resource thresholds instead of repeating flags every time.
 - **Prompt safety net.** Pass `--session-timeout <ms>` when running MiniPhi to cap the entire run (the remaining budget is forwarded to each Phi-4 prompt so runaway loops can’t hang the process).
+- **Workspace-aware prompting.** `WorkspaceProfiler` (`src/libs/workspace-profiler.js`) inspects the current working directory (codebases, doc hubs, book-style markdown folders) and feeds that context into every Phi-4 prompt so MiniPhi knows whether to focus on code, documentation, or multi-chapter manuscripts (including outlining new chapters when asked).
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 - **Web research snapshots.** `node src/index.js web-research "query"` fetches structured DuckDuckGo results, prints them inline, and stores the report (plus optional raw payloads) under `.miniphi/research/` for later retrieval.
 - **.miniphi history notes.** `node src/index.js history-notes --label "post-upgrade"` scans `.miniphi`, records last-modified timestamps, and (when available) last git authors/commits so you can diff workspace evolution across runs.
@@ -157,6 +158,11 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 3. Watch MiniPhi stream lint output, see Python compression status, and observe Phi's `<think>` reasoning block (only when verbose).
 4. Copy the streamed solution or inspect the JSON footer to log compression stats (`linesAnalyzed`, `compressedTokens`).
 5. Repeat with `analyze-file` for build logs, test snapshots, or any text artifact.
+
+## Writing-Focused Workspaces
+- MiniPhi now inspects the working directory before prompting Phi-4. When it finds a documentation-centric or book-style folder (multiple markdown chapters, `preface.md`, etc.) it injects a summary of that structure into the prompt so the model has a global view of the manuscript.
+- Ask MiniPhi to “improve Chapter 3” or “draft a new appendix” inside such a workspace and the agent will reference the detected chapters, suggest cross-chapter edits, and generate new sections without assuming it is editing source code.
+- Mixed repositories (code + docs) still get profiled, so the agent knows when to operate on code and when the task is strictly editorial.
 
 ## Hidden `.miniphi` Workspace
 - MiniPhi now maintains a hidden `.miniphi/` directory at the nearest project root (or reuses an existing one if you invoke the CLI from a subfolder). Every execution creates an `executions/<id>/` archive with `execution.json`, `prompt.json`, `analysis.json`, `compression.json`, and chunked `segments/segment-###.json` files so you can rehydrate any prompt without rerunning the command.

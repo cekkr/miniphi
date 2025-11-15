@@ -5,7 +5,13 @@ import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 
 const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
-const DEFAULT_SYSTEM_PROMPT = "You are a agent project source code helper:";
+const DEFAULT_SYSTEM_PROMPT = [
+  "You are MiniPhi, a local workspace agent.",
+  "Inspect the provided workspace context (codebases, documentation hubs, or book-style markdown collections) and adapt your strategy accordingly.",
+  "When the directory resembles a book or documentation set, provide a cohesive overview, suggest edits, and propose new sections/chapters when helpful.",
+  "When the directory is code-heavy, act as an expert code engineer while still respecting any docs present.",
+  "Always explain your reasoning, keep instructions actionable, and operate directly on the artifacts referenced in the prompt.",
+].join(" ");
 
 /**
  * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
