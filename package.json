@@ -33,7 +33,8 @@
   "homepage": "https://github.com/cekkr/miniphi#readme",
   "dependencies": {
     "@lmstudio/sdk": "^1.5.0",
-    "better-sqlite3": "^9.4.3",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
     "tree-sitter-c": "^0.24.1",
     "web-tree-sitter": "^0.25.10"
   }

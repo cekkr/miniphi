@@ -441,7 +441,7 @@ async function main() {
         await scoringPhi.eject();
       }
       if (performanceTracker) {
-        performanceTracker.dispose();
+        await performanceTracker.dispose();
       }
     } catch {
       // no-op

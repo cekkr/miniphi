@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
+import { open } from "sqlite";
+import sqlite3 from "sqlite3";
 
 const DEFAULT_DB_FILENAME = "miniphi-prompts.db";
 const MAX_STORED_TEXT = 4000;
@@ -23,7 +25,6 @@ export default class PromptPerformanceTracker {
     this.debug = Boolean(options?.debug);
     this.snapshotLimit = options?.snapshotLimit ?? DEFAULT_SNAPSHOT_LIMIT;
     this.db = null;
-    this.statements = {};
     this.enabled = false;
     this.semanticEvaluator = null;
   }
@@ -33,11 +34,20 @@ export default class PromptPerformanceTracker {
       return;
     }
     await fs.promises.mkdir(path.dirname(this.dbPath), { recursive: true });
-    const Database = await this.#loadDriver();
-    this.db = new Database(this.dbPath);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
-    this.#migrate();
+    try {
+      this.db = await open({
+        filename: this.dbPath,
+        driver: sqlite3.Database,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to initialize SQLite database (${this.dbPath}). Install the "sqlite" and "sqlite3" packages to enable prompt scoring. ${message}`,
+      );
+    }
+    await this.db.exec("PRAGMA journal_mode = WAL;");
+    await this.db.exec("PRAGMA foreign_keys = ON;");
+    await this.#migrate();
     this.enabled = true;
   }
 
@@ -45,15 +55,14 @@ export default class PromptPerformanceTracker {
     this.enabled = false;
   }
 
-  dispose() {
+  async dispose() {
     if (this.db) {
       try {
-        this.db.close();
+        await this.db.close();
       } catch {
         // ignore dispose errors
       }
       this.db = null;
-      this.statements = {};
     }
     this.enabled = false;
   }
@@ -82,7 +91,7 @@ export default class PromptPerformanceTracker {
    * }} payload
    */
   async track(payload) {
-    if (!this.enabled || !payload?.traceContext || !payload.request) {
+    if (!this.enabled || !this.db || !payload?.traceContext || !payload.request) {
       return;
     }
 
@@ -154,7 +163,7 @@ export default class PromptPerformanceTracker {
 
     const workspaceFingerprint = this.#fingerprint(workspacePath);
     const now = new Date().toISOString();
-    this.#persistSession({
+    await this.#persistSession({
       sessionId,
       objective,
       workspacePath,
@@ -163,7 +172,7 @@ export default class PromptPerformanceTracker {
       createdAt: now,
     });
 
-    this.#insertPromptScore({
+    await this.#insertPromptScore({
       scope: traceContext.scope,
       sessionId,
       promptId: traceContext.subPromptId,
@@ -182,7 +191,7 @@ export default class PromptPerformanceTracker {
       createdAt: now,
     });
 
-    this.#snapshotBestPrompt({
+    await this.#snapshotBestPrompt({
       objective,
       workspaceFingerprint,
       workspaceType,
@@ -190,19 +199,10 @@ export default class PromptPerformanceTracker {
     });
   }
 
-  async #loadDriver() {
-    try {
-      const mod = await import("better-sqlite3");
-      return mod.default ?? mod;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `Failed to initialize SQLite driver (better-sqlite3). Install dependencies via "npm install" to enable prompt scoring. ${message}`,
-      );
+  async #migrate() {
+    if (!this.db) {
+      return;
     }
-  }
-
-  #migrate() {
     const migrations = [
       `CREATE TABLE IF NOT EXISTS prompt_sessions (
         session_id TEXT PRIMARY KEY,
@@ -211,7 +211,7 @@ export default class PromptPerformanceTracker {
         workspace_type TEXT,
         workspace_fingerprint TEXT,
         created_at TEXT NOT NULL
-      )`,
+      );`,
       `CREATE TABLE IF NOT EXISTS prompt_scores (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT NOT NULL,
@@ -231,7 +231,7 @@ export default class PromptPerformanceTracker {
         workspace_fingerprint TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(session_id) REFERENCES prompt_sessions(session_id) ON DELETE CASCADE
-      )`,
+      );`,
       `CREATE TABLE IF NOT EXISTS best_prompt_snapshots (
         workspace_fingerprint TEXT NOT NULL,
         objective TEXT NOT NULL,
@@ -240,23 +240,51 @@ export default class PromptPerformanceTracker {
         snapshot_json TEXT NOT NULL,
         computed_at TEXT NOT NULL,
         PRIMARY KEY (workspace_fingerprint, objective)
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_workspace ON prompt_scores(workspace_fingerprint, objective)`,
-      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_session ON prompt_scores(session_id, created_at)`,
-      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_score ON prompt_scores(score DESC)`,
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_workspace ON prompt_scores(workspace_fingerprint, objective);`,
+      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_session ON prompt_scores(session_id, created_at);`,
+      `CREATE INDEX IF NOT EXISTS idx_prompt_scores_score ON prompt_scores(score DESC);`,
     ];
-    migrations.forEach((sql) => this.db.prepare(sql).run());
+    for (const sql of migrations) {
+      await this.db.exec(sql);
+    }
+  }
 
-    this.statements.insertSession = this.db.prepare(
+  async #persistSession({
+    sessionId,
+    objective,
+    workspacePath,
+    workspaceType,
+    workspaceFingerprint,
+    createdAt,
+  }) {
+    if (!this.db || !sessionId) {
+      return;
+    }
+    await this.db.run(
       `INSERT INTO prompt_sessions (session_id, objective, workspace_path, workspace_type, workspace_fingerprint, created_at)
        VALUES (@sessionId, @objective, @workspacePath, @workspaceType, @workspaceFingerprint, @createdAt)
        ON CONFLICT(session_id) DO UPDATE SET
          objective = COALESCE(excluded.objective, prompt_sessions.objective),
          workspace_path = COALESCE(excluded.workspace_path, prompt_sessions.workspace_path),
          workspace_type = COALESCE(excluded.workspace_type, prompt_sessions.workspace_type),
-         workspace_fingerprint = COALESCE(excluded.workspace_fingerprint, prompt_sessions.workspace_fingerprint)`,
+         workspace_fingerprint = COALESCE(excluded.workspace_fingerprint, prompt_sessions.workspace_fingerprint);`,
+      {
+        "@sessionId": sessionId,
+        "@objective": objective,
+        "@workspacePath": workspacePath,
+        "@workspaceType": workspaceType,
+        "@workspaceFingerprint": workspaceFingerprint,
+        "@createdAt": createdAt,
+      },
     );
-    this.statements.insertScore = this.db.prepare(
+  }
+
+  async #insertPromptScore(entry) {
+    if (!this.db) {
+      return;
+    }
+    await this.db.run(
       `INSERT INTO prompt_scores (
         session_id,
         scope,
@@ -291,105 +319,59 @@ export default class PromptPerformanceTracker {
         @workspaceType,
         @workspaceFingerprint,
         @createdAt
-      )`,
+      );`,
+      {
+        "@sessionId": entry.sessionId ?? null,
+        "@scope": entry.scope ?? "sub",
+        "@promptId": entry.promptId,
+        "@promptLabel": entry.promptLabel ?? null,
+        "@objective": entry.objective ?? null,
+        "@promptText": this.#sanitizeText(entry.promptText),
+        "@responseText": this.#sanitizeText(entry.responseText),
+        "@score": entry.score ?? null,
+        "@followUpNeeded": entry.followUpNeeded ? 1 : 0,
+        "@followUpReason": entry.followUpReason ?? null,
+        "@evaluationJson": entry.evaluationJson ?? null,
+        "@metadataJson": entry.metadataJson ?? null,
+        "@workspacePath": entry.workspacePath ?? null,
+        "@workspaceType": entry.workspaceType ?? null,
+        "@workspaceFingerprint": entry.workspaceFingerprint ?? null,
+        "@createdAt": entry.createdAt,
+      },
     );
-    this.statements.selectBest = this.db.prepare(
+  }
+
+  async #snapshotBestPrompt({ objective, workspaceFingerprint, workspaceType, workspacePath }) {
+    if (!this.db || !objective || !workspaceFingerprint) {
+      return;
+    }
+    const best = await this.db.get(
       `SELECT prompt_id, prompt_text, response_text, score, evaluation_json, created_at
        FROM prompt_scores
        WHERE workspace_fingerprint = ? AND objective = ?
        ORDER BY score DESC, created_at DESC
-       LIMIT 1`,
+       LIMIT 1;`,
+      [workspaceFingerprint, objective],
     );
-    this.statements.selectStats = this.db.prepare(
+    if (!best) {
+      return;
+    }
+    const stats = await this.db.get(
       `SELECT
         COUNT(*) AS total,
         COALESCE(AVG(score), 0) AS avgScore,
         SUM(CASE WHEN follow_up_needed = 1 THEN 1 ELSE 0 END) AS followUps
        FROM prompt_scores
-       WHERE workspace_fingerprint = ? AND objective = ?`,
+       WHERE workspace_fingerprint = ? AND objective = ?;`,
+      [workspaceFingerprint, objective],
     );
-    this.statements.selectRecentScores = this.db.prepare(
+    const recent = await this.db.all(
       `SELECT id, score, created_at
        FROM prompt_scores
        WHERE workspace_fingerprint = ? AND objective = ?
        ORDER BY created_at DESC
-       LIMIT ?`,
-    );
-    this.statements.upsertSnapshot = this.db.prepare(
-      `INSERT INTO best_prompt_snapshots (
-        workspace_fingerprint,
-        objective,
-        workspace_type,
-        workspace_path,
-        snapshot_json,
-        computed_at
-      ) VALUES (
-        @workspaceFingerprint,
-        @objective,
-        @workspaceType,
-        @workspacePath,
-        @snapshotJson,
-        @computedAt
-      )
-      ON CONFLICT(workspace_fingerprint, objective) DO UPDATE SET
-        workspace_type = excluded.workspace_type,
-        workspace_path = excluded.workspace_path,
-        snapshot_json = excluded.snapshot_json,
-        computed_at = excluded.computed_at`,
-    );
-  }
-
-  #persistSession({ sessionId, objective, workspacePath, workspaceType, workspaceFingerprint, createdAt }) {
-    if (!sessionId || !this.statements.insertSession) {
-      return;
-    }
-    this.statements.insertSession.run({
-      sessionId,
-      objective,
-      workspacePath,
-      workspaceType,
-      workspaceFingerprint,
-      createdAt,
-    });
-  }
-
-  #insertPromptScore(entry) {
-    if (!this.statements.insertScore) {
-      return;
-    }
-    this.statements.insertScore.run({
-      sessionId: entry.sessionId ?? null,
-      scope: entry.scope ?? "sub",
-      promptId: entry.promptId,
-      promptLabel: entry.promptLabel ?? null,
-      objective: entry.objective ?? null,
-      promptText: this.#sanitizeText(entry.promptText),
-      responseText: this.#sanitizeText(entry.responseText),
-      score: entry.score ?? null,
-      followUpNeeded: entry.followUpNeeded ? 1 : 0,
-      followUpReason: entry.followUpReason ?? null,
-      evaluationJson: entry.evaluationJson ?? null,
-      metadataJson: entry.metadataJson ?? null,
-      workspacePath: entry.workspacePath ?? null,
-      workspaceType: entry.workspaceType ?? null,
-      workspaceFingerprint: entry.workspaceFingerprint ?? null,
-      createdAt: entry.createdAt,
-    });
-  }
-
-  #snapshotBestPrompt({ objective, workspaceFingerprint, workspaceType, workspacePath }) {
-    if (!objective || !workspaceFingerprint || !this.statements.selectBest) {
-      return;
-    }
-    const best = this.statements.selectBest.get(workspaceFingerprint, objective);
-    if (!best) {
-      return;
-    }
-    const stats = this.statements.selectStats.get(workspaceFingerprint, objective);
-    const recent = this.statements.selectRecentScores.all(
-      workspaceFingerprint,
-      objective,
-      this.snapshotLimit,
+       LIMIT ?;`,
+      [workspaceFingerprint, objective, this.snapshotLimit],
     );
 
     let evaluation = null;
@@ -418,7 +400,7 @@ export default class PromptPerformanceTracker {
       rollingAverage: stats?.avgScore ?? 0,
       followUpRate:
         stats?.total > 0 ? Number(stats.followUps ?? 0) / Number(stats.total ?? 1) : 0,
-      recentScores: recent
+      recentScores: (recent ?? [])
         .map((row) => ({
           id: row.id,
           score: row.score,
@@ -427,14 +409,36 @@ export default class PromptPerformanceTracker {
         .reverse(),
     };
 
-    this.statements.upsertSnapshot.run({
-      workspaceFingerprint,
-      objective,
-      workspaceType,
-      workspacePath,
-      snapshotJson: JSON.stringify(snapshot),
-      computedAt: new Date().toISOString(),
-    });
+    await this.db.run(
+      `INSERT INTO best_prompt_snapshots (
+        workspace_fingerprint,
+        objective,
+        workspace_type,
+        workspace_path,
+        snapshot_json,
+        computed_at
+      ) VALUES (
+        @workspaceFingerprint,
+        @objective,
+        @workspaceType,
+        @workspacePath,
+        @snapshotJson,
+        @computedAt
+      )
+      ON CONFLICT(workspace_fingerprint, objective) DO UPDATE SET
+        workspace_type = excluded.workspace_type,
+        workspace_path = excluded.workspace_path,
+        snapshot_json = excluded.snapshot_json,
+        computed_at = excluded.computed_at;`,
+      {
+        "@workspaceFingerprint": workspaceFingerprint,
+        "@objective": objective,
+        "@workspaceType": workspaceType,
+        "@workspacePath": workspacePath,
+        "@snapshotJson": JSON.stringify(snapshot),
+        "@computedAt": new Date().toISOString(),
+      },
+    );
   }
 
   #extractPromptText(request) {

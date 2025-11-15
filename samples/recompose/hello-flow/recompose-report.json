@@ -7,7 +7,7 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 20,
+      "durationMs": 4,
       "discovered": 4,
       "converted": 4,
       "skipped": 0,
@@ -15,7 +15,7 @@
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 22,
+      "durationMs": 3,
       "processed": 4,
       "converted": 4,
       "skipped": 0,
@@ -24,12 +24,12 @@
     },
     {
       "phase": "comparison",
-      "durationMs": 6,
+      "durationMs": 1,
       "matches": 4,
       "mismatches": [],
       "missing": [],
       "extras": []
     }
   ],
-  "generatedAt": "2025-11-14T04:25:36.589Z"
+  "generatedAt": "2025-11-15T23:07:22.844Z"
 }

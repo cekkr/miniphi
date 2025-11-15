@@ -1,13 +1,3 @@
----
-source: src/index.js
-language: javascript
-generatedAt: 2025-11-15T23:07:22.838Z
-sha256: 1ecd11046e8a4061c44a3f8e2191ed9abaa8ba2eefaaaa3c474a15b357b6d488
----
-
-# File: src/index.js
-
-```javascript
 import { greet, farewell } from "./greeter.js";
 import { average, describeTrend } from "./math.js";
 
@@ -27,5 +17,3 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   console.log(summarize(sampleValues, "MiniPhi"));
   console.log(closingRemark("MiniPhi"));
 }
-
-```

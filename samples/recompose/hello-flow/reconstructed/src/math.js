@@ -1,13 +1,3 @@
----
-source: src/math.js
-language: javascript
-generatedAt: 2025-11-15T23:07:22.839Z
-sha256: f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab
----
-
-# File: src/math.js
-
-```javascript
 export function average(values) {
   if (!Array.isArray(values) || values.length === 0) {
     return 0;
@@ -27,5 +17,3 @@ export function describeTrend(values) {
   }
   return diff > 0 ? "upward" : "downward";
 }
-
-```
