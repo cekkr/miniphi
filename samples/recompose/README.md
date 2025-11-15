@@ -13,4 +13,4 @@ Quick start:
 node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
 ```
 
-This command wipes previous markdown/code outputs, converts each file under `code/` into markdown, rebuilds code from the markdown, compares the round-trip fidelity, and stores a step-by-step report alongside the sample.
+This command wipes previous markdown/code outputs, converts each file under `code/` into markdown natural language descriptions without code snippets, rebuilds code from the markdown, compares the round-trip fidelity, and stores a step-by-step report alongside the sample.
