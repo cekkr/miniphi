@@ -7,12 +7,19 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 36,
+      "durationMs": 2282592,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "outputDir": "samples/recompose/hello-flow/descriptions"
+      "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     }
   ],
-  "generatedAt": "2025-11-16T04:58:01.012Z"
+  "sessionDir": ".miniphi/recompose/2025-11-16T05-28-06-093Z-recompose",
+  "workspaceContext": {
+    "kind": "code",
+    "summary": "## Overview\nworkspace has no narrative available.",
+    "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
+  },
+  "sessionLabel": "recompose",
+  "generatedAt": "2025-11-16T06:06:08.693Z"
 }

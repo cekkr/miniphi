@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 add-or-create-submodule.sh
 .git.old/*
 .git.bak*
+miniphi-prompts.db
+miniphi-prompts.db-shm
+miniphi-prompts.db-wal

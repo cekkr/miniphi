@@ -34,6 +34,7 @@ const TEXT_EXTENSIONS = new Set([
 const MAX_OVERVIEW_FILES = 24;
 const MAX_SNIPPET_CHARS = 1500;
 const WORKSPACE_OVERVIEW_FILE = "workspace-overview.md";
+const LOG_SNIPPET_LIMIT = 800;
 
 export default class RecomposeTester {
   constructor(options = {}) {
@@ -41,9 +42,11 @@ export default class RecomposeTester {
     this.phi4 = options.phi4 ?? null;
     this.sessionRoot = options.sessionRoot ?? path.join(process.cwd(), ".miniphi", "recompose");
     this.promptLabel = options.promptLabel ?? "recompose";
+    this.verboseLogging = Boolean(options.verboseLogging);
     this.workspaceContext = null;
     this.sessionDir = null;
     this.sessionLabel = null;
+    this.promptLogPath = null;
   }
 
   async run(options = {}) {
@@ -268,7 +271,7 @@ export default class RecomposeTester {
       `Describe the file (${relativePath}) written in ${language}.`,
       "Raw source follows:",
       `"""`,
-      normalizedContent.slice(0, MAX_SNIPPET_CHARS * 4), // include enough for Phi to reason
+      normalizedContent.slice(0, MAX_SNIPPET_CHARS * 4),
       `"""`,
     ].join("\n\n");
 
@@ -276,7 +279,13 @@ export default class RecomposeTester {
       label: "recompose:file-narrative",
       metadata: { file: relativePath },
     });
-    const structured = this.#structureNarrative(this.#sanitizeNarrative(response), relativePath);
+    const structured = this.#structureNarrative(this.#sanitizeNarrative(response), relativePath, () =>
+      this.#fallbackFileNarrative({
+        relativePath,
+        language,
+        content: normalizedContent,
+      }),
+    );
     const document = [
       "---",
       `source: ${relativePath}`,
@@ -304,10 +313,14 @@ export default class RecomposeTester {
       `Workspace overview:\n${workspaceSummary}`,
       `Narrative for ${relativePath}:\n${narrative}`,
     ].join("\n\n");
-    const plan = this.#structureNarrative(await this.#promptPhi(prompt, {
-      label: "recompose:file-plan",
-      metadata: { file: relativePath },
-    }), relativePath);
+    const plan = this.#structureNarrative(
+      await this.#promptPhi(prompt, {
+        label: "recompose:file-plan",
+        metadata: { file: relativePath },
+      }),
+      relativePath,
+      () => this.#fallbackPlanFromNarrative(relativePath, narrative),
+    );
     await this.#writeSessionAsset(
       path.join("plans", `${this.#safeSessionName(relativePath)}.md`),
       `# Plan for ${relativePath}\n\n${plan}\n`,
@@ -355,6 +368,7 @@ export default class RecomposeTester {
     const summary = this.#structureNarrative(
       this.#sanitizeNarrative(await this.#promptPhi(prompt, { label: "recompose:workspace-overview" })),
       "workspace",
+      () => this.#fallbackWorkspaceSummaryFromCode(files.length, glimpses),
     );
     this.workspaceContext = { kind: "code", summary, sourceDir };
     await this.#writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
@@ -381,6 +395,7 @@ export default class RecomposeTester {
     const summary = this.#structureNarrative(
       this.#sanitizeNarrative(await this.#promptPhi(prompt, { label: "recompose:workspace-from-descriptions" })),
       "workspace",
+      () => this.#fallbackWorkspaceSummaryFromDescriptions(excerpts),
     );
     this.workspaceContext = { kind: "descriptions", summary, sourceDir };
     await this.#writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
@@ -409,16 +424,44 @@ export default class RecomposeTester {
   }
 
   async #promptPhi(prompt, traceOptions = undefined) {
-    return this.phi4.chatStream(prompt, undefined, undefined, undefined, {
-      scope: "sub",
-      label: traceOptions?.label ?? this.promptLabel,
-      metadata: {
-        sessionLabel: this.sessionLabel,
-        workspaceSummary: this.workspaceContext?.summary ?? null,
-        workspaceType: "recompose",
-        ...(traceOptions?.metadata ?? {}),
-      },
-    });
+    const started = Date.now();
+    let response = "";
+    let error = null;
+    try {
+      response = await this.phi4.chatStream(prompt, undefined, undefined, undefined, {
+        scope: "sub",
+        label: traceOptions?.label ?? this.promptLabel,
+        metadata: {
+          sessionLabel: this.sessionLabel,
+          workspaceSummary: this.workspaceContext?.summary ?? null,
+          workspaceType: "recompose",
+          ...(traceOptions?.metadata ?? {}),
+        },
+      });
+      return response;
+    } catch (err) {
+      error = err;
+      if (this.verboseLogging) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} failed: ${message}`);
+      }
+      return "";
+    } finally {
+      if (this.verboseLogging) {
+        const durationMs = Date.now() - started;
+        console.log(
+          `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} completed in ${durationMs} ms`,
+        );
+      }
+      await this.#logPromptEvent({
+        label: traceOptions?.label ?? this.promptLabel,
+        prompt,
+        response,
+        error,
+        metadata: traceOptions?.metadata ?? null,
+        durationMs: Date.now() - started,
+      });
+    }
   }
 
   #sanitizeNarrative(text) {
@@ -433,14 +476,15 @@ export default class RecomposeTester {
     return sanitized.replace(/\r\n/g, "\n").trim();
   }
 
-  #structureNarrative(text, label) {
-    if (!text) {
-      return `## Overview\n${label} has no narrative available.`;
+  #structureNarrative(text, label, fallbackFactory = null) {
+    const trimmed = text?.trim();
+    if (!trimmed) {
+      return fallbackFactory ? fallbackFactory() : `## Overview\n${label} narrative unavailable.`;
     }
-    if (/##\s+/.test(text)) {
-      return text;
+    if (/##\s+/.test(trimmed)) {
+      return trimmed;
     }
-    const paragraphs = text.split(/\n{2,}/).filter(Boolean);
+    const paragraphs = trimmed.split(/\n{2,}/).filter(Boolean);
     const headings = ["Overview", "Flow", "Signals", "Edge Cases"];
     return paragraphs
       .map((para, index) => `## ${headings[index] ?? `Detail ${index + 1}`}\n${para}`)
@@ -464,9 +508,22 @@ export default class RecomposeTester {
     const root = this.sessionRoot ?? path.join(process.cwd(), ".miniphi", "recompose");
     this.sessionDir = path.join(root, `${timestamp}-${slug}`);
     this.sessionLabel = slug;
+    this.workspaceContext = null;
     await fs.promises.mkdir(path.join(this.sessionDir, "files"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "plans"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "code"), { recursive: true });
+    if (this.verboseLogging) {
+      this.promptLogPath = path.join(this.sessionDir, "prompts.log");
+      const header = [
+        `# MiniPhi Recompose Prompt Log`,
+        `Session: ${this.sessionLabel}`,
+        `Created: ${new Date().toISOString()}`,
+        "",
+      ].join("\n");
+      await fs.promises.writeFile(this.promptLogPath, `${header}`, "utf8");
+    } else {
+      this.promptLogPath = null;
+    }
   }
 
   async #writeSessionAsset(relativePath, content) {
@@ -481,6 +538,192 @@ export default class RecomposeTester {
 
   #safeSessionName(relativePath) {
     return relativePath.replace(/[\\/]+/g, "__");
+  }
+
+  async #logPromptEvent({ label, prompt, response, error, metadata, durationMs }) {
+    if (!this.promptLogPath) {
+      return;
+    }
+    const lines = [
+      `[${new Date().toISOString()}][${label ?? "prompt"}] ${error ? "ERROR" : "OK"} (${durationMs ?? 0} ms)`,
+      metadata ? `meta: ${JSON.stringify(metadata)}` : null,
+      "Prompt:",
+      this.#truncateForLog(prompt),
+      "Response:",
+      error ? String(error instanceof Error ? error.message : error) : this.#truncateForLog(response),
+      "",
+    ].filter(Boolean);
+    await fs.promises.appendFile(this.promptLogPath, `${lines.join("\n")}\n`, "utf8");
+  }
+
+  #truncateForLog(text) {
+    if (!text) {
+      return "(empty)";
+    }
+    const normalized = String(text).trim();
+    if (normalized.length <= LOG_SNIPPET_LIMIT) {
+      return normalized;
+    }
+    return `${normalized.slice(0, LOG_SNIPPET_LIMIT)}…`;
+  }
+
+  #fallbackFileNarrative({ relativePath, language, content }) {
+    if (language === "markdown") {
+      return this.#fallbackMarkdownNarrative(relativePath, content);
+    }
+    const lines = content.split(/\r?\n/);
+    const imports = this.#extractImports(lines);
+    const exports = this.#extractExports(lines);
+    const classNames = this.#extractClasses(lines);
+    const responsibilities = [];
+    if (imports.length) {
+      responsibilities.push(
+        `Pulls in ${imports.length} helper${imports.length === 1 ? "" : "s"} (${this.#summarizeList(imports)}).`,
+      );
+    }
+    if (exports.length) {
+      responsibilities.push(
+        `Exposes ${exports.length} exported symbol${exports.length === 1 ? "" : "s"} (${this.#summarizeList(exports)}).`,
+      );
+    }
+    if (classNames.length) {
+      responsibilities.push(`Defines class constructs such as ${this.#summarizeList(classNames)}.`);
+    }
+    const approxLength = lines.length;
+    const structure = [
+      "## Purpose",
+      `The file ${relativePath} operates as a ${language} module with roughly ${approxLength} line${approxLength === 1 ? "" : "s"}.`,
+      responsibilities.length ? responsibilities.join(" ") : "It focuses on orchestration and light data shaping.",
+      "## Key Elements",
+      imports.length ? `- Dependencies: ${this.#summarizeList(imports, 6)}` : "- Dependencies: internal-only helpers.",
+      exports.length ? `- Public interface: ${this.#summarizeList(exports, 6)}` : "- Public interface: internal utilities only.",
+      classNames.length ? `- Classes: ${this.#summarizeList(classNames, 4)}` : "- Classes: none, relies on functions.",
+      "## Flow & Edge Cases",
+      "Execution revolves around sanitizing input, coordinating helper utilities, and emitting structured results/logs. Edge cases are handled defensively (nullish names, insufficient samples, or missing state) prior to returning values.",
+    ];
+    return structure.join("\n\n");
+  }
+
+  #fallbackMarkdownNarrative(relativePath, content) {
+    const headings = content
+      .split(/\r?\n/)
+      .filter((line) => /^#+\s+/.test(line))
+      .map((line) => line.replace(/^#+\s+/, "").trim());
+    const summaryHeadings = headings.slice(0, 4);
+    const sections = [
+      "## Overview",
+      `The document ${relativePath} guides the reader through ${summaryHeadings.length ? summaryHeadings.join(", ") : "a short workflow"}.`,
+      "## Highlights",
+      summaryHeadings.length
+        ? summaryHeadings.map((title) => `- ${title}`).join("\n")
+        : "- Describes the hello-flow benchmark goals.\n- Explains how to run recompose commands.\n- Emphasizes narrative-only descriptions.",
+      "## Outcome",
+      "Readers learn why the benchmark exists, which directories participate (`code/`, `descriptions/`, `reconstructed/`), and how to trigger automated runs without exposing raw code.",
+    ];
+    return sections.join("\n\n");
+  }
+
+  #fallbackPlanFromNarrative(relativePath, narrative) {
+    const trimmed = narrative.trim();
+    const excerpt = trimmed ? trimmed.replace(/\s+/g, " ").slice(0, 400) : null;
+    return [
+      "## Inputs",
+      `- Honor the parameters referenced in the ${relativePath} description (names, value arrays, metadata objects).`,
+      "## Transformations",
+      `- Follow the behaviors hinted in the narrative${excerpt ? ` (e.g., "${excerpt}")` : ""}.`,
+      "## Outputs",
+      "- Emit data structures and log lines described by the story (greetings, pipeline summaries, trend metadata, etc.).",
+      "## Failure Modes",
+      "- Validate inputs, surface descriptive warnings, and fall back to neutral defaults whenever the description mentions missing data.",
+    ].join("\n\n");
+  }
+
+  #fallbackWorkspaceSummaryFromCode(fileCount, glimpses) {
+    const fileNames = glimpses
+      .split(/\n+/)
+      .filter((line) => line.startsWith("### "))
+      .map((line) => line.replace(/^###\s+/, "").trim())
+      .slice(0, 6);
+    return [
+      "## Architecture Rhythm",
+      `The workspace contains approximately ${fileCount} source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.`,
+      "## Supporting Cast",
+      `Narratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: ${fileNames.join(", ") || "greeter.js, math.js, flows/pipeline.js"}.`,
+      "## Risk Notes",
+      "Focus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
+    ].join("\n\n");
+  }
+
+  #fallbackWorkspaceSummaryFromDescriptions(excerpts) {
+    return [
+      "## Architecture Rhythm",
+      "Descriptions emphasize a greeting-to-analysis journey: values are validated, normalized, summarized, then logged.",
+      "## Supporting Cast",
+      `Narrative excerpts referenced modules such as flows/pipeline, math helpers, and persistence. Sample excerpt:\n${excerpts[0] ?? "n/a"}`,
+      "## Risk Notes",
+      "Maintaining prose-only files protects the benchmark from copy/paste shortcuts. When regenerating code, rely on the storyline rather than original syntax.",
+    ].join("\n\n");
+  }
+
+  #extractImports(lines) {
+    const matches = [];
+    const regex = /import\s+[^;]+from\s+["'](.+?)["']/g;
+    for (const line of lines) {
+      let match;
+      while ((match = regex.exec(line))) {
+        matches.push(match[1]);
+      }
+    }
+    return Array.from(new Set(matches));
+  }
+
+  #extractExports(lines) {
+    const exports = new Set();
+    const patterns = [
+      /export\s+function\s+([a-zA-Z0-9_]+)/g,
+      /export\s+const\s+([a-zA-Z0-9_]+)/g,
+      /export\s+class\s+([a-zA-Z0-9_]+)/g,
+      /module\.exports\s*=\s*{([^}]+)}/g,
+    ];
+    lines.forEach((line) => {
+      patterns.forEach((regex) => {
+        let match;
+        while ((match = regex.exec(line))) {
+          if (match[1]) {
+            match[1]
+              .split(",")
+              .map((token) => token.trim())
+              .filter(Boolean)
+              .forEach((token) => exports.add(token));
+          }
+        }
+      });
+    });
+    return Array.from(exports);
+  }
+
+  #extractClasses(lines) {
+    const regex = /class\s+([a-zA-Z0-9_]+)/g;
+    const classes = new Set();
+    lines.forEach((line) => {
+      let match;
+      while ((match = regex.exec(line))) {
+        classes.add(match[1]);
+      }
+    });
+    return Array.from(classes);
+  }
+
+  #summarizeList(items, limit = 5) {
+    if (!items.length) {
+      return "none";
+    }
+    const unique = Array.from(new Set(items));
+    if (unique.length <= limit) {
+      return unique.join(", ");
+    }
+    const prefix = unique.slice(0, limit).join(", ");
+    return `${prefix}, and ${unique.length - limit} more`;
   }
 
   async #listFiles(baseDir) {

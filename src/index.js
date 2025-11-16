@@ -767,6 +767,7 @@ async function createRecomposeHarness({
     phi4,
     sessionRoot,
     promptLabel: sessionLabel ?? "recompose",
+    verboseLogging: verbose,
   });
   const cleanup = async () => {
     await phi4.eject();

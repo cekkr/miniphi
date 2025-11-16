@@ -1,5 +1,0 @@
-# Generated Markdown Storage
-
-This folder is intentionally checked in with a few example markdown files (see `src/*.md`) so you can run `markdown-to-code` immediately. When you invoke `node src/index.js recompose --direction code-to-markdown --clean`, the directory is wiped and regenerated from the files under `code/`.
-
-Regenerate the markdown files whenever you update the source code, then review the `recompose-report.json` output to verify each stage.

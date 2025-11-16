@@ -28,6 +28,7 @@ node --check src/index.js
 node src/index.js recompose --sample samples/recompose/hello-flow --direction code-to-markdown --clean
 node src/index.js benchmark recompose --plan samples/recompose/hello-flow/benchmark-plan.yaml
 node src/index.js benchmark analyze samples/benchmark/recompose/hello-flow-plan
+
 Natural next step: tackle the new TODOs (plan scaffolder + analyze diffs) when you’re ready; the groundwork is now in place.
 
  not run (Phi-4/LM Studio needs to be running locally to exercise the new flow).
