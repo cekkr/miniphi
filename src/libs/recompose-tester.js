@@ -122,6 +122,7 @@ export default class RecomposeTester {
       outputDir: this.#relativeToCwd(outputDir),
       steps,
       sessionDir: this.#relativeToCwd(this.sessionDir),
+      promptLog: this.#relativeToCwd(this.promptLogPath),
       workspaceContext: this.workspaceContext,
       sessionLabel: this.sessionLabel,
       generatedAt: new Date().toISOString(),
@@ -512,18 +513,14 @@ export default class RecomposeTester {
     await fs.promises.mkdir(path.join(this.sessionDir, "files"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "plans"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "code"), { recursive: true });
-    if (this.verboseLogging) {
-      this.promptLogPath = path.join(this.sessionDir, "prompts.log");
-      const header = [
-        `# MiniPhi Recompose Prompt Log`,
-        `Session: ${this.sessionLabel}`,
-        `Created: ${new Date().toISOString()}`,
-        "",
-      ].join("\n");
-      await fs.promises.writeFile(this.promptLogPath, `${header}`, "utf8");
-    } else {
-      this.promptLogPath = null;
-    }
+    this.promptLogPath = path.join(this.sessionDir, "prompts.log");
+    const header = [
+      `# MiniPhi Recompose Prompt Log`,
+      `Session: ${this.sessionLabel}`,
+      `Created: ${new Date().toISOString()}`,
+      "",
+    ].join("\n");
+    await fs.promises.writeFile(this.promptLogPath, `${header}`, "utf8");
   }
 
   async #writeSessionAsset(relativePath, content) {

@@ -23,48 +23,25 @@ export default class Phi4StreamParser extends Transform {
     const token = chunk?.content ?? "";
 
     if (this.state === "SOLUTION") {
-      this.push({ content: token });
+      if (token) {
+        this.push({ content: token });
+      }
       return callback();
     }
 
-    this.buffer += token;
-
     if (this.state === "INITIAL") {
-      const startIdx = this.buffer.indexOf(THINK_START);
-      if (startIdx !== -1) {
-        const leading = this.buffer.slice(0, startIdx);
-        if (leading.length > 0) {
-          this.push({ content: leading });
-        }
-        this.state = "THINKING";
-        this.thoughtBuffer = this.buffer.slice(startIdx);
-        this.buffer = "";
-      } else if (this.buffer.length > THINK_START.length) {
-        // Flush safe portion to avoid unbounded buffer if no think block appears.
-        const flushCount = this.buffer.length - THINK_START.length;
-        const safePortion = this.buffer.slice(0, flushCount);
-        if (safePortion.length > 0) {
-          this.push({ content: safePortion });
-        }
-        this.buffer = this.buffer.slice(flushCount);
+      if (token) {
+        this.buffer += token;
+        this.#drainInitialBuffer();
       }
+      return callback();
     }
 
-    if (this.state === "THINKING") {
-      const endIdx = this.thoughtBuffer.indexOf(THINK_END);
-      if (endIdx !== -1) {
-        this.state = "SOLUTION";
-        const closingIdx = endIdx + THINK_END.length;
-        const fullThought = this.thoughtBuffer.slice(0, closingIdx);
-        this.#emitThought(fullThought);
-        const remainder = this.thoughtBuffer.slice(closingIdx);
-        if (remainder.length > 0) {
-          this.push({ content: remainder });
-        }
-        this.thoughtBuffer = "";
-      }
+    // THINKING state: accumulate into the thought buffer until we see </think>.
+    if (token) {
+      this.thoughtBuffer += token;
+      this.#drainThoughtBuffer();
     }
-
     callback();
   }
 
@@ -90,6 +67,46 @@ export default class Phi4StreamParser extends Transform {
         err instanceof Error ? err.message : String(err),
         "Phi4StreamParser"
       );
+    }
+  }
+
+  #drainInitialBuffer() {
+    const startIdx = this.buffer.indexOf(THINK_START);
+    if (startIdx === -1) {
+      if (this.buffer.length > THINK_START.length) {
+        const flushCount = this.buffer.length - THINK_START.length;
+        const safePortion = this.buffer.slice(0, flushCount);
+        if (safePortion.length > 0) {
+          this.push({ content: safePortion });
+        }
+        this.buffer = this.buffer.slice(flushCount);
+      }
+      return;
+    }
+
+    const leading = this.buffer.slice(0, startIdx);
+    if (leading.length > 0) {
+      this.push({ content: leading });
+    }
+    this.state = "THINKING";
+    this.thoughtBuffer = this.buffer.slice(startIdx);
+    this.buffer = "";
+    this.#drainThoughtBuffer();
+  }
+
+  #drainThoughtBuffer() {
+    const endIdx = this.thoughtBuffer.indexOf(THINK_END);
+    if (endIdx === -1) {
+      return;
+    }
+    const closingIdx = endIdx + THINK_END.length;
+    const fullThought = this.thoughtBuffer.slice(0, closingIdx);
+    this.#emitThought(fullThought);
+    const remainder = this.thoughtBuffer.slice(closingIdx);
+    this.thoughtBuffer = "";
+    this.state = "SOLUTION";
+    if (remainder.length > 0) {
+      this.push({ content: remainder });
     }
   }
 }

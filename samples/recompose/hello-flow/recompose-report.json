@@ -7,19 +7,19 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 2282592,
+      "durationMs": 2146645,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-16T05-28-06-093Z-recompose",
+  "sessionDir": ".miniphi/recompose/2025-11-16T06-20-32-320Z-recompose",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Overview\nworkspace has no narrative available.",
+    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/pipeline.js, src/flows/steps/normalize.js, src/flows/steps/validate.js, src/greeter.js, src/index.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
     "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-11-16T06:06:08.693Z"
+  "generatedAt": "2025-11-16T06:56:18.973Z"
 }
