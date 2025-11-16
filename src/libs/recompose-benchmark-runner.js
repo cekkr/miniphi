@@ -61,6 +61,10 @@ export default class RecomposeBenchmarkRunner {
         clean: descriptor.clean,
         sessionLabel: runLabel,
       });
+      const promptLogCopyPath = await this.#copyPromptLog(report.promptLog, outputDir, runLabel);
+      if (promptLogCopyPath) {
+        report.promptLogExport = this.#relativePath(promptLogCopyPath);
+      }
       await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
       const logLines = this.#buildLogLines({
         runLabel,
@@ -68,6 +72,7 @@ export default class RecomposeBenchmarkRunner {
         report,
         reportPath,
         logPath,
+        promptLogPath: promptLogCopyPath,
       });
       await fs.promises.writeFile(logPath, `${logLines.join("\n")}\n`, "utf8");
       logLines.forEach((line) => console.log(line));
@@ -76,6 +81,7 @@ export default class RecomposeBenchmarkRunner {
         runLabel,
         reportPath,
         logPath,
+        promptLogPath: promptLogCopyPath,
         report,
       });
     }
@@ -87,7 +93,7 @@ export default class RecomposeBenchmarkRunner {
     };
   }
 
-  #buildLogLines({ runLabel, direction, report, reportPath, logPath }) {
+  #buildLogLines({ runLabel, direction, report, reportPath, logPath, promptLogPath }) {
     const lines = [`[MiniPhi][Benchmark] ${runLabel} direction=${direction}`];
     for (const step of report.steps ?? []) {
       lines.push(this.#formatStep(step));
@@ -107,6 +113,9 @@ export default class RecomposeBenchmarkRunner {
     const relLog = this.#relativePath(logPath);
     lines.push(`[MiniPhi][Benchmark] Report saved to ${relReport}`);
     lines.push(`[MiniPhi][Benchmark] Log saved to ${relLog}`);
+    if (promptLogPath) {
+      lines.push(`[MiniPhi][Benchmark] Prompt log saved to ${this.#relativePath(promptLogPath)}`);
+    }
     return lines;
   }
 
@@ -132,6 +141,22 @@ export default class RecomposeBenchmarkRunner {
     }
     const relative = path.relative(process.cwd(), targetPath);
     return relative || targetPath;
+  }
+
+  async #copyPromptLog(promptLog, outputDir, runLabel) {
+    if (!promptLog) {
+      return null;
+    }
+    const sourcePath = path.isAbsolute(promptLog) ? promptLog : path.resolve(process.cwd(), promptLog);
+    try {
+      await fs.promises.access(sourcePath, fs.constants.F_OK);
+    } catch {
+      return null;
+    }
+    const safeLabel = this.#sanitizeLabel(runLabel) || "RUN";
+    const targetPath = path.join(outputDir, `${safeLabel}.prompts.log`);
+    await fs.promises.copyFile(sourcePath, targetPath);
+    return targetPath;
   }
 
   #buildDirectionalQueue(directions, repeat, { clean, runPrefix }) {
