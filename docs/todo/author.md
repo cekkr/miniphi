@@ -15,3 +15,17 @@ Tackle the remaining NEXT_STEPS items (larger recompose sample + plan-file suppo
 Commit the regenerated description files and the timestamped benchmark folders alongside the new helper/analyzer so future prompts inherit the context automatically.
 
 Execute NEXT_STEPS
+
+## Update 1
+
+Expanded the hello-flow benchmark so it now exercises a real mini data pipeline: src/index.js wires the new InsightPipeline into the summarizer, flows/pipeline.js orchestrates validation + normalization, and supporting pieces live under flows/steps and shared (samples/recompose/hello-flow/code/src/index.js:1, samples/recompose/hello-flow/code/src/flows/pipeline.js:1, samples/recompose/hello-flow/code/src/shared/logger.js:1). The sample README and generated fixtures were refreshed to match the richer layout, so the markdown + reconstructed trees carry the new files as well (samples/recompose/hello-flow/code/README.md:3, samples/recompose/hello-flow/descriptions/src/flows/pipeline.js.md:1, samples/recompose/hello-flow/reconstructed/src/flows/pipeline.js:1).
+benchmark recompose now understands JSON/YAML plans: the CLI loads and validates plan files (src/index.js:605, src/index.js:717), the runner normalizes per-run descriptors/labels/clean flags (src/libs/recompose-benchmark-runner.js:33, src/libs/recompose-benchmark-runner.js:136), and the new yaml dependency plus a checked-in benchmark-plan.yaml make it easy to share canned sweeps (package.json:40, samples/recompose/hello-flow/benchmark-plan.yaml:1).
+benchmark analyze produces SUMMARY.{json,md,html} so reports drop straight into docs/PRs, and the docs explain the new behavior and plan-driven workflow (src/libs/benchmark-analyzer.js:124, README.md:24, samples/recompose/README.md:24). The helper renders per-direction tables, warning/mismatch lists, and logs the extra artifact locations.
+Documentation/state-of-the-world files call out the finished work and tee up the follow-ons: AI_REFERENCE now records the layered sample + plan/rollup capabilities, and NEXT_STEPS tracks the next automation ideas (AI_REFERENCE.md:18, docs/todo/NEXT_STEPS.md:3).
+Tests
+
+node --check src/index.js
+node src/index.js recompose --sample samples/recompose/hello-flow --direction code-to-markdown --clean
+node src/index.js benchmark recompose --plan samples/recompose/hello-flow/benchmark-plan.yaml
+node src/index.js benchmark analyze samples/benchmark/recompose/hello-flow-plan
+Natural next step: tackle the new TODOs (plan scaffolder + analyze diffs) when you’re ready; the groundwork is now in place.
