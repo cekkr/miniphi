@@ -7,12 +7,20 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 26,
+      "durationMs": 1392015,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "outputDir": "samples/recompose/hello-flow/descriptions"
+      "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     }
   ],
-  "generatedAt": "2025-11-16T05:01:44.919Z"
+  "sessionDir": ".miniphi/recompose/2025-11-16T08-59-38-935Z-markdown-focus-2",
+  "promptLog": ".miniphi/recompose/2025-11-16T08-59-38-935Z-markdown-focus-2/prompts.log",
+  "workspaceContext": {
+    "kind": "code",
+    "summary": "## Overview\nIt looks like you want me to analyze a workspace that might either be a code repository or a documentation set (like a book made of Markdown files). However, I don’t see any specific details—such as file names, directory structures, or key code modules—in your message. Could you please clarify which parts of the workspace should be examined? For example:\n\n## Flow\n• If it’s a book- or documentation-style Markdown collection, let me know which chapters or sections you’re most interested in reviewing so I can provide a cohesive overview and suggest edits or new content.\n\n## Signals\n• If it’s a code-heavy repository, could you specify which directories or modules to focus on? That way I can offer detailed engineering insights and actionable recommendations for improvement.\n\n## Edge Cases\nProviding this extra context will help me tailor my analysis and suggestions exactly to your needs. Please let me know how you’d like to proceed!",
+    "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
+  },
+  "sessionLabel": "markdown-focus-2",
+  "generatedAt": "2025-11-16T09:22:50.953Z"
 }

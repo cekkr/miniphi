@@ -7,29 +7,85 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 40,
+      "durationMs": 842081,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "outputDir": "samples/recompose/hello-flow/descriptions"
+      "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 23,
+      "durationMs": 2794827,
       "processed": 9,
-      "converted": 9,
-      "skipped": 0,
+      "converted": 6,
+      "skipped": 3,
       "outputDir": "samples/recompose/hello-flow/reconstructed",
-      "warnings": []
+      "warnings": [
+        {
+          "path": "src/flows/pipeline.js.md",
+          "reason": "Phi-4 response did not include a code block."
+        },
+        {
+          "path": "src/flows/steps/normalize.js.md",
+          "reason": "Phi-4 response did not include a code block."
+        },
+        {
+          "path": "src/index.js.md",
+          "reason": "Phi-4 response did not include a code block."
+        }
+      ]
     },
     {
       "phase": "comparison",
-      "durationMs": 7,
-      "matches": 9,
-      "mismatches": [],
-      "missing": [],
+      "durationMs": 6,
+      "matches": 0,
+      "mismatches": [
+        {
+          "path": "README.md",
+          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
+          "candidateHash": "816508a923c15bd0c99553503df2335eefff00af1051c03c86bf08bb4c9b1c87"
+        },
+        {
+          "path": "src/flows/steps/validate.js",
+          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
+          "candidateHash": "40fb7cc10082b84a888919273b6f1c77c684e96ce72d53d37579ce2394b20b05"
+        },
+        {
+          "path": "src/greeter.js",
+          "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
+          "candidateHash": "878ebe5512578d5c94fadccb3b3510d4155f281a9cee0a4359d107187ad7d66b"
+        },
+        {
+          "path": "src/math.js",
+          "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
+          "candidateHash": "1b4f2c42001f3f52a6bfbba5dcdc93aa20a4210db632d161d12a1b73f388e412"
+        },
+        {
+          "path": "src/shared/logger.js",
+          "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
+          "candidateHash": "c3d0a2814a5dcfd205dbf5556847b46541cdbc4f864412f45d2a5dd416a4c458"
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js",
+          "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
+          "candidateHash": "0f5b6b3045e155d9ff0e1760484b8261e00fe203a8472fc8bf467d232504c639"
+        }
+      ],
+      "missing": [
+        "src/flows/pipeline.js",
+        "src/flows/steps/normalize.js",
+        "src/index.js"
+      ],
       "extras": []
     }
   ],
-  "generatedAt": "2025-11-16T05:01:44.854Z"
+  "sessionDir": ".miniphi/recompose/2025-11-16T07-39-00-245Z-clean-roundtrip",
+  "promptLog": ".miniphi/recompose/2025-11-16T07-39-00-245Z-clean-roundtrip/prompts.log",
+  "workspaceContext": {
+    "kind": "code",
+    "summary": "## Overview\nIt looks like no specific workspace context (such as a codebase, documentation hub, or book-style markdown collection) has been provided yet. Could you please clarify which directory, project files, or documents you’d like me to inspect? Once I have that information, I can offer a detailed analysis, propose edits, or help with any new sections/chapters as needed.",
+    "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
+  },
+  "sessionLabel": "clean-roundtrip",
+  "generatedAt": "2025-11-16T08:39:37.175Z"
 }

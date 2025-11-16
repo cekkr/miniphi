@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Benchmark Summary</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 24px; }
+table { border-collapse: collapse; margin-top: 8px; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+section { margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<h1>Benchmark Summary</h1>
+<p><strong>Directory:</strong> C:\Sources\GitHub\miniphi\samples\benchmark\recompose\hello-flow-plan</p>
+<p><strong>Analyzed:</strong> 2025-11-16T09:23:30.178Z</p>
+<p><strong>Total Runs:</strong> 3</p>
+<p><strong>Sample Directories:</strong> samples/recompose/hello-flow</p>
+<section><h2>roundtrip</h2><p>Runs: 1, warnings 3 (1 runs), mismatches 9 (1 runs)</p><table><thead><tr><th>Phase</th><th>Avg (ms)</th><th>Min (ms)</th><th>Max (ms)</th><th>Samples</th></tr></thead><tbody><tr><td>code-to-markdown</td><td>842081.00</td><td>842081.00</td><td>842081.00</td><td>1</td></tr><tr><td>markdown-to-code</td><td>2794827.00</td><td>2794827.00</td><td>2794827.00</td><td>1</td></tr><tr><td>comparison</td><td>6.00</td><td>6.00</td><td>6.00</td><td>1</td></tr></tbody></table></section>
+<section><h2>code-to-markdown</h2><p>Runs: 2, warnings 0 (0 runs), mismatches 0 (0 runs)</p><table><thead><tr><th>Phase</th><th>Avg (ms)</th><th>Min (ms)</th><th>Max (ms)</th><th>Samples</th></tr></thead><tbody><tr><td>code-to-markdown</td><td>1296880.00</td><td>1201745.00</td><td>1392015.00</td><td>2</td></tr></tbody></table></section>
+<section><h2>Warning Runs</h2><ul><li><strong>C:\Sources\GitHub\miniphi\samples\benchmark\recompose\hello-flow-plan\clean-roundtrip.json</strong>: 3 warnings (sample: [{&quot;path&quot;:&quot;src/flows/pipeline.js.md&quot;,&quot;reason&quot;:&quot;Phi-4 response did not include a code block.&quot;},{&quot;path&quot;:&quot;src/flows/steps/normalize.js.md&quot;,&quot;reason&quot;:&quot;Phi-4 response did not include a code block.&quot;},{&quot;path&quot;:&quot;src/index.js.md&quot;,&quot;reason&quot;:&quot;Phi-4 response did not include a code block.&quot;}])</li></ul></section>
+<section><h2>Mismatch Runs</h2><ul><li><strong>C:\Sources\GitHub\miniphi\samples\benchmark\recompose\hello-flow-plan\clean-roundtrip.json</strong>: mismatches 6, missing 3, extras 0</li></ul></section>
+</body>
+</html>
