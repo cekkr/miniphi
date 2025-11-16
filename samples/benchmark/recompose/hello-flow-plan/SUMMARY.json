@@ -1,24 +1,32 @@
 {
-  "analyzedAt": "2025-11-16T09:23:30.178Z",
+  "analyzedAt": "2025-11-16T13:28:41.276Z",
   "directory": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan",
-  "totalRuns": 3,
+  "totalRuns": 4,
   "sampleDirs": [
     "samples/recompose/hello-flow"
   ],
   "directions": {
+    "unknown": {
+      "runs": 1,
+      "phases": {},
+      "warningRuns": 0,
+      "totalWarnings": 0,
+      "mismatchRuns": 0,
+      "totalMismatches": 0
+    },
     "roundtrip": {
       "runs": 1,
       "phases": {
         "code-to-markdown": {
-          "averageMs": 842081,
-          "minMs": 842081,
-          "maxMs": 842081,
+          "averageMs": 1027956,
+          "minMs": 1027956,
+          "maxMs": 1027956,
           "runs": 1
         },
         "markdown-to-code": {
-          "averageMs": 2794827,
-          "minMs": 2794827,
-          "maxMs": 2794827,
+          "averageMs": 3096608,
+          "minMs": 3096608,
+          "maxMs": 3096608,
           "runs": 1
         },
         "comparison": {
@@ -29,7 +37,7 @@
         }
       },
       "warningRuns": 1,
-      "totalWarnings": 3,
+      "totalWarnings": 4,
       "mismatchRuns": 1,
       "totalMismatches": 9
     },
@@ -37,9 +45,9 @@
       "runs": 2,
       "phases": {
         "code-to-markdown": {
-          "averageMs": 1296880,
-          "minMs": 1201745,
-          "maxMs": 1392015,
+          "averageMs": 1183051,
+          "minMs": 1014322,
+          "maxMs": 1351780,
           "runs": 2
         }
       },
@@ -52,18 +60,18 @@
   "warningRuns": [
     {
       "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\clean-roundtrip.json",
-      "count": 3,
+      "count": 4,
       "sampleWarnings": [
+        {
+          "path": "README.md.md",
+          "reason": "Phi-4 response did not include a code block."
+        },
         {
           "path": "src/flows/pipeline.js.md",
           "reason": "Phi-4 response did not include a code block."
         },
         {
-          "path": "src/flows/steps/normalize.js.md",
-          "reason": "Phi-4 response did not include a code block."
-        },
-        {
-          "path": "src/index.js.md",
+          "path": "src/flows/steps/validate.js.md",
           "reason": "Phi-4 response did not include a code block."
         }
       ]
@@ -74,39 +82,35 @@
       "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\clean-roundtrip.json",
       "mismatches": [
         {
-          "path": "README.md",
-          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
-          "candidateHash": "816508a923c15bd0c99553503df2335eefff00af1051c03c86bf08bb4c9b1c87"
-        },
-        {
-          "path": "src/flows/steps/validate.js",
-          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
-          "candidateHash": "40fb7cc10082b84a888919273b6f1c77c684e96ce72d53d37579ce2394b20b05"
+          "path": "src/flows/steps/normalize.js",
+          "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
+          "candidateHash": "14f8786d87791c9c61436ff40e5805a521823363be89c67841d726d7411bfcb6"
         },
         {
           "path": "src/greeter.js",
           "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
-          "candidateHash": "878ebe5512578d5c94fadccb3b3510d4155f281a9cee0a4359d107187ad7d66b"
+          "candidateHash": "54b70e426c29f367a295da524d7078c298d80435a9a0837aa8e52ca584d4f759"
         },
         {
           "path": "src/math.js",
           "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
-          "candidateHash": "1b4f2c42001f3f52a6bfbba5dcdc93aa20a4210db632d161d12a1b73f388e412"
+          "candidateHash": "e7f53a3ad18dda98172c0e602c3f24b7ec082f14a2c6e61f385c47f7ead2731f"
         },
         {
           "path": "src/shared/logger.js",
           "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
-          "candidateHash": "c3d0a2814a5dcfd205dbf5556847b46541cdbc4f864412f45d2a5dd416a4c458"
+          "candidateHash": "72a3a14b2d2d1ce36dc124f8c9abc9e7264371c30842e0a885a602c2870d678d"
         },
         {
           "path": "src/shared/persistence/memory-store.js",
           "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
-          "candidateHash": "0f5b6b3045e155d9ff0e1760484b8261e00fe203a8472fc8bf467d232504c639"
+          "candidateHash": "e012ef3b0ac75bcedffc08ab8a7e2dc6d56120463f10af628c26fd172afff763"
         }
       ],
       "missing": [
+        "README.md",
         "src/flows/pipeline.js",
-        "src/flows/steps/normalize.js",
+        "src/flows/steps/validate.js",
         "src/index.js"
       ],
       "extras": []
@@ -114,19 +118,23 @@
   ],
   "runs": [
     {
+      "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\SUMMARY.json",
+      "generatedAt": null
+    },
+    {
       "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\clean-roundtrip.json",
       "direction": "roundtrip",
-      "generatedAt": "2025-11-16T08:39:37.175Z"
+      "generatedAt": "2025-11-16T12:16:39.375Z"
     },
     {
       "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\markdown-focus-1.json",
       "direction": "code-to-markdown",
-      "generatedAt": "2025-11-16T08:59:38.931Z"
+      "generatedAt": "2025-11-16T12:39:11.170Z"
     },
     {
       "file": "C:\\Sources\\GitHub\\miniphi\\samples\\benchmark\\recompose\\hello-flow-plan\\markdown-focus-2.json",
       "direction": "code-to-markdown",
-      "generatedAt": "2025-11-16T09:22:50.953Z"
+      "generatedAt": "2025-11-16T12:56:05.502Z"
     }
   ]
 }

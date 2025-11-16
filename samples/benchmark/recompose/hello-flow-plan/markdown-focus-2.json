@@ -7,20 +7,21 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 1392015,
+      "durationMs": 1014322,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-16T08-59-38-935Z-markdown-focus-2",
-  "promptLog": ".miniphi/recompose/2025-11-16T08-59-38-935Z-markdown-focus-2/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-11-16T12-39-11-177Z-markdown-focus-2",
+  "promptLog": ".miniphi/recompose/2025-11-16T12-39-11-177Z-markdown-focus-2/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Overview\nIt looks like you want me to analyze a workspace that might either be a code repository or a documentation set (like a book made of Markdown files). However, I don’t see any specific details—such as file names, directory structures, or key code modules—in your message. Could you please clarify which parts of the workspace should be examined? For example:\n\n## Flow\n• If it’s a book- or documentation-style Markdown collection, let me know which chapters or sections you’re most interested in reviewing so I can provide a cohesive overview and suggest edits or new content.\n\n## Signals\n• If it’s a code-heavy repository, could you specify which directories or modules to focus on? That way I can offer detailed engineering insights and actionable recommendations for improvement.\n\n## Edge Cases\nProviding this extra context will help me tailor my analysis and suggestions exactly to your needs. Please let me know how you’d like to proceed!",
+    "summary": "## Overview\nHi there! I noticed you mentioned inspecting a workspace context—but I don’t currently see any specific code files, directories, documentation hubs, or markdown collections attached to your message. Could you clarify which artifact(s) or directory you’d like me to review? For example:\n\n## Flow\n• If it’s a code-heavy repository (e.g., with Python modules, JavaScript projects, etc.), please let me know what kind of improvements or refactoring suggestions you’re looking for.\n  \n• Alternatively, if the workspace is a book or documentation set written in Markdown, I can provide an overview of its structure and suggest edits or new sections/chapters.\n\n## Signals\nOnce you share more details or attach/refer to specific files or directories, I’ll be happy to help with targeted recommendations.",
     "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
   },
   "sessionLabel": "markdown-focus-2",
-  "generatedAt": "2025-11-16T09:22:50.953Z"
+  "generatedAt": "2025-11-16T12:56:05.502Z",
+  "promptLogExport": "samples\\benchmark\\recompose\\hello-flow-plan\\markdown-focus-2.prompts.log"
 }

@@ -7,7 +7,7 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 842081,
+      "durationMs": 1027956,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
@@ -15,18 +15,22 @@
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 2794827,
+      "durationMs": 3096608,
       "processed": 9,
-      "converted": 6,
-      "skipped": 3,
+      "converted": 5,
+      "skipped": 4,
       "outputDir": "samples/recompose/hello-flow/reconstructed",
       "warnings": [
+        {
+          "path": "README.md.md",
+          "reason": "Phi-4 response did not include a code block."
+        },
         {
           "path": "src/flows/pipeline.js.md",
           "reason": "Phi-4 response did not include a code block."
         },
         {
-          "path": "src/flows/steps/normalize.js.md",
+          "path": "src/flows/steps/validate.js.md",
           "reason": "Phi-4 response did not include a code block."
         },
         {
@@ -41,51 +45,48 @@
       "matches": 0,
       "mismatches": [
         {
-          "path": "README.md",
-          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
-          "candidateHash": "816508a923c15bd0c99553503df2335eefff00af1051c03c86bf08bb4c9b1c87"
-        },
-        {
-          "path": "src/flows/steps/validate.js",
-          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
-          "candidateHash": "40fb7cc10082b84a888919273b6f1c77c684e96ce72d53d37579ce2394b20b05"
+          "path": "src/flows/steps/normalize.js",
+          "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
+          "candidateHash": "14f8786d87791c9c61436ff40e5805a521823363be89c67841d726d7411bfcb6"
         },
         {
           "path": "src/greeter.js",
           "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
-          "candidateHash": "878ebe5512578d5c94fadccb3b3510d4155f281a9cee0a4359d107187ad7d66b"
+          "candidateHash": "54b70e426c29f367a295da524d7078c298d80435a9a0837aa8e52ca584d4f759"
         },
         {
           "path": "src/math.js",
           "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
-          "candidateHash": "1b4f2c42001f3f52a6bfbba5dcdc93aa20a4210db632d161d12a1b73f388e412"
+          "candidateHash": "e7f53a3ad18dda98172c0e602c3f24b7ec082f14a2c6e61f385c47f7ead2731f"
         },
         {
           "path": "src/shared/logger.js",
           "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
-          "candidateHash": "c3d0a2814a5dcfd205dbf5556847b46541cdbc4f864412f45d2a5dd416a4c458"
+          "candidateHash": "72a3a14b2d2d1ce36dc124f8c9abc9e7264371c30842e0a885a602c2870d678d"
         },
         {
           "path": "src/shared/persistence/memory-store.js",
           "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
-          "candidateHash": "0f5b6b3045e155d9ff0e1760484b8261e00fe203a8472fc8bf467d232504c639"
+          "candidateHash": "e012ef3b0ac75bcedffc08ab8a7e2dc6d56120463f10af628c26fd172afff763"
         }
       ],
       "missing": [
+        "README.md",
         "src/flows/pipeline.js",
-        "src/flows/steps/normalize.js",
+        "src/flows/steps/validate.js",
         "src/index.js"
       ],
       "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-16T07-39-00-245Z-clean-roundtrip",
-  "promptLog": ".miniphi/recompose/2025-11-16T07-39-00-245Z-clean-roundtrip/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-11-16T11-07-54-788Z-clean-roundtrip",
+  "promptLog": ".miniphi/recompose/2025-11-16T11-07-54-788Z-clean-roundtrip/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Overview\nIt looks like no specific workspace context (such as a codebase, documentation hub, or book-style markdown collection) has been provided yet. Could you please clarify which directory, project files, or documents you’d like me to inspect? Once I have that information, I can offer a detailed analysis, propose edits, or help with any new sections/chapters as needed.",
+    "summary": "## Overview\nHi there! I see you’ve given me guidelines on how to adapt based on the type of workspace (whether it’s code-heavy, documentation-like, or a book-style markdown collection). However, right now no specific artifacts or directories have been shared in our conversation. Could you please let me know which files, folders, or context you’d like me to inspect and work with?\n\n## Flow\nIf, for example, you’re working on:\n• A codebase—please share the relevant source files or describe their structure so I can provide expert-level insights.\n• A documentation hub or book-style markdown collection—let me know if you need an overview, suggestions for edits, or ideas for new sections/chapters.\n\n## Signals\nOnce I have more details about the workspace context, I’ll adjust my strategy accordingly and help you with actionable instructions. Thanks!",
     "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
   },
   "sessionLabel": "clean-roundtrip",
-  "generatedAt": "2025-11-16T08:39:37.175Z"
+  "generatedAt": "2025-11-16T12:16:39.375Z",
+  "promptLogExport": "samples\\benchmark\\recompose\\hello-flow-plan\\clean-roundtrip.prompts.log"
 }
