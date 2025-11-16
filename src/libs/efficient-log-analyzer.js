@@ -95,7 +95,10 @@ export default class EfficientLogAnalyzer {
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
-        workspaceType: workspaceContext?.classification?.label ?? null,
+        workspaceType: workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
+        workspaceHint: workspaceContext?.hintBlock ?? null,
+        manifestPreview: workspaceContext?.manifestPreview ?? null,
+        readmeSnippet: workspaceContext?.readmeSnippet ?? null,
       },
     );
 
@@ -175,7 +178,10 @@ export default class EfficientLogAnalyzer {
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
-        workspaceType: workspaceContext?.classification?.label ?? null,
+        workspaceType: workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
+        workspaceHint: workspaceContext?.hintBlock ?? null,
+        manifestPreview: workspaceContext?.manifestPreview ?? null,
+        readmeSnippet: workspaceContext?.readmeSnippet ?? null,
       },
     );
 
@@ -253,25 +259,44 @@ export default class EfficientLogAnalyzer {
 
   generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
     const contextSupplement = this.#formatContextSupplement(extraContext);
-    const contextBlock = contextSupplement ? `\n${contextSupplement}` : "";
+    const contextBlock = contextSupplement ? `\n\n${contextSupplement}` : "";
+    const schema = [
+      "{",
+      '  "task": "repeat the task in <= 10 words",',
+      '  "root_cause": "concise summary of the key finding",',
+      '  "evidence": [',
+      '    { "chunk": "Chunk 2", "line_hint": 120, "excerpt": "quoted or paraphrased line" }',
+      "  ],",
+      '  "recommended_fixes": [',
+      '    { "description": "actionable fix", "files": ["path/to/file.js"], "commands": ["npm test"], "owner": "team" }',
+      "  ],",
+      '  "next_steps": ["follow-up diagnostic or verification step"]',
+      "}",
+    ].join("\n");
     return `# Log/Output Analysis Task
+
+You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):
+\`\`\`json
+${schema}
+\`\`\`
 
 **Task:** ${task}${contextBlock}
 
-**Dataset:**
+**Dataset Overview:**
 - Total lines: ${totalLines}
 - Compressed to: ${metadata.compressedTokens} tokens
 - Compression: ${this.#formatCompression(totalLines, metadata.compressedTokens)}
+- Approx. original bytes: ${metadata.originalSize ?? "unknown"}
+
+**Reporting Rules**
+1. Every evidence entry must mention the chunk/section name (e.g., "Chunk 2" or "Level 1") and include an approximate \`line_hint\`. Use \`null\` only if no line reference exists.
+2. Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.
+3. If information is unavailable, set the field to \`null\` instead of fabricating a value.
 
 **Data:**
 \`\`\`
 ${compressedContent}
-\`\`\`
-
-**Analysis Objectives**
-1. Identify the primary root cause or key insight.
-2. Provide actionable recommendations.
-3. Outline next diagnostic or remediation steps if needed.`;
+\`\`\``;
   }
 
   async #compressLines(lines, summaryLevels, verbose) {
@@ -323,10 +348,22 @@ ${compressedContent}
     if (extraContext.workspaceSummary) {
       lines.push(extraContext.workspaceSummary);
     }
+    if (extraContext.workspaceHint) {
+      lines.push(extraContext.workspaceHint);
+    } else if (Array.isArray(extraContext.manifestPreview) && extraContext.manifestPreview.length) {
+      const manifest = extraContext.manifestPreview
+        .slice(0, 6)
+        .map((entry) => `- ${entry.path} (${entry.bytes} bytes)`)
+        .join("\n");
+      lines.push(`File manifest sample:\n${manifest}`);
+    }
+    if (extraContext.readmeSnippet) {
+      lines.push(`README excerpt:\n${extraContext.readmeSnippet}`);
+    }
     if (!lines.length) {
       return "";
     }
-    return `${lines.join("\n")}\n`;
+    return lines.join("\n");
   }
   #applyPromptTimeout(sessionDeadline) {
     if (!sessionDeadline) {

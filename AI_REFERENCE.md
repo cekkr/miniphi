@@ -2,6 +2,7 @@
 - Update AI_REFERENCE.md references and next step.
 - Update README.md with updated documentation for humans.
 - **High-priority directive:** Benchmark-related "next steps" should primarily target improvements to the MiniPhi library runtime (prompt orchestration, analyzers, clients, etc.) rather than tweaks to the benchmark scripts themselves.
+- **High-priority directive:** Every Phi-4 prompt must declare the exact JSON schema expected in the response (fields, types, nullability) so large workspaces can be analyzed chunk-by-chunk with deterministic structures and line-number aware edits.
 
 # MiniPhi Reference
 

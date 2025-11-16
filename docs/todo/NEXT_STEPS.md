@@ -1,6 +1,12 @@
-# Next Steps
+﻿# Next Steps
+## MiniPhi runtime (hello-flow-plan)
 
-- [x] Extend `samples/recompose/hello-flow` (or add a new sibling sample) with more files/layers to better stress-test markdown���+"code fidelity and expose throughput bottlenecks.
+- [x] Promote the workspace manifest + README gleaner out of `RecomposeTester` into shared helpers and wire them into `src/index.js` run/analyze so the CLI inherits the same hello-flow-plan context (manifest hints, README snippets, workspace overviews) that the benchmarks relied upon.
+- [x] Force `EfficientLogAnalyzer` prompts to declare the expected JSON schema (root cause, evidence with chunk/line hints, recommended fixes, next steps) and shove the workspace hints/manifest metadata into every prompt context so large hello-flow-plan logs produce structured, line-addressable diagnoses.
+- [ ] Bubble up the benchmark mismatch explainers (auto diff + repair plans) into the primary MiniPhi library so the next hello-flow-plan roundtrip can offer fixes directly from `miniphi run` instead of being trapped inside `RecomposeTester`.
+- [ ] Export benchmark-style prompt logs and TODO wiring from the CLI (`run`/`analyze-file`) so investigations triggered by hello-flow-plan mismatches automatically attach transcripts, not just the benchmark harness artifacts.
+
+- [x] Extend `samples/recompose/hello-flow` (or add a new sibling sample) with more files/layers to better stress-test markdownï¿½ï¿½ï¿½+"code fidelity and expose throughput bottlenecks.
 - [x] Allow `node src/index.js benchmark recompose` to accept JSON/YAML plans so each run can opt into custom clean modes, run labels, or direction-specific parameters without extra flags.
 - [x] Teach `benchmark analyze` to emit Markdown/HTML rollups (in addition to SUMMARY.json) so reports can be embedded directly into docs or PRs.
 - [x] While executing recompose runs (standalone or benchmark), log in a file apart all prompts to LMStudio APIs and their response (CLI writes `<report>.prompts.log`, benchmarks emit `RUN-###.prompts.log`)
@@ -13,5 +19,5 @@
 - [x] Add a `--resume-descriptions` / markdown-only mode inside `RecomposeBenchmarkRunner` so CLI repairs can skip the expensive code-to-markdown sweep when descriptions already exist (e.g., iterate only on markdown-to-code for hello-flow-plan).
 - [x] Pipe actual sample metadata (README snippet, plan name, file manifest) into the `workspaceContext` that Phi-4 sees during recompose runs; the current generic placeholder in `.miniphi/recompose/.../clean-roundtrip.json` caused the assistant to hallucinate narrative docs instead of mirroring the code.
 - [x] Detect "no workspace provided" replies in `workspace-overview` prompts (see `clean-roundtrip.prompts.log` lines 25-920) and automatically resend with the manifest + README excerpt so every prompt execution starts with real context instead of wasting several minutes on boilerplate.
-- [x] Cache code-to-markdown narratives per file hash inside `MiniPhiMemory` so repeated hello-flow-plan sweeps reuse the previous 9 descriptions; the latest plan spent 1.0�?"1.3M ms per sweep for unchanged sources (`SUMMARY.md` lines 16-25).
+- [x] Cache code-to-markdown narratives per file hash inside `MiniPhiMemory` so repeated hello-flow-plan sweeps reuse the previous 9 descriptions; the latest plan spent 1.0ï¿½?"1.3M ms per sweep for unchanged sources (`SUMMARY.md` lines 16-25).
 - [x] Persist benchmark summary stats (phase durations, warnings, mismatches) into `.miniphi/history/benchmarks.json` and auto-attach TODO links so project managers do not have to manually copy information like the four "missing code block" warnings from `clean-roundtrip.json`.

@@ -19,6 +19,11 @@ import BenchmarkAnalyzer from "./libs/benchmark-analyzer.js";
 import { loadConfig } from "./libs/config-loader.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
+import {
+  buildWorkspaceHintBlock,
+  collectManifestSummary,
+  readReadmeSnippet,
+} from "./libs/workspace-context-utils.js";
 
 const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose", "benchmark"]);
 
@@ -268,9 +273,10 @@ async function main() {
     return resourceSummary;
   };
 
-  const describeWorkspace = (dir) => {
+  const describeWorkspace = async (dir) => {
+    let profile;
     try {
-      return workspaceProfiler.describe(dir);
+      profile = workspaceProfiler.describe(dir);
     } catch (error) {
       if (verbose) {
         console.warn(
@@ -279,6 +285,33 @@ async function main() {
       }
       return null;
     }
+    const manifestResult = await collectManifestSummary(dir, { limit: 10 }).catch((error) => {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Workspace manifest scan failed for ${dir}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+      return { files: [], manifest: [] };
+    });
+    const readmeSnippet = await readReadmeSnippet({
+      candidates: [
+        path.join(dir, "README.md"),
+        path.join(dir, "README.md.md"),
+        path.join(dir, "docs", "README.md"),
+      ],
+    }).catch(() => null);
+    const hintBlock = buildWorkspaceHintBlock(
+      manifestResult.files,
+      dir,
+      readmeSnippet,
+      { limit: 8 },
+    );
+    return {
+      ...profile,
+      manifestPreview: manifestResult.manifest,
+      readmeSnippet,
+      hintBlock: hintBlock || null,
+    };
   };
 
   try {
@@ -327,7 +360,7 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-      const workspaceContext = describeWorkspace(cwd);
+      const workspaceContext = await describeWorkspace(cwd);
         archiveMetadata.command = cmd;
         archiveMetadata.cwd = cwd;
         stateManager = new MiniPhiMemory(cwd);
@@ -363,6 +396,9 @@ async function main() {
               cwd,
               workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
               workspaceSummary: workspaceContext?.summary ?? null,
+              workspaceHint: workspaceContext?.hintBlock ?? null,
+              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
             },
           },
         });
@@ -377,7 +413,7 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
       const analyzeCwd = path.dirname(filePath);
-      const workspaceContext = describeWorkspace(analyzeCwd);
+      const workspaceContext = await describeWorkspace(analyzeCwd);
 
         archiveMetadata.filePath = filePath;
         archiveMetadata.cwd = path.dirname(filePath);
@@ -412,6 +448,9 @@ async function main() {
               cwd: analyzeCwd,
               workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
               workspaceSummary: workspaceContext?.summary ?? null,
+              workspaceHint: workspaceContext?.hintBlock ?? null,
+              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
             },
           },
         });

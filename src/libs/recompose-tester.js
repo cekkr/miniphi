@@ -2,6 +2,13 @@ import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import YAML from "yaml";
+import {
+  buildWorkspaceHintBlock,
+  collectManifestSummary,
+  formatMetadataSummary,
+  listWorkspaceFiles,
+  readReadmeSnippet,
+} from "./workspace-context-utils.js";
 
 const TEXT_EXTENSIONS = new Set([
   ".js",
@@ -185,7 +192,7 @@ export default class RecomposeTester {
 
   async codeToMarkdown({ sourceDir, targetDir }) {
     const start = Date.now();
-    const files = await this.#listFiles(sourceDir);
+    const files = await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs });
     const workspaceSummary = await this.#ensureWorkspaceSummaryFromCode(sourceDir, files);
     let converted = 0;
     let skipped = 0;
@@ -249,7 +256,9 @@ export default class RecomposeTester {
 
   async markdownToCode({ sourceDir, targetDir }) {
     const start = Date.now();
-    const files = (await this.#listFiles(sourceDir)).filter((file) => file.toLowerCase().endsWith(".md"));
+    const files = (await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs })).filter((file) =>
+      file.toLowerCase().endsWith(".md"),
+    );
     const workspaceSummary = await this.#ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
     let converted = 0;
     const warnings = [];
@@ -304,8 +313,8 @@ export default class RecomposeTester {
 
   async compareDirectories({ baselineDir, candidateDir }) {
     const start = Date.now();
-    const baselineFiles = await this.#listFiles(baselineDir);
-    const candidateFiles = await this.#listFiles(candidateDir);
+    const baselineFiles = await listWorkspaceFiles(baselineDir, { ignoredDirs: this.ignoredDirs });
+    const candidateFiles = await listWorkspaceFiles(candidateDir, { ignoredDirs: this.ignoredDirs });
 
     const baselineMap = new Map(baselineFiles.map((rel) => [rel, path.join(baselineDir, rel)]));
     const candidateMap = new Map(candidateFiles.map((rel) => [rel, path.join(candidateDir, rel)]));
@@ -355,7 +364,7 @@ export default class RecomposeTester {
       "Use at least three markdown headings (##) and no fenced code blocks. Inline code should be rewritten as plain language.",
       "Explain behavior as a story the reader must mentally reassemble into code.",
       `Workspace overview:\n${workspaceSummary}\n`,
-      this.#formatSampleMetadata(),
+      formatMetadataSummary(this.sampleMetadata),
       `Describe the file (${relativePath}) written in ${language}.`,
       "Raw source follows:",
       `"""`,
@@ -399,7 +408,7 @@ export default class RecomposeTester {
       "Describe the modules, helper functions, and edge cases that must exist.",
       "Return markdown with headings for Inputs, Transformations, Outputs, and Failure Modes. Do not write code.",
       `Workspace overview:\n${workspaceSummary}`,
-      this.#formatSampleMetadata(),
+      formatMetadataSummary(this.sampleMetadata),
       `Narrative for ${relativePath}:\n${narrative}`,
     ].join("\n\n");
     const plan = this.#structureNarrative(
@@ -431,7 +440,7 @@ export default class RecomposeTester {
       "Preserve existing exports and module style (ESM vs CommonJS) exactly.",
       "Respond with a single fenced code block containing only the source.",
       `Workspace overview:\n${this.workspaceContext?.summary ?? "n/a"}`,
-      this.#formatSampleMetadata(),
+      formatMetadataSummary(this.sampleMetadata),
       `Plan:\n${plan}`,
       `Narrative:\n${narrative}`,
     ];
@@ -534,13 +543,13 @@ export default class RecomposeTester {
       "Produce sections for Architecture Rhythm, Supporting Cast, and Risk Notes.",
       "Avoid listing file names explicitly; rely on behaviors and interactions.",
       `Glimpses:\n${glimpses}`,
-      this.#formatSampleMetadata(),
+      formatMetadataSummary(this.sampleMetadata),
     ].join("\n\n");
     let summaryText = this.#sanitizeNarrative(await this.#promptPhi(promptParts, { label: "recompose:workspace-overview" }));
     if (this.#needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
         promptParts,
-        this.#buildWorkspaceHintBlock(files, sourceDir),
+        buildWorkspaceHintBlock(files, sourceDir, this.sampleMetadata?.readmeSnippet),
       ]
         .filter(Boolean)
         .join("\n\n");
@@ -574,7 +583,7 @@ export default class RecomposeTester {
       "The workspace contains prose-only descriptions of code files.",
       "Summarize the project from these excerpts so Phi-4 can rebuild it.",
       `Excerpts:\n${excerpts.join("\n\n")}`,
-      this.#formatSampleMetadata(),
+      formatMetadataSummary(this.sampleMetadata),
     ].join("\n\n");
     let summaryText = this.#sanitizeNarrative(
       await this.#promptPhi(prompt, { label: "recompose:workspace-from-descriptions" }),
@@ -582,7 +591,7 @@ export default class RecomposeTester {
     if (this.#needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
         prompt,
-        this.#buildWorkspaceHintBlock(files, sourceDir),
+        buildWorkspaceHintBlock(files, sourceDir, this.sampleMetadata?.readmeSnippet),
       ].join("\n\n");
       summaryText = this.#sanitizeNarrative(
         await this.#promptPhi(retryPrompt, { label: "recompose:workspace-from-descriptions-retry" }),
@@ -631,7 +640,7 @@ export default class RecomposeTester {
     } catch {
       return;
     }
-    const files = await this.#listFiles(codeDir);
+    const files = await listWorkspaceFiles(codeDir, { ignoredDirs: this.ignoredDirs });
     for (const relativePath of files) {
       const absolute = path.join(codeDir, relativePath);
       if (await this.#isBinary(absolute)) {
@@ -987,37 +996,6 @@ export default class RecomposeTester {
     return `${prefix}, and ${unique.length - limit} more`;
   }
 
-  async #listFiles(baseDir) {
-    const files = [];
-    const stack = [""];
-    while (stack.length) {
-      const current = stack.pop();
-      const absolute = path.join(baseDir, current);
-      let dirents;
-      try {
-        dirents = await fs.promises.readdir(absolute, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const dirent of dirents) {
-        const relPath = path.join(current, dirent.name);
-        if (dirent.isDirectory()) {
-          if (this.ignoredDirs.has(dirent.name)) {
-            continue;
-          }
-          stack.push(relPath);
-        } else if (dirent.isFile()) {
-          if (dirent.name === ".gitkeep") {
-            continue;
-          }
-          files.push(relPath.replace(/\\/g, "/"));
-        }
-      }
-    }
-    files.sort();
-    return files;
-  }
-
   #detectExportStyle(source) {
     if (!source) {
       return null;
@@ -1308,38 +1286,25 @@ export default class RecomposeTester {
       this.sampleMetadata = null;
       return;
     }
-    const metadata = {
+    const readmeSnippet = await readReadmeSnippet({
+      candidates: [
+        path.join(sampleDir, "README.md"),
+        path.join(sampleDir, "README.md.md"),
+        codeDir ? path.join(codeDir, "README.md") : null,
+        descriptionsDir ? path.join(descriptionsDir, "README.md") : null,
+      ].filter(Boolean),
+    });
+    const plan = await this.#readSamplePlan(sampleDir);
+    const manifestResult = codeDir
+      ? await collectManifestSummary(codeDir, { ignoredDirs: this.ignoredDirs, limit: 12 })
+      : { manifest: [] };
+    this.sampleMetadata = {
       sampleDir,
       sampleName: path.basename(sampleDir),
-      readmeSnippet: await this.#readSampleReadme(sampleDir, codeDir, descriptionsDir),
-      plan: await this.#readSamplePlan(sampleDir),
-      manifest: await this.#collectSampleManifest(codeDir),
+      readmeSnippet,
+      plan,
+      manifest: manifestResult.manifest,
     };
-    this.sampleMetadata = metadata;
-  }
-
-  async #readSampleReadme(sampleDir, codeDir, descriptionsDir) {
-    const candidates = [
-      path.join(sampleDir, "README.md"),
-      path.join(sampleDir, "README.md.md"),
-      codeDir ? path.join(codeDir, "README.md") : null,
-      descriptionsDir ? path.join(descriptionsDir, "README.md") : null,
-    ].filter(Boolean);
-    for (const candidate of candidates) {
-      try {
-        const stats = await fs.promises.stat(candidate);
-        if (!stats.isFile()) {
-          continue;
-        }
-        const snippet = (await fs.promises.readFile(candidate, "utf8")).replace(/\s+/g, " ").trim();
-        if (snippet) {
-          return snippet.slice(0, 240);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return null;
   }
 
   async #readSamplePlan(sampleDir) {
@@ -1364,62 +1329,6 @@ export default class RecomposeTester {
       }
     }
     return null;
-  }
-
-  async #collectSampleManifest(codeDir) {
-    if (!codeDir) {
-      return [];
-    }
-    try {
-      const stats = await fs.promises.stat(codeDir);
-      if (!stats.isDirectory()) {
-        return [];
-      }
-    } catch {
-      return [];
-    }
-    const files = await this.#listFiles(codeDir);
-    const limited = files.slice(0, 12);
-    const manifest = [];
-    for (const file of limited) {
-      try {
-        const info = await fs.promises.stat(path.join(codeDir, file));
-        manifest.push({ path: file, bytes: info.size });
-      } catch {
-        manifest.push({ path: file, bytes: 0 });
-      }
-    }
-    return manifest;
-  }
-
-  #formatSampleMetadata() {
-    if (!this.sampleMetadata) {
-      return "";
-    }
-    const lines = [`Workspace sample: ${this.sampleMetadata.sampleName}`];
-    if (this.sampleMetadata.plan?.name) {
-      lines.push(`Plan: ${this.sampleMetadata.plan.name}`);
-    }
-    if (this.sampleMetadata.manifest?.length) {
-      const entries = this.sampleMetadata.manifest
-        .slice(0, 6)
-        .map((entry) => `- ${entry.path} (${entry.bytes} bytes)`)
-        .join("\n");
-      lines.push(`Manifest preview:\n${entries}`);
-    }
-    if (this.sampleMetadata.readmeSnippet) {
-      lines.push(`README snippet: ${this.sampleMetadata.readmeSnippet}`);
-    }
-    return lines.join("\n");
-  }
-
-  #buildWorkspaceHintBlock(files, baseDir) {
-    const manifest = files.slice(0, 10).map((file) => `- ${file}`).join("\n");
-    const hints = [`File manifest (${baseDir}):\n${manifest || "- n/a"}`];
-    if (this.sampleMetadata?.readmeSnippet) {
-      hints.push(`README excerpt:\n${this.sampleMetadata.readmeSnippet}`);
-    }
-    return hints.join("\n\n");
   }
 
   #needsWorkspaceRetry(text) {
