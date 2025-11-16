@@ -20,7 +20,7 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 - **Web research snapshots.** `node src/index.js web-research "query"` fetches structured DuckDuckGo results, prints them inline, and stores the report (plus optional raw payloads) under `.miniphi/research/` for later retrieval.
 - **.miniphi history notes.** `node src/index.js history-notes --label "post-upgrade"` scans `.miniphi`, records last-modified timestamps, and (when available) last git authors/commits so you can diff workspace evolution across runs.
-- **Code↔markdown recomposition tests.** `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` converts source code into markdown files, rebuilds code from the generated docs, compares the result, and emits a per-step benchmark report.
+- **Code↔markdown recomposition tests.** `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` converts source code into markdown files, rebuilds code from the generated docs, compares the result, emits a per-step benchmark report, and now drops the Phi-4 transcript next to the report as `recompose-report.prompts.log` so `.miniphi` isn’t required to audit prompts.
 - **Benchmark automation + analysis.** `node src/index.js benchmark recompose --directions roundtrip,code-to-markdown` drops timestamped `RUN-###.{json,log}` artifacts (plus a matching `RUN-###.prompts.log` transcript) under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`, accepts JSON/YAML plans via `--plan` for per-run clean/label/direction overrides, and `node src/index.js benchmark analyze <dir>` now emits `SUMMARY.{json,md,html}` so rollups can be embedded directly into docs or PRs.
 
 ### Prompt Taxonomy & Recordings
@@ -145,7 +145,7 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 - Step 1 converts the files under `code/` into markdown sheets (with front matter + fenced code blocks) inside the sample’s `descriptions/` folder.
 - Step 2 rebuilds code from each markdown file into `reconstructed/`, then Step 3 compares the reconstructed files against the originals.
 - Every run writes a `recompose-report.json` summary (counts, timings, mismatch stats) so you can diff code→markdown→code fidelity over time.
-- When routed through `benchmark recompose`, each `RUN-###.json` also exposes `promptLogExport` and a sibling `RUN-###.prompts.log` file so the exact Phi-4 prompt/response transcript ships with the rest of the run artifacts.
+- Prompt transcripts travel with the artifacts: the standalone CLI writes `<report-basename>.prompts.log` beside `recompose-report.json`, while `benchmark recompose` emits per-run `RUN-###.prompts.log` files plus matching `promptLogExport` entries in each JSON report.
 
 ### Prompt sessions & process-level timeouts
 - **Prompt sessions.** Supply `--prompt-id my-bash-audit` to persist Phi-4 chat history under `.miniphi/prompt-sessions/my-bash-audit.json`. Subsequent `run`/`analyze-file` invocations with the same ID pick up right where the previous reasoning left off, enabling step-by-step analysis across different Node.js scripts or terminals.

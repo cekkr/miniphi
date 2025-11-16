@@ -594,6 +594,8 @@ async function handleRecompose({
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
   let report;
+  let reportPath = null;
+  let promptLogExportPath = null;
   try {
     report = await harness.tester.run({
       sampleDir: sampleArg ? path.resolve(sampleArg) : null,
@@ -604,6 +606,16 @@ async function handleRecompose({
       clean: Boolean(options.clean),
       sessionLabel,
     });
+    const defaultReportBase = report.sampleDir ?? (sampleArg ? path.resolve(sampleArg) : process.cwd());
+    reportPath = path.resolve(options.report ?? path.join(defaultReportBase, "recompose-report.json"));
+    await fs.promises.mkdir(path.dirname(reportPath), { recursive: true });
+    if (typeof harness.tester.exportPromptLog === "function") {
+      promptLogExportPath = await harness.tester.exportPromptLog({
+        targetDir: path.dirname(reportPath),
+        fileName: `${path.basename(reportPath, path.extname(reportPath))}.prompts.log`,
+        label: sessionLabel ?? direction,
+      });
+    }
   } finally {
     await harness.cleanup();
   }
@@ -632,9 +644,15 @@ async function handleRecompose({
     }
   });
 
-  const defaultReportBase = report.sampleDir ?? (sampleArg ? path.resolve(sampleArg) : process.cwd());
-  const reportPath = path.resolve(options.report ?? path.join(defaultReportBase, "recompose-report.json"));
-  await fs.promises.mkdir(path.dirname(reportPath), { recursive: true });
+  if (!reportPath) {
+    throw new Error("Failed to resolve recompose report path.");
+  }
+  if (promptLogExportPath) {
+    const relPrompt = path.relative(process.cwd(), promptLogExportPath) || promptLogExportPath;
+    const normalizedPrompt = relPrompt.replace(/\\/g, "/");
+    report.promptLogExport = normalizedPrompt;
+    console.log(`[MiniPhi][Recompose] Prompt log saved to ${normalizedPrompt}`);
+  }
   await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
   const rel = path.relative(process.cwd(), reportPath);
   console.log(`[MiniPhi][Recompose] Report saved to ${rel || reportPath}`);

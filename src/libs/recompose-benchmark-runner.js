@@ -61,7 +61,13 @@ export default class RecomposeBenchmarkRunner {
         clean: descriptor.clean,
         sessionLabel: runLabel,
       });
-      const promptLogCopyPath = await this.#copyPromptLog(report.promptLog, outputDir, runLabel);
+      const promptLogCopyPath = typeof this.tester.exportPromptLog === "function"
+        ? await this.tester.exportPromptLog({
+          targetDir: outputDir,
+          fileName: `${runLabel}.prompts.log`,
+          label: runLabel,
+        })
+        : await this.#copyPromptLog(report.promptLog, outputDir, runLabel);
       if (promptLogCopyPath) {
         report.promptLogExport = this.#relativePath(promptLogCopyPath);
       }

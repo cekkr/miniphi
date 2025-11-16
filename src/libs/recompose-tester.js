@@ -553,6 +553,28 @@ export default class RecomposeTester {
     await fs.promises.appendFile(this.promptLogPath, `${lines.join("\n")}\n`, "utf8");
   }
 
+  async exportPromptLog(options = {}) {
+    if (!this.promptLogPath) {
+      return null;
+    }
+    const sourcePath = path.isAbsolute(this.promptLogPath)
+      ? this.promptLogPath
+      : path.resolve(process.cwd(), this.promptLogPath);
+    try {
+      await fs.promises.access(sourcePath, fs.constants.F_OK);
+    } catch {
+      return null;
+    }
+    const targetDir = path.resolve(options.targetDir ?? path.dirname(sourcePath));
+    await this.#ensureDir(targetDir);
+    const defaultName = `${this.sessionLabel ?? "recompose"}.prompts.log`;
+    const fileHint = options.fileName ?? options.label ?? defaultName;
+    const fileName = this.#sanitizeExportName(fileHint);
+    const destinationPath = path.join(targetDir, fileName);
+    await fs.promises.copyFile(sourcePath, destinationPath);
+    return destinationPath;
+  }
+
   #truncateForLog(text) {
     if (!text) {
       return "(empty)";
@@ -618,6 +640,21 @@ export default class RecomposeTester {
       "Readers learn why the benchmark exists, which directories participate (`code/`, `descriptions/`, `reconstructed/`), and how to trigger automated runs without exposing raw code.",
     ];
     return sections.join("\n\n");
+  }
+
+  #sanitizeExportName(name) {
+    const fallback = `${this.#slugify(this.sessionLabel ?? "recompose")}.prompts.log`;
+    if (!name) {
+      return fallback;
+    }
+    const normalized = name.replace(/[\\/]+/g, "-").replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").trim();
+    if (!normalized) {
+      return fallback;
+    }
+    if (!normalized.toLowerCase().endsWith(".log")) {
+      return `${normalized}.log`;
+    }
+    return normalized;
   }
 
   #fallbackPlanFromNarrative(relativePath, narrative) {
