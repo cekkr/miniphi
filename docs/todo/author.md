@@ -37,3 +37,12 @@ Next steps:
 
 Start LM Studio with microsoft/phi-4-reasoning-plus, then run node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean to produce new .miniphi/recompose/... sessions and confirm the prompt chain.
 Inspect .miniphi/prompt-exchanges/ and .miniphi/recompose/<timestamp>/ output from a live run to ensure the workspace overview, per-file plans, and generated code land as expected.
+
+# Next steps 1
+- Evaluate the main miniphi user's prompt to LM Studio APIs to obtain a summarization of sub-prompts and sub-actions to divide its execution, process that could be needed recursively for complex prompt in complex projects
+- Add the support to "file connection" search, useful to know in a source code if a file is imported by another files or what files it's importing and analyzing them. Seen different language to handle, could be used LM Studio model itself to elaborate a fast script to its result
+- Take advantages of elaborating of available program/library on terminal (and the possibility to install them in real time, especially in python venv) to elaborate throgh LM Studio prompt an ad hoc script to obtain a certain result, like finding fast some reference in a project with many files or exact references in a big .log file. This is one of the case where "prompt best composition caching" is also useful, but in case of automatization tools
+- Remember the essential importance to use JSON structured prompts pre-declaring response JSON response, to handle with chirurgic precision requests and responses patching
+- In many contexts of API prompting, it's important to say what kind of operation are available on OS/Library/Scripts. Seen that they're too many to write all of them in one context, is needed the right series of prompts with rewriting only essential chat history to understand the best tools to use (or create)
+- Add the support to real time stdout analyzing while still running long execution time process, needed for tools and testing, and support parallel executions for case where is needed (like testing a program that need a server running in the meanwhile), closing them when no more needed (or to recompile/re-run)
+- Improve SQLite DB prompts/json structure/script tools storing and best performances statistical evaluation (also in case of context, like the project, directory, file, or current prompt and sub-prompt). Using API's prompt to check the validity of the chosen tools in this context. (This requires also a verbal description of internal commands in case of prompting needed)
