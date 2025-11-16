@@ -1,6 +1,7 @@
 # After a prompt
 - Update AI_REFERENCE.md references and next step.
 - Update README.md with updated documentation for humans.
+- **High-priority directive:** Benchmark-related "next steps" should primarily target improvements to the MiniPhi library runtime (prompt orchestration, analyzers, clients, etc.) rather than tweaks to the benchmark scripts themselves.
 
 # MiniPhi Reference
 
