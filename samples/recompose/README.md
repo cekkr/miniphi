@@ -23,8 +23,18 @@ Use the dedicated helper to create WHY_SAMPLES-friendly runs without hand-rollin
 node src/index.js benchmark recompose --directions roundtrip,code-to-markdown,markdown-to-code --repeat 2 --clean
 ```
 
-Each invocation writes `RUN-###.{json,log}` pairs under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`. Summaries for a given batch can be produced with:
+Each invocation writes `RUN-###.{json,log}` pairs under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`. Summaries for a given batch now include `SUMMARY.json`, `SUMMARY.md`, and `SUMMARY.html` to make it easy to embed the stats inside docs/PRs:
 
 ```bash
 node src/index.js benchmark analyze samples/benchmark/recompose/<dd-mm-yy_mm-hh>
 ```
+
+## Plan-driven benchmark series
+
+For repeatable sweeps, feed a JSON/YAML plan to the `benchmark recompose` helper. The repo ships with `samples/recompose/hello-flow/benchmark-plan.yaml` which keeps the sample directory relative, pins the timestamp folder, and shows how to toggle `clean` and `runPrefix` per run:
+
+```bash
+node src/index.js benchmark recompose --plan samples/recompose/hello-flow/benchmark-plan.yaml
+```
+
+Plan entries accept `directions`, `repeat`, `clean`, `runPrefix`, and optional `label` fields so you can mix round-trips, direction-only passes, or clean-only reruns without touching CLI flags.

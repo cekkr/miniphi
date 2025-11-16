@@ -1,0 +1,19 @@
+sampleDir: .
+benchmarkRoot: ../../benchmark/recompose
+timestamp: hello-flow-plan
+runPrefix: PLAN
+defaults:
+  directions:
+    - roundtrip
+  repeat: 1
+  clean: false
+runs:
+  - label: clean-roundtrip
+    clean: true
+    directions:
+      - roundtrip
+  - label: markdown-focus
+    directions:
+      - code-to-markdown
+    repeat: 2
+    runPrefix: MD

@@ -2,6 +2,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
 import LMStudioManager from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
@@ -592,7 +593,7 @@ async function handleRecompose({ options, positionals, verbose }) {
   console.log(`[MiniPhi][Recompose] Report saved to ${rel || reportPath}`);
 }
 
-async function handleBenchmark({ options, positionals }) {
+async function handleBenchmark({ options, positionals, verbose }) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
     const target = options.path ?? options.dir ?? positionals[1] ?? null;
@@ -608,25 +609,48 @@ async function handleBenchmark({ options, positionals }) {
     throw new Error(`Unsupported benchmark mode "${mode}". Expected "recompose" or "analyze".`);
   }
 
-  const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? null;
-  const benchmarkRoot = options["benchmark-root"];
+  const planPath = options.plan ?? options["plan-file"] ?? null;
+  const plan = planPath ? await loadBenchmarkPlan(planPath) : null;
+  if (plan?.path && verbose) {
+    const rel = path.relative(process.cwd(), plan.path) || plan.path;
+    console.log(`[MiniPhi][Benchmark] Loaded plan from ${rel}`);
+  }
+  const planSample = plan ? resolvePlanPath(plan, plan.data.sampleDir ?? plan.data.sample) : null;
+  const planBenchmarkRoot = plan ? resolvePlanPath(plan, plan.data.benchmarkRoot ?? plan.data.outputDir) : null;
+  const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? planSample ?? null;
+  const benchmarkRoot = options["benchmark-root"] ?? planBenchmarkRoot ?? undefined;
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
     benchmarkRoot,
   });
-  const directionsValue = options.directions ?? options.direction ?? "roundtrip";
-  const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
-  const repeat = Number(options.repeat ?? 1);
-  const runPrefix = options["run-prefix"] ?? "RUN";
-  const clean = Boolean(options.clean);
-  const timestamp = options.timestamp ?? undefined;
-  const result = await runner.runSeries({
-    directions,
-    repeat,
-    clean,
-    timestamp,
-    runPrefix,
-  });
+  const timestamp = options.timestamp ?? plan?.data?.timestamp ?? undefined;
+  const runPrefix = options["run-prefix"] ?? plan?.data?.runPrefix ?? plan?.data?.defaults?.runPrefix ?? "RUN";
+  const clean = options.clean ?? plan?.data?.clean ?? plan?.data?.defaults?.clean ?? false;
+
+  let result;
+  if (plan) {
+    const planRuns = buildBenchmarkPlanRuns(plan.data);
+    if (!planRuns.length) {
+      throw new Error("Benchmark plan must include at least one run definition.");
+    }
+    result = await runner.runSeries({
+      planRuns,
+      timestamp,
+      runPrefix,
+      clean,
+    });
+  } else {
+    const directionsValue = options.directions ?? options.direction ?? "roundtrip";
+    const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
+    const repeat = Number(options.repeat ?? 1);
+    result = await runner.runSeries({
+      directions,
+      repeat,
+      clean: Boolean(clean),
+      timestamp,
+      runPrefix,
+    });
+  }
   const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
   console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
 }
@@ -688,6 +712,106 @@ function parseArgs(tokens) {
   }
 
   return { options, positionals };
+}
+
+async function loadBenchmarkPlan(planPath) {
+  const absolute = path.resolve(planPath);
+  const raw = await fs.promises.readFile(absolute, "utf8");
+  const ext = path.extname(absolute).toLowerCase();
+  let data;
+  if (ext === ".yaml" || ext === ".yml") {
+    data = YAML.parse(raw);
+  } else {
+    data = JSON.parse(raw);
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Benchmark plan must be a JSON or YAML object.");
+  }
+  return {
+    path: absolute,
+    dir: path.dirname(absolute),
+    data,
+  };
+}
+
+function resolvePlanPath(plan, candidate) {
+  if (!candidate || typeof candidate !== "string") {
+    return null;
+  }
+  if (path.isAbsolute(candidate)) {
+    return candidate;
+  }
+  return path.resolve(plan.dir, candidate);
+}
+
+function buildBenchmarkPlanRuns(planData) {
+  if (!planData || typeof planData !== "object" || Array.isArray(planData)) {
+    throw new Error("Benchmark plan content must be an object.");
+  }
+  const defaultDirections = normalizePlanDirections(planData.defaults?.directions ?? planData.directions);
+  const fallbackDirections = defaultDirections.length ? defaultDirections : ["roundtrip"];
+  const fallbackRepeat = Math.max(1, Number(planData.defaults?.repeat ?? planData.repeat ?? 1) || 1);
+  const fallbackClean = planData.defaults?.clean ?? planData.clean ?? false;
+  const fallbackPrefix = planData.defaults?.runPrefix ?? planData.runPrefix ?? "RUN";
+  const entries = Array.isArray(planData.runs) && planData.runs.length
+    ? planData.runs
+    : [
+        {
+          directions: planData.directions ?? fallbackDirections,
+          repeat: planData.repeat ?? fallbackRepeat,
+          clean: planData.clean ?? fallbackClean,
+          runPrefix: planData.runPrefix ?? fallbackPrefix,
+          label: planData.label,
+          runLabel: planData.runLabel,
+          labels: planData.labels,
+        },
+      ];
+  if (!entries.length) {
+    throw new Error("Benchmark plan must define at least one run entry.");
+  }
+  const runs = [];
+  entries.forEach((entry, entryIndex) => {
+    const entryDirections = normalizePlanDirections(entry.directions ?? entry.direction ?? fallbackDirections);
+    if (!entryDirections.length) {
+      throw new Error(`Plan run ${entryIndex} resolved to zero directions.`);
+    }
+    const repeat = Math.max(1, Number(entry.repeat ?? fallbackRepeat) || 1);
+    const entryClean = entry.clean ?? fallbackClean;
+    const entryPrefix = entry.runPrefix ?? fallbackPrefix;
+    const labelList = Array.isArray(entry.labels) ? entry.labels : null;
+    for (let cycle = 0; cycle < repeat; cycle += 1) {
+      entryDirections.forEach((direction, directionIndex) => {
+        const prioritizedLabel =
+          (labelList ? labelList[directionIndex] ?? labelList[labelList.length - 1] : null) ??
+          (typeof entry.runLabel === "string" ? entry.runLabel : null) ??
+          (typeof entry.label === "string" ? entry.label : null);
+        let resolvedLabel = prioritizedLabel ?? null;
+        const needsSuffix = repeat > 1 || (entryDirections.length > 1 && !labelList);
+        if (resolvedLabel && needsSuffix) {
+          const suffixParts = [cycle + 1];
+          if (entryDirections.length > 1 && !labelList) {
+            suffixParts.push(directionIndex + 1);
+          }
+          resolvedLabel = `${resolvedLabel}-${suffixParts.join("-")}`;
+        }
+        runs.push({
+          direction,
+          clean: entryClean,
+          runPrefix: entryPrefix,
+          runLabel: resolvedLabel,
+        });
+      });
+    }
+  });
+  return runs;
+}
+
+function normalizePlanDirections(candidate) {
+  if (!candidate) {
+    return [];
+  }
+  const rawValues = Array.isArray(candidate) ? candidate : String(candidate).split(",");
+  return rawValues.map((value) => (typeof value === "string" ? value.toLowerCase().trim() : "")).filter(Boolean);
 }
 
 function buildResourceConfig(cliOptions) {

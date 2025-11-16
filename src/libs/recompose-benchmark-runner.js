@@ -34,18 +34,13 @@ export default class RecomposeBenchmarkRunner {
     clean = false,
     timestamp = undefined,
     runPrefix = "RUN",
+    planRuns = null,
   } = {}) {
-    if (!Array.isArray(directions) || directions.length === 0) {
-      throw new Error("At least one direction is required for a benchmark run.");
-    }
-    const sanitizedDirections = directions.map((direction) => direction.toLowerCase().trim()).filter(Boolean);
-    if (sanitizedDirections.length === 0) {
-      throw new Error("Directions resolved to an empty list after trimming.");
-    }
-    const cycles = Math.max(1, Number(repeat) || 1);
-    const directionQueue = [];
-    for (let i = 0; i < cycles; i += 1) {
-      directionQueue.push(...sanitizedDirections);
+    const runQueue = Array.isArray(planRuns) && planRuns.length
+      ? planRuns.map((entry, index) => this.#normalizePlanDescriptor(entry, { defaultClean: clean, defaultPrefix: runPrefix, index }))
+      : this.#buildDirectionalQueue(directions, repeat, { clean, runPrefix });
+    if (runQueue.length === 0) {
+      throw new Error("At least one benchmark run is required.");
     }
     const effectiveTimestamp = timestamp ?? RecomposeBenchmarkRunner.formatTimestamp();
     const outputDir = path.join(this.benchmarkRoot, effectiveTimestamp);
@@ -54,22 +49,29 @@ export default class RecomposeBenchmarkRunner {
 
     const results = [];
     let counter = 0;
-    for (const direction of directionQueue) {
+    for (const descriptor of runQueue) {
       counter += 1;
-      const runLabel = RecomposeBenchmarkRunner.formatRunLabel(runPrefix, counter);
+      const labelFallback = RecomposeBenchmarkRunner.formatRunLabel(descriptor.runPrefix ?? runPrefix, counter);
+      const runLabel = this.#sanitizeLabel(descriptor.runLabel) || labelFallback;
       const reportPath = path.join(outputDir, `${runLabel}.json`);
       const logPath = path.join(outputDir, `${runLabel}.log`);
       const report = await this.tester.run({
         sampleDir: this.sampleDir,
-        direction,
-        clean,
+        direction: descriptor.direction,
+        clean: descriptor.clean,
       });
       await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
-      const logLines = this.#buildLogLines({ runLabel, direction, report, reportPath, logPath });
+      const logLines = this.#buildLogLines({
+        runLabel,
+        direction: descriptor.direction,
+        report,
+        reportPath,
+        logPath,
+      });
       await fs.promises.writeFile(logPath, `${logLines.join("\n")}\n`, "utf8");
       logLines.forEach((line) => console.log(line));
       results.push({
-        direction,
+        direction: descriptor.direction,
         runLabel,
         reportPath,
         logPath,
@@ -129,5 +131,68 @@ export default class RecomposeBenchmarkRunner {
     }
     const relative = path.relative(process.cwd(), targetPath);
     return relative || targetPath;
+  }
+
+  #buildDirectionalQueue(directions, repeat, { clean, runPrefix }) {
+    if (!Array.isArray(directions) || directions.length === 0) {
+      throw new Error("At least one direction is required for a benchmark run.");
+    }
+    const sanitizedDirections = directions.map((direction) => (typeof direction === "string" ? direction.toLowerCase().trim() : "")).filter(Boolean);
+    if (sanitizedDirections.length === 0) {
+      throw new Error("Directions resolved to an empty list after trimming.");
+    }
+    const cycles = Math.max(1, Number(repeat) || 1);
+    const queue = [];
+    for (let i = 0; i < cycles; i += 1) {
+      sanitizedDirections.forEach((direction) => {
+        queue.push({
+          direction,
+          clean: Boolean(clean),
+          runPrefix,
+        });
+      });
+    }
+    return queue;
+  }
+
+  #normalizePlanDescriptor(entry, { defaultClean, defaultPrefix, index }) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`Plan entry ${index ?? 0} is not an object.`);
+    }
+    const direction = typeof entry.direction === "string" ? entry.direction.toLowerCase().trim() : null;
+    if (!direction) {
+      throw new Error(`Plan entry ${index ?? 0} is missing a direction.`);
+    }
+    return {
+      direction,
+      clean: this.#normalizeClean(entry.clean, defaultClean),
+      runPrefix: entry.runPrefix ?? defaultPrefix ?? "RUN",
+      runLabel: entry.runLabel ?? entry.label ?? null,
+    };
+  }
+
+  #normalizeClean(value, fallback) {
+    if (value === undefined || value === null) {
+      return Boolean(fallback);
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["false", "off", "none", "no"].includes(normalized)) {
+        return false;
+      }
+      return true;
+    }
+    return Boolean(value);
+  }
+
+  #sanitizeLabel(label) {
+    if (!label || typeof label !== "string") {
+      return null;
+    }
+    const trimmed = label.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.replace(/[^\w.-]+/g, "-");
   }
 }
