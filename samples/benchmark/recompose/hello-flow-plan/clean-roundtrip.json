@@ -1,0 +1,35 @@
+{
+  "direction": "roundtrip",
+  "sampleDir": "samples/recompose/hello-flow",
+  "codeDir": "samples/recompose/hello-flow/code",
+  "descriptionsDir": "samples/recompose/hello-flow/descriptions",
+  "outputDir": "samples/recompose/hello-flow/reconstructed",
+  "steps": [
+    {
+      "phase": "code-to-markdown",
+      "durationMs": 40,
+      "discovered": 9,
+      "converted": 9,
+      "skipped": 0,
+      "outputDir": "samples/recompose/hello-flow/descriptions"
+    },
+    {
+      "phase": "markdown-to-code",
+      "durationMs": 23,
+      "processed": 9,
+      "converted": 9,
+      "skipped": 0,
+      "outputDir": "samples/recompose/hello-flow/reconstructed",
+      "warnings": []
+    },
+    {
+      "phase": "comparison",
+      "durationMs": 7,
+      "matches": 9,
+      "mismatches": [],
+      "missing": [],
+      "extras": []
+    }
+  ],
+  "generatedAt": "2025-11-16T05:01:44.854Z"
+}

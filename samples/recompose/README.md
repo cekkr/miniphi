@@ -15,6 +15,10 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 
 This command wipes previous markdown/code outputs, converts each file under `code/` into markdown natural language descriptions without code snippets, rebuilds code from the markdown, compares the round-trip fidelity, and stores a step-by-step report alongside the sample.
 
+## Narrative-only descriptions and Phi-4 prompts
+
+`code-to-markdown` no longer dumps source verbatim. MiniPhi now orchestrates a chain of Phi-4 prompts that (1) scans the workspace to build a story-driven overview saved under `.miniphi/recompose/<timestamp>/workspace-overview.md`, and (2) rewrites each file as multi-section prose stored in `descriptions/` plus the `.miniphi` session history. Every description must explain behavior entirely in narrative form—no fenced code, no line-by-line mirroring—so recomposition requires genuine reasoning. During `markdown-to-code`, the CLI issues additional Phi-4 prompts to plan each file and then synthesize the source from the plan. All sub-prompts are captured in `.miniphi/prompt-exchanges/` to prove the benchmark exercised multi-step local inference with `microsoft/phi-4-reasoning-plus`.
+
 ## Timestamped benchmark batches
 
 Use the dedicated helper to create WHY_SAMPLES-friendly runs without hand-rolling timestamps:

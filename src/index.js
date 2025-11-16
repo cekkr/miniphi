@@ -159,11 +159,29 @@ async function main() {
   }
 
   if (command === "recompose") {
-    await handleRecompose({ options, positionals, verbose });
+    await handleRecompose({
+      options,
+      positionals,
+      verbose,
+      configData,
+      promptDefaults,
+      contextLength,
+      debugLm,
+      gpu,
+    });
     return;
   }
   if (command === "benchmark") {
-    await handleBenchmark({ options, positionals, verbose });
+    await handleBenchmark({
+      options,
+      positionals,
+      verbose,
+      configData,
+      promptDefaults,
+      contextLength,
+      debugLm,
+      gpu,
+    });
     return;
   }
 
@@ -548,18 +566,47 @@ async function handleHistoryNotes({ options, verbose }) {
   }
 }
 
-async function handleRecompose({ options, positionals, verbose }) {
-  const tester = new RecomposeTester();
+async function handleRecompose({
+  options,
+  positionals,
+  verbose,
+  configData,
+  promptDefaults,
+  contextLength,
+  debugLm,
+  gpu,
+}) {
+  const sessionLabel =
+    typeof options.label === "string"
+      ? options.label
+      : typeof options["session-label"] === "string"
+        ? options["session-label"]
+        : null;
+  const harness = await createRecomposeHarness({
+    configData,
+    promptDefaults,
+    contextLength,
+    debugLm,
+    verbose,
+    sessionLabel,
+    gpu,
+  });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
-  const report = await tester.run({
-    sampleDir: sampleArg ? path.resolve(sampleArg) : null,
-    direction,
-    codeDir: options["code-dir"],
-    descriptionsDir: options["descriptions-dir"],
-    outputDir: options["output-dir"],
-    clean: Boolean(options.clean),
-  });
+  let report;
+  try {
+    report = await harness.tester.run({
+      sampleDir: sampleArg ? path.resolve(sampleArg) : null,
+      direction,
+      codeDir: options["code-dir"],
+      descriptionsDir: options["descriptions-dir"],
+      outputDir: options["output-dir"],
+      clean: Boolean(options.clean),
+      sessionLabel,
+    });
+  } finally {
+    await harness.cleanup();
+  }
 
   report.steps.forEach((step) => {
     if (step.phase === "code-to-markdown") {
@@ -593,7 +640,16 @@ async function handleRecompose({ options, positionals, verbose }) {
   console.log(`[MiniPhi][Recompose] Report saved to ${rel || reportPath}`);
 }
 
-async function handleBenchmark({ options, positionals, verbose }) {
+async function handleBenchmark({
+  options,
+  positionals,
+  verbose,
+  configData,
+  promptDefaults,
+  contextLength,
+  debugLm,
+  gpu,
+}) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
     const target = options.path ?? options.dir ?? positionals[1] ?? null;
@@ -619,40 +675,106 @@ async function handleBenchmark({ options, positionals, verbose }) {
   const planBenchmarkRoot = plan ? resolvePlanPath(plan, plan.data.benchmarkRoot ?? plan.data.outputDir) : null;
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? planSample ?? null;
   const benchmarkRoot = options["benchmark-root"] ?? planBenchmarkRoot ?? undefined;
+  const harness = await createRecomposeHarness({
+    configData,
+    promptDefaults,
+    contextLength,
+    debugLm,
+    verbose,
+    sessionLabel: null,
+    gpu,
+  });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
     benchmarkRoot,
+    tester: harness.tester,
   });
   const timestamp = options.timestamp ?? plan?.data?.timestamp ?? undefined;
   const runPrefix = options["run-prefix"] ?? plan?.data?.runPrefix ?? plan?.data?.defaults?.runPrefix ?? "RUN";
   const clean = options.clean ?? plan?.data?.clean ?? plan?.data?.defaults?.clean ?? false;
 
   let result;
-  if (plan) {
-    const planRuns = buildBenchmarkPlanRuns(plan.data);
-    if (!planRuns.length) {
-      throw new Error("Benchmark plan must include at least one run definition.");
+  try {
+    if (plan) {
+      const planRuns = buildBenchmarkPlanRuns(plan.data);
+      if (!planRuns.length) {
+        throw new Error("Benchmark plan must include at least one run definition.");
+      }
+      result = await runner.runSeries({
+        planRuns,
+        timestamp,
+        runPrefix,
+        clean,
+      });
+    } else {
+      const directionsValue = options.directions ?? options.direction ?? "roundtrip";
+      const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
+      const repeat = Number(options.repeat ?? 1);
+      result = await runner.runSeries({
+        directions,
+        repeat,
+        clean: Boolean(clean),
+        timestamp,
+        runPrefix,
+      });
     }
-    result = await runner.runSeries({
-      planRuns,
-      timestamp,
-      runPrefix,
-      clean,
-    });
-  } else {
-    const directionsValue = options.directions ?? options.direction ?? "roundtrip";
-    const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
-    const repeat = Number(options.repeat ?? 1);
-    result = await runner.runSeries({
-      directions,
-      repeat,
-      clean: Boolean(clean),
-      timestamp,
-      runPrefix,
-    });
+  } finally {
+    await harness.cleanup();
   }
   const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
   console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
+}
+
+async function createRecomposeHarness({
+  configData,
+  promptDefaults,
+  contextLength,
+  debugLm,
+  verbose,
+  sessionLabel,
+  gpu,
+}) {
+  const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
+  const phi4 = new Phi4Handler(manager, {
+    systemPrompt: promptDefaults.system,
+    promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+  });
+  const loadOptions = { contextLength, gpu };
+  await phi4.load(loadOptions);
+  const memory = new MiniPhiMemory(process.cwd());
+  await memory.prepare();
+  const promptRecorder = new PromptRecorder(memory.baseDir);
+  await promptRecorder.prepare();
+  phi4.setPromptRecorder(promptRecorder);
+  let performanceTracker = null;
+  try {
+    const tracker = new PromptPerformanceTracker({
+      dbPath: PROMPT_DB_PATH,
+      debug: debugLm,
+    });
+    await tracker.prepare();
+    phi4.setPerformanceTracker(tracker);
+    performanceTracker = tracker;
+  } catch (error) {
+    if (verbose) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[MiniPhi][Recompose] Prompt scoring disabled: ${message}`);
+    }
+  }
+  const sessionRoot = path.join(memory.baseDir, "recompose");
+  await fs.promises.mkdir(sessionRoot, { recursive: true });
+  const tester = new RecomposeTester({
+    phi4,
+    sessionRoot,
+    promptLabel: sessionLabel ?? "recompose",
+  });
+  const cleanup = async () => {
+    await phi4.eject();
+    if (performanceTracker) {
+      await performanceTracker.dispose();
+    }
+  };
+  return { tester, cleanup };
 }
 
 function parseArgs(tokens) {

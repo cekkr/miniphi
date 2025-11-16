@@ -32,6 +32,10 @@
 - Each benchmark run now receives its own subfolder named after the execution timestamp following the `dd-mm-yy_mm-hh` rule (minutes precede hours to avoid collisions when multiple runs land in the same hour).
 - Manual benchmark cycle `samples/benchmark/bash/14-11-25_38-05/EXPLAIN-003.md` (depth-1 review of `shell.c → eval.c → execute_cmd.c`) is now available for reuse and includes a benchmark-specific follow-up list that feeds into the roadmap below.
 
+## High-Priority Fundamentals
+1. **Narrative-only recomposition inputs.** `samples/recompose/README.md` mandates that each `code-to-markdown` pass produces strictly narrative, multi-part prose under `samples/recompose/*/descriptions`. The markdown cannot paste raw code or mirror the original file tree; it must describe flow, behavior, and expected outcomes so recomposition requires reasoning instead of copy/paste. Treat `samples/recompose/hello-flow/descriptions` as the canonical enforcement point and keep it aligned with the storytelling guidance spelled out in the README while still letting operators reassemble equivalent pipelines.
+2. **Multi-prompt Phi-4 orchestration.** A single MiniPhi CLI invocation (e.g., `node src/index.js benchmark recompose --plan samples/recompose/hello-flow/benchmark-plan.yaml`) must expand into multiple LM Studio Phi-4 prompts that first explore/understand the workspace (persisting summaries into `.miniphi/` memory and `.miniphi/prompt-exchanges/*.json`) and then drive targeted edits/appends with optimized snippets. Recompose benchmarks are only valid when this chained prompting is visible in memory/history; bypassing it with single-shot copy/paste responses defeats the security objective.
+
 ## Issues & Constraints
 - Persistence is local JSON only: `.miniphi/` has no pruning, encryption, or sync/export tooling yet, so long projects can grow large and data stays on-disk per machine.
 - No automated tests; manual verification recommended before distribution. LM Studio server availability is assumed and not checked beforehand.

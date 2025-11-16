@@ -11,7 +11,7 @@ export default class RecomposeBenchmarkRunner {
   constructor(options = {}) {
     this.sampleDir = path.resolve(options.sampleDir ?? DEFAULT_SAMPLE);
     this.benchmarkRoot = path.resolve(options.benchmarkRoot ?? DEFAULT_BENCHMARK_ROOT);
-    this.tester = new RecomposeTester();
+    this.tester = options.tester ?? new RecomposeTester(options.testerOptions);
     this.lastOutputDir = null;
   }
 
@@ -59,6 +59,7 @@ export default class RecomposeBenchmarkRunner {
         sampleDir: this.sampleDir,
         direction: descriptor.direction,
         clean: descriptor.clean,
+        sessionLabel: runLabel,
       });
       await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
       const logLines = this.#buildLogLines({
