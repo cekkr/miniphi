@@ -670,12 +670,32 @@ async function handleBenchmark({
 }) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
-    const target = options.path ?? options.dir ?? positionals[1] ?? null;
-    if (!target) {
+    const baselineDir = options.baseline ?? options.path ?? options.dir ?? positionals[1] ?? null;
+    if (!baselineDir) {
       throw new Error("benchmark analyze requires --path <dir> or a positional directory argument.");
     }
+    const candidateDir = options.compare ?? options.candidate ?? null;
     const analyzer = new BenchmarkAnalyzer();
-    await analyzer.analyzeDirectory(target);
+    if (candidateDir) {
+      await analyzer.compareDirectories(baselineDir, candidateDir);
+    } else {
+      await analyzer.analyzeDirectory(baselineDir);
+    }
+    return;
+  }
+
+  if (mode === "plan") {
+    const action = (positionals[1] ?? options.action ?? "scaffold").toLowerCase();
+    if (action !== "scaffold") {
+      throw new Error(`Unsupported benchmark plan action "${action}".`);
+    }
+    const sampleDir = options.sample ?? options["sample-dir"] ?? positionals[2] ?? null;
+    await scaffoldBenchmarkPlan({
+      sampleDir,
+      benchmarkRoot: options["benchmark-root"] ?? null,
+      outputPath: options.output ?? options.o ?? null,
+      verbose,
+    });
     return;
   }
 
@@ -710,6 +730,11 @@ async function handleBenchmark({
   const timestamp = options.timestamp ?? plan?.data?.timestamp ?? undefined;
   const runPrefix = options["run-prefix"] ?? plan?.data?.runPrefix ?? plan?.data?.defaults?.runPrefix ?? "RUN";
   const clean = options.clean ?? plan?.data?.clean ?? plan?.data?.defaults?.clean ?? false;
+  const resumeDescriptions =
+    options["resume-descriptions"] ??
+    plan?.data?.resumeDescriptions ??
+    plan?.data?.defaults?.resumeDescriptions ??
+    false;
 
   let result;
   try {
@@ -723,6 +748,7 @@ async function handleBenchmark({
         timestamp,
         runPrefix,
         clean,
+        resumeDescriptions: Boolean(resumeDescriptions),
       });
     } else {
       const directionsValue = options.directions ?? options.direction ?? "roundtrip";
@@ -734,6 +760,7 @@ async function handleBenchmark({
         clean: Boolean(clean),
         timestamp,
         runPrefix,
+        resumeDescriptions: Boolean(resumeDescriptions),
       });
     }
   } finally {
@@ -786,6 +813,7 @@ async function createRecomposeHarness({
     sessionRoot,
     promptLabel: sessionLabel ?? "recompose",
     verboseLogging: verbose,
+    memory,
   });
   const cleanup = async () => {
     await phi4.eject();
@@ -894,6 +922,7 @@ function buildBenchmarkPlanRuns(planData) {
   const fallbackRepeat = Math.max(1, Number(planData.defaults?.repeat ?? planData.repeat ?? 1) || 1);
   const fallbackClean = planData.defaults?.clean ?? planData.clean ?? false;
   const fallbackPrefix = planData.defaults?.runPrefix ?? planData.runPrefix ?? "RUN";
+  const fallbackResume = planData.defaults?.resumeDescriptions ?? planData.resumeDescriptions ?? false;
   const entries = Array.isArray(planData.runs) && planData.runs.length
     ? planData.runs
     : [
@@ -902,6 +931,7 @@ function buildBenchmarkPlanRuns(planData) {
           repeat: planData.repeat ?? fallbackRepeat,
           clean: planData.clean ?? fallbackClean,
           runPrefix: planData.runPrefix ?? fallbackPrefix,
+          resumeDescriptions: planData.resumeDescriptions ?? fallbackResume,
           label: planData.label,
           runLabel: planData.runLabel,
           labels: planData.labels,
@@ -919,6 +949,7 @@ function buildBenchmarkPlanRuns(planData) {
     const repeat = Math.max(1, Number(entry.repeat ?? fallbackRepeat) || 1);
     const entryClean = entry.clean ?? fallbackClean;
     const entryPrefix = entry.runPrefix ?? fallbackPrefix;
+    const entryResume = entry.resumeDescriptions ?? fallbackResume;
     const labelList = Array.isArray(entry.labels) ? entry.labels : null;
     for (let cycle = 0; cycle < repeat; cycle += 1) {
       entryDirections.forEach((direction, directionIndex) => {
@@ -940,6 +971,7 @@ function buildBenchmarkPlanRuns(planData) {
           clean: entryClean,
           runPrefix: entryPrefix,
           runLabel: resolvedLabel,
+          resumeDescriptions: entryResume,
         });
       });
     }
@@ -989,6 +1021,139 @@ function buildResourceConfig(cliOptions) {
     thresholds,
     sampleInterval: parseInterval(cliOptions["resource-sample-interval"]),
   };
+}
+
+async function scaffoldBenchmarkPlan({ sampleDir, benchmarkRoot, outputPath, verbose }) {
+  const defaultSample = path.join("samples", "recompose", "hello-flow");
+  const resolvedSample = path.resolve(sampleDir ?? defaultSample);
+  let stats;
+  try {
+    stats = await fs.promises.stat(resolvedSample);
+  } catch {
+    throw new Error(`Unable to locate sample directory ${resolvedSample}`);
+  }
+  if (!stats.isDirectory()) {
+    throw new Error(`Sample path is not a directory: ${resolvedSample}`);
+  }
+  const sampleName = path.basename(resolvedSample);
+  const codeDir = path.join(resolvedSample, "code");
+  const descriptionsDir = path.join(resolvedSample, "descriptions");
+  const normalized = (target) => {
+    const relative = path.relative(process.cwd(), target);
+    return (relative || target).replace(/\\/g, "/");
+  };
+  const planSlug = `${sampleName}-plan`;
+  const resolvedBenchmarkRoot =
+    benchmarkRoot && path.isAbsolute(benchmarkRoot)
+      ? benchmarkRoot
+      : path.resolve(benchmarkRoot ?? path.join("samples", "benchmark", "recompose", planSlug));
+  const codeFiles = await collectSampleFileStats(codeDir);
+  const descriptionFiles = await collectSampleFileStats(descriptionsDir);
+  const readmeSnippet = await loadReadmeSnippet(resolvedSample);
+  const lines = [];
+  lines.push(`# MiniPhi benchmark plan scaffold (${new Date().toISOString()})`);
+  lines.push(`# Sample: ${sampleName}`);
+  lines.push(`# Detected ${codeFiles.length} code files under ${normalized(codeDir)}`);
+  lines.push(`# Detected ${descriptionFiles.length} description files under ${normalized(descriptionsDir)}`);
+  if (readmeSnippet) {
+    lines.push(`# README excerpt: ${readmeSnippet}`);
+  }
+  if (codeFiles.length) {
+    lines.push(`# First files: ${codeFiles.slice(0, 5).map((file) => file.path).join(", ")}`);
+  }
+  lines.push("");
+  lines.push(`sampleDir: ${normalized(resolvedSample)}`);
+  lines.push(`benchmarkRoot: ${normalized(resolvedBenchmarkRoot)}`);
+  lines.push(`timestamp: ${planSlug}`);
+  lines.push(`runPrefix: PLAN`);
+  lines.push("defaults:");
+  lines.push("  # Roundtrip ensures both directions are exercised.");
+  lines.push("  directions:");
+  lines.push("    - roundtrip");
+  lines.push("  repeat: 1");
+  lines.push("  clean: false");
+  lines.push("  resumeDescriptions: false");
+  lines.push("runs:");
+  lines.push("  # Fresh sweep to regenerate markdown + reconstructed code.");
+  lines.push("  - label: clean-roundtrip");
+  lines.push("    clean: true");
+  lines.push("    directions:");
+  lines.push("      - roundtrip");
+  lines.push("  # Target markdown-to-code iterations without re-narrating files.");
+  lines.push("  - label: markdown-focus");
+  lines.push("    directions:");
+  lines.push("      - markdown-to-code");
+  lines.push("    repeat: 2");
+  lines.push("    runPrefix: PLAN-MD");
+  lines.push("    resumeDescriptions: true");
+  lines.push("");
+  const output = `${lines.join("\n").trim()}\n`;
+  if (outputPath) {
+    const resolvedOutput = path.resolve(outputPath);
+    await fs.promises.mkdir(path.dirname(resolvedOutput), { recursive: true });
+    await fs.promises.writeFile(resolvedOutput, output, "utf8");
+    const rel = normalized(resolvedOutput);
+    console.log(`[MiniPhi][Benchmark][Plan] Scaffold saved to ${rel}`);
+  } else {
+    if (!verbose) {
+      console.log("[MiniPhi][Benchmark][Plan] Use --output <file> to save this scaffold automatically.");
+    }
+    console.log(output);
+  }
+}
+
+async function collectSampleFileStats(baseDir) {
+  try {
+    const stats = await fs.promises.stat(baseDir);
+    if (!stats.isDirectory()) {
+      return [];
+    }
+  } catch {
+    return [];
+  }
+  const files = [];
+  const stack = [""];
+  while (stack.length) {
+    const current = stack.pop();
+    const absolute = path.join(baseDir, current);
+    const dirents = await fs.promises.readdir(absolute, { withFileTypes: true });
+    for (const entry of dirents) {
+      const rel = path.join(current, entry.name).replace(/\\/g, "/");
+      if (entry.isDirectory()) {
+        stack.push(rel);
+      } else if (entry.isFile()) {
+        const info = await fs.promises.stat(path.join(baseDir, rel));
+        files.push({ path: rel, bytes: info.size });
+      }
+    }
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return files;
+}
+
+async function loadReadmeSnippet(sampleDir) {
+  const candidates = [
+    path.join(sampleDir, "README.md"),
+    path.join(sampleDir, "README.md.md"),
+    path.join(sampleDir, "code", "README.md"),
+    path.join(sampleDir, "descriptions", "README.md"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const stats = await fs.promises.stat(candidate);
+      if (!stats.isFile()) {
+        continue;
+      }
+      const content = await fs.promises.readFile(candidate, "utf8");
+      const trimmed = content.replace(/\s+/g, " ").trim();
+      if (trimmed) {
+        return trimmed.slice(0, 220);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
 }
 
 function printHelp() {
@@ -1058,8 +1223,14 @@ Benchmark helper:
     --run-prefix <text>         Prefix for run artifacts (default: RUN)
     --timestamp <value>         Pin a timestamp folder (default: current time)
     --clean                     Perform clean before each run
+    --resume-descriptions       Skip the code-to-markdown sweep when descriptions already exist
   benchmark analyze [dir]       Summarize existing JSON reports under the directory
     --path <dir>                Directory containing RUN-###.json files (positional also accepted)
+    --compare <dir>             Optional candidate directory to diff against baseline
+  benchmark plan scaffold [sample]  Emit a commented plan template for the sample
+    --sample <path>             Sample directory to inspect (default: samples/recompose/hello-flow)
+    --benchmark-root <path>     Suggested benchmark root override
+    --output <path>             Persist the scaffold to a file instead of stdout
 `);
 }
 

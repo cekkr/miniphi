@@ -22,6 +22,7 @@ export default class MiniPhiMemory {
     this.executionsDir = path.join(this.baseDir, "executions");
     this.indicesDir = path.join(this.baseDir, "indices");
     this.healthDir = path.join(this.baseDir, "health");
+    this.historyDir = path.join(this.baseDir, "history");
     this.sessionsDir = path.join(this.baseDir, "prompt-sessions");
     this.researchDir = path.join(this.baseDir, "research");
     this.historyNotesDir = path.join(this.baseDir, "history-notes");
@@ -36,8 +37,12 @@ export default class MiniPhiMemory {
     this.promptSessionsIndexFile = path.join(this.indicesDir, "prompt-sessions-index.json");
     this.researchIndexFile = path.join(this.indicesDir, "research-index.json");
     this.historyNotesIndexFile = path.join(this.indicesDir, "history-notes-index.json");
+    this.benchmarkHistoryFile = path.join(this.historyDir, "benchmarks.json");
+    this.recomposeCacheDir = path.join(this.baseDir, "recompose-cache");
+    this.recomposeNarrativesFile = path.join(this.recomposeCacheDir, "narratives.json");
 
     this.prepared = false;
+    this.recomposeNarrativesCache = null;
   }
 
   /**
@@ -52,8 +57,10 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.indicesDir, { recursive: true });
     await fs.promises.mkdir(this.healthDir, { recursive: true });
     await fs.promises.mkdir(this.sessionsDir, { recursive: true });
+    await fs.promises.mkdir(this.historyDir, { recursive: true });
     await fs.promises.mkdir(this.researchDir, { recursive: true });
     await fs.promises.mkdir(this.historyNotesDir, { recursive: true });
+    await fs.promises.mkdir(this.recomposeCacheDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -64,6 +71,8 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.promptSessionsIndexFile, { entries: [] });
     await this.#ensureFile(this.researchIndexFile, { entries: [] });
     await this.#ensureFile(this.historyNotesIndexFile, { entries: [] });
+    await this.#ensureFile(this.benchmarkHistoryFile, { entries: [] });
+    await this.#ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -75,6 +84,7 @@ export default class MiniPhiMemory {
         { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
         { name: "research", file: this.#relative(this.researchIndexFile) },
         { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
+        { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
       ],
     });
 
@@ -463,6 +473,135 @@ export default class MiniPhiMemory {
       { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
+  }
+
+  async recordBenchmarkSummary(summary, options = {}) {
+    if (!summary) {
+      return;
+    }
+    await this.prepare();
+    const history = await this.#readJSON(this.benchmarkHistoryFile, { entries: [] });
+    const digest = this.#condenseBenchmarkSummary(summary);
+    const entry = {
+      id: randomUUID(),
+      recordedAt: new Date().toISOString(),
+      digest,
+      artifacts: {
+        summary: options.summaryPath ? this.#relative(options.summaryPath) : null,
+        markdown: options.markdownPath ? this.#relative(options.markdownPath) : null,
+        html: options.htmlPath ? this.#relative(options.htmlPath) : null,
+      },
+      type: options.type ?? "summary",
+    };
+    history.entries.unshift(entry);
+    history.entries = history.entries.slice(0, 200);
+    await this.#writeJSON(this.benchmarkHistoryFile, history);
+    if (Array.isArray(options.todoItems) && options.todoItems.length) {
+      await this.addTodoItems(options.todoItems, {
+        source: entry.artifacts.summary ?? digest.directory,
+      });
+    }
+    await this.#updateRootIndex();
+  }
+
+  async addTodoItems(items, { source } = {}) {
+    if (!Array.isArray(items) || !items.length) {
+      return;
+    }
+    await this.prepare();
+    const todo = await this.#readJSON(this.todoFile, { items: [] });
+    const normalized = new Set(todo.items.map((item) => item.text.toLowerCase()));
+    const now = new Date().toISOString();
+    items.forEach((text) => {
+      if (!text || normalized.has(text.toLowerCase())) {
+        return;
+      }
+      todo.items.push({
+        id: randomUUID(),
+        text,
+        createdAt: now,
+        completed: false,
+        source: source ?? null,
+      });
+      normalized.add(text.toLowerCase());
+    });
+    await this.#writeJSON(this.todoFile, todo);
+    await this.#updateRootIndex();
+  }
+
+  async getCachedNarrative(hash) {
+    if (!hash) {
+      return null;
+    }
+    await this.prepare();
+    const cache = await this.#loadNarrativeCache();
+    return cache.entries[hash] ?? null;
+  }
+
+  async storeCachedNarrative(hash, payload = {}) {
+    if (!hash || !payload.document) {
+      return;
+    }
+    await this.prepare();
+    const cache = await this.#loadNarrativeCache();
+    cache.entries[hash] = {
+      document: payload.document,
+      relativePath: payload.relativePath ?? null,
+      sample: payload.sample ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    cache.order = cache.order.filter((item) => item !== hash);
+    cache.order.unshift(hash);
+    const LIMIT = 400;
+    while (cache.order.length > LIMIT) {
+      const removed = cache.order.pop();
+      delete cache.entries[removed];
+    }
+    await this.#writeJSON(this.recomposeNarrativesFile, cache);
+    this.recomposeNarrativesCache = cache;
+  }
+
+  #condenseBenchmarkSummary(summary) {
+    const directions = {};
+    Object.entries(summary.directions ?? {}).forEach(([direction, details]) => {
+      const phases = {};
+      Object.entries(details.phases ?? {}).forEach(([phase, stats]) => {
+        phases[phase] = {
+          avg: Number(stats.averageMs ?? 0),
+          min: Number(stats.minMs ?? 0),
+          max: Number(stats.maxMs ?? 0),
+          runs: stats.runs ?? 0,
+        };
+      });
+      directions[direction] = {
+        runs: details.runs ?? 0,
+        warnings: details.totalWarnings ?? 0,
+        mismatches: details.totalMismatches ?? 0,
+        phases,
+      };
+    });
+    return {
+      analyzedAt: summary.analyzedAt ?? new Date().toISOString(),
+      directory: summary.directory ?? "",
+      totalRuns: summary.totalRuns ?? 0,
+      warningRuns: summary.warningRuns?.length ?? 0,
+      mismatchRuns: summary.mismatchRuns?.length ?? 0,
+      directions,
+    };
+  }
+
+  async #loadNarrativeCache() {
+    if (this.recomposeNarrativesCache) {
+      return this.recomposeNarrativesCache;
+    }
+    const cache = (await this.#readJSON(this.recomposeNarrativesFile, { entries: {}, order: [] })) ?? {
+      entries: {},
+      order: [],
+    };
+    cache.entries = cache.entries ?? {};
+    cache.order = Array.isArray(cache.order) ? cache.order : [];
+    this.recomposeNarrativesCache = cache;
+    return cache;
   }
 
   async saveResearchReport(report) {

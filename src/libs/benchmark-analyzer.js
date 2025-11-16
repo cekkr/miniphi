@@ -1,77 +1,110 @@
 import fs from "fs";
 import path from "path";
+import MiniPhiMemory from "./miniphi-memory.js";
 
 const formatNumber = (value) => Number(value || 0).toFixed(2);
 
 export default class BenchmarkAnalyzer {
+  constructor(options = {}) {
+    this.memory = options.memory ?? new MiniPhiMemory(process.cwd());
+  }
+
   async analyzeDirectory(targetDir) {
     if (!targetDir) {
       throw new Error("Benchmark analyzer requires a target directory.");
     }
     const resolved = path.resolve(targetDir);
-    const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
+    const runs = await this.#loadRuns(resolved);
+    const summary = this.#summarizeRuns(runs, resolved);
+    const artifacts = await this.#writeSummaryArtifacts(resolved, summary);
+    await this.#recordHistory(summary, { ...artifacts, type: "summary" });
+    this.#printSummary(summary, artifacts);
+    return summary;
+  }
+
+  async compareDirectories(baselineDir, candidateDir) {
+    if (!baselineDir || !candidateDir) {
+      throw new Error("benchmark analyze --compare requires both --path/--baseline and --compare directories.");
+    }
+    const baselineResolved = path.resolve(baselineDir);
+    const candidateResolved = path.resolve(candidateDir);
+    const baseline = this.#summarizeRuns(await this.#loadRuns(baselineResolved), baselineResolved);
+    const candidate = this.#summarizeRuns(await this.#loadRuns(candidateResolved), candidateResolved);
+    const comparison = this.#buildComparisonSummary(baseline, candidate);
+    const artifacts = await this.#writeComparisonArtifacts(candidateResolved, comparison);
+    await this.#recordHistory(comparison, { ...artifacts, type: "comparison" });
+    this.#printComparison(comparison, artifacts);
+    return comparison;
+  }
+
+  async #loadRuns(directory) {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
     const jsonFiles = entries
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
-      .map((entry) => path.join(resolved, entry.name));
-
-    if (jsonFiles.length === 0) {
-      throw new Error(`No JSON reports found under ${resolved}`);
+      .map((entry) => path.join(directory, entry.name));
+    if (!jsonFiles.length) {
+      throw new Error(`No JSON reports found under ${directory}`);
     }
-
-    const rawRuns = [];
+    const runs = [];
     for (const filePath of jsonFiles) {
       try {
-        const data = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
-        rawRuns.push({ filePath, data });
+        const raw = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+        runs.push({ filePath, data: raw });
       } catch (error) {
-        console.warn(`[MiniPhi][Benchmark][Analyze] Skipping ${filePath}: ${error instanceof Error ? error.message : error}`);
+        console.warn(
+          `[MiniPhi][Benchmark][Analyze] Skipping ${filePath}: ${error instanceof Error ? error.message : error}`,
+        );
       }
     }
-
-    if (rawRuns.length === 0) {
-      throw new Error(`Unable to parse any JSON reports under ${resolved}`);
+    if (!runs.length) {
+      throw new Error(`Unable to parse any JSON reports under ${directory}`);
     }
-
-    rawRuns.sort((a, b) => {
+    runs.sort((a, b) => {
       const aTime = Date.parse(a.data.generatedAt ?? 0);
       const bTime = Date.parse(b.data.generatedAt ?? 0);
       return aTime - bTime;
     });
+    return runs;
+  }
 
+  #summarizeRuns(runs, directory) {
     const summary = {
       analyzedAt: new Date().toISOString(),
-      directory: resolved,
-      totalRuns: rawRuns.length,
-      sampleDirs: Array.from(new Set(rawRuns.map((run) => run.data.sampleDir).filter(Boolean))).sort(),
+      directory,
+      totalRuns: runs.length,
+      sampleDirs: Array.from(new Set(runs.map((run) => run.data.sampleDir).filter(Boolean))).sort(),
       directions: {},
       warningRuns: [],
       mismatchRuns: [],
-      runs: rawRuns.map((run) => ({
+      runs: runs.map((run) => ({
         file: run.filePath,
         direction: run.data.direction,
         generatedAt: run.data.generatedAt ?? null,
       })),
     };
-
-    for (const { filePath, data } of rawRuns) {
+    for (const { filePath, data } of runs) {
       const direction = data.direction ?? "unknown";
-      const directionBucket = summary.directions[direction] ?? {
+      const bucket = summary.directions[direction] ?? {
         runs: 0,
         phases: {},
         totalWarnings: 0,
         warningRuns: 0,
         totalMismatches: 0,
         mismatchRuns: 0,
+        warningBuckets: {},
       };
-      directionBucket.runs += 1;
+      bucket.runs += 1;
       for (const step of data.steps ?? []) {
-        const phaseStats = directionBucket.phases[step.phase] ?? { durations: [] };
+        const phaseStats = bucket.phases[step.phase] ?? { durations: [] };
         phaseStats.durations.push(Number(step.durationMs || 0));
-        directionBucket.phases[step.phase] = phaseStats;
-
+        bucket.phases[step.phase] = phaseStats;
         if (step.phase === "markdown-to-code" && Array.isArray(step.warnings) && step.warnings.length) {
-          directionBucket.totalWarnings += step.warnings.length;
-          directionBucket.warningRuns += 1;
+          bucket.totalWarnings += step.warnings.length;
+          bucket.warningRuns += 1;
+          step.warnings.forEach((warning) => {
+            const reason = warning?.reason ?? "unknown warning";
+            bucket.warningBuckets[reason] = (bucket.warningBuckets[reason] ?? 0) + 1;
+          });
           summary.warningRuns.push({
             file: filePath,
             count: step.warnings.length,
@@ -81,8 +114,8 @@ export default class BenchmarkAnalyzer {
         if (step.phase === "comparison") {
           const mismatchCount = (step.mismatches ?? []).length + (step.missing ?? []).length + (step.extras ?? []).length;
           if (mismatchCount > 0) {
-            directionBucket.totalMismatches += mismatchCount;
-            directionBucket.mismatchRuns += 1;
+            bucket.totalMismatches += mismatchCount;
+            bucket.mismatchRuns += 1;
             summary.mismatchRuns.push({
               file: filePath,
               mismatches: step.mismatches ?? [],
@@ -92,10 +125,9 @@ export default class BenchmarkAnalyzer {
           }
         }
       }
-      summary.directions[direction] = directionBucket;
+      summary.directions[direction] = bucket;
     }
-
-    const normalizedDirections = {};
+    const normalized = {};
     for (const [direction, bucket] of Object.entries(summary.directions)) {
       const phases = {};
       for (const [phase, stats] of Object.entries(bucket.phases)) {
@@ -109,64 +141,227 @@ export default class BenchmarkAnalyzer {
           runs: durations.length,
         };
       }
-      normalizedDirections[direction] = {
+      normalized[direction] = {
         runs: bucket.runs,
         phases,
         warningRuns: bucket.warningRuns,
         totalWarnings: bucket.totalWarnings,
+        warningBuckets: bucket.warningBuckets,
         mismatchRuns: bucket.mismatchRuns,
         totalMismatches: bucket.totalMismatches,
       };
     }
-    summary.directions = normalizedDirections;
-
-    const summaryPath = path.join(resolved, "SUMMARY.json");
-    const markdownPath = path.join(resolved, "SUMMARY.md");
-    const htmlPath = path.join(resolved, "SUMMARY.html");
-    await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
-    await fs.promises.writeFile(markdownPath, this.#renderMarkdown(summary), "utf8");
-    await fs.promises.writeFile(htmlPath, this.#renderHtml(summary), "utf8");
-
-    this.#printSummary(summary, summaryPath, markdownPath, htmlPath);
-
+    summary.directions = normalized;
     return summary;
   }
 
-  #renderMarkdown(summary) {
-    const lines = [];
-    lines.push("# Benchmark Summary");
-    lines.push("");
-    lines.push(`- Directory: ${summary.directory}`);
-    lines.push(`- Analyzed At: ${summary.analyzedAt}`);
-    lines.push(`- Total Runs: ${summary.totalRuns}`);
-    lines.push(`- Sample Directories: ${summary.sampleDirs.length ? summary.sampleDirs.join(", ") : "n/a"}`);
-    lines.push("");
-    const directionEntries = Object.entries(summary.directions);
-    if (directionEntries.length === 0) {
-      lines.push("No direction stats found.");
-    } else {
-      directionEntries.forEach(([direction, details]) => {
-        lines.push(`## ${direction}`);
-        lines.push(
-          `Runs: ${details.runs}, warnings ${details.totalWarnings} (${details.warningRuns} runs), mismatches ${details.totalMismatches} (${details.mismatchRuns} runs)`,
-        );
-        const phaseEntries = Object.entries(details.phases);
-        if (phaseEntries.length) {
-          lines.push("");
-          lines.push("| Phase | Avg (ms) | Min (ms) | Max (ms) | Samples |");
-          lines.push("| --- | ---: | ---: | ---: | ---: |");
-          phaseEntries.forEach(([phase, stats]) => {
-            lines.push(`| ${phase} | ${formatNumber(stats.averageMs)} | ${formatNumber(stats.minMs)} | ${formatNumber(stats.maxMs)} | ${stats.runs} |`);
-          });
-        }
-        lines.push("");
-      });
+  async #writeSummaryArtifacts(directory, summary) {
+    const summaryPath = path.join(directory, "SUMMARY.json");
+    const markdownPath = path.join(directory, "SUMMARY.md");
+    const htmlPath = path.join(directory, "SUMMARY.html");
+    await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
+    await fs.promises.writeFile(markdownPath, this.#renderMarkdown(summary), "utf8");
+    await fs.promises.writeFile(htmlPath, this.#renderHtml(summary), "utf8");
+    return { summaryPath, markdownPath, htmlPath };
+  }
+
+  async #writeComparisonArtifacts(directory, comparison) {
+    const jsonPath = path.join(directory, "SUMMARY-COMPARE.json");
+    const markdownPath = path.join(directory, "SUMMARY-COMPARE.md");
+    await fs.promises.writeFile(jsonPath, JSON.stringify(comparison, null, 2), "utf8");
+    await fs.promises.writeFile(markdownPath, this.#renderComparisonMarkdown(comparison), "utf8");
+    return { summaryPath: jsonPath, markdownPath, htmlPath: null };
+  }
+
+  async #recordHistory(summary, artifacts) {
+    if (!this.memory) {
+      return;
     }
+    await this.memory.prepare();
+    const todoItems = this.#buildTodoItems(summary);
+    await this.memory.recordBenchmarkSummary(summary, {
+      summaryPath: artifacts.summaryPath,
+      markdownPath: artifacts.markdownPath,
+      htmlPath: artifacts.htmlPath,
+      todoItems,
+      type: artifacts.type,
+    });
+  }
+
+  #buildTodoItems(summary) {
+    if (!summary) {
+      return [];
+    }
+    if (summary.type === "comparison") {
+      const todos = [];
+      Object.entries(summary.directionDeltas ?? {}).forEach(([direction, details]) => {
+        if (details.warningDelta > 0) {
+          todos.push(`${direction}: warnings increased by ${details.warningDelta}`);
+        }
+        if (details.mismatchDelta > 0) {
+          todos.push(`${direction}: mismatches increased by ${details.mismatchDelta}`);
+        }
+      });
+      return todos;
+    }
+    const todos = [];
+    summary.warningRuns.forEach((warning) => {
+      todos.push(`${path.basename(warning.file)} emitted ${warning.count} warnings`);
+    });
+    summary.mismatchRuns.forEach((mismatch) => {
+      todos.push(`${path.basename(mismatch.file)} has ${mismatch.mismatches.length} mismatches`);
+    });
+    return todos;
+  }
+
+  #buildComparisonSummary(baseline, candidate) {
+    const comparison = {
+      type: "comparison",
+      analyzedAt: new Date().toISOString(),
+      baselineDir: baseline.directory,
+      candidateDir: candidate.directory,
+      directionDeltas: {},
+      warningRuns: {
+        baseline: baseline.warningRuns.length,
+        candidate: candidate.warningRuns.length,
+      },
+      mismatchRuns: {
+        baseline: baseline.mismatchRuns.length,
+        candidate: candidate.mismatchRuns.length,
+      },
+    };
+    const directions = new Set([
+      ...Object.keys(baseline.directions),
+      ...Object.keys(candidate.directions),
+    ]);
+    directions.forEach((direction) => {
+      const base = baseline.directions[direction] ?? {
+        runs: 0,
+        phases: {},
+        warningBuckets: {},
+        totalWarnings: 0,
+        totalMismatches: 0,
+      };
+      const cand = candidate.directions[direction] ?? {
+        runs: 0,
+        phases: {},
+        warningBuckets: {},
+        totalWarnings: 0,
+        totalMismatches: 0,
+      };
+      const phaseNames = new Set([...Object.keys(base.phases), ...Object.keys(cand.phases)]);
+      const phaseDeltas = [];
+      phaseNames.forEach((phase) => {
+        const baseStats = base.phases[phase];
+        const candStats = cand.phases[phase];
+        if (!baseStats && !candStats) {
+          return;
+        }
+        phaseDeltas.push({
+          phase,
+          baselineAvg: baseStats ? formatNumber(baseStats.averageMs) : "n/a",
+          candidateAvg: candStats ? formatNumber(candStats.averageMs) : "n/a",
+          deltaMs:
+            baseStats && candStats ? formatNumber(candStats.averageMs - baseStats.averageMs) : "n/a",
+        });
+      });
+      const bucketNames = new Set([
+        ...Object.keys(base.warningBuckets ?? {}),
+        ...Object.keys(cand.warningBuckets ?? {}),
+      ]);
+      const warningBuckets = [];
+      bucketNames.forEach((name) => {
+        const baselineCount = base.warningBuckets?.[name] ?? 0;
+        const candidateCount = cand.warningBuckets?.[name] ?? 0;
+        warningBuckets.push({
+          reason: name,
+          baseline: baselineCount,
+          candidate: candidateCount,
+          delta: candidateCount - baselineCount,
+        });
+      });
+      comparison.directionDeltas[direction] = {
+        baselineRuns: base.runs,
+        candidateRuns: cand.runs,
+        phaseDeltas,
+        warningDelta: cand.totalWarnings - base.totalWarnings,
+        mismatchDelta: cand.totalMismatches - base.totalMismatches,
+        warningBuckets,
+      };
+    });
+    return comparison;
+  }
+
+  #renderComparisonMarkdown(comparison) {
+    const lines = [
+      "# Benchmark Comparison",
+      `- Baseline: ${comparison.baselineDir}`,
+      `- Candidate: ${comparison.candidateDir}`,
+      `- Generated: ${comparison.analyzedAt}`,
+      "",
+    ];
+    Object.entries(comparison.directionDeltas).forEach(([direction, details]) => {
+      lines.push(`## ${direction}`);
+      lines.push(
+        `Runs baseline ${details.baselineRuns} vs candidate ${details.candidateRuns} | warnings Δ ${details.warningDelta} | mismatches Δ ${details.mismatchDelta}`,
+      );
+      if (details.phaseDeltas.length) {
+        lines.push("");
+        lines.push("| Phase | Baseline Avg (ms) | Candidate Avg (ms) | Δ (ms) |");
+        lines.push("| --- | ---: | ---: | ---: |");
+        details.phaseDeltas.forEach((delta) => {
+          lines.push(
+            `| ${delta.phase} | ${delta.baselineAvg} | ${delta.candidateAvg} | ${delta.deltaMs} |`,
+          );
+        });
+      }
+      if (details.warningBuckets.length) {
+        lines.push("");
+        lines.push("Warning buckets:");
+        details.warningBuckets.forEach((bucket) => {
+          lines.push(
+            `- ${bucket.reason}: baseline ${bucket.baseline}, candidate ${bucket.candidate} (Δ ${bucket.delta})`,
+          );
+        });
+      }
+      lines.push("");
+    });
+    return `${lines.join("\n").trim()}\n`;
+  }
+
+  #renderMarkdown(summary) {
+    const lines = [
+      "# Benchmark Summary",
+      `- Directory: ${summary.directory}`,
+      `- Analyzed At: ${summary.analyzedAt}`,
+      `- Total Runs: ${summary.totalRuns}`,
+      `- Sample Directories: ${summary.sampleDirs.join(", ") || "n/a"}`,
+      "",
+    ];
+    Object.entries(summary.directions).forEach(([direction, details]) => {
+      lines.push(`## ${direction}`);
+      lines.push(
+        `Runs: ${details.runs}, warnings ${details.totalWarnings} (${details.warningRuns} runs), mismatches ${details.totalMismatches} (${details.mismatchRuns} runs)`,
+      );
+      const phaseEntries = Object.entries(details.phases);
+      if (phaseEntries.length) {
+        lines.push("");
+        lines.push("| Phase | Avg (ms) | Min (ms) | Max (ms) | Samples |");
+        lines.push("| --- | ---: | ---: | ---: | ---: |");
+        phaseEntries.forEach(([phase, stats]) => {
+          lines.push(
+            `| ${phase} | ${formatNumber(stats.averageMs)} | ${formatNumber(stats.minMs)} | ${formatNumber(stats.maxMs)} | ${stats.runs} |`,
+          );
+        });
+        lines.push("");
+      }
+    });
     if (summary.warningRuns.length) {
       lines.push("## Warning Runs");
       summary.warningRuns.forEach((warning) => {
-        const sample = warning.sampleWarnings?.map((item) => item?.reason ?? "").filter(Boolean).join("; ") || "n/a";
-        lines.push(`- ${warning.file} (${warning.count} warnings) — sample: ${sample}`);
+        const sample =
+          warning.sampleWarnings?.map((item) => item?.reason ?? "").filter(Boolean).join("; ") || "n/a";
+        lines.push(`- ${warning.file} (${warning.count} warnings) – sample: ${sample}`);
       });
       lines.push("");
     }
@@ -183,28 +378,31 @@ export default class BenchmarkAnalyzer {
   }
 
   #renderHtml(summary) {
-    const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => {
-      switch (char) {
-        case "&":
-          return "&amp;";
-        case "<":
-          return "&lt;";
-        case ">":
-          return "&gt;";
-        case '"':
-          return "&quot;";
-        case "'":
-          return "&#39;";
-        default:
-          return char;
-      }
-    });
+    const escape = (value) =>
+      String(value ?? "").replace(/[&<>"']/g, (char) => {
+        switch (char) {
+          case "&":
+            return "&amp;";
+          case "<":
+            return "&lt;";
+          case ">":
+            return "&gt;";
+          case '"':
+            return "&quot;";
+          case "'":
+            return "&#39;";
+          default:
+            return char;
+        }
+      });
     const directionSections = Object.entries(summary.directions)
       .map(([direction, details]) => {
         const rows = Object.entries(details.phases)
           .map(
             ([phase, stats]) =>
-              `<tr><td>${escape(phase)}</td><td>${formatNumber(stats.averageMs)}</td><td>${formatNumber(stats.minMs)}</td><td>${formatNumber(stats.maxMs)}</td><td>${stats.runs}</td></tr>`,
+              `<tr><td>${escape(phase)}</td><td>${formatNumber(stats.averageMs)}</td><td>${formatNumber(
+                stats.minMs,
+              )}</td><td>${formatNumber(stats.maxMs)}</td><td>${stats.runs}</td></tr>`,
           )
           .join("");
         const table = rows
@@ -259,7 +457,7 @@ export default class BenchmarkAnalyzer {
     ].join("\n");
   }
 
-  #printSummary(summary, summaryPath, markdownPath, htmlPath) {
+  #printSummary(summary, artifacts) {
     console.log(`[MiniPhi][Benchmark][Analyze] ${summary.totalRuns} runs analyzed under ${summary.directory}`);
     Object.entries(summary.directions).forEach(([direction, details]) => {
       console.log(
@@ -267,14 +465,16 @@ export default class BenchmarkAnalyzer {
       );
       Object.entries(details.phases).forEach(([phase, stats]) => {
         console.log(
-          `  ↳ ${phase}: avg ${formatNumber(stats.averageMs)} ms, min ${stats.minMs} ms, max ${stats.maxMs} ms across ${stats.runs} samples`,
+          `  -> ${phase}: avg ${formatNumber(stats.averageMs)} ms, min ${stats.minMs} ms, max ${stats.maxMs} ms across ${stats.runs} samples`,
         );
       });
     });
     if (summary.warningRuns.length) {
       console.log("[MiniPhi][Benchmark][Analyze] Warning spikes:");
       summary.warningRuns.forEach((warning) => {
-        console.log(`  - ${warning.file}: ${warning.count} warnings (sample: ${JSON.stringify(warning.sampleWarnings)})`);
+        console.log(
+          `  - ${warning.file}: ${warning.count} warnings (sample: ${JSON.stringify(warning.sampleWarnings)})`,
+        );
       });
     }
     if (summary.mismatchRuns.length) {
@@ -285,11 +485,33 @@ export default class BenchmarkAnalyzer {
         );
       });
     }
-    const relJson = path.relative(process.cwd(), summaryPath) || summaryPath;
-    const relMarkdown = path.relative(process.cwd(), markdownPath) || markdownPath;
-    const relHtml = path.relative(process.cwd(), htmlPath) || htmlPath;
+    const relJson = path.relative(process.cwd(), artifacts.summaryPath) || artifacts.summaryPath;
+    const relMarkdown = path.relative(process.cwd(), artifacts.markdownPath) || artifacts.markdownPath;
+    const relHtml = artifacts.htmlPath ? path.relative(process.cwd(), artifacts.htmlPath) || artifacts.htmlPath : null;
     console.log(`[MiniPhi][Benchmark][Analyze] JSON summary saved to ${relJson}`);
     console.log(`[MiniPhi][Benchmark][Analyze] Markdown summary saved to ${relMarkdown}`);
-    console.log(`[MiniPhi][Benchmark][Analyze] HTML summary saved to ${relHtml}`);
+    if (relHtml) {
+      console.log(`[MiniPhi][Benchmark][Analyze] HTML summary saved to ${relHtml}`);
+    }
+  }
+
+  #printComparison(comparison, artifacts) {
+    console.log(
+      `[MiniPhi][Benchmark][Analyze] Compared ${comparison.candidateDir} against baseline ${comparison.baselineDir}`,
+    );
+    Object.entries(comparison.directionDeltas).forEach(([direction, details]) => {
+      console.log(
+        `[MiniPhi][Benchmark][Analyze] ${direction}: warnings Δ ${details.warningDelta}, mismatches Δ ${details.mismatchDelta}`,
+      );
+      details.phaseDeltas.forEach((delta) => {
+        console.log(
+          `  -> ${delta.phase}: baseline ${delta.baselineAvg} ms vs candidate ${delta.candidateAvg} ms (Δ ${delta.deltaMs})`,
+        );
+      });
+    });
+    const relJson = path.relative(process.cwd(), artifacts.summaryPath) || artifacts.summaryPath;
+    const relMarkdown = path.relative(process.cwd(), artifacts.markdownPath) || artifacts.markdownPath;
+    console.log(`[MiniPhi][Benchmark][Analyze] Comparison JSON saved to ${relJson}`);
+    console.log(`[MiniPhi][Benchmark][Analyze] Comparison Markdown saved to ${relMarkdown}`);
   }
 }

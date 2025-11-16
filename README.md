@@ -20,8 +20,8 @@ MiniPhi is a layered Node.js toolchain that drives LM Studio's `microsoft/Phi-4-
 - **Two entrypoints.** `node src/index.js run ...` to execute a command for you, `node src/index.js analyze-file ...` to summarize an existing log.
 - **Web research snapshots.** `node src/index.js web-research "query"` fetches structured DuckDuckGo results, prints them inline, and stores the report (plus optional raw payloads) under `.miniphi/research/` for later retrieval.
 - **.miniphi history notes.** `node src/index.js history-notes --label "post-upgrade"` scans `.miniphi`, records last-modified timestamps, and (when available) last git authors/commits so you can diff workspace evolution across runs.
-- **Code↔markdown recomposition tests.** `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` converts source code into markdown files, rebuilds code from the generated docs, compares the result, emits a per-step benchmark report, and now drops the Phi-4 transcript next to the report as `recompose-report.prompts.log` so `.miniphi` isn’t required to audit prompts.
-- **Benchmark automation + analysis.** `node src/index.js benchmark recompose --directions roundtrip,code-to-markdown` drops timestamped `RUN-###.{json,log}` artifacts (plus a matching `RUN-###.prompts.log` transcript) under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`, accepts JSON/YAML plans via `--plan` for per-run clean/label/direction overrides, and `node src/index.js benchmark analyze <dir>` now emits `SUMMARY.{json,md,html}` so rollups can be embedded directly into docs or PRs.
+- **Code?+"markdown recomposition tests.** `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` now supports `--resume-descriptions` to skip redundant narration sweeps, caches file narratives per hash under `.miniphi/recompose-cache/`, re-prompts automatically when Phi forgets fenced output, repairs mismatches with diff-driven prompts, and threads real sample metadata (README snippet + manifest) through every workspace summary so Phi-4 mirrors the original code instead of hallucinating context.
+- **Benchmark automation + analysis.** `node src/index.js benchmark recompose --directions roundtrip,code-to-markdown` drops timestamped `RUN-###.{json,log}` artifacts (plus a matching `RUN-###.prompts.log` transcript) under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/`, accepts JSON/YAML plans via `--plan` or the new `benchmark plan scaffold --sample ...`, adds `benchmark analyze --compare <baseline> --compare <candidate>` delta reports, and persists rollups into `.miniphi/history/benchmarks.json` (with TODO entries for every warning/mismatch spike).
 
 ### Prompt Taxonomy & Recordings
 MiniPhi now distinguishes between the **main prompt** (the single prompt generated per CLI invocation) and the **sub prompts** (each LM Studio API call issued while satisfying that run). Every exchange is written to `.miniphi/prompt-exchanges/<id>.json` with a `scope` field (`"main"` or `"sub"`), the request payload, streamed reasoning, and the final response. The companion `.miniphi/prompt-exchanges/index.json` file lists the latest exchanges and their `mainPromptId`, making it easy to:
@@ -146,6 +146,29 @@ node src/index.js recompose --sample samples/recompose/hello-flow --direction ro
 - Step 2 rebuilds code from each markdown file into `reconstructed/`, then Step 3 compares the reconstructed files against the originals.
 - Every run writes a `recompose-report.json` summary (counts, timings, mismatch stats) so you can diff code→markdown→code fidelity over time.
 - Prompt transcripts travel with the artifacts: the standalone CLI writes `<report-basename>.prompts.log` beside `recompose-report.json`, while `benchmark recompose` emits per-run `RUN-###.prompts.log` files plus matching `promptLogExport` entries in each JSON report.
+- Pass `--resume-descriptions` to skip the expensive code?markdown sweep when descriptions already exist (MiniPhi still runs markdown?code + comparisons).
+- Narratives are cached per file hash inside `.miniphi/recompose-cache/narratives.json`, so repeated sweeps reuse the prior descriptions instantly.
+- If Phi-4 forgets to emit a fenced block (or the reconstructed files drift), MiniPhi auto-reprompts with diff summaries of the mismatched files and rewrites them before re-running comparisons.
+- Workspace prompts embed the sample README excerpt + manifest, and �no workspace provided� responses trigger automatic retries seeded with that manifest.
+
+### Scaffold benchmark plans
+```bash
+node src/index.js benchmark plan scaffold --sample samples/recompose/hello-flow --output samples/recompose/hello-flow/benchmark-plan.generated.yaml
+```
+- Generates a commented YAML plan with detected defaults (sample directory, benchmark root, run prefixes, clean settings) so you can tweak values without memorizing the schema.
+- The scaffold highlights when to use `--resume-descriptions`, which directions run per entry, and which directories the plan expects.
+
+### Compare benchmark directories
+```bash
+node src/index.js benchmark analyze samples/benchmark/recompose/hello-flow-plan --compare samples/benchmark/recompose/16-11-25_21-00
+```
+- `benchmark analyze --compare ...` loads both directories, computes direction/phase deltas, and writes `SUMMARY-COMPARE.{json,md}` alongside the candidate runs.
+- Per-direction tables call out average duration drift per phase plus warning/mismatch deltas (grouped by warning bucket).
+
+### Benchmark history + TODOs
+- Every `benchmark analyze` run now persists its rollup (including comparison deltas) into `.miniphi/history/benchmarks.json`.
+- Warning spikes and mismatch regressions automatically add TODO entries inside `.miniphi/todo.json`, so project managers don't have to copy the four "missing code block" warnings from `clean-roundtrip.json` by hand.
+
 
 ### Prompt sessions & process-level timeouts
 - **Prompt sessions.** Supply `--prompt-id my-bash-audit` to persist Phi-4 chat history under `.miniphi/prompt-sessions/my-bash-audit.json`. Subsequent `run`/`analyze-file` invocations with the same ID pick up right where the previous reasoning left off, enabling step-by-step analysis across different Node.js scripts or terminals.
@@ -209,3 +232,6 @@ Per `AI_REFERENCE.md`:
 
 ## License
 MiniPhi is released under the ISC License (`LICENSE`).
+
+
+

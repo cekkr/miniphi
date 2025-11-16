@@ -32,13 +32,19 @@ export default class RecomposeBenchmarkRunner {
     directions = ["roundtrip"],
     repeat = 1,
     clean = false,
+    resumeDescriptions = false,
     timestamp = undefined,
     runPrefix = "RUN",
     planRuns = null,
   } = {}) {
     const runQueue = Array.isArray(planRuns) && planRuns.length
-      ? planRuns.map((entry, index) => this.#normalizePlanDescriptor(entry, { defaultClean: clean, defaultPrefix: runPrefix, index }))
-      : this.#buildDirectionalQueue(directions, repeat, { clean, runPrefix });
+      ? planRuns.map((entry, index) => this.#normalizePlanDescriptor(entry, {
+        defaultClean: clean,
+        defaultPrefix: runPrefix,
+        defaultResume: resumeDescriptions,
+        index,
+      }))
+      : this.#buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions });
     if (runQueue.length === 0) {
       throw new Error("At least one benchmark run is required.");
     }
@@ -60,6 +66,7 @@ export default class RecomposeBenchmarkRunner {
         direction: descriptor.direction,
         clean: descriptor.clean,
         sessionLabel: runLabel,
+        resumeDescriptions: descriptor.resumeDescriptions ?? resumeDescriptions,
       });
       const promptLogCopyPath = typeof this.tester.exportPromptLog === "function"
         ? await this.tester.exportPromptLog({
@@ -165,7 +172,7 @@ export default class RecomposeBenchmarkRunner {
     return targetPath;
   }
 
-  #buildDirectionalQueue(directions, repeat, { clean, runPrefix }) {
+  #buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions }) {
     if (!Array.isArray(directions) || directions.length === 0) {
       throw new Error("At least one direction is required for a benchmark run.");
     }
@@ -181,13 +188,14 @@ export default class RecomposeBenchmarkRunner {
           direction,
           clean: Boolean(clean),
           runPrefix,
+          resumeDescriptions: Boolean(resumeDescriptions),
         });
       });
     }
     return queue;
   }
 
-  #normalizePlanDescriptor(entry, { defaultClean, defaultPrefix, index }) {
+  #normalizePlanDescriptor(entry, { defaultClean, defaultPrefix, defaultResume, index }) {
     if (!entry || typeof entry !== "object") {
       throw new Error(`Plan entry ${index ?? 0} is not an object.`);
     }
@@ -200,6 +208,7 @@ export default class RecomposeBenchmarkRunner {
       clean: this.#normalizeClean(entry.clean, defaultClean),
       runPrefix: entry.runPrefix ?? defaultPrefix ?? "RUN",
       runLabel: entry.runLabel ?? entry.label ?? null,
+       resumeDescriptions: this.#normalizeBoolean(entry.resumeDescriptions, defaultResume),
     };
   }
 
@@ -213,6 +222,22 @@ export default class RecomposeBenchmarkRunner {
         return false;
       }
       return true;
+    }
+    return Boolean(value);
+  }
+
+  #normalizeBoolean(value, fallback) {
+    if (value === undefined || value === null) {
+      return Boolean(fallback);
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["false", "off", "no"].includes(normalized)) {
+        return false;
+      }
+      if (["true", "on", "yes"].includes(normalized)) {
+        return true;
+      }
     }
     return Boolean(value);
   }
