@@ -99,6 +99,9 @@ export default class EfficientLogAnalyzer {
         workspaceHint: workspaceContext?.hintBlock ?? null,
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
+        taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+        connectionSummary:
+          workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
       },
     );
 
@@ -182,6 +185,9 @@ export default class EfficientLogAnalyzer {
         workspaceHint: workspaceContext?.hintBlock ?? null,
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
+        taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+        connectionSummary:
+          workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
       },
     );
 
@@ -359,6 +365,12 @@ ${compressedContent}
     }
     if (extraContext.readmeSnippet) {
       lines.push(`README excerpt:\n${extraContext.readmeSnippet}`);
+    }
+    if (extraContext.taskPlanSummary) {
+      lines.push(`Task plan:\n${extraContext.taskPlanSummary}`);
+    }
+    if (extraContext.connectionSummary) {
+      lines.push(`File connection hints:\n${extraContext.connectionSummary}`);
     }
     if (!lines.length) {
       return "";

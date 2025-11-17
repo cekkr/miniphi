@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import FileConnectionAnalyzer from "./file-connection-analyzer.js";
 
 const CODE_EXTENSIONS = new Set([
   ".js",
@@ -68,6 +69,13 @@ export default class WorkspaceProfiler {
     this.maxEntries = options?.maxEntries ?? 500;
     this.maxDepth = options?.maxDepth ?? 2;
     this.sampleLimit = options?.sampleLimit ?? 8;
+    this.includeConnections = options?.includeConnections ?? true;
+    this.logger = typeof options?.logger === "function" ? options.logger : null;
+    this.connectionAnalyzer =
+      options?.connectionAnalyzer ??
+      new FileConnectionAnalyzer({
+        logger: this.logger,
+      });
   }
 
   /**
@@ -163,6 +171,17 @@ export default class WorkspaceProfiler {
 
     const classification = this.#classify(stats);
     const summary = this.#formatSummary(root, stats, highlights, classification);
+    let connections = null;
+    if (this.includeConnections && stats.codeFiles > 0 && this.connectionAnalyzer) {
+      try {
+        connections = this.connectionAnalyzer.analyze(root);
+      } catch (error) {
+        if (this.logger) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger(`[WorkspaceProfiler] File connection analysis failed: ${message}`);
+        }
+      }
+    }
 
     return {
       root,
@@ -170,6 +189,8 @@ export default class WorkspaceProfiler {
       highlights,
       classification,
       summary,
+      connections,
+      connectionSummary: connections?.summary ?? null,
     };
   }
 

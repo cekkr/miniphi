@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
-import LMStudioManager from "./libs/lmstudio-api.js";
+import LMStudioManager, { LMStudioRestClient } from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
@@ -19,6 +19,7 @@ import BenchmarkAnalyzer from "./libs/benchmark-analyzer.js";
 import { loadConfig } from "./libs/config-loader.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
+import PromptDecomposer from "./libs/prompt-decomposer.js";
 import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
@@ -199,6 +200,24 @@ async function main() {
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
   const workspaceProfiler = new WorkspaceProfiler();
+  let restClient = null;
+  try {
+    restClient = new LMStudioRestClient(configData.lmStudio?.rest ?? configData.rest ?? undefined);
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] LM Studio REST client disabled: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+  const promptDecomposer =
+    restClient &&
+    new PromptDecomposer({
+      restClient,
+      logger: verbose ? (message) => console.warn(message) : null,
+      maxDepth: configData.prompt?.decomposer?.maxDepth,
+      maxActions: configData.prompt?.decomposer?.maxActions,
+    });
   let performanceTracker = null;
   let scoringPhi = null;
 
@@ -360,7 +379,8 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-      const workspaceContext = await describeWorkspace(cwd);
+      let workspaceContext = await describeWorkspace(cwd);
+      let planResult = null;
         archiveMetadata.command = cmd;
         archiveMetadata.cwd = cwd;
         stateManager = new MiniPhiMemory(cwd);
@@ -376,6 +396,32 @@ async function main() {
           if (history) {
             phi4.setHistory(history);
           }
+        }
+        if (promptDecomposer) {
+          try {
+            planResult = await promptDecomposer.decompose({
+              objective: task,
+              command: cmd,
+              workspace: workspaceContext,
+              promptRecorder,
+              storage: stateManager,
+              mainPromptId: promptGroupId,
+              metadata: { mode: "run" },
+            });
+          } catch (error) {
+            if (verbose) {
+              console.warn(
+                `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          }
+        }
+        if (planResult) {
+          workspaceContext = {
+            ...(workspaceContext ?? {}),
+            taskPlanSummary: planResult.summary ?? null,
+            taskPlanId: planResult.planId ?? null,
+          };
         }
         await initializeResourceMonitor(`run:${cmd}`);
         result = await analyzer.analyzeCommandOutput(cmd, task, {
@@ -399,6 +445,8 @@ async function main() {
               workspaceHint: workspaceContext?.hintBlock ?? null,
               workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
               workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+              taskPlanId: planResult?.planId ?? null,
+              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
             },
           },
         });
@@ -413,7 +461,8 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
       const analyzeCwd = path.dirname(filePath);
-      const workspaceContext = await describeWorkspace(analyzeCwd);
+      let workspaceContext = await describeWorkspace(analyzeCwd);
+      let planResult = null;
 
         archiveMetadata.filePath = filePath;
         archiveMetadata.cwd = path.dirname(filePath);
@@ -430,6 +479,32 @@ async function main() {
           if (history) {
             phi4.setHistory(history);
           }
+        }
+        if (promptDecomposer) {
+          try {
+            planResult = await promptDecomposer.decompose({
+              objective: task,
+              command: filePath,
+              workspace: workspaceContext,
+              promptRecorder,
+              storage: stateManager,
+              mainPromptId: promptGroupId,
+              metadata: { mode: "analyze-file" },
+            });
+          } catch (error) {
+            if (verbose) {
+              console.warn(
+                `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          }
+        }
+        if (planResult) {
+          workspaceContext = {
+            ...(workspaceContext ?? {}),
+            taskPlanSummary: planResult.summary ?? null,
+            taskPlanId: planResult.planId ?? null,
+          };
         }
         await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
         result = await analyzer.analyzeLogFile(filePath, task, {
@@ -451,6 +526,8 @@ async function main() {
               workspaceHint: workspaceContext?.hintBlock ?? null,
               workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
               workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+              taskPlanId: planResult?.planId ?? null,
+              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
             },
           },
         });

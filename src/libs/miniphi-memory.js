@@ -26,6 +26,8 @@ export default class MiniPhiMemory {
     this.sessionsDir = path.join(this.baseDir, "prompt-sessions");
     this.researchDir = path.join(this.baseDir, "research");
     this.historyNotesDir = path.join(this.baseDir, "history-notes");
+    this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
+    this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -40,6 +42,10 @@ export default class MiniPhiMemory {
     this.benchmarkHistoryFile = path.join(this.historyDir, "benchmarks.json");
     this.recomposeCacheDir = path.join(this.baseDir, "recompose-cache");
     this.recomposeNarrativesFile = path.join(this.recomposeCacheDir, "narratives.json");
+    this.promptDecompositionIndexFile = path.join(
+      this.promptDecompositionsDir,
+      "index.json",
+    );
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -61,6 +67,8 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.researchDir, { recursive: true });
     await fs.promises.mkdir(this.historyNotesDir, { recursive: true });
     await fs.promises.mkdir(this.recomposeCacheDir, { recursive: true });
+    await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
+    await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -73,6 +81,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.historyNotesIndexFile, { entries: [] });
     await this.#ensureFile(this.benchmarkHistoryFile, { entries: [] });
     await this.#ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
+    await this.#ensureFile(this.promptDecompositionIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -85,6 +94,7 @@ export default class MiniPhiMemory {
         { name: "research", file: this.#relative(this.researchIndexFile) },
         { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
         { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
+        { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
       ],
     });
 
@@ -199,6 +209,32 @@ export default class MiniPhiMemory {
     await this.#updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
 
     return { id: executionId, path: executionDir };
+  }
+
+  async savePromptDecomposition(payload) {
+    if (!payload?.plan) {
+      return null;
+    }
+    await this.prepare();
+    const planId = payload.planId ?? payload.plan?.plan_id ?? randomUUID();
+    const timestamp = new Date().toISOString();
+    const record = {
+      id: planId,
+      createdAt: timestamp,
+      summary: payload.summary ?? payload.plan?.summary ?? null,
+      metadata: payload.metadata ?? null,
+      plan: payload.plan,
+    };
+    const filePath = path.join(this.promptDecompositionsDir, `${planId}.json`);
+    await this.#writeJSON(filePath, record);
+    await this.#updatePromptDecompositionIndex({
+      id: planId,
+      createdAt: timestamp,
+      summary: record.summary,
+      file: this.#relative(filePath),
+      metadata: record.metadata ?? null,
+    });
+    return { id: planId, path: filePath };
   }
 
   async loadPromptSession(promptId) {
@@ -459,6 +495,15 @@ export default class MiniPhiMemory {
     await this.#updateRootIndex();
   }
 
+  async #updatePromptDecompositionIndex(entry) {
+    const index = await this.#readJSON(this.promptDecompositionIndexFile, { entries: [] });
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.promptDecompositionIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
   async #updateRootIndex() {
     const root = await this.#readJSON(this.rootIndexFile, { children: [] });
     root.updatedAt = new Date().toISOString();
@@ -471,6 +516,7 @@ export default class MiniPhiMemory {
       { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
       { name: "research", file: this.#relative(this.researchIndexFile) },
       { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
+      { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }
