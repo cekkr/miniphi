@@ -1,57 +1,57 @@
 # After a prompt
-- Update AI_REFERENCE.md references and next step.
-- Update README.md with updated documentation for humans.
-- **High-priority directive:** Benchmark-related "next steps" should primarily target improvements to the MiniPhi library runtime (prompt orchestration, analyzers, clients, etc.) rather than tweaks to the benchmark scripts themselves.
-- **High-priority directive:** Every Phi-4 prompt must declare the exact JSON schema expected in the response (fields, types, nullability) so large workspaces can be analyzed chunk-by-chunk with deterministic structures and line-number aware edits.
+- Keep `README.md` and this reference in sync whenever MiniPhi gains a new command, argument, or workflow.
+- Benchmark follow-up work must target MiniPhi's runtime (prompt orchestration, analyzers, LM Studio clients) instead of touching the benchmark scripts unless absolutely required for coverage.
+- Every Phi-4 prompt must declare the exact JSON schema expected in the response (fields, types, nullability) so large workspaces stay deterministic.
 
 # MiniPhi Reference
 
 ## Current Status
-- Layered LM Studio stack is live: `LMStudioManager` (JIT loading), `Phi4Handler` (reasoning-aware streaming) and `EfficientLogAnalyzer` (compression + Phi-4 orchestration) sit under `src/`.
-- Native `/api/v0` instrumentation landed in `LMStudioRestClient` (`src/libs/lmstudio-api.js`), wrapping the docs in `docs/APIs/REST API v0 _ LM Studio Docs.html` so we can list/check models, run synchronous chat/completion/embedding calls, and capture runtime stats directly from the default server (`http://127.0.0.1:1234`, `microsoft/phi-4-reasoning-plus`, 4096-token baseline unless the model is reloaded).
-- Cross-platform command runner (`CliExecutor`), streaming file utilities, and Python-backed summarizer script (`log_summarizer.py`) enable analysis of arbitrarily large logs/CLI outputs.
-- `src/index.js` exposes two modes: `run` (execute + analyze a command) and `analyze-file` (summarize existing logs). Both automatically stream Phi-4 solutions unless `--no-stream` is provided.
-- Default workflow: `node src/index.js run --cmd "npm test" --task "Analyze failures"` -> auto execute, compress, and reason using Phi-4 (requires LM Studio server + Phi-4 reasoning-plus downloaded).
-- Python dependency: CLI auto-detects `python3`, `python`, or `py`; override path via `--python-script`. Summaries live under project root.
-- Hidden `.miniphi/` workspace (managed by `MiniPhiMemory`) snapshots every execution: prompts, compression chunks, analysis, recursive indexes, and auto-extracted TODO lists for future orchestration reuse.
-- Structured prompt recorder: every LM Studio exchange (tagged `scope: "main"` for the MiniPhi prompt vs `scope: "sub"` for each LM Studio API call) is now mirrored as JSON under `.miniphi/prompt-exchanges/`, making it trivial to inspect or replay individual sub-prompts in separate Node processes.
-- Research snapshotter: the `web-research` command uses DuckDuckGo’s Instant Answer API to capture short web briefs, prints them inline, and stores normalized results (plus optional raw payloads) under `.miniphi/research/` for reuse in future prompts.
-- History note taker: `history-notes` walks `.miniphi/`, records file sizes + last-modified timestamps, attaches git metadata when available, and emits Markdown/JSON notes inside `.miniphi/history-notes/` so teams can audit workspace drift alongside user edit dates.
-- Code↔markdown benchmarking harness: the `recompose` command (with the new `samples/recompose/hello-flow` project) converts source files into markdown descriptions, rebuilds code from those descriptions, compares the output, and writes step-by-step telemetry into `recompose-report.json`.
-- The `hello-flow` sample now includes layered flow/pipeline modules plus `samples/recompose/hello-flow/benchmark-plan.yaml`, giving recomposition benchmarks nested imports, shared persistence/logging utilities, and a ready-made plan that toggles `clean`, `runPrefix`, and directions per run.
-- `benchmark recompose` now automates timestamped runs under `samples/benchmark/recompose/<dd-mm-yy_mm-hh>/RUN-###.{json,log}`, and `benchmark analyze <dir>` aggregates averages, mismatches, and warning spikes so sweeps stay organized per WHY_SAMPLES guidance.
-- `benchmark recompose --plan <file>` accepts JSON or YAML plans, normalizes per-run `directions`, `clean`, and custom run labels, and resolves plan-relative sample/benchmark directories so teams can check in canonical sweeps.
-- `benchmark analyze` emits `SUMMARY.json`, `SUMMARY.md`, and `SUMMARY.html`, making it trivial to embed rollups into docs or PRs without rerunning the CLI.
-- `benchmark plan scaffold --sample <dir>` inspects the sample tree, emits a commented YAML template (detected defaults + run hints), `benchmark analyze --compare <baseline> --compare <candidate>` spotlights phase/warning deltas, and every rollup now lands in `.miniphi/history/benchmarks.json` with matching TODO entries inside `.miniphi/todo.json`.
-- `RecomposeTester.exportPromptLog` now copies the Phi-4 transcript out of `.miniphi/recompose/.../prompts.log` into whatever output folder invoked it—`recompose-report.prompts.log` for CLI runs and `RUN-###.prompts.log` for benchmarks—and records the relative path via `promptLogExport` inside each JSON report so reviewers can audit LM Studio conversations without spelunking through hidden workspace files.
-- Resource monitor + health archive: `ResourceMonitor` samples RAM/CPU/VRAM on Windows/macOS/Linux, emits warnings via new CLI flags, and persists rollups under `.miniphi/health/resource-usage.json`.
-- Recompose harness upgrades: `RecomposeTester` accepts `--resume-descriptions`, caches code?markdown narratives per file hash via `MiniPhiMemory`, auto-reprompts when Phi skips fenced output, diff-summarizes mismatched files before regenerating them, and threads README/manifests into each workspace summary so Phi-4 starts with real sample context.
-- Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) now lets teams pin the LM Studio endpoint, prompt defaults, and resource thresholds without re-entering the same flags every run.
-- A new `bin` entry exposes the `miniphi` command when the package is installed globally, so `miniphi run ...` or `miniphi analyze-file ...` behave like `node src/index.js ...`.
-- `benchmark/scripts/bash-flow-explain.js` now uses `web-tree-sitter` (with a macro-aware fallback for `shell.c::main`) to emit depth-limited, ordered call-flow walkthroughs for the Bash sample; EXPLAIN-012.md is the latest AST-backed baseline mirrored under `.miniphi/benchmarks/bash/`.
-- `benchmark/scripts/bash-recursive-prompts.js` orchestrates Phi-4 over REST-accessible LM Studio (http://127.0.0.1:1234), walks the Bash directory tree, recursively feeds file snippets, honors any supplied session timeout, and records per-stage stats into `RECURSIVE-###.md` dossiers.
-- Workspace-aware prompting shipped: `WorkspaceProfiler` (`src/libs/workspace-profiler.js`) scans the current working directory (codebases vs doc/book projects) and injects a summary + detected domain into every Phi-4 prompt so MiniPhi can fluidly switch between engineering tasks and manuscript editing (including outlining new chapters when the workspace looks like a book).
-- Prompt scoring + SQLite persistence shipped: `PromptPerformanceTracker` (`src/libs/prompt-performance-tracker.js`) now writes every prompt/response exchange into `miniphi-prompts.db`, calls a dedicated Phi-4 grading prompt to assign scores/follow-up likelihood/tag metadata, snapshots the best-performing prompts per workspace/objective, and exposes `--debug-lm` so operators can watch objectives/prompts scroll by in real time.
-- Prompt sessions can now be resumed via `--prompt-id <id>` (history lives under `.miniphi/prompt-sessions/`), and operators may optionally cap an entire MiniPhi run with `--session-timeout <ms>`—the remaining budget is propagated to each Phi-4 call.
-- Baseline benchmark harness: `node benchmark/run-tests.js` loads `benchmark/tests.config.json`, enforces 15-minute caps, timestamps stdout/stderr, and currently runs the `samples/bash` EXPLAIN generator into timestamped directories under `samples/benchmark/bash/<dd-mm-yy_mm-hh>/`.
-- Each benchmark run now receives its own subfolder named after the execution timestamp following the `dd-mm-yy_mm-hh` rule (minutes precede hours to avoid collisions when multiple runs land in the same hour).
-- Manual benchmark cycle `samples/benchmark/bash/14-11-25_38-05/EXPLAIN-003.md` (depth-1 review of `shell.c → eval.c → execute_cmd.c`) is now available for reuse and includes a benchmark-specific follow-up list that feeds into the roadmap below.
+- Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.
+- CLI entrypoints cover commands (`run`), file analysis (`analyze-file`), research snapshots (`web-research`), `.miniphi` audit trails (`history-notes`), recomposition workflows (`recompose`), and benchmark automation (`benchmark recompose|analyze|plan scaffold`).
+- Default workflow (`node src/index.js run --cmd "npm test" --task "Analyze failures"`) executes a command, compresses stdout/stderr, and streams Phi-4 reasoning in real time (requires LM Studio at `http://127.0.0.1:1234` with `microsoft/phi-4-reasoning-plus`).
+- Hidden `.miniphi/` workspace, managed by `MiniPhiMemory`, snapshots every execution (`executions/<id>`, `prompt.json`, `analysis.json`, compression segments, TODOs, recursive indexes) and mirrors each sub-prompt as JSON under `.miniphi/prompt-exchanges/`.
+- `WorkspaceProfiler` (plus `FileConnectionAnalyzer`) inspects the repo tree and injects workspace hints into every Phi-4 prompt; `PromptRecorder` mirrors the exchanges and `PromptPerformanceTracker` stores scores + prompt metadata inside `miniphi-prompts.db`.
+- `PromptDecomposer` preflights complex tasks, emits JSON trees of sub-prompts/actions, and persists them under `.miniphi/prompt-exchanges/decompositions/` so runs can resume mid-branch.
+- Resource monitoring (RAM/CPU/VRAM) ships via `ResourceMonitor`, streaming warnings to the console and recording rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
+- Research, history, and benchmark helpers store artifacts inside `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, making every Phi-4 conversation or benchmark sweep reproducible.
+- `RecomposeTester` and `RecomposeBenchmarkRunner` drive `samples/recompose/hello-flow`, cache code-to-markdown descriptions, repair mismatches with diff-driven prompts, and export Phi transcript logs next to every JSON report so reviews stay auditable.
+- Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) lets teams pin LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
+
+## Reference documents
+- `README.md` - human-friendly overview, quickstart, command tour, `.miniphi` layout, and current status summary.
+- `docs/NodeJS LM Studio API Integration.md` - SDK vs REST instrumentation, including the `/api/v0` behaviors mirrored in `LMStudioRestClient`.
+- `docs/miniphi-cli-implementation.md` - compression heuristics, architectural rationale, and orchestration background.
+- `docs/APIs/REST API v0 _ LM Studio Docs.html` - offline REST docs consumed by `LMStudioRestClient`.
+- `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
+- `docs/todo/author.md` - human editing backlog.
+- `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
 
 ## High-Priority Fundamentals
-1. **Narrative-only recomposition inputs.** `samples/recompose/README.md` mandates that each `code-to-markdown` pass produces strictly narrative, multi-part prose under `samples/recompose/*/descriptions`. The markdown cannot paste raw code or mirror the original file tree; it must describe flow, behavior, and expected outcomes so recomposition requires reasoning instead of copy/paste. Treat `samples/recompose/hello-flow/descriptions` as the canonical enforcement point and keep it aligned with the storytelling guidance spelled out in the README while still letting operators reassemble equivalent pipelines.
-2. **Multi-prompt Phi-4 orchestration.** A single MiniPhi CLI invocation (e.g., `node src/index.js benchmark recompose --plan samples/recompose/hello-flow/benchmark-plan.yaml`) must expand into multiple LM Studio Phi-4 prompts that first explore/understand the workspace (persisting summaries into `.miniphi/` memory and `.miniphi/prompt-exchanges/*.json`) and then drive targeted edits/appends with optimized snippets. Recompose benchmarks are only valid when this chained prompting is visible in memory/history; bypassing it with single-shot copy/paste responses defeats the security objective.
+1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.
+2. **Multi-prompt orchestration.** Each MiniPhi invocation should expand into multiple Phi-4 prompts (workspace scan, plan, targeted edits). Persist those task trees and transcripts under `.miniphi/` so future runs can resume mid-branch.
+3. **JSON schema enforcement.** Store and reuse schema templates for every Phi-4 interaction (main prompt plus sub-prompts) so long-running editing sessions can diff responses line-by-line.
 
 ## Issues & Constraints
-- Persistence is local JSON only: `.miniphi/` has no pruning, encryption, or sync/export tooling yet, so long projects can grow large and data stays on-disk per machine.
-- No automated tests; manual verification recommended before distribution. LM Studio server availability is assumed and not checked beforehand.
-- `PythonLogSummarizer` requires a functioning Python runtime with stdlib only. Failure falls back to heuristic compression, which may degrade quality.
-- Streaming parser assumes a single `<think>...</think>` block; nested/multiple reasoning sections not handled.
-- CLI currently serial; parallel task decomposition, directory analyzers, and advanced compression strategies from the roadmap remain TODO.
-- GPU telemetry falls back to vendor utilities; if neither `nvidia-smi` nor OS-specific probes exist, VRAM usage is marked "unknown" (still logged, but without enforcement).
-- Benchmark harness presently covers only the Bash sample; additional suites (performance, regression, `.miniphi` integrity) still need to be encoded as configs/scripts.
-- Optional session timeout only applies when `--session-timeout` is provided; still need better adaptive chunking for very long recursive analyses instead of a hard wall-clock abort.
+- Persistence is local JSON only; `.miniphi/` lacks pruning, encryption, or sync tooling and can grow quickly on long projects.
+- There is no automated test suite; compression heuristics, Phi prompts, and LM Studio integrations still rely on manual verification.
+- Packaging, telemetry, retention policies, and richer summarization backends are in flight; use `node src/index.js ...` or `npx miniphi ...` directly until publishing hardening lands.
+- Benchmark suites currently focus on Bash recomposition; other language samples (GPU stressors, Windows helpers, etc.) are still TODO.
 
-## Next Steps
+## Next Steps (runtime-focused)
+1. Wire `.miniphi/indices` and `.miniphi/history/benchmarks.json` directly into the prompt builder so `run`/`analyze-file` commands can reuse benchmark findings without re-reading large files.
+2. Expand `PromptDecomposer` into a first-class planner that detects multi-goal commands, proposes sub-prompts with schema references, and lets operators resume a given branch through `--prompt-id`.
+3. Add config profiles (named presets inside `config.json`) for LM Studio endpoints, GPU modes, prompt templates, and retention policies, and emit CLI help describing the active profile.
+4. Layer richer summarization backends (semantic chunking, embeddings, AST diffs) on top of `EfficientLogAnalyzer` so Phi receives higher-signal context for code and book workspaces.
+5. Ship `.miniphi` maintenance helpers (prune executions, archive research, health-check workspace size) and expose them via a new CLI subcommand.
+6. Harden orchestration observability: log LM Studio `/api/v0/status` snapshots, context settings, and resource baselines before each Phi call, then persist them next to every prompt exchange.
+7. Build a `.miniphi` diff viewer that compares two `history-notes` snapshots or prompt exchanges, highlighting which files, prompts, or health metrics changed between runs.
+8. Teach `web-research` to feed saved research snippets into follow-up `run`/`analyze-file` prompts automatically so investigations keep their citations without manual copy/paste.
+9. Add a CLI helper for replaying `.miniphi/prompt-exchanges/*.json` (per scope or per sub-prompt) so teams can iterate on specific Phi calls without re-running the parent command.
+10. Extend `WorkspaceProfiler` with explicit outline support (`SUMMARY.md`, `book.json`, manifest files) so document-heavy repos send richer cues into every Phi-4 prompt.
+11. Surface top-performing prompts from `miniphi-prompts.db` (`prompt-scores` helper) so operators can pick known-good templates for similar objectives.
+12. Integrate recomposition telemetry with the main runtime: allow `benchmark analyze` summaries to be referenced inside standard prompts to guide future refactors instead of tweaking the benchmark scripts themselves.
+
+### General vision Next Steps
 1. Layer heuristics + comment harvesting onto the new AST call-flow generator so each `shell.c::main` step includes “why” context (startup vs trap vs job-control) instead of just callee metadata.
 2. Persist the `EXPLAIN-003` chunks (and future benchmarks) into a dedicated `.miniphi/benchmarks/bash/` namespace so orchestration layers can retrieve them without rescanning 5K-line files.
 3. Catalog the “special” builtins (`set`, `trap`, `exec`, etc.) inside the benchmark output to document how `execute_simple_command` toggles `CMD_IGNORE_RETURN` under `set -e`.
