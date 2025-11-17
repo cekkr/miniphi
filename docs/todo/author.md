@@ -47,3 +47,6 @@ Inspect .miniphi/prompt-exchanges/ and .miniphi/recompose/<timestamp>/ output fr
 - Add the support to real time stdout analyzing while still running long execution time process, needed for tools and testing, and support parallel executions for case where is needed (like testing a program that need a server running in the meanwhile), closing them when no more needed (or to recompile/re-run)
 - Improve SQLite DB prompts/json structure/script tools storing and best performances statistical evaluation (also in case of context, like the project, directory, file, or current prompt and sub-prompt). Using API's prompt to check the validity of the chosen tools in this context. (This requires also a verbal description of internal commands in case of prompting needed)
 - Try to generate at the end of a miniphi prompt execution, if tools are available, the commands for validating code quality/syntax error (if not know, ask to APIs)
+
+### To prompt:
+As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about: json schema enforcement, recusive prompt decomposition, file connection graphic, capability inventories, prompt telemetry richness
