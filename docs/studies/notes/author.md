@@ -59,4 +59,9 @@ As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about:
 - Miniphi currently not enough "current project-centric". It should be evident to work with current working directory as base project where to work, and it has to support the basic command "miniphy Make this prompt without argument name in CWD --optional-args". Miniphi was created to create from scratch but also edit big projects, and not only "convert to markdown and back to code" as done in benchmarks.
 - Add "command authorization before execution". User's can always allow them, ask for permission for every session etc. Then, take advantages of "APIs generated commands" to add to JSON response structure also the predicted dangerousness (low|mid|high), so user can be asked for permission only for sensible commands.
 - Check the ability of APIs model to change by himself the JSON structure of commands and response. Anyway this requires its ability to implement their input and output adapters.
+- Add support to direct file reference: with @"file/path.cpp" (quotes optional), the prompts analyze and takes as fixed reference the given files.
 - I forgot it. 
+
+## Prompt analysis
+It should be improved the recursive approach. For example, given a prompt, are needed API's prompts... to analyze prompt. These series of prompts (what are the objectives? make a list ...) are aiming to obtain the checklist of what to do, and divided every point in sub-prompts (and recursively sub-sub-prompts etc when needed) to analyze and editing everything coherently staying in the current maximum context window (default: 4096).
+A class that uses nvidia/amdgpu tools to obtain in real time VRAM usage may help to expand/shrink dynamically context window in base of current resource(?)
