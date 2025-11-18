@@ -1,6 +1,6 @@
 # MiniPhi
 
-> Local, Phi-4-powered command and log analysis that compresses everything before it thinks.
+> Local, LM Studio-based (and Phi-4-powered) command and log analysis that compresses everything before it thinks. And execute commands. And edits things. In short, like Codex, but locally.
 
 MiniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio's `microsoft/phi-4-reasoning-plus` model. The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
 
