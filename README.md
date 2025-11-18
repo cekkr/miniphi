@@ -5,7 +5,7 @@
 MiniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio's `microsoft/phi-4-reasoning-plus` model. The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
 
 ## Why MiniPhi exists
-- You can run scary commands (`npm test`, data migrations, synthetic benchmarks) and let Phi-4 triage the output without pasting it into a remote service.
+- You can run scary commands (summarizations, implementations, data migrations, synthetic benchmarks, `npm benchmark:windows`) and let Phi-4 triage the output without pasting it into a remote service.
 - Giant logs stay useful because a Python summarizer and a JS compressor shave them down before Phi starts thinking.
 - MiniPhi keeps a scrapbook of every prompt, response, benchmark run, and research sweep, which means you never lose context across sessions.
 - Every Phi-4 prompt now declares an explicit JSON schema so responses can be replayed or diffed reliably inside large workspaces.
