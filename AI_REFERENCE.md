@@ -23,9 +23,9 @@
 - `README.md` - human-friendly overview, quickstart, command tour, `.miniphi` layout, and current status summary.
 - `docs/NodeJS LM Studio API Integration.md` - SDK vs REST instrumentation, including the `/api/v0` behaviors mirrored in `LMStudioRestClient`.
 - `docs/miniphi-cli-implementation.md` - compression heuristics, architectural rationale, and orchestration background.
-- `docs/APIs/REST API v0 _ LM Studio Docs.html` - offline REST docs consumed by `LMStudioRestClient`.
+- `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` - offline REST docs consumed by `LMStudioRestClient`.
 - `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
-- `docs/todo/author.md` - human editing backlog.
+- `docs/studies/todo/author.md` - human editing backlog.
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
 
 ## High-Priority Fundamentals

@@ -104,9 +104,9 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `AI_REFERENCE.md` holds the current status snapshot plus the near-term roadmap.
 - `docs/NodeJS LM Studio API Integration.md` explains how the LM Studio SDK and REST layers fit together.
 - `docs/miniphi-cli-implementation.md` walks through compression heuristics, pipelines, and architectural decisions.
-- `docs/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
+- `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
 - `docs/os-defaults/windows.md` and `docs/prompts/windows-benchmark-default.md` document the Windows helper workflow.
-- `docs/todo/author.md` tracks authoring tasks that still need human review.
+- `docs/studies/todo/author.md` tracks authoring tasks that still need human review.
 - `samples/recompose/hello-flow` plus `samples/benchmark/` contain the recomposition harness and reference plans described in `WHY_SAMPLES.md`.
 
 ## Project status
