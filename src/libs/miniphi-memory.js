@@ -222,6 +222,7 @@ export default class MiniPhiMemory {
       id: planId,
       createdAt: timestamp,
       summary: payload.summary ?? payload.plan?.summary ?? null,
+      outline: payload.outline ?? null,
       metadata: payload.metadata ?? null,
       plan: payload.plan,
     };
@@ -232,6 +233,7 @@ export default class MiniPhiMemory {
       createdAt: timestamp,
       summary: record.summary,
       file: this.#relative(filePath),
+      outline: record.outline ?? null,
       metadata: record.metadata ?? null,
     });
     return { id: planId, path: filePath };

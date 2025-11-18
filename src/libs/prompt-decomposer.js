@@ -133,6 +133,7 @@ export default class PromptDecomposer {
         plan: normalizedPlan.plan,
         planId: normalizedPlan.planId,
         summary: normalizedPlan.summary,
+        outline: normalizedPlan.outline ?? null,
         metadata: {
           objective: payload.objective,
           command: payload.command ?? null,
@@ -198,8 +199,41 @@ export default class PromptDecomposer {
           : [],
         notes: parsed.notes ?? null,
       },
+      outline: this.#formatOutline(parsed.steps),
     };
     return normalized;
+  }
+
+  #formatOutline(steps, depth = 0, lines = [], prefix = "") {
+    if (!Array.isArray(steps) || steps.length === 0) {
+      const rendered = lines.join("\n").trimEnd();
+      return rendered.length ? rendered : null;
+    }
+    for (const step of steps) {
+      const id = step?.id ?? `${prefix || depth + 1}`;
+      const title = step?.title ?? "Untitled step";
+      const desc = typeof step?.description === "string" ? step.description.trim() : "";
+      const flags = [];
+      if (step?.requires_subprompt) {
+        flags.push("sub-prompt");
+      }
+      if (step?.recommendation) {
+        flags.push(step.recommendation);
+      }
+      const indent = "  ".repeat(depth);
+      const flagText = flags.length ? ` (${flags.join(" | ")})` : "";
+      lines.push(`${indent}${id}. ${title}${flagText}`);
+      if (desc) {
+        lines.push(`${indent}   - ${desc}`);
+      }
+      if (Array.isArray(step?.children) && step.children.length > 0) {
+        this.#formatOutline(step.children, depth + 1, lines, id);
+      }
+      if (lines.length >= 80) {
+        break;
+      }
+    const rendered = lines.slice(0, 80).join("\n").trimEnd();
+    return rendered.length ? rendered : null;
   }
 
   #log(message) {

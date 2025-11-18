@@ -7,6 +7,18 @@ import sqlite3 from "sqlite3";
 const DEFAULT_DB_FILENAME = "miniphi-prompts.db";
 const MAX_STORED_TEXT = 4000;
 const DEFAULT_SNAPSHOT_LIMIT = 12;
+const PROMPT_SCORE_FALLBACK_SCHEMA = [
+  "{",
+  '  "score": 0,',
+  '  "prompt_category": "classification label",',
+  '  "summary": "one-sentence rationale",',
+  '  "follow_up_needed": false,',
+  '  "follow_up_reason": "null or explanation",',
+  '  "tags": ["array", "of", "strings"],',
+  '  "recommended_prompt_pattern": "reuse hint",',
+  '  "series_strategy": ["next prompt idea 1", "next prompt idea 2"]',
+  "}",
+].join("\n");
 
 /**
  * Tracks prompt quality metrics inside a SQLite database so MiniPhi can surface
@@ -27,6 +39,8 @@ export default class PromptPerformanceTracker {
     this.db = null;
     this.enabled = false;
     this.semanticEvaluator = null;
+    this.schemaRegistry = options?.schemaRegistry ?? null;
+    this.scoreSchemaId = options?.scoreSchemaId ?? "prompt-score";
   }
 
   async prepare() {
@@ -112,19 +126,45 @@ export default class PromptPerformanceTracker {
       traceContext.metadata?.task ??
       traceContext.metadata?.objective ??
       null;
-    const metadataJson = JSON.stringify({
-      ...traceContext.metadata,
-      workspacePath,
-      workspaceSummary,
+    const durationMs =
+      payload.response?.finishedAt && payload.response?.startedAt
+        ? payload.response.finishedAt - payload.response.startedAt
+        : null;
+    const metadataPayload = {
+      workspace: {
+        path: workspacePath,
+        type: workspaceType,
+        summary: workspaceSummary,
+        manifestSample: traceContext.metadata?.workspaceManifest ?? null,
+        readmeSnippet: traceContext.metadata?.workspaceReadmeSnippet ?? null,
+      },
+      trace: {
+        scope: traceContext.scope,
+        label: traceContext.label ?? null,
+        mainPromptId: traceContext.mainPromptId ?? null,
+        subPromptId: traceContext.subPromptId ?? null,
+        schemaId: traceContext.schemaId ?? null,
+      },
+      execution: {
+        command: traceContext.metadata?.command ?? null,
+        cwd: traceContext.metadata?.cwd ?? workspacePath ?? null,
+        taskPlanId: traceContext.metadata?.taskPlanId ?? null,
+        taskPlanOutline: traceContext.metadata?.taskPlanOutline ?? null,
+        capabilities: traceContext.metadata?.capabilities ?? null,
+        capabilitySummary: traceContext.metadata?.capabilitySummary ?? null,
+        connections: traceContext.metadata?.workspaceConnections ?? null,
+        connectionGraph: traceContext.metadata?.workspaceConnectionGraph ?? null,
+      },
+      stats: {
+        durationMs,
+        tokensApprox: payload.response?.tokensApprox ?? null,
+        reasoningCount: payload.response?.reasoning?.length ?? 0,
+        error: payload.error ?? null,
+      },
       reasoningPreview,
-      durationMs:
-        payload.response?.finishedAt && payload.response?.startedAt
-          ? payload.response.finishedAt - payload.response.startedAt
-          : null,
-      tokensApprox: payload.response?.tokensApprox ?? null,
-      reasoningCount: payload.response?.reasoning?.length ?? 0,
-      error: payload.error ?? null,
-    });
+      customMetadata: traceContext.metadata ?? null,
+    };
+    const metadataJson = JSON.stringify(metadataPayload);
 
     if (this.debug) {
       const idLabel = traceContext.subPromptId ? `promptId=${traceContext.subPromptId}` : "";
@@ -145,6 +185,9 @@ export default class PromptPerformanceTracker {
         responseText,
         reasoningPreview,
         errorText: payload.error ?? null,
+        capabilitySummary: traceContext.metadata?.capabilitySummary ?? null,
+        executionCommand: traceContext.metadata?.command ?? null,
+        executionCwd: traceContext.metadata?.cwd ?? null,
       });
       try {
         const raw = await this.semanticEvaluator(evalPrompt, traceContext);
@@ -484,14 +527,28 @@ export default class PromptPerformanceTracker {
     const workspaceSummary = details.workspaceSummary
       ? `Workspace summary:\n${details.workspaceSummary}\n`
       : "";
+    const schemaBlock = this.#buildSchemaInstructions(
+      this.scoreSchemaId,
+      PROMPT_SCORE_FALLBACK_SCHEMA,
+    );
+    const capabilitySummary = details.capabilitySummary
+      ? `Available tools:\n${details.capabilitySummary}\n`
+      : "";
+    const commandLine = details.executionCommand
+      ? `Command executed: ${details.executionCommand} (cwd: ${details.executionCwd ?? "n/a"})`
+      : details.executionCwd
+        ? `Working directory: ${details.executionCwd}`
+        : "";
     return [
-      "You score prompt effectiveness for MiniPhi. Return strict JSON with the following keys:",
-      'score (0-100), prompt_category (string), summary (string), follow_up_needed (boolean), follow_up_reason (string), tags (string array), recommended_prompt_pattern (string), series_strategy (string array).',
-      "Use the assistant response to determine whether the stated objective is satisfied or if more prompts are needed.",
+      "You score prompt effectiveness for MiniPhi. Use the assistant response to determine whether the stated objective is satisfied or if more prompts are needed.",
+      "Return strict JSON matching this schema:",
+      schemaBlock,
       `Objective: ${details.objective ?? "unknown"}`,
       `Workspace type: ${details.workspaceType ?? "unknown"}`,
       `Workspace path: ${details.workspacePath ?? "n/a"}`,
       workspaceSummary,
+      capabilitySummary,
+      commandLine,
       `Prompt:\n"""\n${details.promptText}\n"""`,
       `Assistant response:\n"""\n${details.responseText || "n/a"}\n"""`,
       `Reasoning summary: ${details.reasoningPreview ?? "n/a"}`,
@@ -500,6 +557,16 @@ export default class PromptPerformanceTracker {
     ]
       .filter(Boolean)
       .join("\n");
+  }
+
+  #buildSchemaInstructions(schemaId, fallbackSchema) {
+    if (this.schemaRegistry && schemaId) {
+      const block = this.schemaRegistry.buildInstructionBlock(schemaId);
+      if (block) {
+        return block;
+      }
+    }
+    return ["```json", fallbackSchema, "```"].join("\n");
   }
 
   #parseEvaluation(raw) {

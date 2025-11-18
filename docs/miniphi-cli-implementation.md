@@ -3007,15 +3007,17 @@ import Phi4Handler from './lms-phi4.js';
 import CliExecutor from './cliExecutor.js';
 import PythonLogSummarizer from './pythonLogSummarizer.js';
 import EfficientLogAnalyzer from './efficientLogAnalyzer.js';
+import PromptSchemaRegistry from './promptSchemaRegistry.js';
 
 async function main() {
   console.log('🚀 MiniPhi CLI Analysis Engine\n');
   
   const manager = new LMStudioManager();
-  const phi4 = new Phi4Handler(manager);
+  const schemaRegistry = new PromptSchemaRegistry();
+  const phi4 = new Phi4Handler(manager, { schemaRegistry });
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer();
-  const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
+  const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, { schemaRegistry });
   
   await phi4.load({ contextLength: 32768 });
   

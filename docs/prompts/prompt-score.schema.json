@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Prompt Score",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "score",
+    "prompt_category",
+    "summary",
+    "follow_up_needed",
+    "follow_up_reason",
+    "tags",
+    "recommended_prompt_pattern",
+    "series_strategy"
+  ],
+  "properties": {
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "prompt_category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "follow_up_needed": {
+      "type": "boolean"
+    },
+    "follow_up_reason": {
+      "type": ["string", "null"]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recommended_prompt_pattern": {
+      "type": "string",
+      "minLength": 1
+    },
+    "series_strategy": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

@@ -9,14 +9,18 @@ MiniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Giant logs stay useful because a Python summarizer and a JS compressor shave them down before Phi starts thinking.
 - MiniPhi keeps a scrapbook of every prompt, response, benchmark run, and research sweep, which means you never lose context across sessions.
 - Every Phi-4 prompt now declares an explicit JSON schema so responses can be replayed or diffed reliably inside large workspaces.
+- Workspace capabilities (package scripts, repo scripts, `.bin` tools) and import graphs are summarized ahead of each run so Phi starts with an accurate list of available operations and dependencies.
 
 ## What ships today
 - **Layered LM Studio stack.** `LMStudioManager` handles model lifecycles, `Phi4Handler` enforces reasoning-plus formatting, and `EfficientLogAnalyzer` builds Phi-ready context from streamed command output or saved files.
+- **Schema registry + enforcement.** `PromptSchemaRegistry` loads the JSON templates in `docs/prompts/*.schema.json`, injects them into every Phi-4 prompt (main + scoring), and validates responses before they are added to the conversation or stored under `.miniphi/`.
 - **Command + file workflows.** `node src/index.js run` executes any shell command, `analyze-file` replays logs, `web-research` hits DuckDuckGo's Instant Answer API, and `history-notes` records `.miniphi` drift.
 - **Recursive compression.** `log_summarizer.py` (Python stdlib only) cooperates with the JS heuristics to chunk hundreds of thousands of lines into <1K token storyboards.
-- **Coprocessor utilities.** `WorkspaceProfiler`, `PromptRecorder`, `PromptPerformanceTracker`, `PromptDecomposer`, and `MiniPhiMemory` keep workspace hints, prompt transcripts, scoring data (`miniphi-prompts.db`), JSON schema declarations, and TODO queues in sync.
+- **Coprocessor utilities.** `WorkspaceProfiler`, `CapabilityInventory`, `FileConnectionAnalyzer`, `PromptRecorder`, `PromptPerformanceTracker`, `PromptDecomposer`, and `MiniPhiMemory` keep workspace hints, capability inventories, prompt transcripts, scoring data (`miniphi-prompts.db`), JSON schema declarations, and TODO queues in sync. Prompt decomposition plans now ship with recursive outlines under `.miniphi/prompt-exchanges/decompositions/` so future runs can pick up mid-branch.
+- **Connection graphics + capability inventories.** Before each Phi call, MiniPhi renders a small “imports/export” ASCII graph for the highest-signal files and captures package scripts, repo scripts, and `.bin` tools so the model knows which commands already exist.
 - **Resource guard rails.** `ResourceMonitor` samples CPU, RAM, and VRAM; warnings are captured in `.miniphi/health/` so you can spot a runaway command.
 - **Benchmarks + recomposition.** The `recompose` command and benchmark helpers (`samples/recompose/hello-flow`, `benchmark/`) capture Phi-4 conversations, emit JSON/Markdown summaries, and can be swept/analyzed via `benchmark recompose|analyze|plan scaffold`.
+- **Prompt telemetry.** `PromptPerformanceTracker` stores structured JSON blobs describing workspace focus, commands, capability summaries, connection graphs, schema IDs, and prompt lineage so the scoring Phi can validate whether the chosen tools matched the available capabilities.
 - **Prompt logs as artifacts.** `RecomposeTester.exportPromptLog` mirrors per-run transcripts next to their JSON reports so reviewers can inspect the exact reasoning trace without spelunking the hidden workspace.
 
 MiniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume the `microsoft/phi-4-reasoning-plus` model is already downloaded in LM Studio.
@@ -24,10 +28,10 @@ MiniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 ## Architecture snapshot
 1. **LMStudioManager** (src/libs/lmstudio-api.js) performs JIT model loading and surfaces the `/api/v0` REST primitives (list models, chat/completion probes, embeddings, runtime stats).
 2. **Phi4Handler** (src/libs/lms-phi4.js) wraps LM Studio calls, enforces reasoning streams, wires `--session-timeout`, and declares the JSON schema that each downstream Phi-4 call must respect.
-3. **EfficientLogAnalyzer + PythonLogSummarizer** compress streamed stdout/stderr or files by chunk, annotate the segments, and feed the high-signal slices to Phi-4.
-4. **MiniPhiMemory + PromptRecorder** archive prompts, compressed context, responses, TODOs, scoring metadata, and recursive indexes under `.miniphi/` so future runs can rehydrate any exchange.
-5. **WorkspaceProfiler + FileConnectionAnalyzer** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code, docs, or book-style folders you are touching.
-6. **PromptPerformanceTracker** scores every prompt/response pair inside `miniphi-prompts.db` (SQLite), clusters high-performing prompt patterns, and exposes them to future runs.
+3. **EfficientLogAnalyzer + PythonLogSummarizer** compress streamed stdout/stderr or files by chunk, annotate the segments, and feed the high-signal slices to Phi-4 while embedding the proper JSON schema from `docs/prompts/`.
+4. **MiniPhiMemory + PromptRecorder** archive prompts, compressed context, responses, TODOs, scoring metadata, recursive prompt plans, and capability outlines under `.miniphi/` so future runs can rehydrate any exchange.
+5. **WorkspaceProfiler + FileConnectionAnalyzer + CapabilityInventory** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code/docs split, import/dependency graph, and available scripts/binaries.
+6. **PromptPerformanceTracker** scores every prompt/response pair inside `miniphi-prompts.db` (SQLite), captures prompt lineage/schema IDs/commands/capabilities, and exposes the structured telemetry to scoring prompts and future runs.
 
 ## Quickstart
 ### Requirements

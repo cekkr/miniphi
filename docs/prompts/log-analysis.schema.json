@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Log Analysis Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task", "root_cause", "evidence", "recommended_fixes", "next_steps"],
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repeat the operator task in <= 10 words."
+    },
+    "root_cause": {
+      "type": ["string", "null"],
+      "description": "Concise summary of the dominant finding."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Concrete log excerpts that justify the diagnosis.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk", "line_hint", "excerpt"],
+        "properties": {
+          "chunk": {
+            "type": "string",
+            "minLength": 1
+          },
+          "line_hint": {
+            "type": ["integer", "null"]
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "recommended_fixes": {
+      "type": "array",
+      "description": "Targeted remediations with files/commands when available.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "files", "commands", "owner"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "owner": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "description": "Follow-up diagnostics or validations.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -191,6 +191,7 @@ export default class WorkspaceProfiler {
       summary,
       connections,
       connectionSummary: connections?.summary ?? null,
+      connectionGraphic: connections?.graph ?? null,
     };
   }
 

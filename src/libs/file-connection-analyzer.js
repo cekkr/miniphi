@@ -73,6 +73,7 @@ export default class FileConnectionAnalyzer {
 
     const hotspots = this.#buildHotspots(nodes);
     const summary = this.#buildSummary(hotspots, nodes.size, edgeCount);
+    const graph = this.#buildGraphSample(nodes);
 
     return {
       root,
@@ -81,6 +82,7 @@ export default class FileConnectionAnalyzer {
       nodes: Object.fromEntries(nodes),
       hotspots,
       summary,
+      graph,
     };
   }
 
@@ -282,5 +284,40 @@ export default class FileConnectionAnalyzer {
       lines.push(`Most referenced files:\n${dependentLines}`);
     }
     return lines.join("\n\n");
+  }
+
+  #buildGraphSample(nodes) {
+    const ranked = Array.from(nodes.values())
+      .map((node) => ({
+        path: node.path,
+        imports: node.imports.slice(0, 4),
+        importedBy: node.importedBy.slice(0, 4),
+        importCount: node.imports.length,
+        importedByCount: node.importedBy.length,
+      }))
+      .filter((node) => node.importCount > 0 || node.importedByCount > 0)
+      .sort(
+        (a, b) =>
+          b.importCount +
+          b.importedByCount -
+          (a.importCount + a.importedByCount),
+      )
+      .slice(0, 4);
+    if (!ranked.length) {
+      return null;
+    }
+    const lines = ["Connections (→ imports, ← imported by):"];
+    for (const node of ranked) {
+      lines.push(node.path);
+      if (node.imports.length) {
+        const suffix = node.importCount > node.imports.length ? " ..." : "";
+        lines.push(`  → ${node.imports.join(", ")}${suffix}`);
+      }
+      if (node.importedBy.length) {
+        const suffix = node.importedByCount > node.importedBy.length ? " ..." : "";
+        lines.push(`  ← ${node.importedBy.join(", ")}${suffix}`);
+      }
+    }
+    return lines.join("\n");
   }
 }

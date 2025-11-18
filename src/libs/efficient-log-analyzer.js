@@ -1,17 +1,33 @@
 import StreamAnalyzer from "./stream-analyzer.js";
 
+const LOG_ANALYSIS_FALLBACK_SCHEMA = [
+  "{",
+  '  "task": "repeat the task in <= 10 words",',
+  '  "root_cause": "concise summary or null",',
+  '  "evidence": [',
+  '    { "chunk": "Chunk 2", "line_hint": 120, "excerpt": "quoted or paraphrased line" }',
+  "  ],",
+  '  "recommended_fixes": [',
+  '    { "description": "actionable fix", "files": ["path/to/file.js"], "commands": ["npm test"], "owner": "team" }',
+  "  ],",
+  '  "next_steps": ["follow-up diagnostic or verification step"]',
+  "}",
+].join("\n");
+
 /**
  * Coordinates CLI execution, compression, and Phi-4 reasoning for arbitrarily large outputs.
  */
 export default class EfficientLogAnalyzer {
-  constructor(phi4Handler, cliExecutor, pythonSummarizer, streamAnalyzer = undefined) {
+  constructor(phi4Handler, cliExecutor, pythonSummarizer, options = undefined) {
     if (!phi4Handler || !cliExecutor || !pythonSummarizer) {
       throw new Error("EfficientLogAnalyzer requires Phi4Handler, CliExecutor, and PythonLogSummarizer instances.");
     }
     this.phi4 = phi4Handler;
     this.cli = cliExecutor;
     this.summarizer = pythonSummarizer;
-    this.streamAnalyzer = streamAnalyzer ?? new StreamAnalyzer(250);
+    this.streamAnalyzer = options?.streamAnalyzer ?? new StreamAnalyzer(250);
+    this.schemaRegistry = options?.schemaRegistry ?? null;
+    this.schemaId = options?.schemaId ?? "log-analysis";
   }
 
   async analyzeCommandOutput(command, task, options = undefined) {
@@ -100,8 +116,11 @@ export default class EfficientLogAnalyzer {
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+        taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+        capabilitySummary: workspaceContext?.capabilitySummary ?? null,
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
+        connectionGraphic: workspaceContext?.connectionGraphic ?? null,
       },
     );
 
@@ -111,6 +130,10 @@ export default class EfficientLogAnalyzer {
 
     let analysis = "";
     this.#applyPromptTimeout(sessionDeadline);
+    const traceOptions = {
+      ...(promptContext ?? {}),
+      schemaId: promptContext?.schemaId ?? this.schemaId,
+    };
     await this.phi4.chatStream(
       prompt,
       (token) => {
@@ -129,7 +152,7 @@ export default class EfficientLogAnalyzer {
       (err) => {
         throw new Error(`Phi-4 inference error: ${err}`);
       },
-      promptContext,
+      traceOptions,
     );
 
     if (streamOutput) {
@@ -186,13 +209,20 @@ export default class EfficientLogAnalyzer {
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+        taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+        capabilitySummary: workspaceContext?.capabilitySummary ?? null,
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
+        connectionGraphic: workspaceContext?.connectionGraphic ?? null,
       },
     );
 
     let analysis = "";
     this.#applyPromptTimeout(sessionDeadline);
+    const traceOptions = {
+      ...(promptContext ?? {}),
+      schemaId: promptContext?.schemaId ?? this.schemaId,
+    };
     await this.phi4.chatStream(
       prompt,
       (token) => {
@@ -205,7 +235,7 @@ export default class EfficientLogAnalyzer {
       (err) => {
         throw new Error(`Phi-4 inference error: ${err}`);
       },
-      promptContext,
+      traceOptions,
     );
 
     if (streamOutput) {
@@ -266,25 +296,11 @@ export default class EfficientLogAnalyzer {
   generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
     const contextSupplement = this.#formatContextSupplement(extraContext);
     const contextBlock = contextSupplement ? `\n\n${contextSupplement}` : "";
-    const schema = [
-      "{",
-      '  "task": "repeat the task in <= 10 words",',
-      '  "root_cause": "concise summary of the key finding",',
-      '  "evidence": [',
-      '    { "chunk": "Chunk 2", "line_hint": 120, "excerpt": "quoted or paraphrased line" }',
-      "  ],",
-      '  "recommended_fixes": [',
-      '    { "description": "actionable fix", "files": ["path/to/file.js"], "commands": ["npm test"], "owner": "team" }',
-      "  ],",
-      '  "next_steps": ["follow-up diagnostic or verification step"]',
-      "}",
-    ].join("\n");
+    const schemaInstructions = this.#buildSchemaInstructions();
     return `# Log/Output Analysis Task
 
 You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):
-\`\`\`json
-${schema}
-\`\`\`
+${schemaInstructions}
 
 **Task:** ${task}${contextBlock}
 
@@ -303,6 +319,16 @@ ${schema}
 \`\`\`
 ${compressedContent}
 \`\`\``;
+  }
+
+  #buildSchemaInstructions() {
+    if (this.schemaRegistry && this.schemaId) {
+      const block = this.schemaRegistry.buildInstructionBlock(this.schemaId);
+      if (block) {
+        return block;
+      }
+    }
+    return ["```json", LOG_ANALYSIS_FALLBACK_SCHEMA, "```"].join("\n");
   }
 
   async #compressLines(lines, summaryLevels, verbose) {
@@ -369,8 +395,20 @@ ${compressedContent}
     if (extraContext.taskPlanSummary) {
       lines.push(`Task plan:\n${extraContext.taskPlanSummary}`);
     }
+    if (extraContext.taskPlanOutline) {
+      const outlineLines = extraContext.taskPlanOutline.split(/\r?\n/);
+      const preview = outlineLines.slice(0, 12).join("\n");
+      const suffix = outlineLines.length > 12 ? "\n..." : "";
+      lines.push(`Task plan outline:\n${preview}${suffix}`);
+    }
     if (extraContext.connectionSummary) {
       lines.push(`File connection hints:\n${extraContext.connectionSummary}`);
+    }
+    if (extraContext.connectionGraphic) {
+      lines.push(extraContext.connectionGraphic);
+    }
+    if (extraContext.capabilitySummary) {
+      lines.push(`Available tools:\n${extraContext.capabilitySummary}`);
     }
     if (!lines.length) {
       return "";

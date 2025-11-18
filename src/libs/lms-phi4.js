@@ -33,6 +33,7 @@ export class Phi4Handler {
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
     this.promptRecorder = options?.promptRecorder ?? null;
     this.performanceTracker = options?.performanceTracker ?? null;
+    this.schemaRegistry = options?.schemaRegistry ?? null;
   }
 
   /**
@@ -79,6 +80,14 @@ export class Phi4Handler {
   }
 
   /**
+   * Enables or disables schema validation for Phi exchanges.
+   * @param {import("./prompt-schema-registry.js").default | null} registry
+   */
+  setSchemaRegistry(registry) {
+    this.schemaRegistry = registry ?? null;
+  }
+
+  /**
    * Streams a Phi-4 response while emitting think & solution tokens separately via callbacks.
    *
    * @param {string} prompt user prompt
@@ -103,14 +112,16 @@ export class Phi4Handler {
     this.chatHistory.push({ role: "user", content: prompt });
 
     const traceContext = this.#buildTraceContext(traceOptions);
+    const schemaDetails = this.#resolveSchema(traceContext);
     const startedAt = Date.now();
     const capturedThoughts = [];
     let requestSnapshot = null;
     let result = "";
+    let schemaValidation = null;
 
     try {
       this.chatHistory = await this.#truncateHistory();
-      requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext);
+      requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext, schemaDetails);
       const chat = Chat.from(this.chatHistory);
       const prediction = this.model.respond(chat);
       const parser = new Phi4StreamParser((thought) => {
@@ -141,25 +152,33 @@ export class Phi4Handler {
         }
       });
 
+      const finishedAt = Date.now();
+      const validationResult = this.#validateSchema(schemaDetails, result);
+      schemaValidation = this.#summarizeValidation(validationResult);
+      if (validationResult && !validationResult.valid) {
+        const summary = this.#summarizeSchemaErrors(validationResult.errors);
+        throw new Error(
+          `Phi-4 response failed schema validation (${schemaDetails?.id ?? "unknown"}): ${summary}`,
+        );
+      }
       if (result.length > 0) {
         this.chatHistory.push({ role: "assistant", content: result });
       }
 
-      const finishedAt = Date.now();
-      await this.#recordPromptExchange(traceContext, requestSnapshot, {
+      const responseSnapshot = {
         text: result,
         reasoning: capturedThoughts,
         startedAt,
         finishedAt,
-      });
+        schemaId: schemaDetails?.id ?? null,
+        schemaValidation,
+      };
+      await this.#recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
       await this.#trackPromptPerformance(
         traceContext,
         requestSnapshot,
         {
-          text: result,
-          reasoning: capturedThoughts,
-          startedAt,
-          finishedAt,
+          ...responseSnapshot,
           tokensApprox: this.#approximateTokens(result),
         },
         null,
@@ -179,6 +198,8 @@ export class Phi4Handler {
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
+          schemaId: schemaDetails?.id ?? null,
+          schemaValidation,
         },
         message,
       );
@@ -190,6 +211,8 @@ export class Phi4Handler {
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
+          schemaId: schemaDetails?.id ?? null,
+          schemaValidation,
           tokensApprox: this.#approximateTokens(result),
         },
         message,
@@ -295,16 +318,21 @@ export class Phi4Handler {
   #buildTraceContext(options) {
     const scope = options?.scope === "main" ? "main" : "sub";
     const subPromptId = options?.subPromptId ?? randomUUID();
+    const schemaId =
+      typeof options?.schemaId === "string" && options.schemaId.trim()
+        ? options.schemaId.trim().toLowerCase()
+        : null;
     return {
       scope,
       label: options?.label ?? null,
       metadata: options?.metadata ?? null,
       mainPromptId: options?.mainPromptId ?? null,
       subPromptId,
+      schemaId,
     };
   }
 
-  #buildRequestSnapshot(prompt, traceContext) {
+  #buildRequestSnapshot(prompt, traceContext, schemaDetails = undefined) {
     const messages = this.chatHistory.map((entry) => ({
       role: entry.role,
       content: entry.content,
@@ -315,7 +343,9 @@ export class Phi4Handler {
       systemPrompt: this.systemPrompt,
       historyLength: messages.length,
       promptChars: prompt.length,
-       promptText: prompt,
+      promptText: prompt,
+      schemaId: schemaDetails?.id ?? traceContext.schemaId ?? null,
+      schemaPath: schemaDetails?.filePath ?? null,
       messages,
       createdAt: new Date().toISOString(),
     };
@@ -326,25 +356,13 @@ export class Phi4Handler {
       return;
     }
     try {
+      const metadata = this.#composeRecorderMetadata(traceContext, responseSnapshot);
       await this.promptRecorder.record({
         scope: traceContext.scope,
         label: traceContext.label,
         mainPromptId: traceContext.mainPromptId,
         subPromptId: traceContext.subPromptId,
-        metadata: traceContext.metadata
-          ? {
-              ...traceContext.metadata,
-              durationMs:
-                responseSnapshot?.finishedAt && responseSnapshot?.startedAt
-                  ? responseSnapshot.finishedAt - responseSnapshot.startedAt
-                  : undefined,
-            }
-          : {
-              durationMs:
-                responseSnapshot?.finishedAt && responseSnapshot?.startedAt
-                  ? responseSnapshot.finishedAt - responseSnapshot.startedAt
-                  : undefined,
-            },
+        metadata,
         request: {
           ...requestSnapshot,
         },
@@ -379,6 +397,64 @@ export class Phi4Handler {
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptPerformanceTracker");
     }
+  }
+
+  #composeRecorderMetadata(traceContext, responseSnapshot) {
+    const base = traceContext.metadata ? { ...traceContext.metadata } : {};
+    const duration =
+      responseSnapshot?.finishedAt && responseSnapshot?.startedAt
+        ? responseSnapshot.finishedAt - responseSnapshot.startedAt
+        : null;
+    if (duration !== null) {
+      base.durationMs = duration;
+    }
+    if (traceContext.schemaId) {
+      base.schemaId = traceContext.schemaId;
+    }
+    if (responseSnapshot?.schemaValidation) {
+      base.schemaValidation = responseSnapshot.schemaValidation;
+    }
+    return Object.keys(base).length > 0 ? base : null;
+  }
+
+  #resolveSchema(traceContext) {
+    if (!this.schemaRegistry || !traceContext?.schemaId) {
+      return null;
+    }
+    const schema = this.schemaRegistry.getSchema(traceContext.schemaId);
+    if (!schema) {
+      throw new Error(
+        `Schema "${traceContext.schemaId}" was not found in docs/prompts. Add the schema or remove the schemaId.`,
+      );
+    }
+    return schema;
+  }
+
+  #validateSchema(schemaDetails, responseText) {
+    if (!schemaDetails || !this.schemaRegistry) {
+      return null;
+    }
+    return this.schemaRegistry.validate(schemaDetails.id, responseText);
+  }
+
+  #summarizeValidation(validation) {
+    if (!validation) {
+      return null;
+    }
+    if (validation.valid) {
+      return { valid: true };
+    }
+    return {
+      valid: false,
+      errors: Array.isArray(validation.errors) ? validation.errors.slice(0, 10) : null,
+    };
+  }
+
+  #summarizeSchemaErrors(errors) {
+    if (!errors || errors.length === 0) {
+      return "Unknown schema mismatch.";
+    }
+    return errors.slice(0, 3).join("; ");
   }
 
   #approximateTokens(text) {

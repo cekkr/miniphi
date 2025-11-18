@@ -20,6 +20,8 @@ import { loadConfig } from "./libs/config-loader.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 import PromptDecomposer from "./libs/prompt-decomposer.js";
+import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
+import CapabilityInventory from "./libs/capability-inventory.js";
 import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
@@ -154,6 +156,10 @@ async function main() {
     ...options,
   });
 
+  const schemaRegistry = new PromptSchemaRegistry({
+    schemaDir: path.join(PROJECT_ROOT, "docs", "prompts"),
+  });
+
   if (command === "web-research") {
     await handleWebResearch({ options, positionals, verbose });
     return;
@@ -174,6 +180,7 @@ async function main() {
       contextLength,
       debugLm,
       gpu,
+      schemaRegistry,
     });
     return;
   }
@@ -187,6 +194,7 @@ async function main() {
       contextLength,
       debugLm,
       gpu,
+      schemaRegistry,
     });
     return;
   }
@@ -195,11 +203,15 @@ async function main() {
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
     promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+    schemaRegistry,
   });
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
-  const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer);
+  const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, {
+    schemaRegistry,
+  });
   const workspaceProfiler = new WorkspaceProfiler();
+  const capabilityInventory = new CapabilityInventory();
   let restClient = null;
   try {
     restClient = new LMStudioRestClient(configData.lmStudio?.rest ?? configData.rest ?? undefined);
@@ -225,6 +237,7 @@ async function main() {
     const tracker = new PromptPerformanceTracker({
       dbPath: PROMPT_DB_PATH,
       debug: debugLm,
+      schemaRegistry,
     });
     await tracker.prepare();
     performanceTracker = tracker;
@@ -325,11 +338,21 @@ async function main() {
       readmeSnippet,
       { limit: 8 },
     );
+    const capabilities = await capabilityInventory.describe(dir).catch((error) => {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Capability inventory failed for ${dir}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+      return null;
+    });
     return {
       ...profile,
       manifestPreview: manifestResult.manifest,
       readmeSnippet,
       hintBlock: hintBlock || null,
+      capabilitySummary: capabilities?.summary ?? null,
+      capabilityDetails: capabilities?.details ?? null,
     };
   };
 
@@ -338,6 +361,7 @@ async function main() {
     if (performanceTracker) {
       scoringPhi = new Phi4Handler(manager, {
         systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
+        schemaRegistry,
       });
       try {
         await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
@@ -351,6 +375,7 @@ async function main() {
             {
               scope: "sub",
               label: "prompt-scoring",
+              schemaId: "prompt-score",
               metadata: {
                 mode: "prompt-evaluator",
                 workspaceType: parentTrace?.metadata?.workspaceType ?? null,
@@ -421,7 +446,14 @@ async function main() {
             ...(workspaceContext ?? {}),
             taskPlanSummary: planResult.summary ?? null,
             taskPlanId: planResult.planId ?? null,
+            taskPlanOutline: planResult.outline ?? null,
           };
+          if (planResult.outline && verbose) {
+            const outlineLines = planResult.outline.split(/\r?\n/);
+            const preview = outlineLines.slice(0, 10).join("\n");
+            const suffix = outlineLines.length > 10 ? "\n..." : "";
+            console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
+          }
         }
         await initializeResourceMonitor(`run:${cmd}`);
         result = await analyzer.analyzeCommandOutput(cmd, task, {
@@ -446,7 +478,11 @@ async function main() {
               workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
               workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
               taskPlanId: planResult?.planId ?? null,
+              taskPlanOutline: planResult?.outline ?? null,
               workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+              capabilities: workspaceContext?.capabilityDetails ?? null,
             },
           },
         });
@@ -504,7 +540,14 @@ async function main() {
             ...(workspaceContext ?? {}),
             taskPlanSummary: planResult.summary ?? null,
             taskPlanId: planResult.planId ?? null,
+            taskPlanOutline: planResult.outline ?? null,
           };
+          if (planResult.outline && verbose) {
+            const outlineLines = planResult.outline.split(/\r?\n/);
+            const preview = outlineLines.slice(0, 10).join("\n");
+            const suffix = outlineLines.length > 10 ? "\n..." : "";
+            console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
+          }
         }
         await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
         result = await analyzer.analyzeLogFile(filePath, task, {
@@ -527,7 +570,11 @@ async function main() {
               workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
               workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
               taskPlanId: planResult?.planId ?? null,
+              taskPlanOutline: planResult?.outline ?? null,
               workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+              capabilities: workspaceContext?.capabilityDetails ?? null,
             },
           },
         });
@@ -691,6 +738,7 @@ async function handleRecompose({
   contextLength,
   debugLm,
   gpu,
+  schemaRegistry,
 }) {
   const sessionLabel =
     typeof options.label === "string"
@@ -706,6 +754,7 @@ async function handleRecompose({
     verbose,
     sessionLabel,
     gpu,
+    schemaRegistry,
   });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
@@ -783,6 +832,7 @@ async function handleBenchmark({
   contextLength,
   debugLm,
   gpu,
+  schemaRegistry,
 }) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
@@ -837,6 +887,7 @@ async function handleBenchmark({
     verbose,
     sessionLabel: null,
     gpu,
+    schemaRegistry,
   });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
@@ -894,11 +945,13 @@ async function createRecomposeHarness({
   verbose,
   sessionLabel,
   gpu,
+  schemaRegistry,
 }) {
   const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
     promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+    schemaRegistry,
   });
   const loadOptions = { contextLength, gpu };
   await phi4.load(loadOptions);
@@ -912,6 +965,7 @@ async function createRecomposeHarness({
     const tracker = new PromptPerformanceTracker({
       dbPath: PROMPT_DB_PATH,
       debug: debugLm,
+      schemaRegistry,
     });
     await tracker.prepare();
     phi4.setPerformanceTracker(tracker);
