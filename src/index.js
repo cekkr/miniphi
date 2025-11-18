@@ -213,6 +213,28 @@ async function main() {
   });
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
+  const navigatorBlocklist = [
+    /\brm\s+-rf\b/i,
+    /\brmdir\b/i,
+    /\bdel\s+/i,
+    /\bshutdown\b/i,
+    /\breboot\b/i,
+    /\bmkfs\b/i,
+    /\bformat\b/i,
+    /\bpoweroff\b/i,
+    /\binit\s+0\b/i,
+    /:\/\//i, // avoid network fetches via curl/wget etc.
+  ];
+  const isNavigatorCommandSafe = (command) => {
+    if (!command || typeof command !== "string") {
+      return false;
+    }
+    const trimmed = command.trim();
+    if (!trimmed || trimmed.length > 200 || /[\n\r]/.test(trimmed)) {
+      return false;
+    }
+    return !navigatorBlocklist.some((regex) => regex.test(trimmed));
+  };
   let restClient = null;
   try {
     restClient = new LMStudioRestClient(configData.lmStudio?.rest ?? configData.rest ?? undefined);
@@ -232,6 +254,74 @@ async function main() {
           logger: verbose ? (message) => console.warn(message) : null,
         })
       : null;
+  const runNavigatorFollowUps = async ({
+    commands,
+    cwd,
+    workspaceContext,
+    summaryLevels,
+    streamOutput,
+    timeout,
+    sessionDeadline,
+    promptGroupId,
+    baseMetadata,
+  }) => {
+    if (!Array.isArray(commands) || commands.length === 0) {
+      return [];
+    }
+    const MAX_FOLLOW_UPS = 2;
+    const followUps = [];
+    for (const command of commands.slice(0, MAX_FOLLOW_UPS)) {
+      if (!isNavigatorCommandSafe(command)) {
+        if (verbose) {
+          console.warn(`[MiniPhi] Navigator follow-up blocked: ${command}`);
+        }
+        followUps.push({
+          command,
+          skipped: true,
+          reason: "blocked",
+        });
+        continue;
+      }
+      try {
+        const followUpTask = `Navigator follow-up: ${command}`;
+        const followUpResult = await analyzer.analyzeCommandOutput(command, followUpTask, {
+          summaryLevels,
+          streamOutput,
+          cwd,
+          timeout,
+          sessionDeadline,
+          workspaceContext,
+          promptContext: {
+            scope: "sub",
+            label: followUpTask,
+            mainPromptId: promptGroupId,
+            metadata: {
+              ...(baseMetadata ?? {}),
+              mode: "navigator-follow-up",
+              command,
+              workspaceType:
+                workspaceContext?.classification?.domain ??
+                workspaceContext?.classification?.label ??
+                null,
+            },
+          },
+        });
+        followUps.push({
+          command,
+          analysis: followUpResult.analysis,
+          prompt: followUpResult.prompt,
+          linesAnalyzed: followUpResult.linesAnalyzed,
+          compressedTokens: followUpResult.compressedTokens,
+        });
+      } catch (error) {
+        followUps.push({
+          command,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return followUps;
+  };
   const promptDecomposer =
     restClient &&
     new PromptDecomposer({
@@ -529,6 +619,26 @@ async function main() {
             },
           },
         });
+        if (workspaceContext?.navigationHints?.focusCommands?.length) {
+          const followUps = await runNavigatorFollowUps({
+            commands: workspaceContext.navigationHints.focusCommands,
+            cwd,
+            workspaceContext,
+            summaryLevels,
+            streamOutput,
+            timeout,
+            sessionDeadline,
+            promptGroupId,
+            baseMetadata: {
+              parentCommand: cmd,
+              parentMode: "run",
+              workspaceSummary: workspaceContext?.summary ?? null,
+            },
+          });
+          if (followUps.length) {
+            result.navigatorFollowUps = followUps;
+          }
+        }
     } else if (command === "analyze-file") {
       const fileFromFlag = options.file ?? options.path ?? positionals[0];
       if (!fileFromFlag) {
@@ -628,6 +738,26 @@ async function main() {
             },
           },
         });
+        if (workspaceContext?.navigationHints?.focusCommands?.length) {
+          const followUps = await runNavigatorFollowUps({
+            commands: workspaceContext.navigationHints.focusCommands,
+            cwd: analyzeCwd,
+            workspaceContext,
+            summaryLevels,
+            streamOutput,
+            timeout,
+            sessionDeadline,
+            promptGroupId,
+            baseMetadata: {
+              parentCommand: filePath,
+              parentMode: "analyze-file",
+              workspaceSummary: workspaceContext?.summary ?? null,
+            },
+          });
+          if (followUps.length) {
+            result.navigatorFollowUps = followUps;
+          }
+        }
       }
 
     await stopResourceMonitorIfNeeded();

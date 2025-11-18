@@ -232,6 +232,7 @@ export default class PromptDecomposer {
       if (lines.length >= 80) {
         break;
       }
+    }
     const rendered = lines.slice(0, 80).join("\n").trimEnd();
     return rendered.length ? rendered : null;
   }
