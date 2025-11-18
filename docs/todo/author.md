@@ -49,4 +49,7 @@ Inspect .miniphi/prompt-exchanges/ and .miniphi/recompose/<timestamp>/ output fr
 - Try to generate at the end of a miniphi prompt execution, if tools are available, the commands for validating code quality/syntax error (if not know, ask to APIs)
 
 ### To prompt:
-As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about: json schema enforcement, recusive prompt decomposition, file connection graphic, capability inventories, prompt telemetry richness
+As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about: json schema enforcement, recusive prompt decomposition, file connection graphic, capability inventories, prompt telemetry richness [X]
+
+- Add in parallel to npm libraries for code parsing, the ability to learn directly from API model how to navigate correctly the current project/path/file type, also through real time generated nodejs/python helpers scripts
+- Check the ability of miniphi to... edit himself. He should have already all the fundamental implementation to do it. The ability of improve/implements next steps using itself and the API's model, is a sign of great maturity by the tool. Write your conclusion in AI_REFERENCE's next steps and implement right now what is possible/essential. LM Studio APIs are available for realtime testings right now.
