@@ -11,6 +11,22 @@ MiniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Every Phi-4 prompt now declares an explicit JSON schema so responses can be replayed or diffed reliably inside large workspaces.
 - Workspace capabilities (package scripts, repo scripts, `.bin` tools) and import graphs are summarized ahead of each run so Phi starts with an accurate list of available operations and dependencies.
 
+## Get started
+Install [LM Studio](https://lmstudio.ai) as developer and download model `microsoft/phi-4-reasoning-plus` (through Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left.
+
+Clone MiniPhi repo:
+> $ `git clone https://github.com/cekkr/miniphi.git --recurive-submodules`
+
+(Submodules are useful only for development and benchmark purposes)
+
+Install submodules, using `-g` flag if you want `miniphi` command available on PATH.
+> $ `npm install -g`
+
+This project is in a alpha stage of development, and technically it's able to execute terminal commands (at the current version, without asking permissions). Be careful.
+
+> $ `cd my-project/`  
+> $ `miniphi --task "Create the README.md of the current project"`
+
 ## Fundamentals
 - **Narrative-only recomposition inputs.** Storytelling folders inside `samples/recompose/*/descriptions` benchmarks stay prose-only so recomposition prompts must reason instead of copy/pasting code; `hello-flow` enforces those rules in its README. This is an example of multi-passage concept extrapolation without code snippets, priority ordering e back conversion to code, confronting practical results.
 - **Multi-prompt orchestration.** MiniPhi expands every command into a workspace scan, plan, and targeted edits, then saves the prompt trees and transcripts under `.miniphi/` so interrupted runs can resume mid-branch.
