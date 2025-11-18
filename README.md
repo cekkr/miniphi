@@ -12,7 +12,7 @@ MiniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Workspace capabilities (package scripts, repo scripts, `.bin` tools) and import graphs are summarized ahead of each run so Phi starts with an accurate list of available operations and dependencies.
 
 ## Fundamentals
-- **Narrative-only recomposition inputs.** Storytelling folders inside `samples/recompose/*/descriptions` stay prose-only so recomposition prompts must reason instead of copy/pasting code; `hello-flow` enforces those rules in its README.
+- **Narrative-only recomposition inputs.** Storytelling folders inside `samples/recompose/*/descriptions` benchmarks stay prose-only so recomposition prompts must reason instead of copy/pasting code; `hello-flow` enforces those rules in its README. This is an example of multi-passage concept extrapolation without code snippets, priority ordering e back conversion to code, confronting practical results.
 - **Multi-prompt orchestration.** MiniPhi expands every command into a workspace scan, plan, and targeted edits, then saves the prompt trees and transcripts under `.miniphi/` so interrupted runs can resume mid-branch.
 - **JSON schema enforcement.** Each Phi-4 prompt references a schema from `docs/prompts/*.schema.json`, validation happens before responses enter history storage, and schema IDs stay attached for deterministic replays.
 
