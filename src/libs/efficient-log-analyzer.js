@@ -121,6 +121,9 @@ export default class EfficientLogAnalyzer {
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
         connectionGraphic: workspaceContext?.connectionGraphic ?? null,
+        navigationSummary: workspaceContext?.navigationSummary ?? null,
+        navigationBlock: workspaceContext?.navigationBlock ?? null,
+        helperScript: workspaceContext?.helperScript ?? null,
       },
     );
 
@@ -409,6 +412,27 @@ ${compressedContent}
     }
     if (extraContext.capabilitySummary) {
       lines.push(`Available tools:\n${extraContext.capabilitySummary}`);
+    }
+    if (extraContext.navigationBlock) {
+      lines.push(extraContext.navigationBlock);
+    } else if (extraContext.navigationSummary) {
+      lines.push(`Navigation hints: ${extraContext.navigationSummary}`);
+    }
+    if (extraContext.helperScript) {
+      const helper = extraContext.helperScript;
+      const helperParts = [];
+      if (helper.description) {
+        helperParts.push(helper.description);
+      }
+      if (helper.run?.summary) {
+        helperParts.push(helper.run.summary);
+      }
+      if (helper.path) {
+        helperParts.push(`saved at ${helper.path}`);
+      }
+      if (helperParts.length) {
+        lines.push(`Helper script (${helper.language ?? "node"}): ${helperParts.join(" | ")}`);
+      }
     }
     if (!lines.length) {
       return "";

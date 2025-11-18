@@ -60,6 +60,10 @@ export default class CliExecutor {
         completed = true;
         clearTimeout(timeoutHandle);
         if (error) {
+          if (typeof error === "object" && error) {
+            error.stdout = captureOutput ? stdout : "";
+            error.stderr = captureOutput ? stderr : "";
+          }
           reject(error);
           return;
         }
@@ -73,11 +77,14 @@ export default class CliExecutor {
         if (code === 0) {
           resolve(result);
         } else {
-          reject(
-            new Error(
-              `Command "${command}" exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`,
-            ),
+          const failure = new Error(
+            `Command "${command}" exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`,
           );
+          failure.code = code;
+          failure.stdout = captureOutput ? stdout : "";
+          failure.stderr = captureOutput ? stderr : "";
+          failure.command = command;
+          reject(failure);
         }
       };
 

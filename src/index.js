@@ -22,6 +22,7 @@ import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
+import ApiNavigator from "./libs/api-navigator.js";
 import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
@@ -222,6 +223,15 @@ async function main() {
       );
     }
   }
+  const buildNavigator = (memoryInstance) =>
+    restClient
+      ? new ApiNavigator({
+          restClient,
+          cliExecutor: cli,
+          memory: memoryInstance ?? null,
+          logger: verbose ? (message) => console.warn(message) : null,
+        })
+      : null;
   const promptDecomposer =
     restClient &&
     new PromptDecomposer({
@@ -305,7 +315,7 @@ async function main() {
     return resourceSummary;
   };
 
-  const describeWorkspace = async (dir) => {
+  const describeWorkspace = async (dir, options = undefined) => {
     let profile;
     try {
       profile = workspaceProfiler.describe(dir);
@@ -346,13 +356,39 @@ async function main() {
       }
       return null;
     });
-    return {
+    const workspaceSnapshot = {
       ...profile,
       manifestPreview: manifestResult.manifest,
       readmeSnippet,
       hintBlock: hintBlock || null,
       capabilitySummary: capabilities?.summary ?? null,
       capabilityDetails: capabilities?.details ?? null,
+    };
+    let navigationHints = null;
+    const navigator = options?.navigator ?? null;
+    if (navigator) {
+      try {
+        navigationHints = await navigator.generateNavigationHints({
+          workspace: workspaceSnapshot,
+          capabilities,
+          objective: options?.objective ?? null,
+          cwd: dir,
+          executeHelper: options?.executeHelper ?? true,
+        });
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      }
+    }
+    return {
+      ...workspaceSnapshot,
+      navigationSummary: navigationHints?.summary ?? null,
+      navigationBlock: navigationHints?.block ?? null,
+      helperScript: navigationHints?.helper ?? null,
+      navigationHints,
     };
   };
 
@@ -404,12 +440,16 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-      let workspaceContext = await describeWorkspace(cwd);
+      archiveMetadata.command = cmd;
+      archiveMetadata.cwd = cwd;
+      stateManager = new MiniPhiMemory(cwd);
+      await stateManager.prepare();
+      const navigator = buildNavigator(stateManager);
+      let workspaceContext = await describeWorkspace(cwd, {
+        navigator,
+        objective: task,
+      });
       let planResult = null;
-        archiveMetadata.command = cmd;
-        archiveMetadata.cwd = cwd;
-        stateManager = new MiniPhiMemory(cwd);
-        await stateManager.prepare();
         promptRecorder = new PromptRecorder(stateManager.baseDir);
         await promptRecorder.prepare();
         phi4.setPromptRecorder(promptRecorder);
@@ -483,6 +523,9 @@ async function main() {
               workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
               capabilitySummary: workspaceContext?.capabilitySummary ?? null,
               capabilities: workspaceContext?.capabilityDetails ?? null,
+              navigationSummary: workspaceContext?.navigationSummary ?? null,
+              navigationBlock: workspaceContext?.navigationBlock ?? null,
+              helperScript: workspaceContext?.helperScript ?? null,
             },
           },
         });
@@ -497,13 +540,17 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
       const analyzeCwd = path.dirname(filePath);
-      let workspaceContext = await describeWorkspace(analyzeCwd);
+      archiveMetadata.filePath = filePath;
+      archiveMetadata.cwd = analyzeCwd;
+      stateManager = new MiniPhiMemory(archiveMetadata.cwd);
+      await stateManager.prepare();
+      const navigator = buildNavigator(stateManager);
+      let workspaceContext = await describeWorkspace(analyzeCwd, {
+        navigator,
+        objective: task,
+      });
       let planResult = null;
 
-        archiveMetadata.filePath = filePath;
-        archiveMetadata.cwd = path.dirname(filePath);
-        stateManager = new MiniPhiMemory(archiveMetadata.cwd);
-        await stateManager.prepare();
         promptRecorder = new PromptRecorder(stateManager.baseDir);
         await promptRecorder.prepare();
         phi4.setPromptRecorder(promptRecorder);
@@ -575,6 +622,9 @@ async function main() {
               workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
               capabilitySummary: workspaceContext?.capabilitySummary ?? null,
               capabilities: workspaceContext?.capabilityDetails ?? null,
+              navigationSummary: workspaceContext?.navigationSummary ?? null,
+              navigationBlock: workspaceContext?.navigationBlock ?? null,
+              helperScript: workspaceContext?.helperScript ?? null,
             },
           },
         });

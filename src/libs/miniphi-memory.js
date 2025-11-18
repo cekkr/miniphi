@@ -28,6 +28,7 @@ export default class MiniPhiMemory {
     this.historyNotesDir = path.join(this.baseDir, "history-notes");
     this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
     this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
+    this.helpersDir = path.join(this.baseDir, "helpers");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -46,6 +47,7 @@ export default class MiniPhiMemory {
       this.promptDecompositionsDir,
       "index.json",
     );
+    this.helperScriptsIndexFile = path.join(this.helpersDir, "index.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -69,6 +71,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.recomposeCacheDir, { recursive: true });
     await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
     await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
+    await fs.promises.mkdir(this.helpersDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -82,6 +85,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.benchmarkHistoryFile, { entries: [] });
     await this.#ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
     await this.#ensureFile(this.promptDecompositionIndexFile, { entries: [] });
+    await this.#ensureFile(this.helperScriptsIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -95,6 +99,7 @@ export default class MiniPhiMemory {
         { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
         { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
         { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
+        { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
       ],
     });
 
@@ -322,6 +327,17 @@ export default class MiniPhiMemory {
     return raw.replace(/[^A-Za-z0-9._-]/g, "_");
   }
 
+  #normalizeHelperLanguage(language) {
+    const normalized = (language ?? "").toString().trim().toLowerCase();
+    if (normalized.startsWith("py")) {
+      return "python";
+    }
+    if (normalized.startsWith("node") || normalized === "js" || normalized === "javascript") {
+      return "node";
+    }
+    return "node";
+  }
+
   async #ensureFile(filePath, defaultValue) {
     try {
       await fs.promises.access(filePath, fs.constants.F_OK);
@@ -506,6 +522,15 @@ export default class MiniPhiMemory {
     await this.#updateRootIndex();
   }
 
+  async #updateHelperScriptsIndex(entry) {
+    const index = await this.#readJSON(this.helperScriptsIndexFile, { entries: [] });
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.helperScriptsIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
   async #updateRootIndex() {
     const root = await this.#readJSON(this.rootIndexFile, { children: [] });
     root.updatedAt = new Date().toISOString();
@@ -519,6 +544,7 @@ export default class MiniPhiMemory {
       { name: "research", file: this.#relative(this.researchIndexFile) },
       { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
       { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
+      { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }
@@ -550,6 +576,76 @@ export default class MiniPhiMemory {
       });
     }
     await this.#updateRootIndex();
+  }
+
+  async recordHelperScript(script) {
+    if (!script?.code) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const language = this.#normalizeHelperLanguage(script.language);
+    const slug = this.#slugify(script.name ?? `helper-${language}`);
+    const ext = language === "python" ? ".py" : ".js";
+    const fileName = `${timestamp.replace(/[:.]/g, "-")}-${slug}${ext}`;
+    const helperPath = path.join(this.helpersDir, fileName);
+    await fs.promises.writeFile(helperPath, (script.code ?? "").replace(/\r\n/g, "\n"), "utf8");
+    const entry = {
+      id: script.id ?? randomUUID(),
+      name: script.name ?? slug,
+      description: script.description ?? null,
+      language,
+      createdAt: timestamp,
+      source: script.source ?? null,
+      objective: script.objective ?? null,
+      workspaceType: script.workspaceType ?? null,
+      path: this.#relative(helperPath),
+      notes: script.notes ?? null,
+      runs: [],
+    };
+    await this.#updateHelperScriptsIndex(entry);
+    return { entry, path: helperPath };
+  }
+
+  async recordHelperScriptRun(run) {
+    if (!run?.id) {
+      return null;
+    }
+    await this.prepare();
+    const index = await this.#readJSON(this.helperScriptsIndexFile, { entries: [] });
+    const entryIndex = index.entries.findIndex((item) => item.id === run.id);
+    if (entryIndex === -1) {
+      return null;
+    }
+    const timestamp = run.ranAt ?? new Date().toISOString();
+    const baseName = `${run.id}-${timestamp.replace(/[:.]/g, "-")}`;
+    let stdoutPath = null;
+    if (run.stdout && run.stdout.length) {
+      stdoutPath = path.join(this.helpersDir, `${baseName}.stdout.log`);
+      await fs.promises.writeFile(stdoutPath, run.stdout, "utf8");
+    }
+    let stderrPath = null;
+    if (run.stderr && run.stderr.length) {
+      stderrPath = path.join(this.helpersDir, `${baseName}.stderr.log`);
+      await fs.promises.writeFile(stderrPath, run.stderr, "utf8");
+    }
+    const entry = index.entries[entryIndex];
+    const runRecord = {
+      ranAt: timestamp,
+      exitCode: run.exitCode ?? 0,
+      command: run.command ?? null,
+      stdout: stdoutPath ? this.#relative(stdoutPath) : null,
+      stderr: stderrPath ? this.#relative(stderrPath) : null,
+      summary: run.summary ?? null,
+    };
+    entry.lastRun = runRecord;
+    const previous = Array.isArray(entry.runs) ? entry.runs : [];
+    entry.runs = [runRecord, ...previous].slice(0, 5);
+    index.entries[entryIndex] = entry;
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.helperScriptsIndexFile, index);
+    await this.#updateRootIndex();
+    return runRecord;
   }
 
   async addTodoItems(items, { source } = {}) {
