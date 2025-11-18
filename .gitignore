@@ -147,3 +147,4 @@ add-or-create-submodule.sh
 miniphi-prompts.db
 miniphi-prompts.db-shm
 miniphi-prompts.db-wal
+.DS_Store
