@@ -53,3 +53,8 @@ As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about:
 
 - Add in parallel to npm libraries for code parsing, the ability to learn directly from API model how to navigate correctly the current project/path/file type, also through real time generated nodejs/python helpers scripts
 - Check the ability of miniphi to... edit himself. He should have already all the fundamental implementation to do it. The ability of improve/implements next steps using itself and the API's model, is a sign of great maturity by the tool. Write your conclusion in AI_REFERENCE's next steps and implement right now what is possible/essential. LM Studio APIs are available for realtime testings right now.
+
+# Next steps 2
+- It's needed in samples a "get-started" project with a series of prompts that brings miniphi to discover the current OS the available essential tools with essential, general and specific prompts: create general README.md of the project, edit a specific function to change a little behaviour, add a specific features and implement its usage in sample project. Sample should be runnable with node to test both compilation and results respect than the excepted ones.
+- Miniphi currently not enough "current project-centric". It should be evident to work with current working directory as base project where to work, and it has to support the basic command "miniphy Make this prompt without argument name in CWD --optional-args"
+- I forgot it. 
