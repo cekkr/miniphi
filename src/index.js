@@ -171,7 +171,8 @@ async function main() {
     return;
   }
 
-  if (command === "recompose") {
+  // "recompose" command is ONLY for development testing purposes, like "benchmark". 
+  if (command === "recompose") { 
     await handleRecompose({
       options,
       positionals,
