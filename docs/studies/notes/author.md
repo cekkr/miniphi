@@ -56,7 +56,7 @@ As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about:
 
 # Next steps 2
 - It's needed in samples a "get-started" project with a series of prompts that brings miniphi to discover the current OS the available essential tools with essential, general and specific prompts: create general README.md of the project, edit a specific function to change a little behaviour, add a specific features and implement its usage in sample project. Sample should be runnable with node to test both compilation and results respect than the excepted ones.
-- Miniphi currently not enough "current project-centric". It should be evident to work with current working directory as base project where to work, and it has to support the basic command "miniphy Make this prompt without argument name in CWD --optional-args"
+- Miniphi currently not enough "current project-centric". It should be evident to work with current working directory as base project where to work, and it has to support the basic command "miniphy Make this prompt without argument name in CWD --optional-args". Miniphi was created to create from scratch but also edit big projects, and not only "convert to markdown and back to code" as done in benchmarks.
 - Add "command authorization before execution". User's can always allow them, ask for permission for every session etc. Then, take advantages of "APIs generated commands" to add to JSON response structure also the predicted dangerousness (low|mid|high), so user can be asked for permission only for sensible commands.
 - Check the ability of APIs model to change by himself the JSON structure of commands and response. Anyway this requires its ability to implement their input and output adapters.
 - I forgot it. 
