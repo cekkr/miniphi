@@ -6,16 +6,17 @@ const OUTPUT_PREVIEW_LIMIT = 420;
 
 const NAVIGATION_SCHEMA = [
   "{",
+  '  "schema_version": "string // schema identifier (default navigation-plan@v1)",',
   '  "navigation_summary": "<=160 characters overview",',
   '  "recommended_paths": ["relative/path", "glob"],',
   '  "file_types": ["js", "md"],',
   '  "focus_commands": ["npm run lint"],',
   '  "actions": [',
   "    {",
-  '      "command": "string // shell command to execute",',
-  '      "reason": "string // why this command matters",',
-  '      "danger": "low|mid|high // predicted risk",',
-  '      "authorization_hint": "string|null // additional warning or requirement"',
+    '      "command": "string // shell command to execute",',
+    '      "reason": "string // why this command matters",',
+    '      "danger": "low|mid|high // predicted risk",',
+    '      "authorization_hint": "string|null // additional warning or requirement"',
   "    }",
   "  ],",
   '  "helper_script": {',
@@ -71,6 +72,7 @@ export default class ApiNavigator {
     this.logger = typeof options?.logger === "function" ? options.logger : null;
     this.temperature = options?.invocationTemperature ?? DEFAULT_TEMPERATURE;
     this.helperTimeout = options?.helperTimeout ?? HELPER_TIMEOUT_MS;
+    this.adapterRegistry = options?.adapterRegistry ?? null;
   }
 
   setMemory(memory) {
@@ -95,31 +97,73 @@ export default class ApiNavigator {
     if (!plan) {
       return null;
     }
+    const normalizedPlan = this.#normalizePlan(plan);
+    if (!normalizedPlan) {
+      return null;
+    }
     let helper = null;
     if (
-      plan.helper_script?.code &&
+      normalizedPlan.helper_script?.code &&
       this.memory &&
       this.cli &&
       payload.executeHelper !== false
     ) {
-      helper = await this.#materializeHelperScript(plan.helper_script, payload).catch((error) => {
-        this.#log(
-          `[ApiNavigator] Helper script failed: ${error instanceof Error ? error.message : error}`,
-        );
-        return null;
-      });
+      helper = await this.#materializeHelperScript(normalizedPlan.helper_script, payload).catch(
+        (error) => {
+          this.#log(
+            `[ApiNavigator] Helper script failed: ${error instanceof Error ? error.message : error}`,
+          );
+          return null;
+        },
+      );
     }
+    const actions = this.#normalizeActions(normalizedPlan.actions);
     return {
-      summary: plan.navigation_summary ?? null,
-      recommendedPaths: Array.isArray(plan.recommended_paths) ? plan.recommended_paths : [],
-      fileTypes: Array.isArray(plan.file_types) ? plan.file_types : [],
-      focusCommands: Array.isArray(plan.focus_commands) ? plan.focus_commands : [],
+      summary: normalizedPlan.navigation_summary ?? null,
+      recommendedPaths: Array.isArray(normalizedPlan.recommended_paths)
+        ? normalizedPlan.recommended_paths
+        : [],
+      fileTypes: Array.isArray(normalizedPlan.file_types) ? normalizedPlan.file_types : [],
+      focusCommands: Array.isArray(normalizedPlan.focus_commands)
+        ? normalizedPlan.focus_commands
+        : [],
+      actions,
       helper,
-      block: this.#buildNavigationBlock(plan, helper),
-      raw: plan,
+      block: this.#buildNavigationBlock(normalizedPlan, helper, actions),
+      raw: normalizedPlan,
+      schemaVersion: normalizedPlan.schema_version ?? null,
     };
   }
 
+  #normalizePlan(plan) {
+    if (!plan) {
+      return null;
+    }
+    const schemaVersion = plan.schema_version ?? "navigation-plan@v1";
+    if (!this.adapterRegistry) {
+      return { ...plan, schema_version: schemaVersion };
+    }
+    return this.adapterRegistry.normalizeResponse("api-navigator", schemaVersion, plan);
+  }
+
+  #normalizeActions(rawActions) {
+    if (!Array.isArray(rawActions)) {
+      return [];
+    }
+    return rawActions
+      .map((entry) => {
+        if (!entry?.command) {
+          return null;
+        }
+        return {
+          command: entry.command,
+          reason: entry.reason ?? null,
+          danger: entry.danger ?? "mid",
+          authorizationHint: entry.authorization_hint ?? entry.authorizationHint ?? null,
+        };
+      })
+      .filter(Boolean);
+  }
   async #requestPlan(payload) {
     const manifest = Array.isArray(payload.workspace?.manifestPreview)
       ? payload.workspace.manifestPreview.slice(0, 12)

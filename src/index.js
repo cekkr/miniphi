@@ -28,6 +28,7 @@ import ApiNavigator from "./libs/api-navigator.js";
 import CommandAuthorizationManager, {
   normalizeCommandPolicy,
 } from "./libs/command-authorization-manager.js";
+import SchemaAdapterRegistry from "./libs/schema-adapter-registry.js";
 import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
@@ -48,6 +49,7 @@ const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the ca
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
+const schemaAdapterRegistry = new SchemaAdapterRegistry();
 const PROMPT_SCORING_SYSTEM_PROMPT = [
   "You grade MiniPhi prompt effectiveness.",
   "Given an objective, workspace context, prompt text, and the assistant response, you must return JSON with:",
@@ -136,6 +138,41 @@ function mergeFixedReferences(context, references) {
     fixedReferences: references,
   };
 }
+
+schemaAdapterRegistry.registerAdapter({
+  type: "api-navigator",
+  version: "navigation-plan@v1",
+  normalizeResponse: (plan) => {
+    if (!plan || typeof plan !== "object") {
+      return plan;
+    }
+    const normalized = {
+      ...plan,
+      schema_version: plan.schema_version ?? "navigation-plan@v1",
+    };
+    normalized.recommended_paths = Array.isArray(plan.recommended_paths)
+      ? plan.recommended_paths
+      : [];
+    normalized.file_types = Array.isArray(plan.file_types) ? plan.file_types : [];
+    normalized.focus_commands = Array.isArray(plan.focus_commands) ? plan.focus_commands : [];
+    const actions = Array.isArray(plan.actions) ? plan.actions : [];
+    normalized.actions = actions
+      .map((action) => {
+        if (!action || typeof action.command !== "string" || !action.command.trim()) {
+          return null;
+        }
+        return {
+          ...action,
+          command: action.command.trim(),
+          danger: normalizeDangerLevel(action.danger ?? "mid"),
+          authorization_hint:
+            action.authorization_hint ?? action.authorizationHint ?? null,
+        };
+      })
+      .filter(Boolean);
+    return normalized;
+  },
+});
 
 async function main() {
   const args = process.argv.slice(2);
@@ -385,6 +422,7 @@ async function main() {
           cliExecutor: cli,
           memory: memoryInstance ?? null,
           logger: verbose ? (message) => console.warn(message) : null,
+          adapterRegistry: schemaAdapterRegistry,
         })
       : null;
   const runNavigatorFollowUps = async ({
@@ -1021,9 +1059,16 @@ async function main() {
             },
           },
         });
-        if (workspaceContext?.navigationHints?.focusCommands?.length) {
+        const analyzeNavigatorActions =
+          (workspaceContext?.navigationHints?.actions ?? []).length > 0
+            ? workspaceContext.navigationHints.actions
+            : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
+                command,
+                danger: "mid",
+              }));
+        if (analyzeNavigatorActions.length) {
           const followUps = await runNavigatorFollowUps({
-            commands: workspaceContext.navigationHints.focusCommands,
+            commands: analyzeNavigatorActions,
             cwd: analyzeCwd,
             workspaceContext,
             summaryLevels,

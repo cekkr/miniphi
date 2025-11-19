@@ -21,6 +21,7 @@
 - `samples/get-started/` contains a runnable Node.js onboarding project plus curated prompt suites so contributors can test the new workspace-centric flows end-to-end (environment discovery, README drafting, targeted edits, feature work, verification).
 - Global shared memory now lives under `~/.miniphi/` so prompt scoring (`miniphi-prompts.db`), OS profiles, command-policy preferences, and rollout metrics survive across repositories and don't need to be checked into source control.
 - `CommandAuthorizationManager` enforces `--command-policy ask|session|allow|deny`, respects `--assume-yes`, and pairs with `--command-danger` plus ApiNavigator danger metadata so risky commands require explicit approval, while direct file references (`@"path/to/file"`) are hashed, archived under `.miniphi/prompt-exchanges/fixed-references/`, and injected into every downstream prompt.
+- `SchemaAdapterRegistry` normalizes LM Studio API responses (starting with ApiNavigator’s `schema_version` field) so new JSON layouts can self-describe and be adapted without touching the CLI core.
 - Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) lets teams pin LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
 
 ## Reference documents
