@@ -1,6 +1,6 @@
 # miniPhi
 
-> Local, LM Studio-based (and Phi-4-powered) command and log analysis that compresses everything before it thinks. And execute commands. And edits things. In short, like Codex, but locally.
+> Local, LM Studio-based (and Phi-4-powered) project, prompt, command and log analysis that compresses everything before it thinks and then expand back into complex results. In short, like Codex, but locally.
 
 ![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg?raw=true)
 
