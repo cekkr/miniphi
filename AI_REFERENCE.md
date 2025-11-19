@@ -34,6 +34,7 @@
 - `docs/studies/todo/author.md` - human editing backlog.
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
 - `samples/get-started/README.md` - describes the onboarding sample and curated prompt files that exercise workspace-first behavior.
+- `samples/bash-it/` - frozen copy of Bash’s full source tree with complex directories, perfect for exercising recursive analysis, recomposition, and benchmark workflows without cloning upstream Bash.
 - `~/.miniphi/` - global hidden folder for shared telemetry (prompt DB, command-policy preferences, system profile snapshots) that every project run can reuse.
 
 ### Prompt journaling regression sample
