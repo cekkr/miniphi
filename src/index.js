@@ -29,7 +29,15 @@ import {
   readReadmeSnippet,
 } from "./libs/workspace-context-utils.js";
 
-const COMMANDS = new Set(["run", "analyze-file", "web-research", "history-notes", "recompose", "benchmark"]);
+const COMMANDS = new Set([
+  "run",
+  "analyze-file",
+  "web-research",
+  "history-notes",
+  "recompose",
+  "benchmark",
+  "workspace",
+]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +62,18 @@ function parseNumericSetting(value, label) {
   return numeric;
 }
 
+function extractImplicitWorkspaceTask(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    return { task: null, rest: [] };
+  }
+  const boundary = tokens.findIndex((token) => token.startsWith("-"));
+  const end = boundary === -1 ? tokens.length : boundary;
+  const messageTokens = tokens.slice(0, end).filter((token) => !COMMANDS.has(token));
+  const task = messageTokens.join(" ").trim() || null;
+  const rest = boundary === -1 ? [] : tokens.slice(boundary);
+  return { task, rest };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -61,13 +81,22 @@ async function main() {
     return;
   }
 
-  const [command, ...rest] = args;
+  let command = args[0];
+  let rest = args.slice(1);
+  let implicitWorkspaceTask = null;
 
   if (!COMMANDS.has(command)) {
-    console.error(`Unknown command "${command}".`);
-    printHelp();
-    process.exitCode = 1;
-    return;
+    const extracted = extractImplicitWorkspaceTask(args);
+    if (extracted.task) {
+      implicitWorkspaceTask = extracted.task;
+      rest = extracted.rest;
+      command = "workspace";
+    } else {
+      console.error(`Unknown command "${command}".`);
+      printHelp();
+      process.exitCode = 1;
+      return;
+    }
   }
 
   const { options, positionals } = parseArgs(rest);
@@ -112,7 +141,10 @@ async function main() {
     parseNumericSetting(defaults.timeout, "config.defaults.timeout") ??
     60000;
 
-  const task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
+  let task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
+  if (command === "workspace" && implicitWorkspaceTask && !options.task) {
+    task = implicitWorkspaceTask;
+  }
 
   let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
   if (!promptId && typeof defaults.promptId === "string") {
@@ -523,6 +555,74 @@ async function main() {
     }
 
     let result;
+
+    if (command === "workspace") {
+      if (task === DEFAULT_TASK_DESCRIPTION && !implicitWorkspaceTask && !options.task) {
+        throw new Error(
+          'Workspace mode expects a task description. Pass a free-form prompt (e.g., `miniphi "Draft README"`) or supply --task "<description>".',
+        );
+      }
+      const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+      archiveMetadata.cwd = cwd;
+      stateManager = new MiniPhiMemory(cwd);
+      await stateManager.prepare();
+      const navigator = buildNavigator(stateManager);
+      let workspaceContext = await describeWorkspace(cwd, {
+        navigator,
+        objective: task,
+      });
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
+      phi4.setPromptRecorder(promptRecorder);
+      if (promptId) {
+        const history = await stateManager.loadPromptSession(promptId);
+        if (history) {
+          phi4.setHistory(history);
+        }
+      }
+      let planResult = null;
+      if (promptDecomposer) {
+        try {
+          planResult = await promptDecomposer.decompose({
+            objective: task,
+            command: null,
+            workspace: workspaceContext,
+            promptRecorder,
+            storage: stateManager,
+            mainPromptId: promptGroupId,
+            metadata: { mode: "workspace" },
+          });
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Workspace decomposition failed: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        }
+      }
+      if (planResult) {
+        workspaceContext = {
+          ...(workspaceContext ?? {}),
+          taskPlanSummary: planResult.summary ?? null,
+          taskPlanId: planResult.planId ?? null,
+          taskPlanOutline: planResult.outline ?? null,
+        };
+      }
+      console.log(`[MiniPhi][Workspace] cwd: ${cwd}`);
+      console.log(`[MiniPhi][Workspace] task: ${task}`);
+      if (workspaceContext?.summary) {
+        console.log(`[MiniPhi][Workspace] summary: ${workspaceContext.summary}`);
+      }
+      if (workspaceContext?.navigationBlock) {
+        console.log(`[MiniPhi][Workspace] navigation:\n${workspaceContext.navigationBlock}`);
+      }
+      if (planResult?.outline) {
+        console.log(`[MiniPhi][Workspace] plan (${planResult.planId}):\n${planResult.outline}`);
+      } else if (!promptDecomposer) {
+        console.log("[MiniPhi][Workspace] Prompt decomposer is not configured; skipping plan output.");
+      }
+      return;
+    }
 
     if (command === "run") {
       const cmd = options.cmd ?? positionals.join(" ");
@@ -1515,6 +1615,7 @@ Usage:
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js history-notes --label "post benchmark"
+  node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
 
@@ -1540,6 +1641,7 @@ Options:
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
   --debug-lm                   Print each objective + prompt when scoring is running
+  (workspace mode also accepts free-form positional text: `npx miniphi "Draft release notes"`.)
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)

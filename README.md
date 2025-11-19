@@ -29,6 +29,12 @@ This project is in a alpha stage of development, and technically it's able to ex
 > $ `cd my-project/`  
 > $ `miniphi --task "Create the README.md of the current project"`
 
+## Workspace-first prompts
+- `node src/index.js workspace --task "Plan README refresh"` scans the current working directory, summarizes capabilities, and saves a recursive outline without executing arbitrary shell commands.
+- Running `npx miniphi "Audit the docs structure" --verbose` (or `miniphi "…"` when installed globally) now triggers the same workflow: when the CLI does not recognize the first argument as a command it treats the free-form text as the task and assumes the CWD is the project root.
+- Workspace summaries combine `WorkspaceProfiler`, `CapabilityInventory`, and `ApiNavigator` hints so Phi-4 starts with concrete file paths, package scripts, and helper suggestions before editing anything.
+- Use this mode whenever you want MiniPhi to propose edits (README rewrites, code tweaks, task plans) grounded in the current repo before running `miniphi run --cmd ...`.
+
 ## Fundamentals
 - **Narrative-only recomposition inputs.** Storytelling folders inside `samples/recompose/*/descriptions` benchmarks stay prose-only so recomposition prompts must reason instead of copy/pasting code; `hello-flow` enforces those rules in its README. This is an example of multi-passage concept extrapolation without code snippets, priority ordering e back conversion to code, confronting practical results.
 - **Multi-prompt orchestration.** miniPhi expands every command into a workspace scan, plan, and targeted edits, then saves the prompt trees and transcripts under `.miniphi/` so interrupted runs can resume mid-branch.
@@ -47,6 +53,7 @@ This project is in a alpha stage of development, and technically it's able to ex
 - **Recomposition + benchmark harness.** `RecomposeTester` and `RecomposeBenchmarkRunner` power `samples/recompose/hello-flow`, repair mismatches with diff-driven prompts, and export Phi transcripts next to each JSON report.
 - **Prompt telemetry + scoring.** `PromptPerformanceTracker` records workspace focus, commands, schema IDs, capability summaries, and prompt lineage inside `miniphi-prompts.db` so future runs can reuse proven setups.
 - **Config profiles and overrides.** Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) pins LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
+- **Samples.** `samples/recompose/hello-flow` remains the canonical recomposition benchmark, while `samples/get-started` introduces a workspace-onboarding scenario with curated prompts for environment detection, README drafting, feature tweaks, and verification commands.
 
 miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume the `microsoft/phi-4-reasoning-plus` model is already downloaded in LM Studio.
 

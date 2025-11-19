@@ -1,0 +1,15 @@
+{
+  "name": "miniphi-get-started-sample",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable sample for MiniPhi onboarding prompts.",
+  "scripts": {
+    "start": "node src/index.js --info --feature --readme",
+    "smoke": "node src/tests/smoke.js",
+    "test": "node src/tests/smoke.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

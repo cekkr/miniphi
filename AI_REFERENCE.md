@@ -17,6 +17,8 @@
 - Resource monitoring (RAM/CPU/VRAM) ships via `ResourceMonitor`, streaming warnings to the console and recording rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
 - Research, history, and benchmark helpers store artifacts inside `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, making every Phi-4 conversation or benchmark sweep reproducible.
 - `RecomposeTester` and `RecomposeBenchmarkRunner` drive `samples/recompose/hello-flow`, cache code-to-markdown descriptions, repair mismatches with diff-driven prompts, and export Phi transcript logs next to every JSON report so reviews stay auditable.
+- Workspace-first prompts now exist: `node src/index.js workspace --task "..."` (or `miniphi "..."`) anchors planning in the current working directory, loads navigation hints, and persists prompt-decomposition plans without executing arbitrary commands.
+- `samples/get-started/` contains a runnable Node.js onboarding project plus curated prompt suites so contributors can test the new workspace-centric flows end-to-end (environment discovery, README drafting, targeted edits, feature work, verification).
 - Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) lets teams pin LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
 
 ## Reference documents
@@ -27,6 +29,7 @@
 - `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
 - `docs/studies/todo/author.md` - human editing backlog.
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
+- `samples/get-started/README.md` - describes the onboarding sample and curated prompt files that exercise workspace-first behavior.
 
 ## High-Priority Fundamentals
 1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.

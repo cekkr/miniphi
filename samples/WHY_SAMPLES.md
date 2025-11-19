@@ -8,3 +8,6 @@ The resulting markdown file should be very large: this is a perfect test about h
 
 # recompose/hello-flow
 This miniature Node.js project powers the `recompose` benchmarking flow. The `code/` directory contains the canonical source, `descriptions/` stores generated markdown representations, and `recompose-report.json` captures the per-step timings/counts produced by `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip`. Extend this folder with bigger projects to stress-test the markdown↔code round-trip accuracy.
+
+# get-started
+This onboarding scenario lives under `samples/get-started`. The code/ folder hosts a simple Node.js project that discovers the host environment, generates README content, and exposes a tiny feature toggle plus smoke tests. The prompts/ folder contains five curated prompt suites (environment, README, targeted edit, feature addition, verification) so MiniPhi contributors can exercise project-centric workflows that operate directly on the current working directory. Use this sample when validating the `workspace` command, command-authorization policies, or any “edit the repo in place” improvements.
