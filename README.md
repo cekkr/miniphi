@@ -1,10 +1,17 @@
 # miniPhi
 
-> Local, LM Studio-based (and Phi-4-powered) project, prompt, command and log analysis that compresses everything before it thinks and then expand back into complex results. In short, like Codex, but locally.
+> Local, LM Studio-based (and Phi-4-powered) project assistant for your repositories. It runs as a CLI “local AI agent” that understands your workspace, compresses logs and context, and then asks Phi-4 to plan, analyze, or draft changes on top of that snapshot.
 
 ![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg?raw=true)
 
 miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio's `microsoft/phi-4-reasoning-plus` model. The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
+
+## What miniPhi is
+- A **local AI agent for a project**, not a hosted chatbot: it runs on top of your own LM Studio instance and keeps all logs, prompts, and artifacts on disk under `.miniphi/` and `~/.miniphi/`.
+- A **workspace-aware CLI orchestrator** that scans your repo, discovers scripts and tooling, and feeds that context into Phi-4 before asking it to plan or edit anything.
+- A **log and transcript compressor** that lets Phi-4 reason over long command outputs, test runs, and benchmark traces without you pasting anything into a browser.
+- A **memory layer around LM Studio** so prompt trees, decompositions, helper scripts, and research notes can be replayed, diffed, or continued in later sessions.
+- A **development harness for samples and benchmarks** (such as the recomposition flows and benchmark commands documented below), which exist to validate the runtime rather than act as the primary user experience.
 
 ## Why miniPhi exists
 - You can run scary commands (summarizations, implementations, data migrations, synthetic benchmarks, `npm benchmark:windows`) and let Phi-4 triage the output without pasting it into a remote service.
