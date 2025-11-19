@@ -1,0 +1,23 @@
+# property_squares.bsh - Script for runtime extensions for objects properties reference
+echo "Loading BSH Property Square Bracket Access Simulation (property_squares.bsh)..." # Adapted echo
+
+# --- Square Bracket Access Simulation Functions ---
+function get_element (object_base_name_str key_str result_var) {
+    $mangled_name = "${object_base_name_str}_${key_str}" 
+    $($result_var) = $($mangled_name)
+    # echo "DEBUG (get_element): Accessing '$mangled_name', got: '$($result_var)'"
+}
+
+function set_element (object_base_name_str key_str value_to_set) {
+    $mangled_name = "${object_base_name_str}_${key_str}" 
+    $($mangled_name) = "$value_to_set"
+    # echo "DEBUG (set_element): Set '$mangled_name' to '$value_to_set'"
+
+    $object_type_var = "${object_base_name_str}_BSH_STRUCT_TYPE"
+    if "$($object_type_var)" == "" {
+        $($object_type_var) = "BSH_OBJECT_ROOT"
+    }
+}
+
+echo "BSH Square Bracket access simulation functions (get_element, set_element) defined."
+# Example usage comments remain relevant.

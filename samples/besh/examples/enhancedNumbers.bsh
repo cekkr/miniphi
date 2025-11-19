@@ -1,0 +1,105 @@
+
+echo "--- Start of Enhanced Example Script ---"
+
+# Assume number.bsh and string.bsh are loaded.
+
+# --- Using number.bsh with enhanced bsh.c tokenizer ---
+echo ""
+echo "--- Testing Numeric Features (Enhanced Tokenizer) ---"
+
+$num_a = 100
+$num_b = 25
+$num_c = -5       # Now unquoted, tokenized as a single TOKEN_NUMBER "-5"
+$float_a = 10.5   # Now unquoted, tokenized as a single TOKEN_NUMBER "10.5"
+$float_b = 2.0    # Now unquoted, tokenized as a single TOKEN_NUMBER "2.0"
+
+# Arithmetic Operations
+echo "Arithmetic Operations:"
+math_add $num_a $num_b sum_res
+echo "  $num_a + $num_b = $sum_res"
+
+math_sub $num_a $num_b diff_res
+echo "  $num_a - $num_b = $diff_res"
+
+math_mul $num_b $num_c prod_res # $num_c is -5
+echo "  $num_b * $num_c = $prod_res"
+
+math_div $num_a $num_b div_res
+echo "  $num_a / $num_b = $div_res"
+
+math_mod $num_a 7 mod_res
+echo "  $num_a % 7 = $mod_res"
+
+math_add $float_a $float_b float_sum_res # $float_a is 10.5, $float_b is 2.0
+echo "  $float_a + $float_b = $float_sum_res"
+
+# Comparison Operations and Conditionals
+echo ""
+echo "Numeric Comparisons and Conditions:"
+$val1 = 50
+$val2 = 75
+$neg_val = -10 # Unquoted negative number
+
+math_gt $val2 $val1 is_greater_res
+echo "  $val2 > $val1 ? $is_greater_res"
+if $is_greater_res {
+    echo "    Condition ( $val2 > $val1 ): TRUE"
+}
+
+math_lt $neg_val 0 is_neg_less_zero # $neg_val is -10, 0 is unquoted
+echo "  $neg_val < 0 ? $is_neg_less_zero"
+if $is_neg_less_zero {
+    echo "    Condition ( $neg_val < 0 ): TRUE"
+}
+
+# ... (rest of the numeric and string examples would largely remain the same,
+#      as they mostly deal with variables that already hold these string values,
+#      or with string literals that correctly use quotes for spaces etc.) ...
+
+# Example: Passing unquoted number literals directly to a function
+echo ""
+echo "Directly passing unquoted new numbers to functions:"
+math_add -15 2.5 direct_pass_res # Assuming -15 and 2.5 are tokenized as numbers
+echo "  -15 + 2.5 = $direct_pass_res"
+
+
+# --- String Section (largely unchanged, but showing context) ---
+echo ""
+echo "--- String Features (Context with Enhanced Numerics) ---"
+
+$str_a = Hello
+$str_b = World
+$sentence = "Values like -5 and 10.5 are now easier to write."
+$dollar_info = "Literal dollar: \$. Not $num_a."
+
+echo "Sentence: $sentence"
+echo "Dollar info: $dollar_info"
+
+string_len "$sentence" len_sentence
+echo "  Length of sentence: $len_sentence"
+
+string_concat $str_a " " temp_res # Space still needs quotes
+string_concat $temp_res $str_b full_greeting
+echo "  Greeting: $full_greeting"
+
+# Direct character access example remains the same
+$my_word = Example
+echo "  Char at \$my_word[0]: '$my_word[0]'" # E
+echo "  Char at \$my_word[3]: '$my_word[3]'" # m
+
+# Split example remains the same
+$data_list = "alpha,beta,gamma,-10,3.14" # This string itself would still need quotes if assigned directly with commas
+                                       # but if generated or parts are numbers, they are fine.
+echo "  Data list: $data_list"
+string_split "$data_list" "," item_array
+$item_count = $item_array_count
+echo "  Split items: $item_count"
+$k = 0
+while $k < $item_count {
+    $current_item = $item_array[$k]
+    echo "    Item $k: '$current_item'"
+    $k = $($k) + 1
+}
+
+echo ""
+echo "--- End of Enhanced Example Script ---"

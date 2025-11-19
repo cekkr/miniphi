@@ -1,0 +1,230 @@
+# strNumExamples.bsh
+# Example script to demonstrate the number.bsh and string.bsh libraries
+
+echo "--- Start of Example Script ---"
+
+# Ensure necessary libraries are loaded if not done in .bshrc
+# For this example, we assume they have been loaded.
+# Example:
+# import "number.bsh" # If 'import' loads and executes the specified script
+# import "string.bsh"
+
+# --- Using number.bsh ---
+echo ""
+echo "--- Testing Numeric Features ---"
+
+# Numeric variables
+$num_a = "100"
+$num_b = "25"
+$num_c = "-5"
+$float_a = "10.5"
+$float_b = "2.0"
+
+# Arithmetic Operations
+echo "Arithmetic Operations:"
+math_add $num_a $num_b sum_res
+echo "  $num_a + $num_b = $sum_res" # Expected: 125
+
+math_sub $num_a $num_b diff_res
+echo "  $num_a - $num_b = $diff_res" # Expected: 75
+
+math_mul $num_b $num_c prod_res
+echo "  $num_b * $num_c = $prod_res" # Expected: -125
+
+math_div $num_a $num_b div_res
+echo "  $num_a / $num_b = $div_res" # Expected: 4
+
+math_mod $num_a "7" mod_res
+echo "  $num_a % 7 = $mod_res" # Expected: 2 (100 = 14*7 + 2)
+
+math_add $float_a $float_b float_sum_res
+echo "  $float_a + $float_b = $float_sum_res" # Expected: 12.5 (if the C library supports it)
+
+# Comparison Operations and Conditionals
+echo ""
+echo "Numeric Comparisons and Conditions:"
+$val1 = "50"
+$val2 = "75"
+
+math_gt $val2 $val1 is_greater_res
+echo "  $val2 > $val1 ? $is_greater_res" # Expected: 1
+if $is_greater_res {
+    echo "    Condition ( $val2 > $val1 ): TRUE"
+} else {
+    echo "    Condition ( $val2 > $val1 ): FALSE"
+}
+
+math_eq $val1 $val1 is_equal_res
+echo "  $val1 == $val1 ? $is_equal_res" # Expected: 1
+if $is_equal_res {
+    echo "    Condition ( $val1 == $val1 ): TRUE"
+}
+
+math_le $val1 $val2 is_le_res
+echo "  $val1 <= $val2 ? $is_le_res" # Expected: 1
+
+# Using '!' for negation in if
+if ! $is_equal_res { # is_equal_res is 1, so !is_equal_res is false
+    echo "    Condition ( ! ($val1 == $val1) ): TRUE (This should not print)"
+} else {
+    echo "    Condition ( ! ($val1 == $val1) ): FALSE"
+}
+
+$false_val_str = "0"
+if ! $false_val_str {
+    echo "    Condition ( ! $false_val_str ): TRUE"
+}
+
+# Logical NOT
+echo ""
+echo "Logical NOT:"
+$true_bool_str = "1"
+$false_bool_str = "0" # This was already defined as $false_val_str, reusing for clarity
+math_not $true_bool_str not_true_res
+echo "  not $true_bool_str = $not_true_res" # Expected: 0
+
+math_not $false_bool_str not_false_res
+echo "  not $false_bool_str = $not_false_res" # Expected: 1
+
+# Type checking (conceptual, depends on C implementation)
+echo ""
+echo "Type Checking (Numbers):"
+math_is_int $num_a is_int_res_A
+echo "  Is $num_a an integer? $is_int_res_A" # Expected: 1 (if C supports)
+math_is_float $float_a is_float_res_A
+echo "  Is $float_a a float? $is_float_res_A" # Expected: 1 (if C supports)
+math_is_int $float_a is_int_res_B
+echo "  Is $float_a an integer? $is_int_res_B" # Expected: 0 (if C supports)
+
+
+# --- Using string.bsh ---
+echo ""
+echo "--- Testing String Features ---"
+
+$str_a = "Hello"
+$str_b = "World"
+$str_c = "Hello"
+$empty_str = ""
+$sentence = "BSH is a powerful scripting shell"
+
+# String Length
+echo ""
+echo "String Length:"
+string_len $str_a len_a
+echo "  Length of '$str_a': $len_a" # Expected: 5
+string_len $empty_str len_empty
+echo "  Length of empty string: $len_empty" # Expected: 0
+string_len "$sentence" len_sentence
+echo "  Length of '$sentence': $len_sentence" # Expected: 32
+
+# String Comparison
+echo ""
+echo "String Comparison:"
+string_eq "$str_a" "$str_b" eq_ab_res
+echo "  '$str_a' == '$str_b' ? $eq_ab_res" # Expected: 0
+if $eq_ab_res {
+    echo "    Condition ('$str_a' == '$str_b'): TRUE (Should not print)"
+} else {
+    echo "    Condition ('$str_a' == '$str_b'): FALSE"
+}
+
+string_eq "$str_a" "$str_c" eq_ac_res
+echo "  '$str_a' == '$str_c' ? $eq_ac_res" # Expected: 1
+if $eq_ac_res {
+    echo "    Condition ('$str_a' == '$str_c'): TRUE"
+}
+
+string_ne "$str_a" "$str_b" ne_ab_res
+echo "  '$str_a' != '$str_b' ? $ne_ab_res" # Expected: 1
+if ! $ne_ab_res { # !1 -> 0 (false)
+    echo "    Condition ( ! ('$str_a' != '$str_b') ): TRUE (Should not print)"
+} else {
+    echo "    Condition ( ! ('$str_a' != '$str_b') ): FALSE"
+}
+
+
+# String Concatenation
+echo ""
+echo "String Concatenation:"
+$space_char = " "
+string_concat "$str_a" "$space_char" temp_concat_res
+string_concat "$temp_concat_res" "$str_b" full_concat_res
+string_concat "$full_concat_res" "!" final_str
+echo "  Concatenated string: '$final_str'" # Expected: 'Hello World!'
+
+# Character at Index (function)
+echo ""
+echo "Character at Index (string_char_at_index function):"
+string_char_at_index "$final_str" "0" char_res
+echo "  Character at index 0 of '$final_str': '$char_res'" # Expected: 'H'
+string_char_at_index "$final_str" "6" char_res
+echo "  Character at index 6 of '$final_str': '$char_res'" # Expected: 'W'
+string_char_at_index "$final_str" "10" char_res # Corrected index for 'd'
+echo "  Character at index 10 of '$final_str': '$char_res'" # Expected: 'd'
+string_char_at_index "$final_str" "11" char_res
+echo "  Character at index 11 of '$final_str': '$char_res'" # Expected: '!'
+string_char_at_index "$final_str" "100" char_res # Out of bounds
+echo "  Character at index 100 of '$final_str': '$char_res'" # Expected: '' (empty string)
+
+# Direct Character Access (syntax $string[index] - requires bsh.c modification)
+echo ""
+echo "Direct Character Access (syntax \$string[index]):"
+$my_name_str = "BSHShell"
+echo "  String: '$my_name_str'"
+echo "  Character at \$my_name_str[0]: '$my_name_str[0]'" # Expected: 'B'
+echo "  Character at \$my_name_str[3]: '$my_name_str[3]'" # Expected: 'S'
+echo "  Character at \$my_name_str[7]: '$my_name_str[7]'" # Expected: 'l'
+echo "  Character at \$my_name_str[8]: '$my_name_str[8]'" # Expected: '' (out of bounds)
+$idx_var = "1"
+echo "  Character at \$my_name_str[\$idx_var]: '$my_name_str[$idx_var]'" # Expected: 'S' (using variable for index)
+
+# String Splitting
+echo ""
+echo "String Splitting:"
+$csv_data_str = "one,two,three,four,five"
+$csv_delimiter = ","
+echo "  String to split: '$csv_data_str' with delimiter '$csv_delimiter'"
+string_split "$csv_data_str" "$csv_delimiter" csv_array_data
+
+$items_count_val = $csv_array_data_count # Accessing the _count variable set by string_split
+echo "  Number of split items: $items_count_val" # Expected: 5
+
+$i_loop = "0"
+while $i_loop < $items_count_val {
+    $current_item_val = $csv_array_data[$i_loop] # Accessing BSH array elements
+    echo "    Item $i_loop: '$current_item_val'"
+    $i_loop = $($i_loop) + 1
+}
+
+$path_string = "/usr/local/bin/script.sh"
+$path_delimiter_char = "/"
+echo "  Splitting path '$path_string' with delimiter '$path_delimiter_char'"
+string_split "$path_string" "$path_delimiter_char" path_components
+$path_components_count = $path_components_count
+echo "  Number of path components: $path_components_count"
+$j_loop = 0
+while $j_loop < $path_components_count {
+    $path_part = $path_components[$j_loop]
+    echo "    Part $j_loop: '$path_part'"
+    $j_loop = $($j_loop) + 1
+}
+# Note: For the path /usr/local/bin/script.sh, the first part might be empty if the string starts with the delimiter.
+# The C implementation of bsh_string_split_xxx determines this behavior.
+
+echo ""
+echo "--- Testing While Loop with Numeric Condition ---"
+$loop_counter = "0"
+$loop_limit = "3"
+$loop_condition_met = ""
+echo "Counter from $loop_counter up to (but not including) $loop_limit:"
+math_lt $loop_counter $loop_limit loop_condition_met
+while $loop_condition_met {
+    echo "  Counter is $loop_counter"
+    $loop_counter = $($loop_counter) + 1
+    math_lt $loop_counter $loop_limit loop_condition_met # Re-evaluate condition
+}
+echo "While loop finished. Final counter: $loop_counter"
+
+
+echo ""
+echo "--- End of Example Script ---"

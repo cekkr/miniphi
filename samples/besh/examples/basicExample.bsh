@@ -1,0 +1,176 @@
+# MySh Example Script: Demonstrating Loop Implementations
+
+echo "Starting loop demonstration script..."
+echo "------------------------------------"
+
+# --- 1. Define a 'for_to_step' function ---
+# Syntax: for_to_step loop_var_name start_val end_val step_val "command_to_execute_each_iteration"
+# The command_to_execute_each_iteration is a string. Inside it, use $loop_var_name.
+# Note: loop_var_name itself should not have a '$' when passed as an argument to defunc.
+# The 'command_to_execute_each_iteration' will be run by the shell's command dispatcher.
+# For complex bodies, define another function and call it as the command.
+
+defunc for_to_step (iterator start_value end_value step_value command_body) {
+    echo "Executing for_to_step: $iterator from $start_value to $end_value step $step_value"
+    $($iterator) = $start_value # Assign start_value to the variable named by $iterator
+
+    # Determine loop direction based on step
+    if $step_value >= "0" { # Positive or zero step (assume positive for typical loop)
+        while $($iterator) < $end_value {
+            # Execute the body command.
+            # This is a simple way; it executes the string command_body.
+            # For more complex execution, this would need to be more sophisticated.
+            # Here, we assume command_body is a simple command like "echo Iter: $($iterator)"
+            # The shell will tokenize and execute this line.
+            $command_body # This line gets processed by the shell.
+
+            # Increment the iterator
+            $temp_val_for_inc = $($iterator) # Store current value
+            inc temp_val_for_inc             # Increment temp
+            $counter = "0"
+            while $counter < $step_value {   # Loop for step
+                inc $($iterator)
+                inc counter
+            }
+        }
+    } else { # Negative step
+        while $($iterator) > $end_value {
+            $command_body
+
+            # Decrement the iterator (abs value of step)
+            $abs_step = $step_value
+            # Crude way to get absolute value for negative step for dec loop
+            # This assumes step_value is like "-1", "-2" etc.
+            # A real 'abs' function or better string manipulation would be needed.
+            # For simplicity, we'll just use 'dec' repeatedly.
+            $counter = "0"
+            # Example: step_value is -2. We want to dec twice.
+            # We need to make step_value positive for the counter loop.
+            # This is getting complicated without math functions.
+            # Let's assume step is -1 for simplicity in this example for negative steps.
+            if $step_value == "-1" {
+                dec $($iterator)
+            } else {
+                echo "Warning: for_to_step only supports step -1 for negative steps in this example."
+            }
+        }
+    }
+    echo "Finished for_to_step: $iterator"
+}
+
+echo ""
+echo "--- Example 1: Using for_to_step (positive step) ---"
+# Note: The body "echo Loop var x is $x" is passed as a single argument string.
+# The shell will expand $x inside that string when 'for_to_step' executes '$command_body'.
+for_to_step x 0 5 1 "echo Loop var x is $x"
+echo "Value of x after loop: $x" # x should be 5
+
+echo ""
+echo "--- Example 2: Using for_to_step (step 2) ---"
+for_to_step y 10 20 2 "echo Stepping y: $y"
+echo "Value of y after loop: $y" # y should be 20
+
+echo ""
+echo "--- Example 3: Using for_to_step (negative step - simplified to -1) ---"
+for_to_step z 3 0 -1 "echo Countdown z: $z"
+echo "Value of z after loop: $z" # z should be 0
+
+echo "------------------------------------"
+
+# --- 2. Define post-increment (pp) and post-decrement (mm) functions ---
+# These take the NAME of the variable to increment/decrement.
+
+defunc pp (varname_as_string) {
+    # $varname_as_string holds the name of the variable, e.g., "my_counter"
+    # We want to execute: inc my_counter
+    # This is tricky. The 'inc' command expects a variable name, not a string containing a name.
+    # The current 'inc' implementation in C takes 'tokens[1]' which is $var or var.
+    # A direct 'inc $varname_as_string' would try to inc a var literally named 'varname_as_string'.
+    # This requires 'inc' to be smarter or an intermediate step.
+    # For now, this 'pp' is more conceptual unless 'inc' can handle $ (get value of varname_as_string then inc THAT).
+    # The current 'inc $var' in C code handles if var_name_token[0] == '$'.
+    # So, if varname_as_string is "myvar", we need to pass "myvar" or "$myvar" to inc.
+    # Let's assume we pass the name without '$'.
+    inc $varname_as_string
+    # To return the old value (true post-increment), it's more complex:
+    # $old_val = $($varname_as_string) # Get value *before* inc
+    # inc $varname_as_string
+    # echo $old_val # or set $RESULT = $old_val
+    echo "Variable $varname_as_string (conceptually) incremented."
+}
+
+defunc mm (varname_as_string) {
+    dec $varname_as_string
+    echo "Variable $varname_as_string (conceptually) decremented."
+}
+
+echo ""
+echo "--- Example 4: Using pp and mm (conceptual due to inc/dec argument handling) ---"
+$my_val = 10
+echo "Initial my_val: $my_val"
+pp my_val # This will try to 'inc my_val'
+echo "my_val after pp: $my_val" # Should be 11
+mm my_val
+echo "my_val after mm: $my_val" # Should be 10
+echo "------------------------------------"
+
+# --- 3. Define a C-style for loop (conceptual) ---
+# Syntax: c_style_for "init_command" "condition_check_command" "result_var_for_condition" "increment_command" "body_command"
+# - init_command: e.g., "$i = 0"
+# - condition_check_command: e.g., "is_less $i 5" (this command should set $result_var_for_condition to "true" or "false")
+# - result_var_for_condition: The name of the variable that condition_check_command sets (e.g., "cond_res")
+# - increment_command: e.g., "inc i"
+# - body_command: e.g., "echo Iteration $i"
+# This is complex because of the lack of a general 'eval' for expressions.
+
+defunc is_less (op1 op2 result_var) { # Helper for c_style_for condition
+    if $op1 < $op2 {
+        $($result_var) = "true"
+    } else {
+        $($result_var) = "false"
+    }
+}
+
+defunc c_style_for (init_cmd cond_check_cmd cond_result_var increment_cmd body_cmd) {
+    echo "Executing c_style_for..."
+    # Execute initialization command
+    $init_cmd
+
+    # Execute condition check command for the first time
+    $cond_check_cmd
+    while $($cond_result_var) == "true" {
+        # Execute body command
+        $body_cmd
+
+        # Execute increment command
+        $increment_cmd
+
+        # Re-execute condition check command
+        $cond_check_cmd
+    }
+    echo "Finished c_style_for."
+}
+
+echo ""
+echo "--- Example 5: Using c_style_for (conceptual) ---"
+# We need a command like 'is_less $j 3 cond_out' that sets $cond_out
+# The 'is_less' function is defined above.
+c_style_for "$j = 0" "is_less $j 3 cond_out" "cond_out" "inc j" "echo C-Style loop j: $j"
+echo "Value of j after c_style_for: $j" # Should be 3
+
+echo "------------------------------------"
+
+# --- 4. Direct while loop example ---
+echo ""
+echo "--- Example 6: Direct while loop ---"
+$k = 0
+echo "Starting direct while loop for k."
+while $k < 4 {
+    echo "Direct while, k is $k"
+    inc k
+}
+echo "Value of k after direct while: $k" # Should be 4
+
+echo "------------------------------------"
+echo "Loop demonstration script finished."
+

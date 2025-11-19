@@ -1,0 +1,183 @@
+# BSH Current Working Directory Framework (cwd.bsh)
+# Provides functions for common directory operations.
+# Assumes a C library (e.g., bsh_fs_utils.so) is loaded,
+# aliased as 'BSH_FS_UTILS_LIB_ALIAS'.
+
+echo "Loading CWD Framework (cwd.bsh)..."
+
+# --- Configuration ---
+# Define the alias used when loading your filesystem utility C library.
+# Example: loadlib "/path/to/bsh_fs_utils.so" "fs_utils"
+$BSH_FS_UTILS_LIB_ALIAS = "fs_utils" # IMPORTANT: Ensure this library is loaded in your .bshrc or equivalent
+
+# --- Helper: Check if the fs_utils library seems loaded ---
+# This is a conceptual check. In a real scenario, you might have a
+# specific function in your C library to test its availability.
+function is_fs_utils_loaded (result_var) {
+    # For now, we'll assume if the alias is set, the user intends for it to be loaded.
+    # A more robust check might involve a test calllib.
+    if $BSH_FS_UTILS_LIB_ALIAS != "" {
+        # echo "Debug: Assuming '$BSH_FS_UTILS_LIB_ALIAS' is available."
+        $($result_var) = "true"
+    } else {
+        echo "Error: BSH_FS_UTILS_LIB_ALIAS is not set. Filesystem operations will likely fail."
+        $($result_var) = "false"
+    }
+}
+
+# --- pwd (Print Working Directory) ---
+# Prints the value of the $CWD shell variable.
+function pwd () {
+    if $CWD != "" {
+        echo "$CWD"
+    } else {
+        echo "pwd: \$CWD variable is not set or is empty."
+        echo "     Try running 'update_cwd' or ensure shell initialization was successful."
+    }
+}
+
+# --- cd (Change Directory) ---
+# Changes the current working directory.
+# Usage: cd <target_directory>
+function cd (target_directory) {
+    echo "CD: Attempting to change directory to '$target_directory'..."
+    is_fs_utils_loaded fs_lib_ready
+    if $fs_lib_ready != "true" {
+        echo "Error: Filesystem utility library ('$BSH_FS_UTILS_LIB_ALIAS') not available for cd."
+        return
+    }
+
+    if "$target_directory" == "" {
+        # Behavior for "cd" with no arguments: typically go to HOME.
+        # This requires $HOME to be set and the C library to handle it.
+        # For simplicity, we'll require a target_directory for now,
+        # or you can extend your C function bsh_change_directory.
+        # Let's assume your C function can handle an empty string as "go to HOME"
+        # or you have a specific C function for it.
+        # If $HOME is available in bsh:
+        if $HOME != "" {
+             echo "CD: No directory specified, attempting to go to HOME ($HOME)."
+             calllib $BSH_FS_UTILS_LIB_ALIAS "bsh_change_directory" "$HOME"
+        } else {
+            echo "CD Error: No directory specified and \$HOME is not set."
+            return
+        }
+    } else {
+        calllib $BSH_FS_UTILS_LIB_ALIAS "bsh_change_directory" "$target_directory"
+    }
+
+    if $LAST_LIB_CALL_STATUS == "0" {
+        echo "CD: Directory change successful (according to C lib)."
+        # IMPORTANT: After a successful chdir in C, bsh's internal CWD variable needs an update.
+        update_cwd # Call the built-in to refresh $CWD
+        echo "CD: \$CWD updated to '$CWD'."
+    } else {
+        echo "CD Error: Failed to change directory to '$target_directory'."
+        echo "  C Library ('$BSH_FS_UTILS_LIB_ALIAS'.bsh_change_directory) Status: $LAST_LIB_CALL_STATUS"
+        echo "  Output/Error: $LAST_LIB_CALL_OUTPUT"
+    }
+}
+
+# --- ls (List Directory Contents) ---
+# Lists the contents of the specified directory, or the current directory if none specified.
+# Usage: ls [target_directory]
+function ls (target_directory_param) {
+    is_fs_utils_loaded fs_lib_ready
+    if $fs_lib_ready != "true" {
+        echo "Error: Filesystem utility library ('$BSH_FS_UTILS_LIB_ALIAS') not available for ls."
+        return
+    }
+
+    $effective_target_dir = ""
+    if "$target_directory_param" == "" {
+        $effective_target_dir = "$CWD" # Use current CWD if no arg
+        echo "LS: Listing contents of current directory ($CWD)..."
+    } else {
+        $effective_target_dir = "$target_directory_param"
+        echo "LS: Listing contents of '$effective_target_dir'..."
+    }
+
+    if "$effective_target_dir" == "" {
+        echo "LS Error: Target directory is empty (possibly \$CWD is not set)."
+        return
+    }
+
+    # Assuming your C function 'bsh_list_directory' takes the target path as an argument.
+    # If it should list CWD when no arg is passed to it, adjust calllib accordingly.
+    calllib $BSH_FS_UTILS_LIB_ALIAS "bsh_list_directory" "$effective_target_dir"
+
+    if $LAST_LIB_CALL_STATUS == "0" {
+        if $LAST_LIB_CALL_OUTPUT != "" {
+            echo "$LAST_LIB_CALL_OUTPUT"
+        } else {
+            echo "LS: (Directory is empty or no output from C library)"
+        }
+    } else {
+        echo "LS Error: Failed to list directory '$effective_target_dir'."
+        echo "  C Library ('$BSH_FS_UTILS_LIB_ALIAS'.bsh_list_directory) Status: $LAST_LIB_CALL_STATUS"
+        echo "  Output/Error: $LAST_LIB_CALL_OUTPUT"
+    }
+}
+
+echo "CWD Framework (cwd.bsh) loaded."
+echo "Available commands: pwd, cd <dir>, ls [dir]"
+echo "Make sure to load a C library with 'bsh_change_directory' and 'bsh_list_directory'"
+echo "and alias it as '$BSH_FS_UTILS_LIB_ALIAS' (e.g., loadlib path/to/libfs.so $BSH_FS_UTILS_LIB_ALIAS)."
+
+# --- Example C functions (for your bsh_fs_utils.c) ---
+# These are conceptual and would need to be implemented in C, compiled, and loaded.
+#
+# int bsh_change_directory(int argc, char* argv[], char* obuf, int obuf_size) {
+#     if (argc < 1 || argv[0] == NULL || strlen(argv[0]) == 0) {
+#         // Handle "cd" to HOME if argv[0] is empty or a specific convention
+#         const char* home_dir = getenv("HOME");
+#         if (home_dir && chdir(home_dir) == 0) return 0;
+#         snprintf(obuf, obuf_size, "No directory specified and HOME not accessible.");
+#         return 1; // Error
+#     }
+#     if (chdir(argv[0]) == 0) {
+#         // obuf can optionally contain the new path if needed, but update_cwd handles it.
+#         // snprintf(obuf, obuf_size, "Changed directory to %s", argv[0]);
+#         return 0; // Success
+#     } else {
+#         snprintf(obuf, obuf_size, "Error changing to %s: %s", argv[0], strerror(errno));
+#         return errno; // Or a generic error code
+#     }
+# }
+#
+# int bsh_list_directory(int argc, char* argv[], char* obuf, int obuf_size) {
+#     const char* path = "."; // Default to current directory
+#     if (argc > 0 && argv[0] != NULL && strlen(argv[0]) > 0) {
+#         path = argv[0];
+#     }
+#
+#     DIR *d;
+#     struct dirent *dir;
+#     d = opendir(path);
+#     if (d) {
+#         obuf[0] = '\0'; // Clear output buffer
+#         size_t current_len = 0;
+#         while ((dir = readdir(d)) != NULL) {
+#             if (strcmp(dir->d_name, ".") == 0 || strcmp(dir->d_name, "..") == 0) continue;
+#             size_t name_len = strlen(dir->d_name);
+#             if (current_len + name_len + 2 < obuf_size) { // +2 for newline and null terminator
+#                 strcat(obuf, dir->d_name);
+#                 strcat(obuf, "\n"); // Add newline between entries
+#                 current_len += (name_len + 1);
+#             } else {
+#                 // Buffer too small, could indicate with a special message or truncate
+#                 strncat(obuf, "...", obuf_size - current_len -1);
+#                 break;
+#             }
+#         }
+#         closedir(d);
+#         // Remove trailing newline if any and buffer is not empty
+#         if (current_len > 0 && obuf[current_len-1] == '\n') {
+#            obuf[current_len-1] = '\0';
+#         }
+#         return 0; // Success
+#     } else {
+#         snprintf(obuf, obuf_size, "Error opening directory %s: %s", path, strerror(errno));
+#         return errno; // Or a generic error code
+#     }
+# }

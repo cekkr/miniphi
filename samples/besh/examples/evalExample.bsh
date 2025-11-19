@@ -1,0 +1,8 @@
+$command = "echo"
+$message = "Hello from eval!"
+$full_command_str = "$command \"$message\""
+eval $full_command_str # Expands to eval "echo \"Hello from eval!\"" which then executes
+
+$var_name = "USER"
+$USER = "bsh_user"
+eval "echo \"Current user from eval: \$$var_name\"" # Will echo "Current user from eval: bsh_user"

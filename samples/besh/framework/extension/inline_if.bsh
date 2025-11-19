@@ -1,0 +1,18 @@
+# inline_if.bsh
+# Provides a BSH function for conditional value assignment (ternary-like).
+echo "Loading Inline If Extension (inline_if.bsh)..." 
+
+# Function: iif (inline if)
+# Usage: iif $condition_result "value_if_true" "value_if_false" destination_variable_name
+function iif (condition_outcome true_value false_value result_var_name) {
+    # echo "IIF: Condition='$condition_outcome', TrueVal='$true_value', FalseVal='$false_value' -> $result_var_name"
+
+    if "$condition_outcome" == "1" || "$condition_outcome" == "true" { 
+        $($result_var_name) = "$true_value"
+    } else {
+        $($result_var_name) = "$false_value"
+    }
+}
+
+echo "BSH 'iif' function defined."
+# Example usage comments remain relevant; math_eq (if handler for '==') uses new op system.

@@ -1,0 +1,304 @@
+# .bshrc file:
+# Executed when bsh starts. Defines core functions and aliases.
+# Default BSH Startup Script (.bshrc) - Emphasizing C Compilation & Type System
+echo "Executing .bshrc (v0.9 - new C parser & BSH operator handlers)..." # Version updated
+echo "Welcome to bsh - The Extensible Shell!"
+echo "------------------------------------"
+
+# --- Core Settings & Aliases ---
+$PS1 = "bsh-ng" # New Generation!
+defkeyword defunc function
+
+# --- Essential Framework Imports ---
+echo "Importing essential BSH frameworks..."
+import c_compiler     # For def_c_lib to compile C code on the fly
+import type           # For get_type
+import core_operators # For defoperator calls & BSH operator handlers
+
+# number.bsh will be imported after bshmath C library is compiled and loaded.
+echo "------------------------------------"
+echo "Defining and Compiling 'bshmath' C Library via c_compiler.bsh..."
+
+# Define the C source code for the math library in a BSH variable
+# This C code provides the actual implementations for math operations.
+$BSH_MATH_C_LIB_SOURCE = "
+#include <stdio.h>
+#include <stdlib.h> // For strtod, strtol, etc.
+#include <string.h> // For snprintf
+#include <math.h>   // For fmod, etc.
+
+// Standard signature for BSH C library functions:
+// int func_name(int argc, char* argv[], char* output_buffer, int buffer_size);
+
+// Arithmetic operations
+int bsh_add_numbers(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 numbers for add\"); return 1; }
+  char *e1, *e2; double v1 = strtod(argv[0], &e1); double v2 = strtod(argv[1], &e2);
+  if (*e1 != '\\0' || *e2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid number format for add\"); return 2; }
+  snprintf(obuf, obuf_size, \"%g\", v1 + v2); return 0;
+}
+int bsh_subtract_numbers(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 numbers for sub\"); return 1; }
+  char *e1, *e2; double v1 = strtod(argv[0], &e1); double v2 = strtod(argv[1], &e2);
+  if (*e1 != '\\0' || *e2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid number format for sub\"); return 2; }
+  snprintf(obuf, obuf_size, \"%g\", v1 - v2); return 0;
+}
+int bsh_multiply_numbers(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 numbers for mul\"); return 1; }
+  char *e1, *e2; double v1 = strtod(argv[0], &e1); double v2 = strtod(argv[1], &e2);
+  if (*e1 != '\\0' || *e2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid number format for mul\"); return 2; }
+  snprintf(obuf, obuf_size, \"%g\", v1 * v2); return 0;
+}
+int bsh_divide_numbers(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 numbers for div\"); return 1; }
+  char *e1, *e2; double v1 = strtod(argv[0], &e1); double v2 = strtod(argv[1], &e2);
+  if (*e1 != '\\0' || *e2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid number format for div\"); return 2; }
+  if (v2 == 0.0) { snprintf(obuf, obuf_size, \"Error: Division by zero\"); return 3; }
+  snprintf(obuf, obuf_size, \"%g\", v1 / v2); return 0;
+}
+int bsh_modulo_numbers(int argc, char* argv[], char* obuf, int obuf_size) { // Typically for integers
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 integers for mod\"); return 1; }
+  char *e1, *e2; long iv1 = strtol(argv[0], &e1, 10); long iv2 = strtol(argv[1], &e2, 10);
+  if (*e1 != '\\0' || *e2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid integer format for mod\"); return 2; }
+  if (iv2 == 0) { snprintf(obuf, obuf_size, \"Error: Modulo by zero\"); return 3; }
+  snprintf(obuf, obuf_size, \"%ld\", iv1 % iv2); return 0;
+}
+// Comparison operations (return \"1\" for true, \"0\" for false)
+int bsh_numbers_equal(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 == v2); return 0;
+}
+int bsh_numbers_not_equal(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 != v2); return 0;
+}
+int bsh_numbers_greater_than(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 > v2); return 0;
+}
+int bsh_numbers_less_than(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 < v2); return 0;
+}
+int bsh_numbers_greater_equal(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 >= v2); return 0;
+}
+int bsh_numbers_less_equal(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  double v1 = strtod(argv[0], NULL); double v2 = strtod(argv[1], NULL);
+  snprintf(obuf, obuf_size, \"%d\", v1 <= v2); return 0;
+}
+// Type checking C functions
+int bsh_is_integer(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 1 || argv[0][0] == '\\0') { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  char *endptr; strtol(argv[0], &endptr, 10);
+  snprintf(obuf, obuf_size, \"%d\", *endptr == '\\0'); return 0;
+}
+int bsh_is_float(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 1 || argv[0][0] == '\\0') { snprintf(obuf, obuf_size, \"0\"); return 1; }
+  char *endptr; strtod(argv[0], &endptr);
+  snprintf(obuf, obuf_size, \"%d\", *endptr == '\\0'); return 0;
+}
+// Logical NOT C function
+int bsh_logical_not(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 1) { snprintf(obuf, obuf_size, \"1\"); return 1; }
+  if (strcmp(argv[0], \"0\") == 0 || strcmp(argv[0], \"false\") == 0 || argv[0][0] == '\\0') {
+    snprintf(obuf, obuf_size, \"1\");
+  } else {
+    snprintf(obuf, obuf_size, \"0\");
+  }
+  return 0;
+}
+" #
+
+$BSH_MATH_CFLAGS = "-Wall -Wextra -O2" # Example
+$BSH_MATH_LDFLAGS = "-lm" # Link math library
+
+def_c_lib bshmath BSH_MATH_C_LIB_SOURCE BSH_MATH_CFLAGS BSH_MATH_LDFLAGS
+
+if $bshmath_COMPILE_STATUS == "success" {
+    if $bshmath_LOAD_STATUS == "success" {
+        echo "'bshmath' C library compiled and loaded successfully."
+        echo "Importing number module (math actions)..."
+        import number
+    } else {
+        echo "CRITICAL ERROR: 'bshmath' compiled but FAILED TO LOAD."
+        echo "Number operations will not function."
+    }
+} else {
+    echo "CRITICAL ERROR: FAILED TO COMPILE 'bshmath' C library."
+    echo "Number operations will not function."
+}
+echo "------------------------------------"
+
+# Import other core modules AFTER core_operators and number (if number relies on bshmath)
+echo "Importing string module..."
+import string
+
+echo "------------------------------------"
+
+# --- Utility Functions ---
+function is_empty (var_name_str result_var) {
+    $temp_val = $($var_name_str)
+    if $temp_val == "" { $($result_var) = "true" } else { $($result_var) = "false" }
+}
+
+function scope_test (param1) {
+    echo "--- scope_test ---"
+    echo "Param1 (local): $param1"
+    $local_var = "I am local to scope_test"
+    echo "Local_var (local): $local_var"
+
+    is_empty param1 param_empty_res
+    echo "Is param1 empty? $param_empty_res"
+    echo "Global_var (from scope_test): $global_var_example"
+    echo "--- end scope_test ---"
+}
+
+# For loop using direct math_add calls (fine) or could use arithmetic operators
+function for_loop (iterator start_val end_val step command_body) {
+    echo "FOR_LOOP: Iter '$iterator' from $start_val to $end_val (exclusive) step $step"
+    $($iterator) = $start_val
+
+    if $step == "0" {
+        echo "FOR_LOOP Error: Step value cannot be zero."
+        return
+    }
+
+    $is_positive_step = "1" # Assume positive step
+    # The comparison $step < "0" will use the new operator system
+    if $step < "0" { # This now goes through the C parser and '<' operator BSH handler
+        $is_positive_step = "0"
+    }
+
+    if $is_positive_step == "1" {
+        # The comparison $($iterator) < $end_val uses new operator system
+        while $($iterator) < $end_val {
+            $command_body
+            # $iterator = $($iterator) + $step # This would use the new '+' operator
+            math_add "$($iterator)" "$step" "$iterator" # Direct call, bypasses op dispatch for '+'
+        }
+    } else { # Negative step
+        # The comparison $($iterator) > $end_val uses new operator system
+        while $($iterator) > $end_val {
+            $command_body
+            # $iterator = $($iterator) + $step # Step is negative
+            math_add "$($iterator)" "$step" "$iterator" # Direct call
+        }
+    }
+    echo "FOR_LOOP: Finished for '$iterator'."
+}
+
+# --- JSON Handling (Conceptual Wrappers) ---
+# This part remains conceptual. If bsh.c now flattens JSON, these functions would
+# provide a BSH API to access those flattened variables.
+function json_get (base_json_var_name path_str result_var_name) {
+    echo "JSON_GET: Attempting to get path '$path_str' from flattened JSON var '$base_json_var_name'"
+
+    # Assuming bsh.c created variables like:
+    # $base_json_var_name_TYPE = "JSON_OBJECT" or "JSON_ARRAY"
+    # $base_json_var_name_key = "value"
+    # $base_json_var_name_object_subkey = "another_value"
+    # $base_json_var_name_array_0 = "item1"
+    # $base_json_var_name_array_length = "3"
+
+    # This BSH function needs to parse path_str (e.g., "key.subkey" or "array[0]")
+    # and construct the mangled variable name.
+    # Example for "key.subkey":
+    $mangled_var_name = "${base_json_var_name}_${path_str}" # Needs robust path to var name conversion
+    # Crude replacement for dot in path with underscore for flattened var access:
+    # (Requires a string replace function)
+    # string_replace "$path_str" "." "_" path_as_var_suffix
+    # $mangled_var_name = "${base_json_var_name}_$path_as_var_suffix"
+
+    if $(is_var_defined $mangled_var_name) { # is_var_defined would be a new helper
+        $($result_var_name) = $($mangled_var_name)
+    } else {
+        $($result_var_name) = "JSON_PATH_NOT_FOUND"
+    }
+    # This is highly simplified. A real json_get would need robust path parsing.
+}
+
+# --- Path Manipulation Example ---
+# Stays largely the same, relies on shell's variable handling.
+
+# --- C Code Definition for bshmath ---
+# This part is still crucial for number.bsh to function if it uses 'bshmath'.
+$bsh_math_c_code = "
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+// Functions like bsh_add_numbers, bsh_subtract_numbers, etc. remain unchanged
+// ... (all the C functions: bsh_add_numbers ... bsh_is_float) ...
+int bsh_add_numbers(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 2) { snprintf(obuf, obuf_size, \"Error: Expected 2 numbers\"); return 1; }
+  char *endptr1, *endptr2;
+  double n1 = strtod(argv[0], &endptr1);
+  double n2 = strtod(argv[1], &endptr2);
+  if (*endptr1 != '\\0' || *endptr2 != '\\0') { snprintf(obuf, obuf_size, \"Error: Invalid number format\"); return 2; }
+  snprintf(obuf, obuf_size, \"%g\", n1 + n2);
+  return 0;
+}
+// ... (all other C math functions from original bshrc.txt)
+int bsh_subtract_numbers(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+int bsh_multiply_numbers(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+int bsh_divide_numbers(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+int bsh_modulo_numbers(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+int bsh_is_integer(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+int bsh_is_float(int argc, char* argv[], char* obuf, int obuf_size) { /* ... */ return 0;}
+// New: BSH needs a way to call the logical not on "0" or "1" if it was in C
+// This bsh_logical_not was assumed in number.bsh
+int bsh_logical_not(int argc, char* argv[], char* obuf, int obuf_size) {
+  if (argc < 1) { snprintf(obuf, obuf_size, \"1\"); return 1; } // Default to true if no arg? Or error.
+  if (strcmp(argv[0], \"0\") == 0 || strcmp(argv[0], \"false\") == 0 || argv[0][0] == '\\0') {
+    snprintf(obuf, obuf_size, \"1\"); // true
+  } else {
+    snprintf(obuf, obuf_size, \"0\"); // false
+  }
+  return 0;
+}
+"
+
+echo "Defining and compiling 'bshmath' C library for number framework..."
+# Assumes c_compiler.def_c_lib is available
+def_c_lib bshmath bsh_math_c_code "" ""
+
+if $bshmath_COMPILE_STATUS == "success" {
+    if $bshmath_LOAD_STATUS == "success" {
+        echo "'bshmath' library compiled and loaded successfully."
+    } else {
+        echo "Warning: 'bshmath' compiled but failed to load."
+    }
+} else {
+    echo "Error: Failed to compile 'bshmath' library."
+}
+echo "------------------------------------"
+
+# Function to simulate return: echoes value and exits current script/function context.
+# Usage: return [value_or_$variable]
+function return (value_to_return) {
+    if $ARG_COUNT > 0 { # ARG_COUNT would be a special BSH var indicating num args passed
+        echo $value_to_return # This will now stringify objects automatically
+    }
+    # 'exit' here would terminate the current script or function.
+    # If 'exit' can take a status that becomes the script's output for $(),
+    # then echo might not be strictly needed if the stringified object is passed to exit.
+    # For simplicity, echo handles stringification for stdout, exit handles termination.
+    exit # Or exit with a specific status if needed
+}
+
+echo "BSH 'return' function defined."
+
+# --- End of .bshrc ---
+echo ".bshrc execution finished."
+echo ""
+
+$global_var_example = "I am a global variable set in .bshrc"

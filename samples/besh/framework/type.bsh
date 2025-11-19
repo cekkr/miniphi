@@ -1,0 +1,27 @@
+# type.bsh
+echo "Loading Type Framework (type.bsh)..."
+
+# Relies on math_is_int and math_is_float from number.bsh
+function get_type (value_str result_var_name) {
+    $temp_is_int = "0"
+    math_is_int "$value_str" temp_is_int # from number.bsh 
+
+    if $temp_is_int == "1" {
+        $($result_var_name) = "INTEGER"
+        return
+    }
+
+    $temp_is_float = "0"
+    math_is_float "$value_str" temp_is_float # from number.bsh
+    if $temp_is_float == "1" {
+        $($result_var_name) = "FLOAT"
+        return
+    }
+    $($result_var_name) = "STRING" # Default type
+}
+
+# The function 'register_operator_handler' is now obsolete for C-to-BSH dispatch,
+# as handlers are specified directly in 'defoperator' calls in core_operators.bsh.
+# It can be removed.
+
+echo "Type Framework loaded. 'get_type' is available."

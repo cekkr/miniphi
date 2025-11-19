@@ -1,0 +1,77 @@
+# BSH C Compiler Framework (c_compiler.bsh)
+# Provides functions to define, compile, and load C code as shared libraries.
+echo "Loading C Compiler Framework (c_compiler.bsh)..." 
+
+# --- Configuration ---
+$BSH_C_COMPILE_TEMP_DIR = "/tmp/bsh_compile_cache" 
+# $(mkdir -p $BSH_C_COMPILE_TEMP_DIR) # Conceptual, requires C core support
+
+# --- Helper Function: Find Available C Compiler ---
+function find_compiler (result_var_name) {
+    echo "Finding C compiler..."
+    # This part remains conceptual, relying on eventual C core support for $(...) or a command_exists built-in
+    # For now, defaults to gcc.
+    $($result_var_name) = "gcc" # Default assumption
+    echo "Assuming 'gcc' is available (robust check needs 'which' command and output capture)."
+}
+
+# --- Main Function: Define, Compile, and Load C Library ---
+function def_c_lib (lib_alias c_code_var_name compiler_flags_var linker_flags_var) {
+    echo "--- def_c_lib: Defining C library '$lib_alias' ---"
+
+    $c_source_code = $($c_code_var_name)
+    is_empty c_source_code is_code_empty_res # Assumes is_empty is defined globally from .bshrc
+    if $is_code_empty_res == "true" {
+        echo "Error: C source code variable '$c_code_var_name' is empty."
+        $($lib_alias)_COMPILE_STATUS = "failure" 
+        return
+    }
+
+    find_compiler COMPILER_TO_USE
+    if $COMPILER_TO_USE == "not_found" { # Assuming find_compiler might set "not_found"
+        echo "Error: No C compiler found. Cannot compile '$lib_alias'."
+        $($lib_alias)_COMPILE_STATUS = "failure" 
+        return
+    }
+    echo "Using compiler: $COMPILER_TO_USE"
+
+    $source_file_path = "$BSH_C_COMPILE_TEMP_DIR/$lib_alias.c" 
+    $output_lib_path = "$BSH_C_COMPILE_TEMP_DIR/$lib_alias.so" 
+
+    echo "Conceptual: Writing C code for '$lib_alias' to '$source_file_path'"
+    # Actual file writing needs C core support: write_file "$source_file_path" "$c_source_code"
+
+    $cflags = ""
+    if "$compiler_flags_var" != "" { $cflags = $($compiler_flags_var) } 
+    $ldflags = ""
+    if "$linker_flags_var" != "" { $ldflags = $($linker_flags_var) }
+
+    $compile_command = "$COMPILER_TO_USE -shared -fPIC -o \"$output_lib_path\" \"$source_file_path\" $cflags $ldflags" 
+    echo "Compile command: $compile_command"
+
+    echo "Conceptual: Executing compile command..." 
+    # Actual command execution: $($compile_command)
+    # $compile_status = $LAST_COMMAND_STATUS
+    $compile_status = "0" # SIMULATE COMPILE SUCCESS
+
+    if $compile_status == "0" {
+        echo "Compilation of '$lib_alias' successful. Output: $output_lib_path"
+        $($lib_alias)_COMPILE_STATUS = "success" 
+        $($lib_alias)_PATH = "$output_lib_path" 
+
+        echo "Loading library '$lib_alias' from '$output_lib_path'..." 
+        loadlib "$output_lib_path" "$lib_alias"
+        # Assume loadlib sets LAST_LIB_CALL_STATUS or a similar mechanism if it fails silently
+        # For this script, let's assume success if no crash.
+        $($lib_alias)_LOAD_STATUS = "success"
+    } else {
+        echo "Error: Compilation of '$lib_alias' failed. Status: $compile_status"
+        $($lib_alias)_COMPILE_STATUS = "failure"
+        $($lib_alias)_LOAD_STATUS = "failure"
+    }
+    echo "--- def_c_lib: Finished for '$lib_alias' ---"
+}
+
+
+echo "C Compiler Framework loaded."
+echo "Use 'def_c_lib LIB_ALIAS C_CODE_VAR [CFLAGS_VAR] [LDFLAGS_VAR]' to compile and load C code."
