@@ -80,3 +80,48 @@
 23. **[P1 – Realtime stdout + parallel orchestration]** Extend `CliExecutor` with realtime stdout sampling + tailing hooks so long-running jobs can be analyzed mid-flight, add background-process orchestration (e.g., keep a server running while executing tests), and ensure every helper process is auto-closed or refreshed when recompiles are requested.
 24. **[P2 – Prompt telemetry richness]** Layer a `prompt-telemetry report` CLI on top of the new structured metadata so teams can query `miniphi-prompts.db` by workspace, command, schema, or capability set, and visualize whether the chosen tools matched the available inventory.
 25. **[P2 – Post-run validation advisor]** At the end of every MiniPhi run, have a `PostRunAdvisor` ask LM Studio (or follow heuristics) for the top commands that validate syntax/code quality for the touched languages; echo those commands to the operator and, if unknown, auto-query the APIs for the correct invocations.
+
+## Upcoming Implementation Studies
+
+### Get-started prompt suite and runnable sample
+- Create `samples/get-started/` mirroring the `hello-flow` layout (`code/`, `prompts/`, `runs/`), but centered on a multi-step onboarding story: (1) detect host OS + available tools, (2) scaffold a README for the repo found in the current CWD, (3) tweak an existing function to change a small behavior, (4) add a feature plus CLI usage, and (5) run/verify everything with Node so regressions are obvious. The sample code should expose assertions (for example `npm test` or `node code/index.js --verify`) so MiniPhi can prove both compilation and result stability.
+- Include scripted prompt files such as `prompts/01-environment.md`, `prompts/02-readme.md`, etc., describing the expected objectives and the JSON schema each Phi call must honor (list required fields, enumerations, and the “essential/general/specific prompt” separation).
+- Wire the new sample into `samples/WHY_SAMPLES.md` and the CLI docs so contributors know how to run `node src/index.js run --cmd "node samples/get-started/code/index.js --smoke"` and how to replay the curated prompts for regression checks.
+
+### Project-centric CLI and bare `miniphi "<prompt>"` entrypoint
+- Restructure `src/index.js` so the default command operates on `process.cwd()` without forcing `--cmd`. If a user executes `miniphi "Draft the README"` the CLI should treat the first positional string as the objective, infer `command="(workspace-edit)"`, and run the same workspace-scan + plan pipeline that `run` uses today.
+- Introduce a `workspace` (or `plan-run`) mode that shells out only when the prompt tree instructs it to; expose flags like `--cwd`, `--auto-approve-commands`, `--require-approval`, and `--assume-yes` so project-centric sessions can stay inside the repo root by default.
+- Update `README.md` and `docs/miniphi-cli-implementation.md` once the UX is wired so it is obvious MiniPhi edits the current project rather than just summarizing CLI output.
+
+### Command authorization and danger scoring
+- Add a `CommandAuthorizationManager` (likely under `src/libs/command-authorization.js`) that gates every call to `CliExecutor.executeCommand`. It needs policy presets (session-only approval, per-command confirmation, always allow), persistence under `.miniphi/prefs/command-policy.json`, and CLI flags to override (`--command-policy ask|allow|deny`).
+- Teach `ApiNavigator` (and any helper that synthesizes commands) to emit structured entries with predicted danger levels. Extend `NAVIGATION_SCHEMA` to something like:
+  ```json
+  "actions": [
+    {
+      "command": "npm run build",
+      "reason": "compile to validate the new feature",
+      "danger": "low|mid|high", // low=safe/read-only, mid=repo-scoped mutations, high=destructive/system-wide
+      "authorization_hint": "needs network" // optional explanation
+    }
+  ]
+  ```
+  Every field must include a `description` in the schema so the Phi prompt explains expectations, and enumerations must list their allowed values explicitly.
+- Pipe the parsed danger metadata into the authorization manager so low-risk commands follow the global policy while `mid|high` prompts always pause for confirmation unless the operator opted into auto-approval.
+
+### Schema agility for API-generated commands
+- At the moment the Phi prompts are locked to the JSON templates inside `docs/prompts/*.schema.json`. To let the APIs evolve their command payloads, add a schema negotiation handshake: API responses should include a `schema_version` or `schema_uri`, and `PromptSchemaRegistry` needs methods to register dynamic schema adapters (for example `command-plan@v2`) at runtime.
+- Implement adapter surfaces (input and output) so when a schema update lands the CLI can map `v1` command objects to the new `v2` structure before passing them downstream. Persist the adapter metadata under `.miniphi/indices/schema-adapters.json` and guard each prompt with the selected schema id so replaying history stays deterministic.
+
+### Direct file references inside prompts
+- Extend the CLI argument parser to scan the operator objective for `@"path/to/file.ext"` tokens (quotes optional) and treat them as “pinned inputs”. Resolve each path relative to `cwd`, read the contents (with a size cap), and attach the snippets to the workspace context (`workspaceContext.fixedReferences`).
+- Update the prompt builders (main log-analysis prompt plus the decomposer + navigator payloads) to list the referenced files, include SHA-256 hashes for traceability, and, when reasonable, inline short excerpts so Phi treats those files as authoritative.
+- Store the reference metadata under `.miniphi/prompt-exchanges/<id>/fixed-references.json` so reruns keep the exact same attachments even if the files change later.
+
+### Recursive prompt analysis and VRAM-aware context sizing
+- Promote the existing `PromptDecomposer` into a recursive “prompt analyzer” pipeline. Each user objective should trigger a stack of meta-prompts: (1) objective classification (“what are the goals?”), (2) checklist + sub-prompts, (3) optional sub-sub prompts if a leaf exceeds the current context window. Persist every layer as JSON plus Markdown outlines under `.miniphi/prompt-exchanges/decompositions/`.
+- Build a GPU telemetry helper (for example `src/libs/gpu-context-budgeter.js`) that polls `nvidia-smi`/AMDGPU sensors in real time (reuse `ResourceMonitor.#queryNvidiaSmi`) and computes a safe Phi context length. When VRAM pressure is high, clamp `contextLength` and summarization depth; when the GPU is idle, let prompts expand to the configured max (default 4096 today).
+- Feed the resource snapshot into the decomposer (`limits.dynamicContextBudget`) so recursive prompts stay inside whatever LM Studio can currently handle.
+
+### Placeholder / “I forgot it” capture
+- Add a standing backlog entry (e.g., append to `docs/studies/notes/TODOs.md`) that records unspecified user follow-ups. Each MiniPhi session should write a stub note such as “Forgotten requirement for <date>: [context]” so the missing information is not lost.
