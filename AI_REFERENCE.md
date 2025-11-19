@@ -14,6 +14,7 @@
 - `WorkspaceProfiler` (plus `FileConnectionAnalyzer` and the new `CapabilityInventory`) inspects the repo tree, renders ASCII file-connection graphs, captures repo/package scripts, and injects the combined hints into every Phi-4 prompt; `PromptRecorder` mirrors the exchanges and `PromptPerformanceTracker` stores scores + telemetry inside `miniphi-prompts.db`.
 - `ApiNavigator` runs in parallel with the npm-based analyzers, asking LM Studio's API for navigation guidance, synthesizing single-use Node.js/Python helper scripts, executing them immediately, and feeding the navigation block + helper output back into downstream prompts while storing the code and stdout/stderr artifacts under `.miniphi/helpers/`.
 - `PromptDecomposer` preflights complex tasks, emits JSON trees + human-readable outlines of sub-prompts/actions, and persists them under `.miniphi/prompt-exchanges/decompositions/` so runs can resume mid-branch with the saved outline.
+- `PromptStepJournal` sits next to `PromptRecorder`, emitting `.miniphi/prompt-exchanges/stepwise/<session>/` JSON steps whenever `--prompt-journal [id]` is passed so operators (or downstream AI supervisors) can review every Phi/API prompt, the resulting commands or file analyses, and then pause/resume via `--prompt-journal-status paused|completed|closed`.
 - Resource monitoring (RAM/CPU/VRAM) ships via `ResourceMonitor`, streaming warnings to the console and recording rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
 - Research, history, and benchmark helpers store artifacts inside `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, making every Phi-4 conversation or benchmark sweep reproducible.
 - `RecomposeTester` and `RecomposeBenchmarkRunner` drive `samples/recompose/hello-flow`, cache code-to-markdown descriptions, repair mismatches with diff-driven prompts, and export Phi transcript logs next to every JSON report so reviews stay auditable.
@@ -34,6 +35,11 @@
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
 - `samples/get-started/README.md` - describes the onboarding sample and curated prompt files that exercise workspace-first behavior.
 - `~/.miniphi/` - global hidden folder for shared telemetry (prompt DB, command-policy preferences, system profile snapshots) that every project run can reuse.
+
+### Prompt journaling regression sample
+- `samples/besh/bsh.c` is the intentionally giant “besh” shell file for recursive summarization and chirurgic editing drills. It is ideal for validating the new stepwise journaling pipeline.
+- `npm run sample:besh-journal` runs `analyze-file` on `samples/besh/bsh.c` with `--prompt-journal besh-regression --prompt-journal-status paused`; it outputs a paused ledger under `.miniphi/prompt-exchanges/stepwise/besh-regression/` so another AI (or you) can sign off on the captured steps before resuming.
+- To continue the regression after reviewing or modifying the repo, rerun the command with the same journal id (and optionally the same `--prompt-id`) but set `--prompt-journal-status completed` so the ledger shows exactly when the session resumed and closed.
 
 ## High-Priority Fundamentals
 1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.

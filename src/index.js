@@ -140,6 +140,152 @@ function mergeFixedReferences(context, references) {
   };
 }
 
+const VALID_JOURNAL_STATUS = new Set(["active", "paused", "completed", "closed"]);
+
+function normalizeJournalStatus(value) {
+  if (!value && value !== 0) {
+    return null;
+  }
+  let normalized = value.toString().trim().toLowerCase();
+  if (normalized === "complete") {
+    normalized = "completed";
+  }
+  if (VALID_JOURNAL_STATUS.has(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+function buildPlanOperations(plan, limit = 8) {
+  if (!plan || !Array.isArray(plan.steps)) {
+    return [];
+  }
+  const flattened = [];
+  const visit = (steps) => {
+    if (!Array.isArray(steps)) {
+      return;
+    }
+    for (const step of steps) {
+      if (flattened.length >= limit) {
+        return;
+      }
+      flattened.push({
+        type: "plan-step",
+        id: step?.id ?? null,
+        summary: step?.title ?? "Untitled step",
+        status: step?.requires_subprompt ? "requires-subprompt" : "ready",
+        description: step?.description ?? null,
+        recommendation: step?.recommendation ?? null,
+      });
+      if (Array.isArray(step?.children) && step.children.length) {
+        visit(step.children);
+      }
+    }
+  };
+  visit(plan.steps);
+  return flattened;
+}
+
+function buildNavigationOperations(hints, limit = 6) {
+  if (!hints) {
+    return [];
+  }
+  const operations = [];
+  if (Array.isArray(hints.actions)) {
+    for (const action of hints.actions) {
+      if (!action?.command) {
+        continue;
+      }
+      operations.push({
+        type: "command",
+        command: action.command,
+        status: "pending",
+        danger: action.danger ?? "mid",
+        summary: action.reason ?? "Navigator follow-up",
+        authorizationHint: action.authorizationHint ?? null,
+      });
+      if (operations.length >= limit) {
+        return operations;
+      }
+    }
+  }
+  if (operations.length < limit && Array.isArray(hints.focusCommands)) {
+    for (const command of hints.focusCommands) {
+      if (!command) continue;
+      operations.push({
+        type: "command",
+        command,
+        status: "pending",
+        danger: "mid",
+        summary: "Navigator focus command",
+      });
+      if (operations.length >= limit) {
+        break;
+      }
+    }
+  }
+  return operations;
+}
+
+async function recordPlanStepInJournal(journal, sessionId, context = undefined) {
+  if (!journal || !sessionId || !context?.planResult) {
+    return;
+  }
+  const operations = buildPlanOperations(context.planResult.plan);
+  const commandLine = context.command ? `\nCommand: ${context.command}` : "";
+  await journal.appendStep(sessionId, {
+    label: context.label ?? "prompt-plan",
+    prompt: `Objective: ${context.objective ?? "workspace task"}${commandLine}`.trim(),
+    response: context.planResult.outline ?? JSON.stringify(context.planResult.plan, null, 2),
+    status: "plan",
+    operations,
+    metadata: {
+      planId: context.planResult.planId ?? null,
+      summary: context.planResult.summary ?? null,
+      mode: context.mode ?? null,
+    },
+    workspaceSummary: context.workspaceSummary ?? null,
+  });
+}
+
+async function recordNavigationPlanInJournal(journal, sessionId, context = undefined) {
+  if (!journal || !sessionId || !context?.navigationHints) {
+    return;
+  }
+  const plan = context.navigationHints;
+  const operations = buildNavigationOperations(plan);
+  await journal.appendStep(sessionId, {
+    label: context.label ?? "navigator-plan",
+    prompt: `Navigator objective: ${context.objective ?? "workspace guidance"}`,
+    response: plan.block ?? JSON.stringify(plan.raw ?? {}, null, 2),
+    status: "advisor",
+    operations,
+    metadata: {
+      summary: plan.summary ?? null,
+      helper: plan.helper ?? null,
+    },
+    workspaceSummary: context.workspaceSummary ?? null,
+  });
+}
+
+async function recordAnalysisStepInJournal(journal, sessionId, payload = undefined) {
+  if (!journal || !sessionId || !payload) {
+    return;
+  }
+  await journal.appendStep(sessionId, {
+    label: payload.label ?? "analysis",
+    prompt: payload.prompt ?? null,
+    response: payload.response ?? null,
+    schemaId: payload.schemaId ?? null,
+    status: payload.status ?? "recorded",
+    operations: payload.operations ?? [],
+    metadata: payload.metadata ?? null,
+    workspaceSummary: payload.workspaceSummary ?? null,
+    startedAt: payload.startedAt ?? null,
+    finishedAt: payload.finishedAt ?? null,
+  });
+}
+
 schemaAdapterRegistry.registerAdapter({
   type: "api-navigator",
   version: "navigation-plan@v1",
@@ -293,6 +439,25 @@ async function main() {
   const promptGroupId =
     promptId ?? `auto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
+  const rawPromptJournal = options["prompt-journal"];
+  let promptJournalId = null;
+  if (typeof rawPromptJournal === "string") {
+    const trimmed = rawPromptJournal.trim();
+    promptJournalId = trimmed || null;
+  } else if (rawPromptJournal === true) {
+    promptJournalId = promptGroupId;
+  } else if (typeof defaults.promptJournal === "string") {
+    const trimmed = defaults.promptJournal.trim();
+    if (trimmed) {
+      promptJournalId = trimmed;
+    }
+  } else if (defaults.promptJournal === true) {
+    promptJournalId = promptGroupId;
+  }
+  const promptJournalStatus =
+    normalizeJournalStatus(options["prompt-journal-status"]) ??
+    normalizeJournalStatus(defaults.promptJournalStatus);
+
   const sessionTimeoutValue =
     parseNumericSetting(options["session-timeout"], "--session-timeout") ??
     parseNumericSetting(defaults.sessionTimeout, "config.defaults.sessionTimeout");
@@ -436,6 +601,8 @@ async function main() {
     sessionDeadline,
     promptGroupId,
     baseMetadata,
+    promptJournal,
+    promptJournalId,
   }) => {
     if (!Array.isArray(commands) || commands.length === 0) {
       return [];
@@ -474,6 +641,29 @@ async function main() {
           danger: entry.danger,
           reason: "blocked",
         });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Navigator follow-up blocked: ${entry.command}`,
+            prompt: `Navigator suggested ${entry.command}`,
+            response: null,
+            status: "skipped",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: entry.danger,
+                status: "blocked",
+                summary: "Navigator follow-up blocked by policy",
+              },
+            ],
+            metadata: {
+              mode: "navigator-follow-up",
+              parent: baseMetadata?.parentCommand ?? null,
+              reason: "blocked",
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
         continue;
       }
       try {
@@ -501,25 +691,72 @@ async function main() {
           },
           commandDanger: entry.danger,
           commandSource: "navigator",
-          authorizationContext: {
-            reason: entry.reason ?? "Navigator follow-up",
-            hint: entry.authorizationHint ?? null,
-          },
-        });
+            authorizationContext: {
+              reason: entry.reason ?? "Navigator follow-up",
+              hint: entry.authorizationHint ?? null,
+            },
+          });
         followUps.push({
           command: entry.command,
           danger: entry.danger,
           analysis: followUpResult.analysis,
-          prompt: followUpResult.prompt,
-          linesAnalyzed: followUpResult.linesAnalyzed,
-          compressedTokens: followUpResult.compressedTokens,
-        });
+            prompt: followUpResult.prompt,
+            linesAnalyzed: followUpResult.linesAnalyzed,
+            compressedTokens: followUpResult.compressedTokens,
+          });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: followUpTask,
+            prompt: followUpResult.prompt,
+            response: followUpResult.analysis,
+            schemaId: followUpResult.schemaId ?? null,
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: entry.danger,
+                status: "executed",
+                summary: `Navigator command captured ${followUpResult.linesAnalyzed ?? 0} lines`,
+              },
+            ],
+            metadata: {
+              mode: "navigator-follow-up",
+              parent: baseMetadata?.parentCommand ?? null,
+              navigationReason: entry.reason ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+            startedAt: followUpResult.startedAt ?? null,
+            finishedAt: followUpResult.finishedAt ?? null,
+          });
+        }
       } catch (error) {
         followUps.push({
           command: entry.command,
           danger: entry.danger,
           error: error instanceof Error ? error.message : String(error),
         });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Navigator follow-up failed: ${entry.command}`,
+            prompt: `Navigator suggested ${entry.command}`,
+            response: null,
+            status: "error",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: entry.danger,
+                status: "failed",
+                summary: error instanceof Error ? error.message : String(error),
+              },
+            ],
+            metadata: {
+              mode: "navigator-follow-up",
+              parent: baseMetadata?.parentCommand ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
       }
     }
     return followUps;
@@ -561,6 +798,7 @@ async function main() {
 
   let stateManager;
   let promptRecorder = null;
+  let promptJournal = null;
   const archiveMetadata = { promptId };
   let resourceMonitor;
   let resourceSummary = null;
@@ -753,6 +991,24 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
+      if (promptJournalId) {
+        promptJournal = new PromptStepJournal(stateManager.baseDir);
+        await promptJournal.openSession(promptJournalId, {
+          mode: "workspace",
+          task,
+          command: null,
+          cwd,
+          promptId: promptGroupId,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          workspaceType:
+            workspaceContext?.classification?.domain ??
+            workspaceContext?.classification?.label ??
+            null,
+          argv: process.argv.slice(2),
+        });
+      } else {
+        promptJournal = null;
+      }
       promptRecorder = new PromptRecorder(stateManager.baseDir);
       await promptRecorder.prepare();
       phi4.setPromptRecorder(promptRecorder);
@@ -789,6 +1045,22 @@ async function main() {
           taskPlanId: planResult.planId ?? null,
           taskPlanOutline: planResult.outline ?? null,
         };
+      }
+      if (promptJournal) {
+        await recordPlanStepInJournal(promptJournal, promptJournalId, {
+          planResult,
+          objective: task,
+          command: null,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          mode: "workspace",
+        });
+        if (workspaceContext?.navigationHints) {
+          await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
+            navigationHints: workspaceContext.navigationHints,
+            workspaceSummary: workspaceContext.summary ?? null,
+            objective: task,
+          });
+        }
       }
       console.log(`[MiniPhi][Workspace] cwd: ${cwd}`);
       console.log(`[MiniPhi][Workspace] task: ${task}`);
@@ -837,6 +1109,24 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
+      if (promptJournalId) {
+        promptJournal = new PromptStepJournal(stateManager.baseDir);
+        await promptJournal.openSession(promptJournalId, {
+          mode: "run",
+          task,
+          command: cmd,
+          cwd,
+          promptId: promptGroupId,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          workspaceType:
+            workspaceContext?.classification?.domain ??
+            workspaceContext?.classification?.label ??
+            null,
+          argv: process.argv.slice(2),
+        });
+      } else {
+        promptJournal = null;
+      }
       let planResult = null;
         promptRecorder = new PromptRecorder(stateManager.baseDir);
         await promptRecorder.prepare();
@@ -883,6 +1173,38 @@ async function main() {
             console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
           }
         }
+        if (promptJournal) {
+          await recordPlanStepInJournal(promptJournal, promptJournalId, {
+            planResult,
+            objective: task,
+            command: filePath,
+            workspaceSummary: workspaceContext?.summary ?? null,
+            mode: "analyze-file",
+          });
+          if (workspaceContext?.navigationHints) {
+            await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
+              navigationHints: workspaceContext.navigationHints,
+              workspaceSummary: workspaceContext.summary ?? null,
+              objective: task,
+            });
+          }
+        }
+        if (promptJournal) {
+          await recordPlanStepInJournal(promptJournal, promptJournalId, {
+            planResult,
+            objective: task,
+            command: cmd,
+            workspaceSummary: workspaceContext?.summary ?? null,
+            mode: "run",
+          });
+          if (workspaceContext?.navigationHints) {
+            await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
+              navigationHints: workspaceContext.navigationHints,
+              workspaceSummary: workspaceContext.summary ?? null,
+              objective: task,
+            });
+          }
+        }
         await initializeResourceMonitor(`run:${cmd}`);
         result = await analyzer.analyzeCommandOutput(cmd, task, {
           summaryLevels,
@@ -922,6 +1244,32 @@ async function main() {
             reason: "Primary --cmd execution",
           },
         });
+        if (promptJournal && result) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `run:${cmd}`,
+            prompt: result.prompt,
+            response: result.analysis,
+            schemaId: result.schemaId ?? null,
+            operations: [
+              {
+                type: "command",
+                command: cmd,
+                cwd,
+                danger: userCommandDanger,
+                status: "executed",
+                summary: `Captured ${result.linesAnalyzed ?? 0} lines`,
+              },
+            ],
+            metadata: {
+              mode: "run",
+              linesAnalyzed: result.linesAnalyzed ?? null,
+              compressedTokens: result.compressedTokens ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+            startedAt: result.startedAt ?? null,
+            finishedAt: result.finishedAt ?? null,
+          });
+        }
         const navigatorActions =
           (workspaceContext?.navigationHints?.actions ?? []).length > 0
             ? workspaceContext.navigationHints.actions
@@ -944,6 +1292,8 @@ async function main() {
               parentMode: "run",
               workspaceSummary: workspaceContext?.summary ?? null,
             },
+            promptJournal,
+            promptJournalId,
           });
           if (followUps.length) {
             result.navigatorFollowUps = followUps;
@@ -981,6 +1331,24 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
+      if (promptJournalId) {
+        promptJournal = new PromptStepJournal(stateManager.baseDir);
+        await promptJournal.openSession(promptJournalId, {
+          mode: "analyze-file",
+          task,
+          command: filePath,
+          cwd: analyzeCwd,
+          promptId: promptGroupId,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          workspaceType:
+            workspaceContext?.classification?.domain ??
+            workspaceContext?.classification?.label ??
+            null,
+          argv: process.argv.slice(2),
+        });
+      } else {
+        promptJournal = null;
+      }
       let planResult = null;
 
         promptRecorder = new PromptRecorder(stateManager.baseDir);
@@ -1060,6 +1428,30 @@ async function main() {
             },
           },
         });
+        if (promptJournal && result) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `analyze-file:${path.basename(filePath)}`,
+            prompt: result.prompt,
+            response: result.analysis,
+            schemaId: result.schemaId ?? null,
+            operations: [
+              {
+                type: "file-analysis",
+                file: filePath,
+                status: "completed",
+                summary: `Analyzed ${result.linesAnalyzed ?? 0} lines`,
+              },
+            ],
+            metadata: {
+              mode: "analyze-file",
+              linesAnalyzed: result.linesAnalyzed ?? null,
+              compressedTokens: result.compressedTokens ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+            startedAt: result.startedAt ?? null,
+            finishedAt: result.finishedAt ?? null,
+          });
+        }
         const analyzeNavigatorActions =
           (workspaceContext?.navigationHints?.actions ?? []).length > 0
             ? workspaceContext.navigationHints.actions
@@ -1082,6 +1474,8 @@ async function main() {
               parentMode: "analyze-file",
               workspaceSummary: workspaceContext?.summary ?? null,
             },
+            promptJournal,
+            promptJournalId,
           });
           if (followUps.length) {
             result.navigatorFollowUps = followUps;
@@ -1131,6 +1525,13 @@ async function main() {
     try {
       if (promptId && stateManager) {
         await stateManager.savePromptSession(promptId, phi4.getHistory());
+      }
+      if (promptJournal && promptJournalId) {
+        const finalJournalStatus = promptJournalStatus ?? "completed";
+        await promptJournal.setStatus(promptJournalId, finalJournalStatus, {
+          mode: command,
+          completedAt: new Date().toISOString(),
+        });
       }
       await stopResourceMonitorIfNeeded();
       await phi4.eject();
@@ -1870,6 +2271,8 @@ Options:
   --no-stream                  Disable live streaming of Phi-4 output
   --no-summary                 Skip JSON summary footer
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
+  --prompt-journal [id]        Mirror each Phi/API step + operations into .miniphi/prompt-exchanges/stepwise
+  --prompt-journal-status <s>  Finalize the journal as active|paused|completed|closed (default: completed)
   --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
   --debug-lm                   Print each objective + prompt when scoring is running
   --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)

@@ -10,7 +10,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "benchmark": "node benchmark/run-tests.js",
-    "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose"
+    "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose",
+    "sample:besh-journal": "node src/index.js analyze-file --file samples/besh/bsh.c --task \"Audit the besh shell and capture a prompt journal\" --summary-levels 4 --prompt-journal besh-regression --prompt-journal-status paused --no-stream"
   },
   "bin": {
     "miniphi": "src/index.js"
