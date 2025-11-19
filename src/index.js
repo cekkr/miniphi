@@ -13,6 +13,7 @@ import MiniPhiMemory from "./libs/miniphi-memory.js";
 import GlobalMiniPhiMemory from "./libs/global-memory.js";
 import ResourceMonitor from "./libs/resource-monitor.js";
 import PromptRecorder from "./libs/prompt-recorder.js";
+import PromptStepJournal from "./libs/prompt-step-journal.js";
 import WebResearcher from "./libs/web-researcher.js";
 import HistoryNotesManager from "./libs/history-notes.js";
 import RecomposeTester from "./libs/recompose-tester.js";

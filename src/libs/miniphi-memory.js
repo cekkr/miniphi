@@ -28,6 +28,7 @@ export default class MiniPhiMemory {
     this.historyNotesDir = path.join(this.baseDir, "history-notes");
     this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
     this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
+    this.promptStepJournalDir = path.join(this.promptExchangesDir, "stepwise");
     this.helpersDir = path.join(this.baseDir, "helpers");
     this.fixedReferencesDir = path.join(this.promptExchangesDir, "fixed-references");
 
@@ -49,6 +50,7 @@ export default class MiniPhiMemory {
       "index.json",
     );
     this.helperScriptsIndexFile = path.join(this.helpersDir, "index.json");
+    this.promptStepJournalIndexFile = path.join(this.promptStepJournalDir, "index.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -72,6 +74,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.recomposeCacheDir, { recursive: true });
     await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
     await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
+    await fs.promises.mkdir(this.promptStepJournalDir, { recursive: true });
     await fs.promises.mkdir(this.helpersDir, { recursive: true });
     await fs.promises.mkdir(this.fixedReferencesDir, { recursive: true });
 
@@ -88,6 +91,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
     await this.#ensureFile(this.promptDecompositionIndexFile, { entries: [] });
     await this.#ensureFile(this.helperScriptsIndexFile, { entries: [] });
+    await this.#ensureFile(this.promptStepJournalIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -102,6 +106,7 @@ export default class MiniPhiMemory {
         { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
         { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
         { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
+        { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
       ],
     });
 

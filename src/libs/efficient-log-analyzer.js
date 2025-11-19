@@ -50,6 +50,7 @@ export default class EfficientLogAnalyzer {
       console.log(`[MiniPhi] Executing command: ${command}`);
     }
 
+    const invocationStartedAt = Date.now();
     const lines = [];
     let buffer = "";
     let stderrBuffer = "";
@@ -177,6 +178,7 @@ export default class EfficientLogAnalyzer {
       process.stdout.write("\n");
     }
 
+    const invocationFinishedAt = Date.now();
     return {
       command,
       task,
@@ -186,6 +188,9 @@ export default class EfficientLogAnalyzer {
       compressedContent: compression.content,
       analysis,
       workspaceContext: workspaceContext ?? null,
+      schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
+      startedAt: invocationStartedAt,
+      finishedAt: invocationFinishedAt,
     };
   }
 
@@ -211,6 +216,7 @@ export default class EfficientLogAnalyzer {
       .map((chunk, idx) => this.formatSummary(chunk, `Chunk ${idx + 1}`))
       .join("\n");
 
+    const invocationStartedAt = Date.now();
     const tokens = Math.max(1, Math.ceil(formatted.length / 4));
     const prompt = this.generateSmartPrompt(
       task,
@@ -264,6 +270,7 @@ export default class EfficientLogAnalyzer {
       process.stdout.write("\n");
     }
 
+    const invocationFinishedAt = Date.now();
     return {
       filePath,
       task,
@@ -273,6 +280,9 @@ export default class EfficientLogAnalyzer {
       compressedContent: formatted,
       analysis,
       workspaceContext: workspaceContext ?? null,
+      schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
+      startedAt: invocationStartedAt,
+      finishedAt: invocationFinishedAt,
     };
   }
 

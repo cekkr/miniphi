@@ -1,0 +1,69 @@
+name: 🐛 Bug report
+title: "[Bug]: "
+description: Create a bug report to help us improve
+labels: "bug:general"
+body:
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: Tell us what should happen.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Current behavior
+      description: Tell us what happens instead of the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Possible solution
+      description: Tell us how it could be fixed at your glance.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Context
+      description: >
+        How has this issue affected you? What are you trying to accomplish?
+        Providing context helps us come up with a solution that is most useful in the real world.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: >
+        Provide a link to a live example, or an unambiguous set of steps to reproduce this bug. Include code to reproduce, if relevant.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Diagnostic Information"
+      description: >
+        **Please run `bash-it doctor` and paste the complete output below.**
+        This single command provides all the diagnostic information we need including:
+        bash-it version, enabled components, bash version, OS version, and configuration.
+      placeholder: "Run: bash-it doctor"
+      value: |
+        ```
+        # Paste the output of: bash-it doctor
+
+
+        ```
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Additional Context (Optional)"
+      description: >
+        Any additional information that might help diagnose the issue.
+        This could include specific error messages, relevant parts of your ~/.bashrc,
+        or other configuration details not captured by `bash-it doctor`.
+      placeholder: "Paste any additional relevant information here"
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Notes
+      description: >
+        Provide any extra details here.
