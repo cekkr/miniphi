@@ -29,6 +29,7 @@ export default class MiniPhiMemory {
     this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
     this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
     this.helpersDir = path.join(this.baseDir, "helpers");
+    this.fixedReferencesDir = path.join(this.promptExchangesDir, "fixed-references");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -72,6 +73,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
     await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
     await fs.promises.mkdir(this.helpersDir, { recursive: true });
+    await fs.promises.mkdir(this.fixedReferencesDir, { recursive: true });
 
     await this.#ensureFile(this.promptsFile, { history: [] });
     await this.#ensureFile(this.knowledgeFile, { entries: [] });
@@ -106,6 +108,34 @@ export default class MiniPhiMemory {
     this.prepared = true;
     await this.#updateRootIndex();
     return this.baseDir;
+  }
+
+  async recordFixedReferences(payload) {
+    if (!payload?.references || payload.references.length === 0) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const entryId = randomUUID();
+    const filePath = path.join(this.fixedReferencesDir, `${entryId}.json`);
+    const entry = {
+      id: entryId,
+      promptId: payload.promptId ?? null,
+      task: payload.task ?? null,
+      cwd: payload.cwd ?? this.startDir,
+      createdAt: timestamp,
+      files: payload.references.map((ref) => ({
+        label: ref.label ?? ref.relative ?? ref.path,
+        path: ref.path,
+        relative: ref.relative ?? null,
+        bytes: ref.bytes ?? null,
+        hash: ref.hash ?? null,
+        status: ref.error ? "missing" : "ok",
+        error: ref.error ?? null,
+      })),
+    };
+    await this.#writeJSON(filePath, entry);
+    return { entry, path: filePath };
   }
 
  /**

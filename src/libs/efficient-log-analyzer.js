@@ -28,6 +28,7 @@ export default class EfficientLogAnalyzer {
     this.streamAnalyzer = options?.streamAnalyzer ?? new StreamAnalyzer(250);
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.schemaId = options?.schemaId ?? "log-analysis";
+    this.commandAuthorizer = options?.commandAuthorizer ?? null;
   }
 
   async analyzeCommandOutput(command, task, options = undefined) {
@@ -40,6 +41,9 @@ export default class EfficientLogAnalyzer {
       sessionDeadline = undefined,
       promptContext = undefined,
       workspaceContext = undefined,
+      commandDanger = "mid",
+      commandSource = "user",
+      authorizationContext = undefined,
     } = options ?? {};
 
     if (verbose) {
@@ -71,6 +75,16 @@ export default class EfficientLogAnalyzer {
     };
 
     try {
+      if (this.commandAuthorizer) {
+        await this.commandAuthorizer.ensureAuthorized(command, {
+          danger: commandDanger,
+          context: {
+            source: commandSource,
+            reason: authorizationContext?.reason ?? null,
+            hint: authorizationContext?.hint ?? null,
+          },
+        });
+      }
       await this.cli.executeCommand(command, {
         cwd,
         timeout,
@@ -124,6 +138,7 @@ export default class EfficientLogAnalyzer {
         navigationSummary: workspaceContext?.navigationSummary ?? null,
         navigationBlock: workspaceContext?.navigationBlock ?? null,
         helperScript: workspaceContext?.helperScript ?? null,
+        fixedReferences: workspaceContext?.fixedReferences ?? null,
       },
     );
 
@@ -217,6 +232,10 @@ export default class EfficientLogAnalyzer {
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
         connectionGraphic: workspaceContext?.connectionGraphic ?? null,
+        fixedReferences: workspaceContext?.fixedReferences ?? null,
+        helperScript: workspaceContext?.helperScript ?? null,
+        navigationSummary: workspaceContext?.navigationSummary ?? null,
+        navigationBlock: workspaceContext?.navigationBlock ?? null,
       },
     );
 
@@ -417,6 +436,16 @@ ${compressedContent}
       lines.push(extraContext.navigationBlock);
     } else if (extraContext.navigationSummary) {
       lines.push(`Navigation hints: ${extraContext.navigationSummary}`);
+    }
+    if (Array.isArray(extraContext.fixedReferences) && extraContext.fixedReferences.length) {
+      const refs = extraContext.fixedReferences
+        .slice(0, 4)
+        .map((ref) => {
+          const status = ref.error ? `missing (${ref.error})` : `${ref.bytes ?? "?"} bytes`;
+          return `- ${ref.relative ?? ref.path}: ${status}`;
+        })
+        .join("\n");
+      lines.push(`Fixed references pinned for this task:\n${refs}`);
     }
     if (extraContext.helperScript) {
       const helper = extraContext.helperScript;

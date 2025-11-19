@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
@@ -9,6 +10,7 @@ import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
+import GlobalMiniPhiMemory from "./libs/global-memory.js";
 import ResourceMonitor from "./libs/resource-monitor.js";
 import PromptRecorder from "./libs/prompt-recorder.js";
 import WebResearcher from "./libs/web-researcher.js";
@@ -23,6 +25,9 @@ import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
+import CommandAuthorizationManager, {
+  normalizeCommandPolicy,
+} from "./libs/command-authorization-manager.js";
 import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
@@ -42,7 +47,7 @@ const COMMANDS = new Set([
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const PROMPT_DB_PATH = path.join(PROJECT_ROOT, "miniphi-prompts.db");
+const globalMemory = new GlobalMiniPhiMemory();
 const PROMPT_SCORING_SYSTEM_PROMPT = [
   "You grade MiniPhi prompt effectiveness.",
   "Given an objective, workspace context, prompt text, and the assistant response, you must return JSON with:",
@@ -72,6 +77,64 @@ function extractImplicitWorkspaceTask(tokens) {
   const task = messageTokens.join(" ").trim() || null;
   const rest = boundary === -1 ? [] : tokens.slice(boundary);
   return { task, rest };
+}
+
+const FILE_REF_PATTERN = /@(?:"([^"]+)"|'([^']+)'|([^\s]+))/g;
+
+function parseDirectFileReferences(taskText, cwd) {
+  if (!taskText || typeof taskText !== "string") {
+    return { cleanedTask: taskText, references: [] };
+  }
+  const references = [];
+  const cleanedTask = taskText.replace(FILE_REF_PATTERN, (match, dq, sq, bare) => {
+    const raw = dq ?? sq ?? bare;
+    if (!raw) {
+      return match;
+    }
+    const resolved = path.resolve(cwd, raw);
+    const record = {
+      label: raw,
+      path: resolved,
+      relative: path.relative(cwd, resolved),
+    };
+    try {
+      const content = fs.readFileSync(resolved, "utf8");
+      record.bytes = Buffer.byteLength(content, "utf8");
+      record.hash = createHash("sha256").update(content).digest("hex");
+      record.preview = content.slice(0, 4000);
+    } catch (error) {
+      record.error = error instanceof Error ? error.message : String(error);
+    }
+    references.push(record);
+    return raw;
+  });
+  return {
+    cleanedTask: cleanedTask.trim() || taskText,
+    references,
+  };
+}
+
+const VALID_DANGER_LEVELS = new Set(["low", "mid", "high"]);
+
+function normalizeDangerLevel(value) {
+  if (!value) {
+    return "mid";
+  }
+  const normalized = value.toString().toLowerCase();
+  if (VALID_DANGER_LEVELS.has(normalized)) {
+    return normalized;
+  }
+  return "mid";
+}
+
+function mergeFixedReferences(context, references) {
+  if (!Array.isArray(references) || references.length === 0) {
+    return context;
+  }
+  return {
+    ...(context ?? {}),
+    fixedReferences: references,
+  };
 }
 
 async function main() {
@@ -119,10 +182,46 @@ async function main() {
     console.log(`[MiniPhi] Loaded configuration from ${relPath}`);
   }
 
+  try {
+    await globalMemory.prepare();
+  } catch (error) {
+    console.warn(
+      `[MiniPhi] Unable to prepare global memory at ${globalMemory.baseDir}: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+
+  let storedCommandPolicy = null;
+  try {
+    storedCommandPolicy = await globalMemory.loadCommandPolicy();
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Unable to read global command policy: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
   const defaults = configData.defaults ?? {};
   const promptDefaults = configData.prompt ?? configData.lmStudio?.prompt ?? {};
   const pythonScriptPath =
     options["python-script"] ?? configData.pythonScript ?? defaults.pythonScript;
+
+  const flagPolicy = typeof options["command-policy"] === "string" ? options["command-policy"] : null;
+  const configPolicy = configData.commandPolicy ?? defaults.commandPolicy ?? null;
+  const commandPolicy = normalizeCommandPolicy(
+    flagPolicy ?? configPolicy ?? storedCommandPolicy?.policy ?? "ask",
+  );
+  if (flagPolicy) {
+    await globalMemory.saveCommandPolicy({ policy: commandPolicy, source: "cli" });
+  } else if (!storedCommandPolicy?.policy) {
+    await globalMemory.saveCommandPolicy({ policy: commandPolicy, source: "default" });
+  }
+  const assumeYes = Boolean(options["assume-yes"]);
+  const commandAuthorizer = new CommandAuthorizationManager({
+    policy: commandPolicy,
+    assumeYes,
+    logger: verbose ? (message) => console.warn(message) : null,
+  });
 
   const summaryLevels =
     parseNumericSetting(options["summary-levels"], "--summary-levels") ??
@@ -243,6 +342,7 @@ async function main() {
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, {
     schemaRegistry,
+    commandAuthorizer,
   });
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
@@ -301,23 +401,45 @@ async function main() {
     if (!Array.isArray(commands) || commands.length === 0) {
       return [];
     }
+    const normalize = (entry) => {
+      if (!entry) {
+        return null;
+      }
+      if (typeof entry === "string") {
+        return { command: entry, danger: "mid", reason: null, authorizationHint: null };
+      }
+      if (typeof entry.command !== "string") {
+        return null;
+      }
+      return {
+        command: entry.command,
+        danger: normalizeDangerLevel(entry.danger ?? "mid"),
+        reason: entry.reason ?? null,
+        authorizationHint: entry.authorizationHint ?? null,
+      };
+    };
+    const normalizedEntries = commands.map(normalize).filter(Boolean);
+    if (!normalizedEntries.length) {
+      return [];
+    }
     const MAX_FOLLOW_UPS = 2;
     const followUps = [];
-    for (const command of commands.slice(0, MAX_FOLLOW_UPS)) {
-      if (!isNavigatorCommandSafe(command)) {
+    for (const entry of normalizedEntries.slice(0, MAX_FOLLOW_UPS)) {
+      if (!isNavigatorCommandSafe(entry.command)) {
         if (verbose) {
-          console.warn(`[MiniPhi] Navigator follow-up blocked: ${command}`);
+          console.warn(`[MiniPhi] Navigator follow-up blocked: ${entry.command}`);
         }
         followUps.push({
-          command,
+          command: entry.command,
           skipped: true,
+          danger: entry.danger,
           reason: "blocked",
         });
         continue;
       }
       try {
-        const followUpTask = `Navigator follow-up: ${command}`;
-        const followUpResult = await analyzer.analyzeCommandOutput(command, followUpTask, {
+        const followUpTask = `Navigator follow-up: ${entry.command}`;
+        const followUpResult = await analyzer.analyzeCommandOutput(entry.command, followUpTask, {
           summaryLevels,
           streamOutput,
           cwd,
@@ -331,16 +453,23 @@ async function main() {
             metadata: {
               ...(baseMetadata ?? {}),
               mode: "navigator-follow-up",
-              command,
+              command: entry.command,
               workspaceType:
                 workspaceContext?.classification?.domain ??
                 workspaceContext?.classification?.label ??
                 null,
             },
           },
+          commandDanger: entry.danger,
+          commandSource: "navigator",
+          authorizationContext: {
+            reason: entry.reason ?? "Navigator follow-up",
+            hint: entry.authorizationHint ?? null,
+          },
         });
         followUps.push({
-          command,
+          command: entry.command,
+          danger: entry.danger,
           analysis: followUpResult.analysis,
           prompt: followUpResult.prompt,
           linesAnalyzed: followUpResult.linesAnalyzed,
@@ -348,7 +477,8 @@ async function main() {
         });
       } catch (error) {
         followUps.push({
-          command,
+          command: entry.command,
+          danger: entry.danger,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -368,14 +498,15 @@ async function main() {
 
   try {
     const tracker = new PromptPerformanceTracker({
-      dbPath: PROMPT_DB_PATH,
+      dbPath: globalMemory.promptDbPath,
       debug: debugLm,
       schemaRegistry,
     });
     await tracker.prepare();
     performanceTracker = tracker;
     if (verbose) {
-      const relDb = path.relative(process.cwd(), PROMPT_DB_PATH) || PROMPT_DB_PATH;
+      const relDb =
+        path.relative(process.cwd(), globalMemory.promptDbPath) || globalMemory.promptDbPath;
       console.log(`[MiniPhi] Prompt scoring database ready at ${relDb}`);
     }
   } catch (error) {
@@ -563,14 +694,26 @@ async function main() {
         );
       }
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+      const workspaceRefsResult = parseDirectFileReferences(task, cwd);
+      const workspaceFixedReferences = workspaceRefsResult.references;
+      task = workspaceRefsResult.cleanedTask;
       archiveMetadata.cwd = cwd;
       stateManager = new MiniPhiMemory(cwd);
       await stateManager.prepare();
+      if (workspaceFixedReferences.length) {
+        await stateManager.recordFixedReferences({
+          references: workspaceFixedReferences,
+          promptId: promptGroupId,
+          task,
+          cwd,
+        });
+      }
       const navigator = buildNavigator(stateManager);
       let workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
       });
+      workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
       promptRecorder = new PromptRecorder(stateManager.baseDir);
       await promptRecorder.prepare();
       phi4.setPromptRecorder(promptRecorder);
@@ -631,15 +774,30 @@ async function main() {
       }
 
       const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+      const fileRefResult = parseDirectFileReferences(task, cwd);
+      const fixedReferences = fileRefResult.references;
+      task = fileRefResult.cleanedTask;
+      const userCommandDanger = normalizeDangerLevel(
+        options["command-danger"] ?? defaults.commandDanger ?? "mid",
+      );
       archiveMetadata.command = cmd;
       archiveMetadata.cwd = cwd;
       stateManager = new MiniPhiMemory(cwd);
       await stateManager.prepare();
+      if (fixedReferences.length) {
+        await stateManager.recordFixedReferences({
+          references: fixedReferences,
+          promptId: promptGroupId,
+          task,
+          cwd,
+        });
+      }
       const navigator = buildNavigator(stateManager);
       let workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
       });
+      workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       let planResult = null;
         promptRecorder = new PromptRecorder(stateManager.baseDir);
         await promptRecorder.prepare();
@@ -719,10 +877,22 @@ async function main() {
               helperScript: workspaceContext?.helperScript ?? null,
             },
           },
+          commandDanger: userCommandDanger,
+          commandSource: "user",
+          authorizationContext: {
+            reason: "Primary --cmd execution",
+          },
         });
-        if (workspaceContext?.navigationHints?.focusCommands?.length) {
+        const navigatorActions =
+          (workspaceContext?.navigationHints?.actions ?? []).length > 0
+            ? workspaceContext.navigationHints.actions
+            : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
+                command,
+                danger: "mid",
+              }));
+        if (navigatorActions.length) {
           const followUps = await runNavigatorFollowUps({
-            commands: workspaceContext.navigationHints.focusCommands,
+            commands: navigatorActions,
             cwd,
             workspaceContext,
             summaryLevels,
@@ -751,15 +921,27 @@ async function main() {
         throw new Error(`File not found: ${filePath}`);
       }
       const analyzeCwd = path.dirname(filePath);
+      const analyzeRefsResult = parseDirectFileReferences(task, analyzeCwd);
+      const analyzeFixedReferences = analyzeRefsResult.references;
+      task = analyzeRefsResult.cleanedTask;
       archiveMetadata.filePath = filePath;
       archiveMetadata.cwd = analyzeCwd;
       stateManager = new MiniPhiMemory(archiveMetadata.cwd);
       await stateManager.prepare();
+      if (analyzeFixedReferences.length) {
+        await stateManager.recordFixedReferences({
+          references: analyzeFixedReferences,
+          promptId: promptGroupId,
+          task,
+          cwd: analyzeCwd,
+        });
+      }
       const navigator = buildNavigator(stateManager);
       let workspaceContext = await describeWorkspace(analyzeCwd, {
         navigator,
         objective: task,
       });
+      workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       let planResult = null;
 
         promptRecorder = new PromptRecorder(stateManager.baseDir);
@@ -1036,6 +1218,7 @@ async function handleRecompose({
     sessionLabel,
     gpu,
     schemaRegistry,
+    promptDbPath: globalMemory.promptDbPath,
   });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
@@ -1169,6 +1352,7 @@ async function handleBenchmark({
     sessionLabel: null,
     gpu,
     schemaRegistry,
+    promptDbPath: globalMemory.promptDbPath,
   });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
@@ -1227,6 +1411,7 @@ async function createRecomposeHarness({
   sessionLabel,
   gpu,
   schemaRegistry,
+  promptDbPath,
 }) {
   const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
   const phi4 = new Phi4Handler(manager, {
@@ -1244,7 +1429,7 @@ async function createRecomposeHarness({
   let performanceTracker = null;
   try {
     const tracker = new PromptPerformanceTracker({
-      dbPath: PROMPT_DB_PATH,
+      dbPath: promptDbPath,
       debug: debugLm,
       schemaRegistry,
     });
@@ -1641,7 +1826,10 @@ Options:
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
   --debug-lm                   Print each objective + prompt when scoring is running
-  (workspace mode also accepts free-form positional text: `npx miniphi "Draft release notes"`.)
+  --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)
+  --assume-yes                 Auto-approve prompts when the policy is ask/session
+  --command-danger <level>     Danger classification for --cmd (low | mid | high; default: mid)
+  (workspace mode also accepts free-form positional text: npx miniphi "Draft release notes".)
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)

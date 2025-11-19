@@ -10,6 +10,14 @@ const NAVIGATION_SCHEMA = [
   '  "recommended_paths": ["relative/path", "glob"],',
   '  "file_types": ["js", "md"],',
   '  "focus_commands": ["npm run lint"],',
+  '  "actions": [',
+  "    {",
+  '      "command": "string // shell command to execute",',
+  '      "reason": "string // why this command matters",',
+  '      "danger": "low|mid|high // predicted risk",',
+  '      "authorization_hint": "string|null // additional warning or requirement"',
+  "    }",
+  "  ],",
   '  "helper_script": {',
   '    "language": "node|python",',
   '    "name": "friendly title",',
@@ -255,7 +263,7 @@ export default class ApiNavigator {
     return segments.join(" | ") || null;
   }
 
-  #buildNavigationBlock(plan, helper) {
+  #buildNavigationBlock(plan, helper, actions = undefined) {
     const lines = [];
     if (plan.navigation_summary) {
       lines.push(`Navigation summary: ${plan.navigation_summary}`);
@@ -265,6 +273,21 @@ export default class ApiNavigator {
     }
     if (Array.isArray(plan.file_types) && plan.file_types.length) {
       lines.push(`Key file types: ${plan.file_types.join(", ")}`);
+    }
+    if (Array.isArray(actions) && actions.length) {
+      const formatted = actions
+        .map((action) => {
+          const segments = [`${action.command} (${action.danger ?? "mid"})`];
+          if (action.reason) {
+            segments.push(action.reason);
+          }
+          if (action.authorizationHint) {
+            segments.push(action.authorizationHint);
+          }
+          return `- ${segments.join(" | ")}`;
+        })
+        .join("\n");
+      lines.push(`Proposed actions:\n${formatted}`);
     }
     if (Array.isArray(plan.focus_commands) && plan.focus_commands.length) {
       lines.push(`Suggested commands: ${plan.focus_commands.join(", ")}`);

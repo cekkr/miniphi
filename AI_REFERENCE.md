@@ -19,6 +19,8 @@
 - `RecomposeTester` and `RecomposeBenchmarkRunner` drive `samples/recompose/hello-flow`, cache code-to-markdown descriptions, repair mismatches with diff-driven prompts, and export Phi transcript logs next to every JSON report so reviews stay auditable.
 - Workspace-first prompts now exist: `node src/index.js workspace --task "..."` (or `miniphi "..."`) anchors planning in the current working directory, loads navigation hints, and persists prompt-decomposition plans without executing arbitrary commands.
 - `samples/get-started/` contains a runnable Node.js onboarding project plus curated prompt suites so contributors can test the new workspace-centric flows end-to-end (environment discovery, README drafting, targeted edits, feature work, verification).
+- Global shared memory now lives under `~/.miniphi/` so prompt scoring (`miniphi-prompts.db`), OS profiles, command-policy preferences, and rollout metrics survive across repositories and don't need to be checked into source control.
+- `CommandAuthorizationManager` enforces `--command-policy ask|session|allow|deny`, respects `--assume-yes`, and pairs with `--command-danger` plus ApiNavigator danger metadata so risky commands require explicit approval, while direct file references (`@"path/to/file"`) are hashed, archived under `.miniphi/prompt-exchanges/fixed-references/`, and injected into every downstream prompt.
 - Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) lets teams pin LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
 
 ## Reference documents
@@ -30,6 +32,7 @@
 - `docs/studies/todo/author.md` - human editing backlog.
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
 - `samples/get-started/README.md` - describes the onboarding sample and curated prompt files that exercise workspace-first behavior.
+- `~/.miniphi/` - global hidden folder for shared telemetry (prompt DB, command-policy preferences, system profile snapshots) that every project run can reuse.
 
 ## High-Priority Fundamentals
 1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.

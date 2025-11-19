@@ -65,3 +65,6 @@ As described in [AI_REFERENCE.md](AI_REFERENCE.md) , implement next steps about:
 ## Prompt analysis
 It should be improved the recursive approach. For example, given a prompt, are needed API's prompts... to analyze prompt. These series of prompts (what are the objectives? make a list ...) are aiming to obtain the checklist of what to do, and divided every point in sub-prompts (and recursively sub-sub-prompts etc when needed) to analyze and editing everything coherently staying in the current maximum context window (default: 4096).
 A class that uses nvidia/amdgpu tools to obtain in real time VRAM usage may help to expand/shrink dynamically context window in base of current resource(?)
+
+## Additional
+- Create a general .miniphi folder in user's home path to save every general information useful to any project (learned prompts, OS current configuration, best performances etc.) to avoid to add them in miniphi source code.
