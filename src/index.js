@@ -58,6 +58,7 @@ const COMMANDS = new Set([
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
+const DEFAULT_NO_TOKEN_TIMEOUT_MS = 120000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
@@ -488,10 +489,14 @@ async function main() {
   const promptTimeoutMs =
     parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs") ??
     DEFAULT_PROMPT_TIMEOUT_MS;
+  const noTokenTimeoutMs =
+    parseNumericSetting(promptDefaults.noTokenTimeoutMs, "config.prompt.noTokenTimeoutMs") ??
+    DEFAULT_NO_TOKEN_TIMEOUT_MS;
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
     promptTimeoutMs,
     schemaRegistry,
+    noTokenTimeoutMs,
   });
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
@@ -886,10 +891,11 @@ async function main() {
   try {
     await phi4.load({ contextLength, gpu });
     if (performanceTracker) {
-      scoringPhi = new Phi4Handler(manager, {
-        systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
-        schemaRegistry,
-      });
+        scoringPhi = new Phi4Handler(manager, {
+          systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
+          schemaRegistry,
+          noTokenTimeoutMs,
+        });
       try {
         await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
         performanceTracker.setSemanticEvaluator(async (evaluationPrompt, parentTrace) => {

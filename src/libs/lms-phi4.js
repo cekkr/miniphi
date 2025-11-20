@@ -34,6 +34,7 @@ export class Phi4Handler {
     this.promptRecorder = options?.promptRecorder ?? null;
     this.performanceTracker = options?.performanceTracker ?? null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
+    this.noTokenTimeoutMs = options?.noTokenTimeoutMs ?? null;
   }
 
   /**
@@ -61,6 +62,14 @@ export class Phi4Handler {
    */
   clearHistory() {
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
+  }
+
+  setNoTokenTimeout(timeoutMs) {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      this.noTokenTimeoutMs = null;
+      return;
+    }
+    this.noTokenTimeoutMs = timeoutMs;
   }
 
   /**
@@ -126,12 +135,44 @@ export class Phi4Handler {
       let result = "";
       let schemaValidation = null;
       let schemaFailureDetails = null;
+      let heartbeatTimer = null;
+      let predictionHandle = null;
+      let streamError = null;
+      let solutionStreamHandle = null;
+      const resetHeartbeat = () => {
+        if (!Number.isFinite(this.noTokenTimeoutMs) || this.noTokenTimeoutMs <= 0) {
+          return;
+        }
+        if (heartbeatTimer) {
+          clearTimeout(heartbeatTimer);
+        }
+        heartbeatTimer = setTimeout(() => {
+          const seconds = Math.round(this.noTokenTimeoutMs / 1000);
+          const message = `No Phi-4 tokens emitted in ${seconds} seconds; cancelling prompt.`;
+          if (typeof predictionHandle?.return === "function") {
+            try {
+              predictionHandle.return();
+            } catch {
+              // ignore best-effort cancellation errors
+            }
+          }
+          if (solutionStreamHandle && typeof solutionStreamHandle.destroy === "function") {
+            try {
+              solutionStreamHandle.destroy(new Error(message));
+            } catch {
+              // ignore destroy errors
+            }
+          }
+          streamError = new Error(message);
+        }, this.noTokenTimeoutMs);
+      };
 
       try {
         this.chatHistory = await this.#truncateHistory();
         requestSnapshot = this.#buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         const chat = Chat.from(this.chatHistory);
         const prediction = this.model.respond(chat);
+        predictionHandle = prediction;
         const parser = new Phi4StreamParser((thought) => {
           capturedThoughts.push(thought);
           if (onThink) {
@@ -140,7 +181,7 @@ export class Phi4Handler {
         });
         const readable = Readable.from(prediction);
         const solutionStream = readable.pipe(parser);
-        let streamError = null;
+        solutionStreamHandle = solutionStream;
         const attachStreamError = (stream) => {
           if (!stream || typeof stream.once !== "function") {
             return;
@@ -153,11 +194,13 @@ export class Phi4Handler {
         attachStreamError(readable);
         attachStreamError(solutionStream);
 
+        resetHeartbeat();
         result = await this.#withPromptTimeout(async () => {
           let assistantResponse = "";
           for await (const fragment of solutionStream) {
             const token = fragment?.content ?? "";
             if (!token) continue;
+            resetHeartbeat();
             if (onToken) onToken(token);
             assistantResponse += token;
           }
@@ -201,6 +244,10 @@ export class Phi4Handler {
           schemaValidation,
         };
         await this.#recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
+        if (heartbeatTimer) {
+          clearTimeout(heartbeatTimer);
+          heartbeatTimer = null;
+        }
         await this.#trackPromptPerformance(
           traceContext,
           requestSnapshot,
@@ -213,6 +260,10 @@ export class Phi4Handler {
 
         return result;
       } catch (error) {
+        if (heartbeatTimer) {
+          clearTimeout(heartbeatTimer);
+          heartbeatTimer = null;
+        }
         this.chatHistory.pop(); // remove user entry to preserve state
         const message = error instanceof Error ? error.message : String(error);
         const finishedAt = Date.now();
@@ -276,6 +327,10 @@ export class Phi4Handler {
         );
         throw errorForThrow;
       }
+    }
+
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
     }
 
     throw new Error("Phi-4 chat stream exceeded retry budget.");

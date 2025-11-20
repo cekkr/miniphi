@@ -73,6 +73,7 @@ export default class ApiNavigator {
     this.temperature = options?.invocationTemperature ?? DEFAULT_TEMPERATURE;
     this.helperTimeout = options?.helperTimeout ?? HELPER_TIMEOUT_MS;
     this.adapterRegistry = options?.adapterRegistry ?? null;
+    this.disabled = false;
   }
 
   setMemory(memory) {
@@ -90,6 +91,10 @@ export default class ApiNavigator {
    * }} payload
    */
   async generateNavigationHints(payload = undefined) {
+    if (this.disabled) {
+      this.#log("[ApiNavigator] Disabled after previous failures; skipping navigation hints.");
+      return null;
+    }
     if (!this.restClient || !payload?.workspace) {
       return null;
     }
@@ -201,13 +206,21 @@ export default class ApiNavigator {
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this.#parsePlan(raw);
     } catch (error) {
-      this.#log(
-        `[ApiNavigator] Failed to request navigation hints: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      this.#log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
+      if (this.#shouldDisable(message)) {
+        this.disabled = true;
+        this.#log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
+      }
       return null;
     }
+  }
+
+  #shouldDisable(message) {
+    if (!message) {
+      return false;
+    }
+    return /timed out/i.test(message) || /ECONNREFUSED|ENOTFOUND/i.test(message);
   }
 
   #parsePlan(raw) {

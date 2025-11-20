@@ -116,6 +116,7 @@ export default class PromptDecomposer {
       this.#log(`[PromptDecomposer] REST failure: ${errorMessage}`);
       if (this.#shouldDisable(errorMessage)) {
         this.disabled = true;
+        this.#log("[PromptDecomposer] Disabled after repeated failures.");
       }
     }
 
