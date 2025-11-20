@@ -47,6 +47,7 @@ const COMMANDS = new Set([
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
+const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
@@ -552,9 +553,12 @@ async function main() {
   }
 
   const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
+  const promptTimeoutMs =
+    parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs") ??
+    DEFAULT_PROMPT_TIMEOUT_MS;
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
-    promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+    promptTimeoutMs,
     schemaRegistry,
   });
   const cli = new CliExecutor();
@@ -1370,6 +1374,10 @@ async function main() {
             null,
           argv: process.argv.slice(2),
         });
+        const resumeStatus = promptJournalStatus ?? "paused";
+        console.log(
+          `[MiniPhi] Prompt journal session "${promptJournalId}" (${resumeStatus}). Re-run with --prompt-journal ${promptJournalId} to resume.`,
+        );
       } else {
         promptJournal = null;
       }

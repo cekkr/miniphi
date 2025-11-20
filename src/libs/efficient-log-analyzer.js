@@ -177,27 +177,34 @@ export default class EfficientLogAnalyzer {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
     };
-    await this.phi4.chatStream(
-      prompt,
-      (token) => {
-        analysis += token;
-        if (streamOutput) {
-          process.stdout.write(token);
-        }
-      },
-      (thought) => {
-        if (verbose) {
-          console.log("\n[Reasoning Block]\n");
-          console.log(thought);
-          console.log("\n[Solution Stream]");
-        }
-      },
-      (err) => {
-        this.#logDev(devLog, `Phi error: ${err}`);
-        throw new Error(`Phi-4 inference error: ${err}`);
-      },
-      traceOptions,
-    );
+    const stopHeartbeat = !streamOutput
+      ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
+      : () => {};
+    try {
+      await this.phi4.chatStream(
+        prompt,
+        (token) => {
+          analysis += token;
+          if (streamOutput) {
+            process.stdout.write(token);
+          }
+        },
+        (thought) => {
+          if (verbose) {
+            console.log("\n[Reasoning Block]\n");
+            console.log(thought);
+            console.log("\n[Solution Stream]");
+          }
+        },
+        (err) => {
+          this.#logDev(devLog, `Phi error: ${err}`);
+          throw new Error(`Phi-4 inference error: ${err}`);
+        },
+        traceOptions,
+      );
+    } finally {
+      stopHeartbeat();
+    }
 
     if (streamOutput) {
       process.stdout.write("\n");
@@ -311,20 +318,28 @@ export default class EfficientLogAnalyzer {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
     };
-    await this.phi4.chatStream(
-      prompt,
-      (token) => {
-        analysis += token;
-        if (streamOutput) {
-          process.stdout.write(token);
-        }
-      },
-      undefined,
-      (err) => {
-        throw new Error(`Phi-4 inference error: ${err}`);
-      },
-      traceOptions,
-    );
+    const stopHeartbeat = !streamOutput
+      ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
+      : () => {};
+    try {
+      await this.phi4.chatStream(
+        prompt,
+        (token) => {
+          analysis += token;
+          if (streamOutput) {
+            process.stdout.write(token);
+          }
+        },
+        undefined,
+        (err) => {
+          this.#logDev(devLog, `Phi error: ${err}`);
+          throw new Error(`Phi-4 inference error: ${err}`);
+        },
+        traceOptions,
+      );
+    } finally {
+      stopHeartbeat();
+    }
 
     if (streamOutput) {
       process.stdout.write("\n");
@@ -617,5 +632,27 @@ ${compressedContent}
       return text;
     }
     return `${text.slice(0, limit)}...`;
+  }
+
+  #startHeartbeat(message, devLogHandle, intervalMs = 15000) {
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      return () => {};
+    }
+    let firedOnce = false;
+    const emit = () => {
+      const line = `[MiniPhi] ${message}`;
+      console.log(line);
+      if (!firedOnce) {
+        this.#logDev(devLogHandle, message);
+        firedOnce = true;
+      }
+    };
+    const timer = setInterval(emit, intervalMs);
+    if (typeof timer.unref === "function") {
+      timer.unref();
+    }
+    return () => {
+      clearInterval(timer);
+    };
   }
 }
