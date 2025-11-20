@@ -6,6 +6,12 @@
 
 # MiniPhi Reference
 
+## High priority reference
+- Miniphi is an AI agent that uses LM Studio APIs for local running. By default, it manipulates the current working directory content given the user prompt.
+- Miniphi has to work with fixed and reduced context length with APIs: so it has to use recursive APIs requests to elaborate a complete task list for complete the main prompt, and then execute it in its predicted priority order
+- Miniphi has to take advantage of API's model in LM Studio itself to elaborate better prompts, ad hoc command line commands and shell/js/python scripts for current user's OS and CWD project. Given that, are essential the "basic essential prompts" where miniphi start to learn everything useful
+- Miniphi stores best general purposes commands/scripts in project and global .miniphi/ directory, so it can re-use them without recreating them. But given that not always are correct, even the first time, it's important to implement a backup system and preventing "infinity loop" in child commands/scripts execution, checking on running their stdout (giving also the ability to interact with stdin input)
+
 ## Current Status
 - Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.
 - CLI entrypoints cover commands (`run`), file analysis (`analyze-file`), research snapshots (`web-research`), `.miniphi` audit trails (`history-notes`), recomposition workflows (`recompose`), and benchmark automation (`benchmark recompose|analyze|plan scaffold`).
