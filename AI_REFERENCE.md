@@ -155,3 +155,10 @@ These are the currently "fixed reference points" of miniphi project:
 ### Recompose prompt watchdogs
 - `recompose:workspace-overview` timed out twice at the 2-minute Phi-4 budget while converting `samples/recompose/hello-flow` (`.miniphi/recompose/2025-11-20T06-27-04-083Z-recompose/prompts.log`), so add a dedicated prompt timeout knob plus progressive summarization that feeds trimmed glimpses before retrying.
 - When the overview prompt fails, subsequent code/description conversions abort silently; capture the partial overview result and surface it in the CLI output with a retry recommendation instead of only logging to `.miniphi/recompose/<timestamp>/prompts.log`.
+
+## General next steps
+- Mirror the “external LM Studio disables ResourceMonitor” guard inside `benchmark/run-tests.js` so benchmark suites stop emitting false RAM/VRAM warnings when the APIs run over the network, and pipe those warnings back into the CLI summary for parity.
+- Harden `EfficientLogAnalyzer` with a watchdog + deterministic fallback JSON so `npm run sample:besh-journal` can emit partial-but-valid schema output instead of stalling at the 28.8-minute limit; rerun the sample afterward to refresh `.miniphi/prompt-exchanges`.
+- Feed `PromptDecomposer` and navigator plans directly into multi-pass analyzer runs (one Phi call per chunk) so large files can be split/merged automatically instead of relying on a single monolithic prompt.
+- Extend automated coverage beyond the new helper tests by introducing mocked LM Studio interactions (e.g., fixture-driven `Phi4Handler` responses) so prompt builders, schema adapters, and navigator flows have regression protection.
+- Once the runtime stabilizes, record a fresh `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` artifact plus a clean `npm run sample:besh-journal --verbose --stream-output` journal to serve as the new baseline for future fixes.
