@@ -164,7 +164,8 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 ## Project status
 - Ready: layered LM Studio stack (`LMStudioManager`, `Phi4Handler`, `EfficientLogAnalyzer`) is production ready with reasoning streaming, JSON schema guards, and prompt scoring.
 - Ready: `.miniphi` memory, prompt transcripts, and research or history snapshots are stable across commands.
-- Warning: there are no automated tests yet, so manual verification is still required whenever compression heuristics or Phi prompts change.
+- Ready: helper utilities (danger normalization, navigation planners, LM Studio endpoint detection) now have automated coverage via `npm test` (`node --test ./tests/**/*.test.js`).
+- Warning: compression heuristics and Phi prompt templates still require manual verification because integration tests depend on live LM Studio responses.
 - In progress: packaging (`npm bin` publish), richer summarization backends, better telemetry, and retention policies for `.miniphi` artifacts are still underway.
 - Next up: upcoming work focuses on runtime improvements (prompt orchestration, analyzers, LM Studio clients) rather than tweaking benchmark scripts; the `benchmark analyze` and `plan scaffold` tools already cover reporting needs.
 
