@@ -1671,6 +1671,11 @@ async function handleRecompose({
       : typeof options["session-label"] === "string"
         ? options["session-label"]
         : null;
+  const rawMode =
+    typeof options["recompose-mode"] === "string"
+      ? options["recompose-mode"].toLowerCase()
+      : configData.recompose?.mode?.toLowerCase() ?? "offline";
+  const recomposeMode = rawMode === "live" ? "live" : "offline";
   const harness = await createRecomposeHarness({
     configData,
     promptDefaults,
@@ -1681,6 +1686,7 @@ async function handleRecompose({
     gpu,
     schemaRegistry,
     promptDbPath: globalMemory.promptDbPath,
+    recomposeMode,
   });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
@@ -1815,6 +1821,7 @@ async function handleBenchmark({
     gpu,
     schemaRegistry,
     promptDbPath: globalMemory.promptDbPath,
+    recomposeMode: "live",
   });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
@@ -1874,34 +1881,44 @@ async function createRecomposeHarness({
   gpu,
   schemaRegistry,
   promptDbPath,
+  recomposeMode = "live",
 }) {
-  const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
-  const phi4 = new Phi4Handler(manager, {
-    systemPrompt: promptDefaults.system,
-    promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
-    schemaRegistry,
-  });
-  const loadOptions = { contextLength, gpu };
-  await phi4.load(loadOptions);
-  const memory = new MiniPhiMemory(process.cwd());
-  await memory.prepare();
-  const promptRecorder = new PromptRecorder(memory.baseDir);
-  await promptRecorder.prepare();
-  phi4.setPromptRecorder(promptRecorder);
-  let performanceTracker = null;
-  try {
-    const tracker = new PromptPerformanceTracker({
-      dbPath: promptDbPath,
-      debug: debugLm,
+  let phi4 = null;
+  let manager = null;
+  if (recomposeMode === "live") {
+    manager = new LMStudioManager(configData.lmStudio?.clientOptions);
+    phi4 = new Phi4Handler(manager, {
+      systemPrompt: promptDefaults.system,
+      promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
       schemaRegistry,
     });
-    await tracker.prepare();
-    phi4.setPerformanceTracker(tracker);
-    performanceTracker = tracker;
-  } catch (error) {
-    if (verbose) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[MiniPhi][Recompose] Prompt scoring disabled: ${message}`);
+    const loadOptions = { contextLength, gpu };
+    await phi4.load(loadOptions);
+  }
+  const memory = new MiniPhiMemory(process.cwd());
+  await memory.prepare();
+  let promptRecorder = null;
+  if (phi4) {
+    promptRecorder = new PromptRecorder(memory.baseDir);
+    await promptRecorder.prepare();
+    phi4.setPromptRecorder(promptRecorder);
+  }
+  let performanceTracker = null;
+  if (phi4) {
+    try {
+      const tracker = new PromptPerformanceTracker({
+        dbPath: promptDbPath,
+        debug: debugLm,
+        schemaRegistry,
+      });
+      await tracker.prepare();
+      phi4.setPerformanceTracker(tracker);
+      performanceTracker = tracker;
+    } catch (error) {
+      if (verbose) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[MiniPhi][Recompose] Prompt scoring disabled: ${message}`);
+      }
     }
   }
   const sessionRoot = path.join(memory.baseDir, "recompose");
@@ -1912,9 +1929,12 @@ async function createRecomposeHarness({
     promptLabel: sessionLabel ?? "recompose",
     verboseLogging: verbose,
     memory,
+    useLivePrompts: recomposeMode === "live",
   });
   const cleanup = async () => {
-    await phi4.eject();
+    if (phi4) {
+      await phi4.eject();
+    }
     if (performanceTracker) {
       await performanceTracker.dispose();
     }

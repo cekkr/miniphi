@@ -140,3 +140,7 @@
 
 ### Placeholder / “I forgot it” capture
 - Add a standing backlog entry (e.g., append to `docs/studies/notes/TODOs.md`) that records unspecified user follow-ups. Each MiniPhi session should write a stub note such as “Forgotten requirement for <date>: [context]” so the missing information is not lost.
+
+### Recompose prompt watchdogs
+- `recompose:workspace-overview` timed out twice at the 2-minute Phi-4 budget while converting `samples/recompose/hello-flow` (`.miniphi/recompose/2025-11-20T06-27-04-083Z-recompose/prompts.log`), so add a dedicated prompt timeout knob plus progressive summarization that feeds trimmed glimpses before retrying.
+- When the overview prompt fails, subsequent code/description conversions abort silently; capture the partial overview result and surface it in the CLI output with a retry recommendation instead of only logging to `.miniphi/recompose/<timestamp>/prompts.log`.

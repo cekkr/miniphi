@@ -3,8 +3,9 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import Phi4Handler from "../../src/libs/lms-phi4.js";
-import LMStudioManager from "../../src/libs/lmstudio-api.js";
+import LMStudioManager, { normalizeLmStudioHttpUrl } from "../../src/libs/lmstudio-api.js";
 import PromptRecorder from "../../src/libs/prompt-recorder.js";
+import { loadConfig } from "../../src/libs/config-loader.js";
 
 const SAMPLE_ROOT = path.resolve("samples/bash");
 const BENCHMARK_SUITE_DIR = path.resolve("samples/benchmark/bash");
@@ -23,7 +24,18 @@ async function main() {
   await ensureDirectory(MIRROR_DIR);
   await ensureDirectory(BENCHMARK_WORKSPACE);
 
-  await pingLmStudioRest();
+  const configData = loadConfig().data ?? {};
+  const clientOptions = configData.lmStudio?.clientOptions ?? undefined;
+  const restBaseUrl = normalizeLmStudioHttpUrl(
+    configData.lmStudio?.rest?.baseUrl ?? configData.rest?.baseUrl ?? clientOptions?.baseUrl,
+  );
+  const modeInput =
+    (process.env.MINIPHI_BENCHMARK_MODE ?? configData.benchmark?.recursivePromptsMode ?? "offline").toLowerCase();
+  const useLivePrompts = modeInput === "live";
+  console.log(`[RecursivePrompt] Mode: ${useLivePrompts ? "live (LM Studio)" : "offline (deterministic)"}.`);
+  if (useLivePrompts) {
+    await pingLmStudioRest(restBaseUrl);
+  }
 
   const directoryTree = await buildDirectoryTree(SAMPLE_ROOT, MAX_DEPTH);
   const files = await collectSourceFiles(SAMPLE_ROOT, MAX_DEPTH);
@@ -35,70 +47,86 @@ async function main() {
   const selectedFiles = files.slice(0, MAX_FILE_COUNT);
   const snippets = await Promise.all(selectedFiles.map((file) => readSnippet(file.absolute)));
 
-  const manager = new LMStudioManager();
-  const phi4 = new Phi4Handler(manager);
-  const promptRecorder = new PromptRecorder(BENCHMARK_WORKSPACE);
-  await promptRecorder.prepare();
-  phi4.setPromptRecorder(promptRecorder);
   const stats = [];
   const transcripts = [];
   const insightLog = [];
   let finalResponse = "";
   const mainPromptId = `bench-bash-${Date.now().toString(36)}`;
-
-  try {
-    await phi4.load();
-    const overviewPrompt = buildOverviewPrompt(directoryTree, selectedFiles);
-    const overview = await runPromptStage(
-      phi4,
-      "directory-overview",
-      overviewPrompt,
-      stats,
-      transcripts,
-      {
-        scope: "sub",
-        label: "directory-overview",
-        mainPromptId,
-        metadata: { stage: "directory-overview" },
-      },
-    );
-    insightLog.push({ label: "overview", summary: summarizeForContext(overview) });
-
-    for (let i = 0; i < selectedFiles.length; i += 1) {
-      const file = selectedFiles[i];
-      const snippet = snippets[i];
-      const insightContext = buildInsightContext(insightLog, CONTEXT_LIMIT);
-      const prompt = buildFilePrompt(file, snippet, insightContext);
-      const label = `file:${file.relative}`;
-      const response = await runPromptStage(phi4, label, prompt, stats, transcripts, {
-        scope: "sub",
-        label,
-        mainPromptId,
-        metadata: {
-          stage: "file-analysis",
-          file: file.relative,
-        },
-      });
-      insightLog.push({ label: file.relative, summary: summarizeForContext(response) });
-    }
-
-    const synthesisContext = buildInsightContext(insightLog, CONTEXT_LIMIT * 1.5);
-    const synthesisPrompt = buildSynthesisPrompt(directoryTree, synthesisContext);
-    finalResponse = await runPromptStage(phi4, "synthesis", synthesisPrompt, stats, transcripts, {
-      scope: "sub",
-      label: "synthesis",
-      mainPromptId,
-      metadata: { stage: "synthesis" },
-    });
-  } catch (error) {
-    console.error(`[RecursivePrompt] ${error instanceof Error ? error.message : error}`);
-    process.exitCode = 1;
-  } finally {
+  if (useLivePrompts) {
+    const manager = new LMStudioManager(clientOptions);
+    const phi4 = new Phi4Handler(manager);
+    const promptRecorder = new PromptRecorder(BENCHMARK_WORKSPACE);
+    await promptRecorder.prepare();
+    phi4.setPromptRecorder(promptRecorder);
     try {
-      await phi4.eject();
-    } catch {
-      // ignore unload errors
+      await phi4.load();
+      const overviewPrompt = buildOverviewPrompt(directoryTree, selectedFiles);
+      const overview = await runPromptStage(
+        phi4,
+        "directory-overview",
+        overviewPrompt,
+        stats,
+        transcripts,
+        {
+          scope: "sub",
+          label: "directory-overview",
+          mainPromptId,
+          metadata: { stage: "directory-overview" },
+        },
+      );
+      insightLog.push({ label: "overview", summary: summarizeForContext(overview) });
+
+      for (let i = 0; i < selectedFiles.length; i += 1) {
+        const file = selectedFiles[i];
+        const snippet = snippets[i];
+        const insightContext = buildInsightContext(insightLog, CONTEXT_LIMIT);
+        const prompt = buildFilePrompt(file, snippet, insightContext);
+        const label = `file:${file.relative}`;
+        const response = await runPromptStage(phi4, label, prompt, stats, transcripts, {
+          scope: "sub",
+          label,
+          mainPromptId,
+          metadata: {
+            stage: "file-analysis",
+            file: file.relative,
+          },
+        });
+        insightLog.push({ label: file.relative, summary: summarizeForContext(response) });
+      }
+
+      const synthesisContext = buildInsightContext(insightLog, CONTEXT_LIMIT * 1.5);
+      const synthesisPrompt = buildSynthesisPrompt(directoryTree, synthesisContext);
+      finalResponse = await runPromptStage(phi4, "synthesis", synthesisPrompt, stats, transcripts, {
+        scope: "sub",
+        label: "synthesis",
+        mainPromptId,
+        metadata: { stage: "synthesis" },
+      });
+    } catch (error) {
+      console.error(`[RecursivePrompt] ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+    } finally {
+      try {
+        await phi4.eject();
+      } catch {
+        // ignore unload errors
+      }
     }
+  } else {
+    const offlineSummary = buildOfflineSummary(directoryTree, selectedFiles, snippets);
+    stats.push({
+      stage: "offline-overview",
+      promptChars: directoryTree.length,
+      responseChars: offlineSummary.length,
+      durationMs: 0,
+      error: "offline-mode",
+    });
+    transcripts.push({
+      stage: "offline-overview",
+      prompt: directoryTree,
+      response: offlineSummary,
+    });
+    finalResponse = offlineSummary;
   }
 
   const report = buildReport({
@@ -168,14 +196,15 @@ async function runPromptStage(phi4, label, prompt, stats, transcripts, traceCont
   }
 }
 
-async function pingLmStudioRest() {
+async function pingLmStudioRest(baseUrl = "http://127.0.0.1:1234") {
   if (typeof fetch !== "function") {
     return;
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
   try {
-    const response = await fetch("http://127.0.0.1:1234/api/v0/models", {
+    const normalized = normalizeLmStudioHttpUrl(baseUrl);
+    const response = await fetch(`${normalized}/api/v0/models`, {
       method: "GET",
       signal: controller.signal,
     });
@@ -387,6 +416,25 @@ ${finalResponse}
 
 ---
 Report generated by benchmark/scripts/bash-recursive-prompts.js.`;
+}
+
+function buildOfflineSummary(directoryTree, selectedFiles, snippets) {
+  const fileLines = selectedFiles.map((file, index) => {
+    const preview = snippets[index]
+      ? snippets[index].replace(/\s+/g, " ").trim().slice(0, 160)
+      : "snippet unavailable";
+    return `- ${file.relative}: ${preview}`;
+  });
+  return [
+    "## Offline Benchmark Summary",
+    "LM Studio prompts were bypassed in favor of a deterministic walkthrough.",
+    "### Directory Sketch",
+    "```",
+    directoryTree,
+    "```",
+    "### File Highlights",
+    fileLines.join("\n") || "- No files selected.",
+  ].join("\n");
 }
 
 async function writeReport(content) {

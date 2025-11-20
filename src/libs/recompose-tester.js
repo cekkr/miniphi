@@ -43,7 +43,7 @@ const MAX_OVERVIEW_FILES = 24;
 const MAX_SNIPPET_CHARS = 1500;
 const WORKSPACE_OVERVIEW_FILE = "workspace-overview.md";
 const LOG_SNIPPET_LIMIT = 800;
-const DEFAULT_FILE_CONCURRENCY = 3;
+const DEFAULT_FILE_CONCURRENCY = 1;
 const PRIORITY_REPAIR_TARGETS = [
   "readme.md",
   "src/validate.js",
@@ -54,6 +54,9 @@ const PRIORITY_REPAIR_TARGETS = [
   "src/shared/persistence/memory-store.js",
 ];
 const WORKSPACE_RETRY_PATTERNS = [/no workspace provided/i, /workspace context missing/i];
+const MAX_OVERVIEW_CHAR_BUDGET = 8000;
+const MAX_OVERVIEW_SUMMARY_LINES = 4;
+const OVERVIEW_COMMENT_PREFIX = /^(?:\/\/+|\/\*+|\*+|#+|--)/;
 
 export default class RecomposeTester {
   constructor(options = {}) {
@@ -64,6 +67,12 @@ export default class RecomposeTester {
     this.verboseLogging = Boolean(options.verboseLogging);
     this.fileConcurrency = Math.max(1, Number(options.fileConcurrency ?? DEFAULT_FILE_CONCURRENCY) || DEFAULT_FILE_CONCURRENCY);
     this.memory = options.memory ?? null;
+    this.useLivePrompts = options.useLivePrompts !== undefined ? Boolean(options.useLivePrompts) : true;
+    this.offlineFallbackActive = !this.useLivePrompts;
+    this.promptFailureBudget =
+      typeof options.promptFailureBudget === "number" && Number.isFinite(options.promptFailureBudget)
+        ? options.promptFailureBudget
+        : 1;
     this.workspaceContext = null;
     this.sampleMetadata = null;
     this.baselineSignatures = new Map();
@@ -479,6 +488,9 @@ export default class RecomposeTester {
   }
 
   async #attemptCodeGeneration({ relativePath, blueprint, signature, repairContext }) {
+    if (this.offlineFallbackActive) {
+      return this.#buildOfflineCodeStub({ relativePath, blueprint, signature });
+    }
     const maxAttempts = signature ? 3 : 2;
     let guidance = null;
     let lastReason = null;
@@ -538,13 +550,22 @@ export default class RecomposeTester {
       return this.workspaceContext.summary;
     }
     const glimpses = await this.#collectGlimpses(sourceDir, files);
+    const workspaceHints = buildWorkspaceHintBlock(
+      files,
+      sourceDir,
+      this.sampleMetadata?.readmeSnippet,
+      { limit: 12 },
+    );
     const promptParts = [
       "Survey the workspace and narrate the protagonist's goals.",
       "Produce sections for Architecture Rhythm, Supporting Cast, and Risk Notes.",
       "Avoid listing file names explicitly; rely on behaviors and interactions.",
       `Glimpses:\n${glimpses}`,
+      workspaceHints ? `Workspace hints:\n${workspaceHints}` : null,
       formatMetadataSummary(this.sampleMetadata),
-    ].join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     let summaryText = this.#sanitizeNarrative(await this.#promptPhi(promptParts, { label: "recompose:workspace-overview" }));
     if (this.#needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
@@ -608,17 +629,36 @@ export default class RecomposeTester {
   }
 
   async #collectGlimpses(baseDir, files) {
+    if (!Array.isArray(files) || files.length === 0) {
+      return "Workspace scan produced no narrative glimpses.";
+    }
+    const prioritized = this.#prioritizeOverviewFiles(files);
     const glimpses = [];
-    for (const relative of files) {
-      if (glimpses.length >= MAX_OVERVIEW_FILES) {
+    let included = 0;
+    let budget = MAX_OVERVIEW_CHAR_BUDGET;
+    for (const relative of prioritized) {
+      if (included >= MAX_OVERVIEW_FILES || budget <= 0) {
         break;
       }
-      const absolute = path.join(baseDir, relative);
-      if (await this.#isBinary(absolute)) {
+      const summary = await this.#summarizeFileForOverview(baseDir, relative);
+      if (!summary) {
         continue;
       }
-      const snippet = await this.#readSnippet(absolute);
-      glimpses.push(`### ${relative}\n${snippet}`);
+      const block = `### ${relative}\n${summary}`;
+      const blockLength = block.length;
+      if (blockLength > budget && included > 0) {
+        break;
+      }
+      glimpses.push(block);
+      included += 1;
+      budget -= blockLength;
+    }
+    const omitted = files.length - included;
+    if (omitted > 0) {
+      glimpses.push(`(+${omitted} additional files omitted for brevity)`);
+    }
+    if (!glimpses.length) {
+      glimpses.push("Workspace scan produced no narrative glimpses.");
     }
     return glimpses.join("\n\n");
   }
@@ -626,6 +666,138 @@ export default class RecomposeTester {
   async #readSnippet(filePath) {
     const content = await fs.promises.readFile(filePath, "utf8");
     return content.replace(/\r\n/g, "\n").slice(0, MAX_SNIPPET_CHARS);
+  }
+
+  #prioritizeOverviewFiles(files) {
+    return [...(files ?? [])]
+      .map((relative) => ({
+        relative,
+        score: this.#overviewPriorityScore(relative),
+      }))
+      .sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative))
+      .map((entry) => entry.relative);
+  }
+
+  #overviewPriorityScore(relativePath) {
+    const normalized = (relativePath ?? "").toLowerCase();
+    let score = 200 - normalized.length;
+    if (normalized.includes("readme")) {
+      score += 400;
+    }
+    for (const target of PRIORITY_REPAIR_TARGETS) {
+      if (normalized.includes(target)) {
+        score += 250;
+      }
+    }
+    if (normalized.includes("/flows/")) {
+      score += 120;
+    }
+    if (normalized.includes("/shared/")) {
+      score += 90;
+    }
+    if (normalized.endsWith(".md")) {
+      score += 40;
+    }
+    return score;
+  }
+
+  async #summarizeFileForOverview(baseDir, relativePath) {
+    if (!relativePath) {
+      return null;
+    }
+    const absolute = path.join(baseDir, relativePath);
+    if (await this.#isBinary(absolute)) {
+      return null;
+    }
+    let raw;
+    try {
+      raw = await fs.promises.readFile(absolute, "utf8");
+    } catch {
+      return null;
+    }
+    const normalized = raw.replace(/\r\n/g, "\n").slice(0, MAX_SNIPPET_CHARS);
+    const lines = normalized.split("\n");
+    const summary = [];
+    for (const line of lines) {
+      if (summary.length >= MAX_OVERVIEW_SUMMARY_LINES) {
+        break;
+      }
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const comment = this.#extractCommentNarrative(trimmed);
+      if (comment) {
+        summary.push(comment);
+        continue;
+      }
+      const codeLine = this.#summarizeCodeLine(trimmed);
+      if (codeLine) {
+        summary.push(codeLine);
+      }
+    }
+    if (!summary.length) {
+      const fallback = this.#normalizeWhitespace(lines.slice(0, 6).join(" "));
+      if (fallback) {
+        summary.push(fallback.slice(0, 240));
+      }
+    }
+    if (!summary.length) {
+      return null;
+    }
+    return summary.map((line) => `- ${line}`).join("\n");
+  }
+
+  #extractCommentNarrative(line) {
+    if (!line || !OVERVIEW_COMMENT_PREFIX.test(line)) {
+      return null;
+    }
+    return line
+      .replace(/^\/\*+/, "")
+      .replace(/\*+\/$/, "")
+      .replace(/^(?:\/\/+|#+|--|\*+)\s*/, "")
+      .trim();
+  }
+
+  #summarizeCodeLine(line) {
+    if (!line) {
+      return null;
+    }
+    const fn = line.match(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/);
+    if (fn) {
+      return `Defines function ${fn[1]}().`;
+    }
+    const arrow = line.match(/^(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>/);
+    if (arrow) {
+      return `Introduces helper ${arrow[1]} via arrow function.`;
+    }
+    const classMatch = line.match(/^(?:export\s+)?class\s+([A-Za-z0-9_$]+)/);
+    if (classMatch) {
+      return `Declares class ${classMatch[1]}.`;
+    }
+    const importMatch = line.match(/^import\s+(?:.+)\s+from\s+["'](.+)["']/);
+    if (importMatch) {
+      return `Imports module ${importMatch[1]}.`;
+    }
+    const requireMatch = line.match(/^const\s+([A-Za-z0-9_$]+)\s*=\s*require\(["'](.+)["']\)/);
+    if (requireMatch) {
+      return `Requires module ${requireMatch[2]} as ${requireMatch[1]}.`;
+    }
+    const exportConst = line.match(/^export\s+(?:const|let|var)\s+([A-Za-z0-9_$]+)/);
+    if (exportConst) {
+      return `Exports constant ${exportConst[1]}.`;
+    }
+    if (/return\s+[{[]/.test(line)) {
+      return "Returns a structured object.";
+    }
+    if (/logger\./i.test(line)) {
+      return "Emits structured telemetry.";
+    }
+    return null;
+  }
+
+  #normalizeWhitespace(text) {
+    return (text ?? "").replace(/\s+/g, " ").trim();
   }
 
   async #captureBaselineSignatures(codeDir) {
@@ -661,15 +833,31 @@ export default class RecomposeTester {
     const started = Date.now();
     let response = "";
     let error = null;
+    const metadata = {
+      sessionLabel: this.sessionLabel,
+      workspaceSummary: this.workspaceContext?.summary ?? null,
+      workspaceType: this.workspaceContext?.kind ?? "recompose",
+      sample: this.sampleMetadata?.sampleName ?? null,
+      plan: this.sampleMetadata?.plan?.name ?? null,
+      ...(traceOptions?.metadata ?? {}),
+    };
+    if (this.offlineFallbackActive) {
+      if (this.verboseLogging) {
+        console.warn(
+          `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} bypassed (offline fallback).`,
+        );
+      }
+      await this.#logPromptEvent({
+        label: traceOptions?.label ?? this.promptLabel,
+        prompt,
+        response: "",
+        error: "Phi-4 bypassed (offline fallback)",
+        metadata: traceOptions?.metadata ?? null,
+        durationMs: 0,
+      });
+      return "";
+    }
     try {
-      const metadata = {
-        sessionLabel: this.sessionLabel,
-        workspaceSummary: this.workspaceContext?.summary ?? null,
-        workspaceType: this.workspaceContext?.kind ?? "recompose",
-        sample: this.sampleMetadata?.sampleName ?? null,
-        plan: this.sampleMetadata?.plan?.name ?? null,
-        ...(traceOptions?.metadata ?? {}),
-      };
       response = await this.phi4.chatStream(prompt, undefined, undefined, undefined, {
         scope: "sub",
         label: traceOptions?.label ?? this.promptLabel,
@@ -678,6 +866,7 @@ export default class RecomposeTester {
       return response;
     } catch (err) {
       error = err;
+      this.#handlePromptFailure(err);
       if (this.verboseLogging) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} failed: ${message}`);
@@ -933,6 +1122,73 @@ export default class RecomposeTester {
       "## Risk Notes",
       "Maintaining prose-only files protects the benchmark from copy/paste shortcuts. When regenerating code, rely on the storyline rather than original syntax.",
     ].join("\n\n");
+  }
+
+  #handlePromptFailure(error) {
+    if (this.offlineFallbackActive || this.promptFailureBudget <= 0) {
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    if (!message || !/prompt session exceeded|model unloaded|connection/i.test(message)) {
+      return;
+    }
+    this.promptFailureBudget -= 1;
+    if (this.promptFailureBudget <= 0) {
+      this.offlineFallbackActive = true;
+      if (this.verboseLogging) {
+        console.warn("[MiniPhi][Recompose] Enabling offline fallback after repeated Phi-4 failures.");
+      }
+    }
+  }
+
+  #buildOfflineCodeStub({ relativePath, blueprint, signature }) {
+    const normalizedName = this.#normalizeExportName(relativePath);
+    const summary = this.#normalizeWhitespace(blueprint?.narrative ?? "");
+    const exports = Array.isArray(signature?.exports) && signature.exports.length ? signature.exports : null;
+    const exportStyle = signature?.exportStyle ?? "commonjs";
+    const lines = [];
+    lines.push(`// Offline stub generated for ${relativePath}`);
+    if (summary) {
+      lines.push(`// Narrative excerpt: ${summary.slice(0, 200)}`);
+    }
+    if (exportStyle === "esm") {
+      if (exports) {
+        for (const name of exports) {
+          const safe = this.#normalizeExportName(name);
+          lines.push(`export function ${safe}() {`);
+          lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
+          lines.push("}");
+        }
+      } else {
+        lines.push(`export default function ${normalizedName}Stub() {`);
+        lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
+        lines.push("}");
+      }
+    } else {
+      const exportNames = exports ?? [`${normalizedName}Stub`];
+      for (const name of exportNames) {
+        const safe = this.#normalizeExportName(name);
+        lines.push(`function ${safe}() {`);
+        lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
+        lines.push("}");
+      }
+      if (exportNames.length === 1) {
+        lines.push(`module.exports = ${this.#normalizeExportName(exportNames[0])};`);
+      } else {
+        lines.push(
+          `module.exports = { ${exportNames.map((name) => this.#normalizeExportName(name)).join(", ")} };`,
+        );
+      }
+    }
+    return lines.join("\n");
+  }
+
+  #normalizeExportName(name) {
+    if (!name) {
+      return "offlineStub";
+    }
+    const sanitized = name.replace(/[^\w]/g, "_");
+    return sanitized || "offlineStub";
   }
 
   #extractImports(lines) {
@@ -1276,8 +1532,8 @@ export default class RecomposeTester {
   }
 
   #requirePhi() {
-    if (!this.phi4) {
-      throw new Error("Phi-4 handler is required for recompose benchmarks.");
+    if (!this.offlineFallbackActive && !this.phi4) {
+      throw new Error("Phi-4 handler is required for live recompose benchmarks.");
     }
   }
 
