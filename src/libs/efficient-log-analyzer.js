@@ -271,7 +271,7 @@ export default class EfficientLogAnalyzer {
     }
 
     const totalLines = chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
-    const formattedChunks = chunks.map((chunk, idx) => {
+    const chunkSummaries = chunks.map((chunk, idx) => {
       const label = `Chunk ${idx + 1}`;
       this.#logDev(
         devLog,
@@ -279,38 +279,21 @@ export default class EfficientLogAnalyzer {
           JSON.stringify(chunk?.summary ?? []),
         )}`,
       );
-      return this.formatSummary(chunk, label);
+      return { chunk, label };
     });
-    const formatted = formattedChunks.join("\n");
+    const promptBudget = await this.#resolvePromptBudget();
+    const adjustment = this.#buildBudgetedPrompt({
+      chunkSummaries,
+      summaryLevels,
+      task,
+      totalLines,
+      workspaceContext,
+      promptBudget,
+      devLog,
+    });
+    const { prompt, body, linesUsed, tokensUsed } = adjustment;
 
     const invocationStartedAt = Date.now();
-    const tokens = Math.max(1, Math.ceil(formatted.length / 4));
-    const prompt = this.generateSmartPrompt(
-      task,
-      formatted,
-      totalLines || 1,
-      {
-        compressedTokens: tokens,
-        originalSize: totalLines * 4,
-      },
-      {
-        workspaceSummary: workspaceContext?.summary ?? null,
-        workspaceType: workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
-        workspaceHint: workspaceContext?.hintBlock ?? null,
-        manifestPreview: workspaceContext?.manifestPreview ?? null,
-        readmeSnippet: workspaceContext?.readmeSnippet ?? null,
-        taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
-        taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
-        capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-        connectionSummary:
-          workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
-        connectionGraphic: workspaceContext?.connectionGraphic ?? null,
-        fixedReferences: workspaceContext?.fixedReferences ?? null,
-        helperScript: workspaceContext?.helperScript ?? null,
-        navigationSummary: workspaceContext?.navigationSummary ?? null,
-        navigationBlock: workspaceContext?.navigationBlock ?? null,
-      },
-    );
 
     let analysis = "";
     this.#applyPromptTimeout(sessionDeadline);
@@ -357,9 +340,9 @@ export default class EfficientLogAnalyzer {
       filePath,
       task,
       prompt,
-      linesAnalyzed: totalLines,
-      compressedTokens: tokens,
-      compressedContent: formatted,
+      linesAnalyzed: linesUsed,
+      compressedTokens: tokensUsed,
+      compressedContent: body,
       analysis,
       workspaceContext: workspaceContext ?? null,
       schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
@@ -388,13 +371,16 @@ export default class EfficientLogAnalyzer {
     ].join("\n");
   }
 
-  formatSummary(summary, label = undefined) {
+  formatSummary(summary, label = undefined, maxLevel = Infinity) {
     if (!summary || !Array.isArray(summary.summary)) {
       return "";
     }
 
     let formatted = label ? `# ${label}\n\n` : "";
     for (const level of summary.summary) {
+      if (typeof level.level === "number" && level.level > maxLevel) {
+        continue;
+      }
       formatted += `## Level ${level.level} (${level.total_lines} lines)\n`;
       for (const [category, data] of Object.entries(level.categories ?? {})) {
         formatted += `\n### ${category} (${data.count} occurrences)\n`;
@@ -481,6 +467,152 @@ ${compressedContent}
     const approxCompressedLines = compressedTokens / 4;
     const ratio = totalLines / Math.max(1, approxCompressedLines);
     return `${ratio.toFixed(1)}x`;
+  }
+
+  async #resolvePromptBudget() {
+    if (!this.phi4 || typeof this.phi4.getContextWindow !== "function") {
+      return 4096;
+    }
+    try {
+      const window = await this.phi4.getContextWindow();
+      const normalized = Number(window);
+      if (Number.isFinite(normalized) && normalized > 0) {
+        return Math.max(1024, normalized - 1024);
+      }
+    } catch {
+      // ignore errors and fall through
+    }
+    return 4096;
+  }
+
+  #estimateTokens(text) {
+    if (!text) {
+      return 0;
+    }
+    return Math.max(1, Math.ceil(text.length / 4));
+  }
+
+  #buildBudgetedPrompt({
+    chunkSummaries,
+    summaryLevels,
+    task,
+    totalLines,
+    workspaceContext,
+    promptBudget,
+    devLog,
+  }) {
+    let detailLevel = summaryLevels;
+    let chunkLimit = chunkSummaries.length;
+    if (chunkLimit === 0) {
+      return {
+        prompt: this.generateSmartPrompt(task, "(no content)", 0, { compressedTokens: 1 }, {}),
+        body: "(no content)",
+        linesUsed: 0,
+        tokensUsed: 1,
+      };
+    }
+    let attempts = 0;
+    let composed;
+    let prompt;
+    let tokens;
+    while (attempts < 20) {
+      composed = this.#composeChunkSummaries(chunkSummaries, chunkLimit, detailLevel);
+      const extraContext = {
+        workspaceSummary: workspaceContext?.summary ?? null,
+        workspaceType:
+          workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
+        workspaceHint: workspaceContext?.hintBlock ?? null,
+        manifestPreview: workspaceContext?.manifestPreview ?? null,
+        readmeSnippet: workspaceContext?.readmeSnippet ?? null,
+        taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+        taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+        capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+        connectionSummary:
+          workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
+        connectionGraphic: workspaceContext?.connectionGraphic ?? null,
+        fixedReferences: workspaceContext?.fixedReferences ?? null,
+        helperScript: workspaceContext?.helperScript ?? null,
+        navigationSummary: workspaceContext?.navigationSummary ?? null,
+        navigationBlock: workspaceContext?.navigationBlock ?? null,
+      };
+      prompt = this.generateSmartPrompt(
+        task,
+        composed.text,
+        composed.lines || totalLines || 1,
+        {
+          compressedTokens: this.#estimateTokens(composed.text),
+          originalSize: totalLines * 4,
+        },
+        extraContext,
+      );
+      tokens = this.#estimateTokens(prompt);
+      if (tokens <= promptBudget) {
+        break;
+      }
+      attempts += 1;
+      if (detailLevel > 0) {
+        detailLevel -= 1;
+        const note = `Prompt exceeded budget (${tokens} > ${promptBudget}); reducing summary detail to level ${detailLevel}.`;
+        console.log(`[MiniPhi] ${note}`);
+        this.#logDev(devLog, note);
+        continue;
+      }
+      if (chunkLimit > 1) {
+        chunkLimit -= 1;
+        const msg = `Prompt still too large; dropping chunk ${chunkLimit + 1} and retrying.`;
+        console.log(`[MiniPhi] ${msg}`);
+        this.#logDev(devLog, msg);
+        continue;
+      }
+      break;
+    }
+    if (tokens > promptBudget) {
+      const truncated = this.#truncateToBudget(prompt, promptBudget);
+      prompt = truncated.prompt;
+      tokens = truncated.tokens;
+      this.#logDev(
+        devLog,
+        `Prompt truncated to fit context window (${tokens}/${promptBudget} tokens).`,
+      );
+    }
+    return {
+      prompt,
+      body: composed?.text ?? "",
+      linesUsed: composed?.lines ?? totalLines,
+      tokensUsed: tokens,
+    };
+  }
+
+  #composeChunkSummaries(chunkSummaries, limit, maxLevel) {
+    const segments = [];
+    let lines = 0;
+    const count = Math.max(1, Math.min(limit, chunkSummaries.length));
+    for (let idx = 0; idx < count; idx += 1) {
+      const { chunk, label } = chunkSummaries[idx];
+      const text = this.formatSummary(chunk, label, maxLevel);
+      if (text) {
+        segments.push(text);
+      }
+      lines += chunk?.input_lines ?? 0;
+    }
+    return {
+      text: segments.join("\n"),
+      lines,
+    };
+  }
+
+  #truncateToBudget(prompt, budgetTokens) {
+    if (!prompt) {
+      return { prompt: "", tokens: 0 };
+    }
+    const estimate = this.#estimateTokens(prompt);
+    if (estimate <= budgetTokens) {
+      return { prompt, tokens: estimate };
+    }
+    const ratio = budgetTokens / estimate;
+    const maxChars = Math.max(512, Math.floor(prompt.length * ratio) - 100);
+    const truncated = `${prompt.slice(0, maxChars)}\n[Prompt truncated due to context limit]`;
+    return { prompt: truncated, tokens: this.#estimateTokens(truncated) };
   }
 
   #formatContextSupplement(extraContext) {

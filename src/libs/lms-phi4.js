@@ -359,6 +359,17 @@ export class Phi4Handler {
     this.chatHistory = sanitized;
   }
 
+  async getContextWindow() {
+    if (!this.model || typeof this.model.getContextLength !== "function") {
+      return null;
+    }
+    try {
+      return await this.model.getContextLength();
+    } catch {
+      return null;
+    }
+  }
+
   async #withPromptTimeout(task, onTimeout) {
     const timeoutMs = this.promptTimeoutMs;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
