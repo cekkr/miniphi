@@ -157,6 +157,56 @@ function buildRestClientOptions(configData) {
   return Object.keys(options).length ? options : undefined;
 }
 
+function resolveLmStudioHttpBaseUrl(configData) {
+  const candidate =
+    configData?.lmStudio?.rest?.baseUrl ??
+    configData?.rest?.baseUrl ??
+    process.env.LMSTUDIO_REST_URL ??
+    configData?.lmStudio?.clientOptions?.baseUrl ??
+    null;
+  if (!candidate) {
+    return null;
+  }
+  return normalizeLmStudioHttpUrl(candidate);
+}
+
+function isLoopbackHostname(hostname) {
+  if (!hostname) {
+    return true;
+  }
+  const normalized = hostname.toLowerCase();
+  if (
+    normalized === "localhost" ||
+    normalized === "0.0.0.0" ||
+    normalized === "::1" ||
+    normalized === "0:0:0:0:0:0:0:1"
+  ) {
+    return true;
+  }
+  if (normalized.startsWith("127.")) {
+    return true;
+  }
+  if (normalized.startsWith("::ffff:")) {
+    const mapped = normalized.slice(7);
+    if (mapped.startsWith("127.") || mapped === "localhost") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isLocalLmStudioBaseUrl(baseUrl) {
+  if (!baseUrl) {
+    return true;
+  }
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    return isLoopbackHostname(hostname);
+  } catch {
+    return true;
+  }
+}
+
 const VALID_JOURNAL_STATUS = new Set(["active", "paused", "completed", "closed"]);
 
 function normalizeJournalStatus(value) {
@@ -508,6 +558,16 @@ async function main() {
     ...options,
   });
 
+  const resolvedLmStudioBaseUrl = resolveLmStudioHttpBaseUrl(configData);
+  const isLmStudioLocal = isLocalLmStudioBaseUrl(resolvedLmStudioBaseUrl);
+  const resourceMonitorForcedDisabled = !isLmStudioLocal;
+  if (resourceMonitorForcedDisabled && verbose) {
+    const endpointLabel = resolvedLmStudioBaseUrl ?? "unknown";
+    console.warn(
+      `[MiniPhi] Resource monitor disabled (LM Studio endpoint is external: ${endpointLabel}).`,
+    );
+  }
+
   const schemaRegistry = new PromptSchemaRegistry({
     schemaDir: path.join(PROJECT_ROOT, "docs", "prompts"),
   });
@@ -831,7 +891,7 @@ async function main() {
   let resourceMonitor;
   let resourceSummary = null;
   const initializeResourceMonitor = async (label) => {
-    if (resourceMonitor) {
+    if (resourceMonitorForcedDisabled || resourceMonitor) {
       return;
     }
     const historyFile = stateManager?.resourceUsageFile ?? null;
@@ -852,7 +912,7 @@ async function main() {
     }
   };
   const stopResourceMonitorIfNeeded = async () => {
-    if (!resourceMonitor || resourceSummary) {
+    if (resourceMonitorForcedDisabled || !resourceMonitor || resourceSummary) {
       return resourceSummary;
     }
     try {
