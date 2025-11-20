@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
-import LMStudioManager, { LMStudioRestClient } from "./libs/lmstudio-api.js";
+import LMStudioManager, { LMStudioRestClient, normalizeLmStudioHttpUrl } from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
@@ -138,6 +138,21 @@ function mergeFixedReferences(context, references) {
     ...(context ?? {}),
     fixedReferences: references,
   };
+}
+
+function buildRestClientOptions(configData) {
+  const overrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
+  const options = overrides && typeof overrides === "object" ? { ...overrides } : {};
+  const explicitBase =
+    typeof options.baseUrl === "string" && options.baseUrl.trim().length
+      ? options.baseUrl
+      : null;
+  const candidateBase =
+    explicitBase ?? configData?.lmStudio?.clientOptions?.baseUrl ?? null;
+  if (candidateBase) {
+    options.baseUrl = normalizeLmStudioHttpUrl(candidateBase);
+  }
+  return Object.keys(options).length ? options : undefined;
 }
 
 const VALID_JOURNAL_STATUS = new Set(["active", "paused", "completed", "closed"]);
@@ -573,7 +588,7 @@ async function main() {
   };
   let restClient = null;
   try {
-    restClient = new LMStudioRestClient(configData.lmStudio?.rest ?? configData.rest ?? undefined);
+    restClient = new LMStudioRestClient(buildRestClientOptions(configData));
   } catch (error) {
     if (verbose) {
       console.warn(

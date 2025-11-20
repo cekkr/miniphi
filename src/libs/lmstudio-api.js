@@ -5,10 +5,56 @@ const DEFAULT_LOAD_CONFIG = {
   gpu: "auto",
   ttl: 300,
 };
-const DEFAULT_LMSTUDIO_BASE_URL = "http://127.0.0.1:1234";
+const DEFAULT_LMSTUDIO_HTTP_BASE_URL = "http://127.0.0.1:1234";
+const DEFAULT_LMSTUDIO_WS_BASE_URL = "ws://127.0.0.1:1234";
 const DEFAULT_MODEL_KEY = "microsoft/phi-4-reasoning-plus";
 const DEFAULT_CONTEXT_LENGTH = 4096;
 const DEFAULT_REST_TIMEOUT_MS = 30000;
+
+function trimTrailingSlash(url) {
+  if (!url) {
+    return url;
+  }
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+export function normalizeLmStudioWsUrl(value = DEFAULT_LMSTUDIO_WS_BASE_URL) {
+  if (!value || typeof value !== "string") {
+    return DEFAULT_LMSTUDIO_WS_BASE_URL;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_LMSTUDIO_WS_BASE_URL;
+  }
+  if (/^wss?:\/\//i.test(trimmed)) {
+    return trimTrailingSlash(trimmed);
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    const isSecure = trimmed.toLowerCase().startsWith("https://");
+    const converted = trimmed.replace(/^https?:\/\//i, isSecure ? "wss://" : "ws://");
+    return trimTrailingSlash(converted);
+  }
+  return `ws://${trimTrailingSlash(trimmed.replace(/^\/+/, ""))}`;
+}
+
+export function normalizeLmStudioHttpUrl(value = DEFAULT_LMSTUDIO_HTTP_BASE_URL) {
+  if (!value || typeof value !== "string") {
+    return DEFAULT_LMSTUDIO_HTTP_BASE_URL;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_LMSTUDIO_HTTP_BASE_URL;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimTrailingSlash(trimmed);
+  }
+  if (/^wss?:\/\//i.test(trimmed)) {
+    const isSecure = trimmed.toLowerCase().startsWith("wss://");
+    const converted = trimmed.replace(/^wss?:\/\//i, isSecure ? "https://" : "http://");
+    return trimTrailingSlash(converted);
+  }
+  return `http://${trimTrailingSlash(trimmed.replace(/^\/+/, ""))}`;
+}
 
 /**
  * Layer 1 manager that encapsulates LM Studio client interactions and
@@ -19,7 +65,7 @@ export class LMStudioManager {
    * @param {object} [clientOptions] - Optional options passed to LMStudioClient.
    */
   constructor(clientOptions = undefined) {
-    this.client = new LMStudioClient(clientOptions);
+    this.client = new LMStudioClient(this.#normalizeClientOptions(clientOptions));
     this.loadedModels = new Map();
     this.modelConfigs = new Map();
   }
@@ -116,6 +162,18 @@ export class LMStudioManager {
 
     return Object.entries(requested).every(([key, value]) => cached[key] === value);
   }
+
+  /**
+   * @param {object} [options]
+   */
+  #normalizeClientOptions(options = undefined) {
+    if (!options || typeof options !== "object") {
+      return { baseUrl: DEFAULT_LMSTUDIO_WS_BASE_URL };
+    }
+    const normalized = { ...options };
+    normalized.baseUrl = normalizeLmStudioWsUrl(normalized.baseUrl);
+    return normalized;
+  }
 }
 
 /**
@@ -133,8 +191,10 @@ export class LMStudioRestClient {
    * }} [options]
    */
   constructor(options = undefined) {
-    this.baseUrl = this.#normalizeBaseUrl(
-      options?.baseUrl ?? process.env.LMSTUDIO_REST_URL ?? DEFAULT_LMSTUDIO_BASE_URL,
+    this.baseUrl = trimTrailingSlash(
+      normalizeLmStudioHttpUrl(
+        options?.baseUrl ?? process.env.LMSTUDIO_REST_URL ?? DEFAULT_LMSTUDIO_HTTP_BASE_URL,
+      ),
     );
     this.apiVersion = this.#normalizeApiVersion(options?.apiVersion ?? "v0");
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_REST_TIMEOUT_MS;
@@ -342,16 +402,6 @@ export class LMStudioRestClient {
 
     const relativePath = maybePath.startsWith("/") ? maybePath.slice(1) : maybePath;
     return `${this.baseUrl}/api/${this.apiVersion}/${relativePath}`;
-  }
-
-  /**
-   * @param {string} baseUrl
-   */
-  #normalizeBaseUrl(baseUrl) {
-    if (!baseUrl) {
-      return DEFAULT_LMSTUDIO_BASE_URL;
-    }
-    return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   }
 
   /**
