@@ -784,6 +784,13 @@ async function main() {
       logger: verbose ? (message) => console.warn(message) : null,
       maxDepth: configData.prompt?.decomposer?.maxDepth,
       maxActions: configData.prompt?.decomposer?.maxActions,
+      timeoutMs: parseNumericSetting(
+        configData.prompt?.decomposer?.timeoutMs ??
+          configData.lmStudio?.prompt?.timeoutMs ??
+          configData.prompt?.timeoutMs ??
+          defaults.timeout,
+        "config.prompt.decomposer.timeoutMs",
+      ),
     });
   let performanceTracker = null;
   let scoringPhi = null;

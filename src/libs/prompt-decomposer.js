@@ -4,6 +4,7 @@ import { LMStudioRestClient } from "./lmstudio-api.js";
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_TEMPERATURE = 0.2;
+const DEFAULT_TIMEOUT_MS = 45000;
 
 const SYSTEM_PROMPT = [
   "You are the MiniPhi prompt decomposer.",
@@ -57,6 +58,12 @@ export default class PromptDecomposer {
     this.maxActions = options?.maxActions ?? DEFAULT_MAX_ACTIONS;
     this.temperature = options?.temperature ?? DEFAULT_TEMPERATURE;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
+    const requestedTimeout = Number(options?.timeoutMs);
+    this.timeoutMs =
+      Number.isFinite(requestedTimeout) && requestedTimeout > 0
+        ? requestedTimeout
+        : DEFAULT_TIMEOUT_MS;
+    this.disabled = false;
   }
 
   /**
@@ -72,7 +79,10 @@ export default class PromptDecomposer {
    * }} payload
    */
   async decompose(payload) {
-    if (!payload?.objective || !this.restClient) {
+    if (!payload?.objective || !this.restClient || this.disabled) {
+      if (this.disabled) {
+        this.#log("[PromptDecomposer] Disabled after previous failures; skipping.");
+      }
       return null;
     }
     const requestBody = this.#buildRequestBody(payload);
@@ -92,16 +102,21 @@ export default class PromptDecomposer {
     let errorMessage = null;
 
     try {
-      const completion = await this.restClient.createChatCompletion({
-        messages,
-        temperature: this.temperature,
-        max_tokens: -1,
-      });
+      const completion = await this.#withTimeout(
+        this.restClient.createChatCompletion({
+          messages,
+          temperature: this.temperature,
+          max_tokens: -1,
+        }),
+      );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
       normalizedPlan = this.#parsePlan(responseText, payload);
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
       this.#log(`[PromptDecomposer] REST failure: ${errorMessage}`);
+      if (this.#shouldDisable(errorMessage)) {
+        this.disabled = true;
+      }
     }
 
     if (payload.promptRecorder) {
@@ -166,6 +181,36 @@ export default class PromptDecomposer {
         captureTools: true,
       },
     };
+  }
+
+  #withTimeout(promise) {
+    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
+      return promise;
+    }
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(
+            new Error(
+              `Prompt decomposition exceeded ${Math.round(this.timeoutMs / 1000)}s timeout.`,
+            ),
+          );
+        }, this.timeoutMs);
+      }),
+    ]);
+  }
+
+  #shouldDisable(message) {
+    if (!message) {
+      return false;
+    }
+    const normalized = message.toString().toLowerCase();
+    return (
+      normalized.includes("timed out") ||
+      normalized.includes("timeout") ||
+      normalized.includes("network")
+    );
   }
 
   #parsePlan(responseText, payload) {
