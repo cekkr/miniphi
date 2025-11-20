@@ -68,3 +68,15 @@ A class that uses nvidia/amdgpu tools to obtain in real time VRAM usage may help
 
 ## Additional
 - Create a general .miniphi folder in user's home path to save every general information useful to any project (learned prompts, OS current configuration, best performances etc.) to avoid to add them in miniphi source code.
+
+# Benchmarking and step by step improvements
+
+Tests
+
+node src/index.js recompose --sample samples/recompose/hello-flow --direction code-to-markdown --prompt-journal recompose-hello --prompt-journal-status active --verbose (runs offline by default and completes in milliseconds).
+npm run benchmark (both samples-bash-explain and samples-bash-recursive-prompts now pass; the second test exercises the offline deterministic path unless MINIPHI_BENCHMARK_MODE=live is set).
+Next Steps
+
+When you need full Phi coverage, re-run recompose with --recompose-mode live and export MINIPHI_BENCHMARK_MODE=live before npm run benchmark.
+Populate .miniphi/recompose-cache with a known-good live run so future offline passes can reuse richer narratives.
+Consider extending the offline summaries (both recompose + benchmark) with quick hashes so you can detect drift between offline heuristics and live expectations.
