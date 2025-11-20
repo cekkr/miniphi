@@ -13,6 +13,8 @@ These are the currently "fixed reference points" of miniphi project:
 - Miniphi has to take advantage of API's model in LM Studio itself to elaborate better prompts, ad hoc command line commands and shell/js/python scripts for current user's OS and CWD project. Given that, are essential the "basic essential prompts" where miniphi start to learn everything useful
 - Miniphi stores best general purposes commands/scripts in project and global .miniphi/ directory, so it can re-use them without recreating them. But given that not always are correct, even the first time, it's important to implement a backup system and preventing "infinity loop" in child commands/scripts execution, checking on running their stdout (giving also the ability to interact with stdin input)
 - Miniphi API's request MUST use JSON-structured prompts, writing also the excepted JSON response structure with essential fields meanings and excepted outputs/options
+- If an API's prompt request is above context tokens limits, split the task in sub tasks, also with the help of model itself to know bet task splitting approach and results merging (always through new prompts, commands, scripts). Learn to "fork" same chat history into multiple direction to determine the best approaches in any case.
+- It's essential that miniphi learn OS tools and available libraries (and discover new ones), to list the pertinents available commands/tools while prompting certain kind of tasks to API's model.
 
 ## Current Status
 - Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.
