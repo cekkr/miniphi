@@ -15,6 +15,7 @@ These are the currently "fixed reference points" of miniphi project:
 - Miniphi API's request MUST use JSON-structured prompts, writing also the excepted JSON response structure with essential fields meanings and excepted outputs/options
 - If an API's prompt request is above context tokens limits, split the task in sub tasks, also with the help of model itself to know bet task splitting approach and results merging (always through new prompts, commands, scripts). Learn to "fork" same chat history into multiple direction to determine the best approaches in any case.
 - It's essential that miniphi learn OS tools and available libraries (and discover new ones), to list the pertinents available commands/tools while prompting certain kind of tasks to API's model.
+- When prompted to run "benchmarks" to evaluate next steps, benchmarks are general test cases to evaluate general miniphi efficiency and next steps are generally referred to general purposes miniphi working (study about best prompt templating, truncation, task to sub tasks, research best commands and script with model etc). Check execution stdout while running step-by-step to avoid infinite loop and testing implementations in real time.
 
 ## Current Status
 - Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.
@@ -162,3 +163,5 @@ These are the currently "fixed reference points" of miniphi project:
 - Feed `PromptDecomposer` and navigator plans directly into multi-pass analyzer runs (one Phi call per chunk) so large files can be split/merged automatically instead of relying on a single monolithic prompt.
 - Extend automated coverage beyond the new helper tests by introducing mocked LM Studio interactions (e.g., fixture-driven `Phi4Handler` responses) so prompt builders, schema adapters, and navigator flows have regression protection.
 - Once the runtime stabilizes, record a fresh `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` artifact plus a clean `npm run sample:besh-journal --verbose --stream-output` journal to serve as the new baseline for future fixes.
+- Detect repeated LM Studio REST timeouts (navigator/decomposer) and automatically disable those features for the current session after the first failure, emitting a summary plus a reminder on how to re-enable them when the API recovers.
+- Add a prompt heartbeat: if `Phi4Handler.chatStream` provides no tokens for N seconds (configurable), cancel the request, trigger the fallback JSON, and surface the hang reason in the prompt journal so `sample:besh-bsh.c` runs stop sitting on “Still waiting...” indefinitely.
