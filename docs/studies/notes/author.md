@@ -106,4 +106,4 @@ node src/index.js recompose … --direction roundtrip → exits 0 but produces o
 RECOMPOSE_MODE=live ./run-log-benchmarks.sh and RECOMPOSE_MODE=live RECOMPOSE_DIRECTIONS=roundtrip ./run-log-benchmarks.sh → both terminated after ~1 hr because Phi-4 stalled mid-recompose; partial logs saved under current-benchmarks/20251120T085026Z and 20251120T095105Z.
 
 ## So ...
-So for preparing benchamrks: npm run sample:besh-journal
+So for preparing benchamrks: npm run sample:besh-journal --verbose --stream-output

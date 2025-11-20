@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import StreamAnalyzer from "./stream-analyzer.js";
 
 const LOG_ANALYSIS_FALLBACK_SCHEMA = [
@@ -29,6 +31,12 @@ export default class EfficientLogAnalyzer {
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.schemaId = options?.schemaId ?? "log-analysis";
     this.commandAuthorizer = options?.commandAuthorizer ?? null;
+    this.devLogDir =
+      options?.devLogDir === null
+        ? null
+        : path.resolve(
+            options?.devLogDir ?? path.join(process.cwd(), ".miniphi", "dev-logs"),
+          );
   }
 
   async analyzeCommandOutput(command, task, options = undefined) {
@@ -46,9 +54,16 @@ export default class EfficientLogAnalyzer {
       authorizationContext = undefined,
     } = options ?? {};
 
+    const devLog = this.#startDevLog(`command-${this.#safeLabel(command)}`, {
+      type: "command",
+      command,
+      task,
+      cwd,
+    });
     if (verbose) {
       console.log(`[MiniPhi] Executing command: ${command}`);
     }
+    this.#logDev(devLog, `Executing command "${command}" (cwd: ${cwd})`);
 
     const invocationStartedAt = Date.now();
     const lines = [];
@@ -101,6 +116,7 @@ export default class EfficientLogAnalyzer {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.#logDev(devLog, `Command failed: ${message}`);
       throw new Error(`Command execution failed: ${message}`);
     }
 
@@ -114,6 +130,7 @@ export default class EfficientLogAnalyzer {
     if (verbose) {
       console.log(`[MiniPhi] Total lines captured: ${lines.length}`);
     }
+    this.#logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
 
     const compression = await this.#compressLines(lines, summaryLevels, verbose);
     const prompt = this.generateSmartPrompt(
@@ -146,6 +163,13 @@ export default class EfficientLogAnalyzer {
     if (verbose) {
       console.log(`\n[MiniPhi] Dispatching analysis to Phi-4 (~${compression.tokens} tokens)\n`);
     }
+    if (!streamOutput) {
+      console.log("[MiniPhi] Awaiting Phi response (stream output disabled)...");
+    }
+    this.#logDev(
+      devLog,
+      `Prompt (${compression.tokens} tokens):\n${this.#truncateForLog(prompt)}`,
+    );
 
     let analysis = "";
     this.#applyPromptTimeout(sessionDeadline);
@@ -169,6 +193,7 @@ export default class EfficientLogAnalyzer {
         }
       },
       (err) => {
+        this.#logDev(devLog, `Phi error: ${err}`);
         throw new Error(`Phi-4 inference error: ${err}`);
       },
       traceOptions,
@@ -179,6 +204,10 @@ export default class EfficientLogAnalyzer {
     }
 
     const invocationFinishedAt = Date.now();
+    this.#logDev(
+      devLog,
+      `Phi response captured (${invocationFinishedAt - invocationStartedAt} ms):\n${this.#truncateForLog(analysis)}`,
+    );
     return {
       command,
       task,
@@ -202,19 +231,50 @@ export default class EfficientLogAnalyzer {
       promptContext = undefined,
       workspaceContext = undefined,
     } = options ?? {};
+    const maxLines = options?.maxLinesPerChunk ?? 2000;
+    const devLog = this.#startDevLog(`file-${this.#safeLabel(path.basename(filePath))}`, {
+      type: "log-file",
+      filePath,
+      task,
+      summaryLevels,
+      maxLinesPerChunk: maxLines,
+    });
+    this.#logDev(devLog, `Summarizing ${filePath} (maxLinesPerChunk=${maxLines})`);
+    console.log(
+      `[MiniPhi] Summarizing ${path.relative(process.cwd(), filePath) || filePath} ...`,
+    );
+    const summarizeStarted = Date.now();
     const { chunks } = await this.summarizer.summarizeFile(filePath, {
       maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
       recursionLevels: summaryLevels,
     });
+    const summarizeFinished = Date.now();
+    this.#logDev(
+      devLog,
+      `Summarizer produced ${chunks.length} chunks in ${summarizeFinished - summarizeStarted} ms.`,
+    );
+    console.log(
+      `[MiniPhi] Summarizer produced ${chunks.length} chunks in ${
+        summarizeFinished - summarizeStarted
+      } ms`,
+    );
 
     if (chunks.length === 0) {
       throw new Error(`No content found in ${filePath}`);
     }
 
     const totalLines = chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
-    const formatted = chunks
-      .map((chunk, idx) => this.formatSummary(chunk, `Chunk ${idx + 1}`))
-      .join("\n");
+    const formattedChunks = chunks.map((chunk, idx) => {
+      const label = `Chunk ${idx + 1}`;
+      this.#logDev(
+        devLog,
+        `${label}: ${chunk?.input_lines ?? 0} lines summarized → ${this.#truncateForLog(
+          JSON.stringify(chunk?.summary ?? []),
+        )}`,
+      );
+      return this.formatSummary(chunk, label);
+    });
+    const formatted = formattedChunks.join("\n");
 
     const invocationStartedAt = Date.now();
     const tokens = Math.max(1, Math.ceil(formatted.length / 4));
@@ -268,9 +328,16 @@ export default class EfficientLogAnalyzer {
 
     if (streamOutput) {
       process.stdout.write("\n");
+    } else {
+      console.log("[MiniPhi] Phi response received.");
     }
-
     const invocationFinishedAt = Date.now();
+    this.#logDev(
+      devLog,
+      `Phi response (${invocationFinishedAt - invocationStartedAt} ms):\n${this.#truncateForLog(
+        analysis,
+      )}`,
+    );
     return {
       filePath,
       task,
@@ -488,5 +555,67 @@ ${compressedContent}
       throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
     }
     this.phi4.setPromptTimeout(remaining);
+  }
+
+  #startDevLog(label, metadata = undefined) {
+    if (!this.devLogDir) {
+      return null;
+    }
+    try {
+      fs.mkdirSync(this.devLogDir, { recursive: true });
+    } catch {
+      return null;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeLabel = this.#safeLabel(label) || "log";
+    const filePath = path.join(this.devLogDir, `${stamp}-${safeLabel}.log`);
+    const header = [
+      `# MiniPhi Developer Log - ${label}`,
+      `created_at: ${new Date().toISOString()}`,
+      metadata ? `metadata: ${JSON.stringify(metadata)}` : null,
+      "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    try {
+      fs.writeFileSync(filePath, `${header}\n`, "utf8");
+    } catch {
+      return null;
+    }
+    return { filePath };
+  }
+
+  #logDev(handle, message) {
+    if (!handle?.filePath || !message) {
+      return;
+    }
+    const line = `[${new Date().toISOString()}] ${message}\n`;
+    try {
+      fs.appendFileSync(handle.filePath, line, "utf8");
+    } catch {
+      // ignore logging failures
+    }
+  }
+
+  #safeLabel(value) {
+    if (!value) {
+      return "";
+    }
+    return value
+      .toString()
+      .trim()
+      .replace(/[^A-Za-z0-9._-]+/g, "_")
+      .slice(0, 80);
+  }
+
+  #truncateForLog(value, limit = 2000) {
+    if (!value) {
+      return "";
+    }
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    if (text.length <= limit) {
+      return text;
+    }
+    return `${text.slice(0, limit)}...`;
   }
 }

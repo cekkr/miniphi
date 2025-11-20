@@ -562,6 +562,7 @@ async function main() {
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, {
     schemaRegistry,
     commandAuthorizer,
+    devLogDir: path.join(PROJECT_ROOT, ".miniphi", "dev-logs"),
   });
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
