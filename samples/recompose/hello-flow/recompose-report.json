@@ -1,5 +1,5 @@
 {
-  "direction": "roundtrip",
+  "direction": "code-to-markdown",
   "sampleDir": "samples/recompose/hello-flow",
   "codeDir": "samples/recompose/hello-flow/code",
   "descriptionsDir": "samples/recompose/hello-flow/descriptions",
@@ -7,92 +7,20 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 8,
+      "durationMs": 137994,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
       "cacheHits": 9,
       "concurrency": 1,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
-    },
-    {
-      "phase": "markdown-to-code",
-      "durationMs": 56,
-      "processed": 9,
-      "converted": 9,
-      "skipped": 0,
-      "outputDir": "samples/recompose/hello-flow/reconstructed",
-      "warnings": []
-    },
-    {
-      "phase": "repair",
-      "attempted": 9,
-      "repaired": 9,
-      "skipped": [],
-      "initialMismatches": 9,
-      "initialMissing": 0,
-      "durationMs": 4
-    },
-    {
-      "phase": "comparison",
-      "durationMs": 8,
-      "matches": 0,
-      "mismatches": [
-        {
-          "path": "README.md",
-          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
-          "candidateHash": "9bd120f41ad4cbd15017cd6af11fa74e3decd8123c743698fdfd6a7618b30839"
-        },
-        {
-          "path": "src/flows/pipeline.js",
-          "baselineHash": "88863b2c0a2e020ecee096053b7879039e80b2c32e3cdd907f6a1e706acceb09",
-          "candidateHash": "7b23482ba1a54848855912bed16d0fac7b879ecdc7c5f85b7cb8de1c8a2e44cb"
-        },
-        {
-          "path": "src/flows/steps/normalize.js",
-          "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
-          "candidateHash": "71fbee66b813a75c23b51f7c6d96b7fa01513dc8f99f4cb5baeac5aafe197178"
-        },
-        {
-          "path": "src/flows/steps/validate.js",
-          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
-          "candidateHash": "452b8f8fd48656353fb20e211bbb06ce4da5a5c8bf1a938f7835235535592467"
-        },
-        {
-          "path": "src/greeter.js",
-          "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
-          "candidateHash": "7acc6cd13a18419925f12e424ff35254214be5d9c74c674d1d00b950ceec55f4"
-        },
-        {
-          "path": "src/index.js",
-          "baselineHash": "0d71eb707442c7bd5064d6ed2a18e79c600ab65216f59e1f756f0ce7f5d0acd8",
-          "candidateHash": "bf6e688d254bbf8b5a9c3ecad1e7589921684d484d96cd8ba508b7bce0a5d9e6"
-        },
-        {
-          "path": "src/math.js",
-          "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
-          "candidateHash": "39538366b4a04a0a4d7f1d6e272e5abf34c588ab1be089b57754f6fbff2e5d89"
-        },
-        {
-          "path": "src/shared/logger.js",
-          "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
-          "candidateHash": "390f6b87625ca4e42cff3a3c42561ceb30ddd2da8acf076fe06a04f760f1ed20"
-        },
-        {
-          "path": "src/shared/persistence/memory-store.js",
-          "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
-          "candidateHash": "2345ea059809a688017eb1c62b0b49ea835dd575f85b8780241a860b1724428f"
-        }
-      ],
-      "missing": [],
-      "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-20T07-30-25-052Z-recompose",
-  "promptLog": ".miniphi/recompose/2025-11-20T07-30-25-052Z-recompose/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-11-20T09-13-50-305Z-recompose",
+  "promptLog": ".miniphi/recompose/2025-11-20T09-13-50-305Z-recompose/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
+    "summary": "## Overview\nThe protagonist here is not a lone hero but rather an orchestrator—a system designed to execute a carefully layered flow that transforms, validates, and ultimately presents data. Its mission is to maintain deterministic behavior by ensuring every step produces a predictable, structured output while simultaneously emitting telemetry for traceability. In this small yet robust benchmark, the goal is to exercise the art of recomposition through layered imports and modular interactions.\n\n## Flow\n─────────────────────────────  \nArchitecture Rhythm\n\n## Signals\nAt its core, the system follows a rhythm defined by sequential, interdependent modules. Each module contributes a specific piece to the overall operation: some handle data validation and normalization (ensuring inputs are clean and standardized), while others compute analytical insights like averages or trend descriptions. The flow is meticulously orchestrated so that every function returns well-formed objects, and each interaction emits telemetry events for monitoring purposes. This layered design creates a predictable cadence—from greeting routines to mathematical analyses—where the output of one step seamlessly informs the next.\n\n## Edge Cases\n─────────────────────────────  \nSupporting Cast\n\n## Detail 5\nThe ensemble backing this orchestration brings together several specialized utilities:\n\n## Detail 6\n• A logging facility that not only records system events but also structures its messages for clarity. Its helper functions (built using concise arrow syntax) ensure that every significant event is captured as part of the overall telemetry stream.\n\n## Detail 7\n• A memory store component designed to persist state in a structured manner, providing a reliable backing for operations that depend on consistent data storage and retrieval.\n\n## Detail 8\n• Mathematical utilities that calculate averages and describe trends, adding analytical depth to the flow. These functions transform raw numerical inputs into meaningful insights that can inform subsequent decisions within the pipeline.\n\n## Detail 9\n• Friendly greeting mechanisms that add an element of human interaction—whether initiating or concluding a process—to ensure that every transaction is both informative and engaging.\n\n## Detail 10\nTogether, these modules support the protagonist’s goal by ensuring that each stage of data transformation is well documented, traceable, and executed in harmony with the next.\n\n## Detail 11\n─────────────────────────────  \nRisk Notes\n\n## Detail 12\nDespite the robust design, several risk factors loom on the horizon:\n\n## Detail 13\n• The heavy reliance on structured outputs means any deviation or unexpected format from one module could cascade through the pipeline, undermining determinism. Small errors in validation or normalization might propagate unchecked if not properly isolated.\n\n## Detail 14\n• With telemetry emitted at nearly every stage, there is a potential for log clutter or information overload. This could obscure critical events and make troubleshooting more challenging if not managed with precision.\n\n## Detail 15\n• The layered import strategy, while elegant, creates tight interdependencies between modules. A misstep in one area—such as an error in the logging mechanism or memory store—could ripple through the entire system, impacting both data integrity and user interactions.\n\n## Detail 16\n• Finally, while each function is designed to return consistent objects, the overall design may become brittle if changes occur in any module’s contract. Ensuring rigorous testing and clear documentation of expected structures becomes paramount to mitigating these risks.\n\n## Detail 17\nIn summary, the protagonist’s goals are to achieve a harmonious and deterministic flow of operations—from greeting and mathematical analysis through validation and normalization—while maintaining robust telemetry and state persistence. The supporting cast works tirelessly behind the scenes to ensure that every step is traceable and consistent, yet careful attention must be paid to potential pitfalls that could disrupt this elegant orchestration.",
     "sourceDir": "samples/recompose/hello-flow/code",
     "metadata": {
       "sampleDir": "/Volumes/ExtSD/Sources/GitHub/miniphi/samples/recompose/hello-flow",
@@ -144,6 +72,6 @@
     }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-11-20T07:30:25.165Z",
+  "generatedAt": "2025-11-20T09:16:08.335Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }

@@ -1887,9 +1887,17 @@ async function createRecomposeHarness({
   let manager = null;
   if (recomposeMode === "live") {
     manager = new LMStudioManager(configData.lmStudio?.clientOptions);
+    const baseTimeout = parseNumericSetting(
+      promptDefaults.timeoutMs,
+      "config.prompt.timeoutMs",
+    );
+    const recomposePromptTimeout =
+      typeof baseTimeout === "number" && Number.isFinite(baseTimeout)
+        ? Math.max(baseTimeout, 300000)
+        : 300000;
     phi4 = new Phi4Handler(manager, {
       systemPrompt: promptDefaults.system,
-      promptTimeoutMs: parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs"),
+      promptTimeoutMs: recomposePromptTimeout,
       schemaRegistry,
     });
     const loadOptions = { contextLength, gpu };

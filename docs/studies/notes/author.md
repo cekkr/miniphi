@@ -80,3 +80,27 @@ Next Steps
 When you need full Phi coverage, re-run recompose with --recompose-mode live and export MINIPHI_BENCHMARK_MODE=live before npm run benchmark.
 Populate .miniphi/recompose-cache with a known-good live run so future offline passes can reuse richer narratives.
 Consider extending the offline summaries (both recompose + benchmark) with quick hashes so you can detect drift between offline heuristics and live expectations.
+
+## Part 2
+
+hanges
+
+src/libs/lmstudio-api.js (lines 160-181) now treats cached models as compatible when the existing context window is already larger than the request, so the scoring Phi instance no longer ejects the main handle by asking for a smaller context.
+src/libs/lms-phi4.js (lines 100-214) reworks chatStream into a two-attempt loop that retries once after “model not loaded / unloaded / instance reference” errors, reuses the request metadata, and attaches explicit error listeners to both the LM Studio iterator and the parser stream so “Model unloaded” events are caught instead of crashing the process. The method now reports a final failure only after the retry budget is exhausted and records schema failures exactly once.
+src/index.js (lines 1887-1904) raises the live recompose prompt timeout to at least five minutes so Phi-4 can finish the long “file-plan” prompts without being forcibly aborted at the global 2‑minute setting.
+Benchmark Runs
+
+npm run sample:besh-journal now completes the LM Studio load sequence only once. The run still fails because Phi-4 refuses to emit JSON (see current-benchmarks/20251120T095105Z/npm-sample-besh-journal/output.log (lines 1-20)), but the previous “Cannot find model of instance reference” crash is gone, confirming the lifecycle fix.
+node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --recompose-mode live --prompt-journal adhoc-roundtrip … now reaches Phi-4 and records a successful workspace-overview prompt (samples/recompose/hello-flow/recompose-report.prompts.log (lines 1-25)). The subsequent “file-plan” prompts still stall—first because they hit the old 2‑minute cutoff (lines 26‑34) and then because Phi responds with the generic “Hi there…” text instead of the requested plan (.miniphi/recompose/2025-11-20T08-34-50-220Z-recompose/prompts.log (lines 1-15)). Because those prompts never return structured plans, the reconstructed sources remain offline stubs.
+RECOMPOSE_MODE=live ./run-log-benchmarks.sh (full directions) produced current-benchmarks/20251120T085026Z. That run captured a failing sample:besh-journal (same schema issue) and a successful recompose-code-to-markdown, but it timed out during recompose-markdown-to-code so no npm benchmark phase ran (current-benchmarks/20251120T085026Z/run.log (lines 1-24)).
+RECOMPOSE_MODE=live RECOMPOSE_DIRECTIONS=roundtrip ./run-log-benchmarks.sh generated current-benchmarks/20251120T095105Z before the process was killed while recompose-roundtrip waited on Phi (run log lines 1-16). In both benchmark attempts the Phi prompts remained the limiting factor; resource monitor still reports ~99% RAM usage and the schema validator rejects multiple responses.
+Next Steps
+
+Patch the Phi prompt templates (main analyzer + recompose prompts) so they include an explicit “JSON only” reminder and fall back to deterministic summaries before hitting the time limit; otherwise every run will continue to die on schema errors or 5‑minute hangs.
+Consider disabling prompt scoring (or hardening its schema) when LM Studio is already overloaded—the scoring Phi is currently spamming warnings for $.series_strategy and contributes nothing to the failing workflows.
+Once Phi responds deterministically again, rerun RECOMPOSE_MODE=live ./run-log-benchmarks.sh so current-benchmarks includes one clean, end-to-end artifact set.
+Commands executed (all in repo root):
+
+npm run sample:besh-journal → exits 1 with schema validation error.
+node src/index.js recompose … --direction roundtrip → exits 0 but produces offline stubs because downstream prompts still fail.
+RECOMPOSE_MODE=live ./run-log-benchmarks.sh and RECOMPOSE_MODE=live RECOMPOSE_DIRECTIONS=roundtrip ./run-log-benchmarks.sh → both terminated after ~1 hr because Phi-4 stalled mid-recompose; partial logs saved under current-benchmarks/20251120T085026Z and 20251120T095105Z.

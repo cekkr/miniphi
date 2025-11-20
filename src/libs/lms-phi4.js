@@ -109,116 +109,161 @@ export class Phi4Handler {
       throw new Error("Prompt is required.");
     }
 
-    this.chatHistory.push({ role: "user", content: prompt });
+    let attempt = 0;
+    const maxAttempts = 2;
+    while (attempt < maxAttempts) {
+      this.chatHistory.push({ role: "user", content: prompt });
 
-    const traceContext = this.#buildTraceContext(traceOptions);
-    const schemaDetails = this.#resolveSchema(traceContext);
-    const startedAt = Date.now();
-    const capturedThoughts = [];
-    let requestSnapshot = null;
-    let result = "";
-    let schemaValidation = null;
+      const traceContext = this.#buildTraceContext(traceOptions);
+      const schemaDetails = this.#resolveSchema(traceContext);
+      const startedAt = Date.now();
+      const capturedThoughts = [];
+      let requestSnapshot = null;
+      let result = "";
+      let schemaValidation = null;
 
-    try {
-      this.chatHistory = await this.#truncateHistory();
-      requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext, schemaDetails);
-      const chat = Chat.from(this.chatHistory);
-      const prediction = this.model.respond(chat);
-      const parser = new Phi4StreamParser((thought) => {
-        capturedThoughts.push(thought);
-        if (onThink) {
-          onThink(thought);
+      try {
+        this.chatHistory = await this.#truncateHistory();
+        requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext, schemaDetails);
+        const chat = Chat.from(this.chatHistory);
+        const prediction = this.model.respond(chat);
+        const parser = new Phi4StreamParser((thought) => {
+          capturedThoughts.push(thought);
+          if (onThink) {
+            onThink(thought);
+          }
+        });
+        const readable = Readable.from(prediction);
+        const solutionStream = readable.pipe(parser);
+        let streamError = null;
+        const attachStreamError = (stream) => {
+          if (!stream || typeof stream.once !== "function") {
+            return;
+          }
+          stream.once("error", (err) => {
+            const normalized = err instanceof Error ? err : new Error(String(err));
+            streamError = normalized;
+          });
+        };
+        attachStreamError(readable);
+        attachStreamError(solutionStream);
+
+        result = await this.#withPromptTimeout(async () => {
+          let assistantResponse = "";
+          for await (const fragment of solutionStream) {
+            const token = fragment?.content ?? "";
+            if (!token) continue;
+            if (onToken) onToken(token);
+            assistantResponse += token;
+          }
+          if (streamError) {
+            throw streamError;
+          }
+          return assistantResponse;
+        }, () => {
+          if (typeof prediction?.return === "function") {
+            try {
+              prediction.return();
+            } catch {
+              // ignore prediction cancellation errors
+            }
+          }
+        });
+
+        const finishedAt = Date.now();
+        const validationResult = this.#validateSchema(schemaDetails, result);
+        schemaValidation = this.#summarizeValidation(validationResult);
+        if (validationResult && !validationResult.valid) {
+          const summary = this.#summarizeSchemaErrors(validationResult.errors);
+          throw new Error(
+            `Phi-4 response failed schema validation (${schemaDetails?.id ?? "unknown"}): ${summary}`,
+          );
         }
-      });
-      const readable = Readable.from(prediction);
-      const solutionStream = readable.pipe(parser);
-
-      result = await this.#withPromptTimeout(async () => {
-        let assistantResponse = "";
-        for await (const fragment of solutionStream) {
-          const token = fragment?.content ?? "";
-          if (!token) continue;
-          if (onToken) onToken(token);
-          assistantResponse += token;
+        if (result.length > 0) {
+          this.chatHistory.push({ role: "assistant", content: result });
         }
-        return assistantResponse;
-      }, () => {
-        if (typeof prediction?.return === "function") {
+
+        const responseSnapshot = {
+          text: result,
+          reasoning: capturedThoughts,
+          startedAt,
+          finishedAt,
+          schemaId: schemaDetails?.id ?? null,
+          schemaValidation,
+        };
+        await this.#recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
+        await this.#trackPromptPerformance(
+          traceContext,
+          requestSnapshot,
+          {
+            ...responseSnapshot,
+            tokensApprox: this.#approximateTokens(result),
+          },
+          null,
+        );
+
+        return result;
+      } catch (error) {
+        this.chatHistory.pop(); // remove user entry to preserve state
+        const message = error instanceof Error ? error.message : String(error);
+        const finishedAt = Date.now();
+        const shouldRetry = attempt === 0 && this.#isRecoverableModelError(message);
+        if (shouldRetry) {
+          attempt += 1;
           try {
-            prediction.return();
+            await this.load();
           } catch {
-            // ignore prediction cancellation errors
+            // swallow load errors so the retry can surface the original failure
+          }
+          continue;
+        }
+        let errorForThrow = error;
+        if (onError) {
+          try {
+            onError(message);
+          } catch (callbackError) {
+            errorForThrow = callbackError;
           }
         }
-      });
-
-      const finishedAt = Date.now();
-      const validationResult = this.#validateSchema(schemaDetails, result);
-      schemaValidation = this.#summarizeValidation(validationResult);
-      if (validationResult && !validationResult.valid) {
-        const summary = this.#summarizeSchemaErrors(validationResult.errors);
-        throw new Error(
-          `Phi-4 response failed schema validation (${schemaDetails?.id ?? "unknown"}): ${summary}`,
+        await this.#recordPromptExchange(
+          traceContext,
+          requestSnapshot,
+          {
+            text: result,
+            reasoning: capturedThoughts,
+            startedAt,
+            finishedAt,
+            schemaId: schemaDetails?.id ?? null,
+            schemaValidation,
+          },
+          message,
         );
+        await this.#trackPromptPerformance(
+          traceContext,
+          requestSnapshot,
+          {
+            text: result,
+            reasoning: capturedThoughts,
+            startedAt,
+            finishedAt,
+            schemaId: schemaDetails?.id ?? null,
+            schemaValidation,
+            tokensApprox: this.#approximateTokens(result),
+          },
+          message,
+        );
+        throw errorForThrow;
       }
-      if (result.length > 0) {
-        this.chatHistory.push({ role: "assistant", content: result });
-      }
-
-      const responseSnapshot = {
-        text: result,
-        reasoning: capturedThoughts,
-        startedAt,
-        finishedAt,
-        schemaId: schemaDetails?.id ?? null,
-        schemaValidation,
-      };
-      await this.#recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
-      await this.#trackPromptPerformance(
-        traceContext,
-        requestSnapshot,
-        {
-          ...responseSnapshot,
-          tokensApprox: this.#approximateTokens(result),
-        },
-        null,
-      );
-
-      return result;
-    } catch (error) {
-      this.chatHistory.pop(); // remove user entry to preserve state
-      const message = error instanceof Error ? error.message : String(error);
-      if (onError) onError(message);
-      const finishedAt = Date.now();
-      await this.#recordPromptExchange(
-        traceContext,
-        requestSnapshot,
-        {
-          text: result,
-          reasoning: capturedThoughts,
-          startedAt,
-          finishedAt,
-          schemaId: schemaDetails?.id ?? null,
-          schemaValidation,
-        },
-        message,
-      );
-      await this.#trackPromptPerformance(
-        traceContext,
-        requestSnapshot,
-        {
-          text: result,
-          reasoning: capturedThoughts,
-          startedAt,
-          finishedAt,
-          schemaId: schemaDetails?.id ?? null,
-          schemaValidation,
-          tokensApprox: this.#approximateTokens(result),
-        },
-        message,
-      );
-      throw error;
     }
+
+    throw new Error("Phi-4 chat stream exceeded retry budget.");
+  }
+
+  #isRecoverableModelError(message) {
+    if (!message || typeof message !== "string") {
+      return false;
+    }
+    return /model (?:not loaded|unloaded)/i.test(message) || /instance reference/i.test(message);
   }
 
   /**

@@ -160,7 +160,24 @@ export class LMStudioManager {
       return false;
     }
 
-    return Object.entries(requested).every(([key, value]) => cached[key] === value);
+    return Object.entries(requested).every(([key, value]) => {
+      if (value === undefined) {
+        return true;
+      }
+      if (key === "contextLength") {
+        const cachedLength = Number(cached.contextLength);
+        const requestedLength = Number(value);
+        if (!Number.isFinite(requestedLength)) {
+          return cached.contextLength === value;
+        }
+        if (!Number.isFinite(cachedLength)) {
+          return false;
+        }
+        // Allow re-use when the cached context window is already large enough.
+        return cachedLength >= requestedLength;
+      }
+      return cached[key] === value;
+    });
   }
 
   /**
