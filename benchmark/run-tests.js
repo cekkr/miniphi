@@ -4,6 +4,8 @@ import path from "path";
 import process from "process";
 import CliExecutor from "../src/libs/cli-executor.js";
 import ResourceMonitor from "../src/libs/resource-monitor.js";
+import { loadConfig as loadMiniPhiConfig } from "../src/libs/config-loader.js";
+import { resolveLmStudioHttpBaseUrl, isLocalLmStudioBaseUrl } from "../src/libs/core-utils.js";
 
 const DEFAULT_TIMEOUT = 15 * 60 * 1000;
 const PROJECT_ROOT = process.cwd();
@@ -12,8 +14,12 @@ const RESOURCE_HISTORY = path.join(LOG_ROOT, "resource-usage.json");
 
 async function main() {
   const { flags, filters } = parseArgs(process.argv.slice(2));
-  const config = await loadConfig();
+  const config = await loadBenchmarkConfig();
   const availableTests = config.tests ?? [];
+  const miniConfig = loadMiniPhiConfig()?.data ?? {};
+  const resolvedLmStudioBase = resolveLmStudioHttpBaseUrl(miniConfig);
+  const lmStudioLocal = isLocalLmStudioBaseUrl(resolvedLmStudioBase);
+  const resourceMonitorDisabled = !lmStudioLocal;
 
   if (flags.has("list")) {
     printTestList(availableTests);
@@ -36,7 +42,14 @@ async function main() {
   let hasFailures = false;
 
   for (const test of selected) {
-    const success = await runTest(cli, test, flags);
+    const success = await runTest(cli, test, flags, {
+      disableMonitor: flags.has("no-monitor")
+        ? true
+        : flags.has("force-monitor")
+          ? false
+          : resourceMonitorDisabled,
+      lmStudioBase: resolvedLmStudioBase,
+    });
     if (!success) {
       hasFailures = true;
       if (flags.has("fail-fast")) {
@@ -48,7 +61,7 @@ async function main() {
   process.exitCode = hasFailures ? 1 : 0;
 }
 
-async function runTest(cli, test, flags) {
+async function runTest(cli, test, flags, options = undefined) {
   const timeout = Math.min(test.timeoutMs ?? DEFAULT_TIMEOUT, DEFAULT_TIMEOUT);
   const logDir = path.join(LOG_ROOT, test.logDir ?? test.name ?? "default");
   await fs.promises.mkdir(logDir, { recursive: true });
@@ -65,17 +78,25 @@ async function runTest(cli, test, flags) {
   log("INFO", `Starting test "${test.name}"`);
   log("INFO", test.description ?? "No description provided.");
 
+  const monitorDisabled = Boolean(options?.disableMonitor);
   let monitor;
-  try {
-    monitor = new ResourceMonitor({
-      sampleInterval: 3000,
-      historyFile: RESOURCE_HISTORY,
-      label: `benchmark:${test.name}`,
-    });
-    await monitor.start(`benchmark:${test.name}`);
-  } catch (error) {
-    monitor = null;
-    log("WARN", `Resource monitor unavailable (${error instanceof Error ? error.message : error}).`);
+  if (monitorDisabled) {
+    const reason = options?.lmStudioBase
+      ? `LM Studio endpoint is external (${options.lmStudioBase})`
+      : "resource monitor disabled via flag";
+    log("INFO", `Resource monitor skipped: ${reason}.`);
+  } else {
+    try {
+      monitor = new ResourceMonitor({
+        sampleInterval: 3000,
+        historyFile: RESOURCE_HISTORY,
+        label: `benchmark:${test.name}`,
+      });
+      await monitor.start(`benchmark:${test.name}`);
+    } catch (error) {
+      monitor = null;
+      log("WARN", `Resource monitor unavailable (${error instanceof Error ? error.message : error}).`);
+    }
   }
 
   const streamChunk = (data, stream) => {
@@ -127,7 +148,7 @@ async function finalizeMonitor(monitor, log) {
   }
 }
 
-async function loadConfig() {
+async function loadBenchmarkConfig() {
   const configPath = path.join(PROJECT_ROOT, "benchmark", "tests.config.json");
   const raw = await fs.promises.readFile(configPath, "utf8");
   return JSON.parse(raw);

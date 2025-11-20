@@ -172,6 +172,7 @@ export default class EfficientLogAnalyzer {
     );
 
     let analysis = "";
+    let usedFallback = false;
     this.#applyPromptTimeout(sessionDeadline);
     const traceOptions = {
       ...(promptContext ?? {}),
@@ -202,12 +203,29 @@ export default class EfficientLogAnalyzer {
         },
         traceOptions,
       );
+    } catch (error) {
+      usedFallback = true;
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
+      this.#logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      analysis = this.#buildFallbackAnalysis(task, reason, {
+        datasetHint: `${lines.length} lines captured from ${command}`,
+        rerunCommand: command,
+      });
     } finally {
       stopHeartbeat();
     }
 
     if (streamOutput) {
-      process.stdout.write("\n");
+      if (usedFallback) {
+        process.stdout.write(`${analysis}\n`);
+      } else {
+        process.stdout.write("\n");
+      }
+    } else if (usedFallback) {
+      console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
+    } else {
+      console.log("[MiniPhi] Phi response received.");
     }
 
     const invocationFinishedAt = Date.now();
@@ -296,6 +314,7 @@ export default class EfficientLogAnalyzer {
     const invocationStartedAt = Date.now();
 
     let analysis = "";
+    let usedFallback = false;
     this.#applyPromptTimeout(sessionDeadline);
     const traceOptions = {
       ...(promptContext ?? {}),
@@ -320,12 +339,27 @@ export default class EfficientLogAnalyzer {
         },
         traceOptions,
       );
+    } catch (error) {
+      usedFallback = true;
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
+      this.#logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      analysis = this.#buildFallbackAnalysis(task, reason, {
+        datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
+        rerunCommand: filePath,
+      });
     } finally {
       stopHeartbeat();
     }
 
     if (streamOutput) {
-      process.stdout.write("\n");
+      if (usedFallback) {
+        process.stdout.write(`${analysis}\n`);
+      } else {
+        process.stdout.write("\n");
+      }
+    } else if (usedFallback) {
+      console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
     } else {
       console.log("[MiniPhi] Phi response received.");
     }
@@ -419,6 +453,51 @@ ${schemaInstructions}
 \`\`\`
 ${compressedContent}
 \`\`\``;
+  }
+
+  #buildFallbackAnalysis(task, reason, context = undefined) {
+    const taskLabel =
+      typeof task === "string" && task.trim().length > 0
+        ? task.trim().slice(0, 200)
+        : "MiniPhi fallback report";
+    const normalizedReason =
+      typeof reason === "string" && reason.trim().length > 0
+        ? reason.trim()
+        : "Phi-4 did not complete the analysis.";
+    const datasetHint =
+      typeof context?.datasetHint === "string" && context.datasetHint.trim().length > 0
+        ? context.datasetHint.trim()
+        : null;
+    const evidenceExcerpt = datasetHint ? `${normalizedReason} (${datasetHint})` : normalizedReason;
+    const nextStep =
+      typeof context?.nextStep === "string" && context.nextStep.trim().length > 0
+        ? context.nextStep.trim()
+        : "Re-run the analysis once Phi-4 responds deterministically.";
+    const rerunCommands =
+      typeof context?.rerunCommand === "string" && context.rerunCommand.trim().length > 0
+        ? [context.rerunCommand.trim()]
+        : [];
+    const payload = {
+      task: taskLabel,
+      root_cause: null,
+      evidence: [
+        {
+          chunk: "Fallback summary",
+          line_hint: null,
+          excerpt: evidenceExcerpt,
+        },
+      ],
+      recommended_fixes: [
+        {
+          description: "Re-run MiniPhi analyzer after addressing the failure reason.",
+          files: [],
+          commands: rerunCommands,
+          owner: null,
+        },
+      ],
+      next_steps: [nextStep],
+    };
+    return JSON.stringify(payload, null, 2);
   }
 
   #buildSchemaInstructions() {
