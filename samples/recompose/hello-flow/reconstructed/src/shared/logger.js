@@ -1,47 +1,5 @@
-"use strict";
-
-function createLogger(scope = "flow") {
-  const history = [];
-
-  function log(level, message, metadata = {}) {
-    let msg;
-    if (message === undefined || message === null) {
-      msg = "";
-    } else if (typeof message === "string") {
-      msg = message;
-    } else {
-      try {
-        msg = JSON.stringify(message);
-      } catch (e) {
-        msg = "[non-string]";
-      }
-    }
-
-    const entry = {
-      scope,
-      level,
-      message: msg,
-      metadata,
-      timestamp: Date.now()
-    };
-    history.push(entry);
-  }
-
-  return {
-    info(msg, meta = {}) {
-      log("info", msg, meta);
-    },
-    warn(msg, meta = {}) {
-      log("warn", msg, meta);
-    },
-    error(msg, meta = {}) {
-      log("error", msg, meta);
-    },
-    flush() {
-      // Return an immutable copy of the history array.
-      return [...history];
-    }
-  };
+// Offline stub generated for src/shared/logger.js
+// Narrative excerpt: ## Purpose The file src/shared/logger.js operates as a javascript module with roughly 23 lines. Exposes 1 exported symbol (createLogger). ## Key Elements - Dependencies: internal-only helpers. - Publi
+export function createLogger() {
+  throw new Error("Offline stub executed for src/shared/logger.js");
 }
-
-module.exports = createLogger;

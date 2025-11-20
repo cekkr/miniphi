@@ -1,5 +1,5 @@
 {
-  "direction": "code-to-markdown",
+  "direction": "roundtrip",
   "sampleDir": "samples/recompose/hello-flow",
   "codeDir": "samples/recompose/hello-flow/code",
   "descriptionsDir": "samples/recompose/hello-flow/descriptions",
@@ -7,21 +7,143 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 1452749,
+      "durationMs": 8,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
+      "cacheHits": 9,
+      "concurrency": 1,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
+    },
+    {
+      "phase": "markdown-to-code",
+      "durationMs": 56,
+      "processed": 9,
+      "converted": 9,
+      "skipped": 0,
+      "outputDir": "samples/recompose/hello-flow/reconstructed",
+      "warnings": []
+    },
+    {
+      "phase": "repair",
+      "attempted": 9,
+      "repaired": 9,
+      "skipped": [],
+      "initialMismatches": 9,
+      "initialMissing": 0,
+      "durationMs": 4
+    },
+    {
+      "phase": "comparison",
+      "durationMs": 8,
+      "matches": 0,
+      "mismatches": [
+        {
+          "path": "README.md",
+          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
+          "candidateHash": "9bd120f41ad4cbd15017cd6af11fa74e3decd8123c743698fdfd6a7618b30839"
+        },
+        {
+          "path": "src/flows/pipeline.js",
+          "baselineHash": "88863b2c0a2e020ecee096053b7879039e80b2c32e3cdd907f6a1e706acceb09",
+          "candidateHash": "7b23482ba1a54848855912bed16d0fac7b879ecdc7c5f85b7cb8de1c8a2e44cb"
+        },
+        {
+          "path": "src/flows/steps/normalize.js",
+          "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
+          "candidateHash": "71fbee66b813a75c23b51f7c6d96b7fa01513dc8f99f4cb5baeac5aafe197178"
+        },
+        {
+          "path": "src/flows/steps/validate.js",
+          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
+          "candidateHash": "452b8f8fd48656353fb20e211bbb06ce4da5a5c8bf1a938f7835235535592467"
+        },
+        {
+          "path": "src/greeter.js",
+          "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
+          "candidateHash": "7acc6cd13a18419925f12e424ff35254214be5d9c74c674d1d00b950ceec55f4"
+        },
+        {
+          "path": "src/index.js",
+          "baselineHash": "0d71eb707442c7bd5064d6ed2a18e79c600ab65216f59e1f756f0ce7f5d0acd8",
+          "candidateHash": "bf6e688d254bbf8b5a9c3ecad1e7589921684d484d96cd8ba508b7bce0a5d9e6"
+        },
+        {
+          "path": "src/math.js",
+          "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
+          "candidateHash": "39538366b4a04a0a4d7f1d6e272e5abf34c588ab1be089b57754f6fbff2e5d89"
+        },
+        {
+          "path": "src/shared/logger.js",
+          "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
+          "candidateHash": "390f6b87625ca4e42cff3a3c42561ceb30ddd2da8acf076fe06a04f760f1ed20"
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js",
+          "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
+          "candidateHash": "2345ea059809a688017eb1c62b0b49ea835dd575f85b8780241a860b1724428f"
+        }
+      ],
+      "missing": [],
+      "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-16T10-41-57-227Z-recompose",
-  "promptLog": ".miniphi/recompose/2025-11-16T10-41-57-227Z-recompose/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-11-20T07-30-25-052Z-recompose",
+  "promptLog": ".miniphi/recompose/2025-11-20T07-30-25-052Z-recompose/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Overview\nBelow is an outline of my approach to inspecting your workspace context and providing tailored recommendations based on the type of content you have. Since I haven’t seen explicit artifacts yet, I’ll describe how I’d proceed for both code-heavy and documentation/book-style directories.\n\n## Flow\n──────────────────────────────\n1. Initial Assessment\n\n## Signals\n• Directory Structure:  \n – For a code-heavy project, I would look for folders like “src”, “lib”, “tests” (or “test”), “docs”, “examples”, etc.  \n – For a documentation or book-style collection, I’d expect a “docs” folder with chapters organized as markdown files, perhaps an “index.md” or “README.md”, and maybe additional folders for images, styles, etc.\n\n## Edge Cases\n• File Types & Naming Conventions:  \n – In code projects, file extensions (.py, .js, .ts, etc.), clear naming conventions, and modular organization are key.  \n – For documentation, I’d check for consistent markdown formatting (headings, lists, links) along with a coherent Table of Contents.\n\n## Detail 5\n──────────────────────────────\n2. If the Workspace Is Code Heavy\n\n## Detail 6\nActionable Steps:\n• Code Organization:  \n – Verify that modules and packages are logically segmented. For example, if you have a “utils” folder or similar helper code, check that it’s separated from core business logic.  \n – Suggest refactoring opportunities—for instance, extracting duplicated code into utility functions or classes.\n\n## Detail 7\n• Testing & Quality Assurance:  \n – Look for a dedicated test suite (e.g., a “tests” directory). If tests are sparse or missing, recommend adding unit and integration tests to improve reliability.  \n – Check if there’s any linting configuration (like .eslintrc, .flake8, etc.) in place; if not, propose setting one up for consistent coding style.\n\n## Detail 8\n• Build & Deployment:  \n – Inspect build scripts or package configurations (e.g., package.json, setup.py) to ensure that dependencies are managed properly.  \n – If the project uses continuous integration (CI), review configuration files (like .github/workflows/) and suggest improvements if necessary.\n\n## Detail 9\nExample Recommendation:  \n“If your codebase currently lacks comprehensive tests, consider introducing a testing framework such as pytest for Python or Jest for JavaScript along with CI integration to automatically run tests on each commit.”\n\n## Detail 10\n──────────────────────────────\n3. If the Workspace Is Documentation/Book-Style\n\n## Detail 11\nActionable Steps:\n• Content Structure & Flow:  \n – Evaluate the Table of Contents and chapter breakdowns (e.g., Introduction, Tutorials, API Reference, Troubleshooting).  \n – Identify if there are gaps—for instance, a missing “Getting Started” or “FAQ” section—and propose new chapters to cover these topics.\n\n## Detail 12\n• Consistency & Readability:  \n – Check that markdown formatting is consistent across all documents (e.g., heading levels, bullet lists, code blocks).  \n – Suggest using a style guide or Markdown linting tool to maintain uniformity and readability.\n\n## Detail 13\n• Additional Enhancements:  \n – Recommend incorporating diagrams or interactive examples if the content benefits from visual aids.  \n – If there are outdated sections, propose updates or reordering chapters for better logical flow.\n\n## Detail 14\nExample Recommendation:  \n“If your documentation currently includes an Introduction, Features, and Usage sections but lacks troubleshooting advice, adding a dedicated ‘Troubleshooting’ chapter with common issues and resolutions could significantly enhance the user experience.”\n\n## Detail 15\n──────────────────────────────\n4. Conclusion\n\n## Detail 16\nMy overall strategy is to:\n • Thoroughly review the directory layout and file contents.\n • Identify strengths (clear organization, consistent formatting) and potential areas for improvement (lack of tests in code projects or incomplete documentation sections).\n • Provide actionable recommendations tailored to either improving code quality (through refactoring, testing, build/deployment enhancements) or enriching documentation (by restructuring content, ensuring consistency, adding missing chapters).\n\n## Detail 17\nIf you provide specific artifacts or more details about your workspace later on, I can offer even more targeted advice. This approach should help maintain a well-organized repository whether you’re working on code or preparing a comprehensive documentation set.\n\n## Detail 18\nLet me know if you’d like to focus on any particular area or need further clarification!",
-    "sourceDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow\\code"
+    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
+    "sourceDir": "samples/recompose/hello-flow/code",
+    "metadata": {
+      "sampleDir": "/Volumes/ExtSD/Sources/GitHub/miniphi/samples/recompose/hello-flow",
+      "sampleName": "hello-flow",
+      "readmeSnippet": "# Hello Flow Sample This intentionally small project keeps the `recompose` benchmark deterministic while still exercising layered imports: - `src/greeter.js` handles friendly greetings/farewells. - `src/math.js` performs average/trend calcu",
+      "plan": {
+        "name": "hello-flow-plan",
+        "path": "samples/recompose/hello-flow/benchmark-plan.yaml",
+        "runs": 2
+      },
+      "manifest": [
+        {
+          "path": "README.md",
+          "bytes": 781
+        },
+        {
+          "path": "src/flows/pipeline.js",
+          "bytes": 2488
+        },
+        {
+          "path": "src/flows/steps/normalize.js",
+          "bytes": 651
+        },
+        {
+          "path": "src/flows/steps/validate.js",
+          "bytes": 1113
+        },
+        {
+          "path": "src/greeter.js",
+          "bytes": 257
+        },
+        {
+          "path": "src/index.js",
+          "bytes": 1375
+        },
+        {
+          "path": "src/math.js",
+          "bytes": 560
+        },
+        {
+          "path": "src/shared/logger.js",
+          "bytes": 551
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js",
+          "bytes": 711
+        }
+      ]
+    }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-11-16T11:06:09.986Z",
+  "generatedAt": "2025-11-20T07:30:25.165Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }

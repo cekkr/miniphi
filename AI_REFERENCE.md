@@ -1,6 +1,7 @@
 # After a prompt
 - Keep `README.md` and this reference in sync whenever MiniPhi gains a new command, argument, or workflow.
 - Benchmark follow-up work must target MiniPhi's runtime (prompt orchestration, analyzers, LM Studio clients) instead of touching the benchmark scripts unless absolutely required for coverage.
+- Recompose/benchmark/test scripts are instrumentation: they select sample directories, compose the seed prompt batches, and capture logs so we can replay “as-is” MiniPhi behavior. Treat failures surfaced by these scripts as bugs in MiniPhi itself (runtime, analyzers, LM Studio adapters, samples) and only edit the scripts when they need broader prompt coverage or better logging.
 - Every Phi-4 prompt must declare the exact JSON schema expected in the response (fields, types, nullability) so large workspaces stay deterministic.
 
 # MiniPhi Reference
