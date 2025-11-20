@@ -107,3 +107,5 @@ RECOMPOSE_MODE=live ./run-log-benchmarks.sh and RECOMPOSE_MODE=live RECOMPOSE_DI
 
 ## So ...
 So for preparing benchamrks: npm run sample:besh-journal --verbose --stream-output
+
+Human test execution: npm run sample:besh-journal --no-stream
