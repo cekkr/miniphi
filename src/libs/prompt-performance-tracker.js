@@ -579,10 +579,35 @@ export default class PromptPerformanceTracker {
     }
     try {
       const parsed = JSON.parse(match[0]);
-      return typeof parsed === "object" && parsed ? parsed : null;
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      return this.#normalizeEvaluationShape(parsed);
     } catch {
       return null;
     }
+  }
+
+  #normalizeEvaluationShape(payload) {
+    const normalized = { ...payload };
+    if (Array.isArray(normalized.tags)) {
+      normalized.tags = normalized.tags
+        .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+        .filter(Boolean);
+    } else {
+      normalized.tags = [];
+    }
+    if (Array.isArray(normalized.series_strategy)) {
+      normalized.series_strategy = normalized.series_strategy
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter(Boolean);
+    } else if (typeof normalized.series_strategy === "string") {
+      const trimmed = normalized.series_strategy.trim();
+      normalized.series_strategy = trimmed ? [trimmed] : [];
+    } else {
+      normalized.series_strategy = [];
+    }
+    return normalized;
   }
 
   #estimateScore(responseText, error, responseSnapshot) {

@@ -55,6 +55,7 @@ const PROMPT_SCORING_SYSTEM_PROMPT = [
   "You grade MiniPhi prompt effectiveness.",
   "Given an objective, workspace context, prompt text, and the assistant response, you must return JSON with:",
   "score (0-100), prompt_category, summary, follow_up_needed, follow_up_reason, tags, recommended_prompt_pattern, series_strategy.",
+  "series_strategy must always be an array of short strategy strings (use [] if you have no suggestions); never return a bare string.",
   "Focus on whether the response satisfied the objective and whether another prompt is required.",
   "Return JSON only.",
 ].join(" ");

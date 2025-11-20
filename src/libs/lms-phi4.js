@@ -110,9 +110,13 @@ export class Phi4Handler {
     }
 
     let attempt = 0;
-    const maxAttempts = 2;
+    const maxSchemaRetries = 1;
+    const maxAttempts = 2 + maxSchemaRetries;
+    const basePrompt = prompt;
+    let currentPrompt = prompt;
+    let schemaRetryCount = 0;
     while (attempt < maxAttempts) {
-      this.chatHistory.push({ role: "user", content: prompt });
+      this.chatHistory.push({ role: "user", content: currentPrompt });
 
       const traceContext = this.#buildTraceContext(traceOptions);
       const schemaDetails = this.#resolveSchema(traceContext);
@@ -121,10 +125,11 @@ export class Phi4Handler {
       let requestSnapshot = null;
       let result = "";
       let schemaValidation = null;
+      let schemaFailureDetails = null;
 
       try {
         this.chatHistory = await this.#truncateHistory();
-        requestSnapshot = this.#buildRequestSnapshot(prompt, traceContext, schemaDetails);
+        requestSnapshot = this.#buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         const chat = Chat.from(this.chatHistory);
         const prediction = this.model.respond(chat);
         const parser = new Phi4StreamParser((thought) => {
@@ -175,6 +180,10 @@ export class Phi4Handler {
         schemaValidation = this.#summarizeValidation(validationResult);
         if (validationResult && !validationResult.valid) {
           const summary = this.#summarizeSchemaErrors(validationResult.errors);
+          schemaFailureDetails = {
+            summary,
+            schemaId: schemaDetails?.id ?? traceContext.schemaId ?? "unknown",
+          };
           throw new Error(
             `Phi-4 response failed schema validation (${schemaDetails?.id ?? "unknown"}): ${summary}`,
           );
@@ -215,6 +224,19 @@ export class Phi4Handler {
           } catch {
             // swallow load errors so the retry can surface the original failure
           }
+          continue;
+        }
+        const schemaRetryAllowed =
+          schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
+        if (schemaRetryAllowed) {
+          attempt += 1;
+          schemaRetryCount += 1;
+          currentPrompt = this.#buildSchemaRetryPrompt(
+            basePrompt,
+            schemaDetails,
+            schemaFailureDetails.summary,
+            schemaRetryCount,
+          );
           continue;
         }
         let errorForThrow = error;
@@ -500,6 +522,23 @@ export class Phi4Handler {
       return "Unknown schema mismatch.";
     }
     return errors.slice(0, 3).join("; ");
+  }
+
+  #buildSchemaRetryPrompt(basePrompt, schemaDetails, summary, retryCount) {
+    const normalizedBase = typeof basePrompt === "string" ? basePrompt.trimEnd() : "";
+    const reminderLines = [
+      normalizedBase,
+      "",
+      "---",
+      `Schema attempt ${retryCount}: Previous response failed schema "${
+        schemaDetails?.id ?? "unknown"
+      }" because ${summary}.`,
+      "Reply again with STRICT JSON only; omit commentary, code fences, or greetings.",
+    ];
+    if (schemaDetails?.text) {
+      reminderLines.push("Schema reference:", "```json", schemaDetails.text, "```");
+    }
+    return reminderLines.filter(Boolean).join("\n");
   }
 
   #approximateTokens(text) {
