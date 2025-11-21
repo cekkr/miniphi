@@ -12,7 +12,16 @@ const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   '  "recommended_fixes": [',
   '    { "description": "actionable fix", "files": ["path/to/file.js"], "commands": ["npm test"], "owner": "team" }',
   "  ],",
-  '  "next_steps": ["follow-up diagnostic or verification step"]',
+  '  "next_steps": ["follow-up diagnostic or verification step"],',
+  '  "truncation_strategy": {',
+  '    "should_split": true,',
+  '    "chunking_plan": [',
+  '      { "goal": "Describe the next chunk to inspect", "priority": 1, "lines": null, "context": "Summaries + commands" }',
+  "    ],",
+  '    "carryover_fields": ["chunk", "line_hint", "symptom"],',
+  '    "history_schema": "chunk_label,line_window,summary,commands",',
+  '    "notes": "Update chunking details based on the captured evidence."',
+  "  }",
   "}",
 ].join("\n");
 
@@ -477,6 +486,7 @@ ${schemaInstructions}
 1. Every evidence entry must mention the chunk/section name (e.g., "Chunk 2" or "Level 1") and include an approximate \`line_hint\`. Use \`null\` only if no line reference exists.
 2. Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.
 3. If information is unavailable, set the field to \`null\` instead of fabricating a value.
+4. When the dataset is truncated or you need more context, populate \`truncation_strategy\` with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use \`null\` when no truncation plan is required.
 
 **Data:**
 \`\`\`
@@ -506,6 +516,18 @@ ${compressedContent}
       typeof context?.rerunCommand === "string" && context.rerunCommand.trim().length > 0
         ? [context.rerunCommand.trim()]
         : [];
+    const chunkingPlan =
+      datasetHint || rerunCommands.length
+        ? [
+            {
+              goal: datasetHint ?? rerunCommands[0],
+              priority: 1,
+              lines: null,
+              context: normalizedReason,
+            },
+          ]
+        : [];
+    const shouldSplit = chunkingPlan.length > 0;
     const payload = {
       task: taskLabel,
       root_cause: null,
@@ -525,6 +547,13 @@ ${compressedContent}
         },
       ],
       next_steps: [nextStep],
+      truncation_strategy: {
+        should_split: shouldSplit,
+        chunking_plan: chunkingPlan,
+        carryover_fields: ["chunk", "line_hint", "symptom"],
+        history_schema: "chunk_label,line_window,summary,commands_run,follow_up_actions",
+        notes: "Generated automatically after Phi-4 failed to emit tokens; refine after rerun.",
+      },
     };
     return JSON.stringify(payload, null, 2);
   }

@@ -7,18 +7,18 @@
       "baseUrl": "http://127.0.0.1:1234"
     },
     "prompt": {
-      "timeoutMs": 45000,
-      "noTokenTimeoutMs": 300000
+      "timeoutSeconds": 45,
+      "noTokenTimeoutSeconds": 600
     }
   },
   "defaults": {
     "task": "Provide a precise technical analysis of the captured output.",
     "contextLength": 32768,
     "gpu": "auto",
-    "timeout": 60000,
+    "timeoutSeconds": 60,
     "summaryLevels": 3,
     "chunkSize": 2000,
-    "sessionTimeout": 1200000
+    "sessionTimeoutSeconds": 1800
   },
   "resourceMonitor": {
     "maxMemoryPercent": 85,

@@ -3069,7 +3069,7 @@ main().catch(console.error);
 
 - `--prompt-id <id>` tells the CLI to persist Phi-4 chat history under `.miniphi/prompt-sessions/<id>.json`. Reuse the ID in future invocations (or custom scripts) to resume the same reasoning thread—ideal for step-by-step audits that span multiple commands.
 - `MiniPhiMemory` exposes `loadPromptSession` / `savePromptSession`, making it trivial for bespoke Node.js utilities to orchestrate multi-phase prompts while staying in sync with the `.miniphi` workspace.
-- `--session-timeout <ms>` applies a single wall-clock budget to the entire process. `EfficientLogAnalyzer` computes the remaining time before each `phi4.chatStream` call and forwards the value through `Phi4Handler.setPromptTimeout`, so nested prompts cannot exceed the user-supplied cap yet no default limit is imposed.
+- `--session-timeout <s>` applies a single wall-clock budget (seconds) to the entire process. `EfficientLogAnalyzer` computes the remaining time before each `phi4.chatStream` call and forwards the value through `Phi4Handler.setPromptTimeout`, so nested prompts cannot exceed the user-supplied cap yet no default limit is imposed.
 
 ---
 

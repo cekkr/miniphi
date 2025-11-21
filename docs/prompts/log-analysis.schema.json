@@ -74,6 +74,58 @@
       "items": {
         "type": "string"
       }
+    },
+    "truncation_strategy": {
+      "type": ["object", "null"],
+      "description": "Plan for splitting oversized inputs and preserving must-have context across prompts. Use null when not needed.",
+      "additionalProperties": false,
+      "properties": {
+        "should_split": {
+          "type": "boolean",
+          "description": "Whether the operator should split the dataset before rerunning."
+        },
+        "chunking_plan": {
+          "type": "array",
+          "description": "Proposed follow-up chunks with priorities and focus areas.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["goal"],
+            "properties": {
+              "goal": {
+                "type": "string",
+                "minLength": 1
+              },
+              "priority": {
+                "type": ["integer", "null"]
+              },
+              "lines": {
+                "type": ["integer", "null"]
+              },
+              "context": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          "default": []
+        },
+        "carryover_fields": {
+          "type": "array",
+          "description": "Fields that must persist between chunks (e.g., chunk id, last error).",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "history_schema": {
+          "type": ["string", "null"],
+          "description": "JSON schema (in prose) for recording context outside the current chunk."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Extra guidance for truncation or helper scripts."
+        }
+      }
     }
   }
 }

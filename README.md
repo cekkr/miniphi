@@ -135,7 +135,7 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 - `--prompt-id <id>` or `--config defaults.promptId` let you resume a chat session; transcripts are written to `.miniphi/prompt-sessions/<id>.json`.
 - `--prompt-journal [id]` mirrors every prompt + downstream operation into `.miniphi/prompt-exchanges/stepwise/<id>/`; combine with `--prompt-journal-status paused|completed|closed` to pause/resume journals explicitly.
 - `--python-script <path>` overrides the bundled `log_summarizer.py` (miniPhi will auto-detect `python3`, `python`, or `py`).
-- `--session-timeout <ms>` hard-stops the orchestration; Phi-4 receives the remaining budget with each prompt so runaway loops cannot hang the CLI.
+- `--session-timeout <s>` hard-stops the orchestration; Phi-4 receives the remaining budget with each prompt so runaway loops cannot hang the CLI.
 - `--no-summary` skips the JSON footer if another system is reading stdout.
 - `MINIPHI_CONFIG=/path/config.json` is honored if you prefer environment variables over flags.
 

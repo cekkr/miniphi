@@ -58,7 +58,7 @@ const COMMANDS = new Set([
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
-const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
+const DEFAULT_NO_TOKEN_TIMEOUT_MS = 600000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
@@ -81,6 +81,33 @@ function parseNumericSetting(value, label) {
     throw new Error(`${label} expects a finite number.`);
   }
   return numeric;
+}
+
+function resolveDurationMs({
+  secondsValue,
+  secondsLabel = "duration (seconds)",
+  millisValue,
+  millisLabel = "duration (milliseconds)",
+} = {}) {
+  if (secondsValue !== undefined && secondsValue !== null && secondsValue !== "") {
+    const seconds = parseNumericSetting(secondsValue, secondsLabel);
+    if (seconds !== undefined) {
+      if (seconds <= 0) {
+        throw new Error(`${secondsLabel} expects a positive number of seconds.`);
+      }
+      return seconds * 1000;
+    }
+  }
+  if (millisValue !== undefined && millisValue !== null && millisValue !== "") {
+    const millis = parseNumericSetting(millisValue, millisLabel);
+    if (millis !== undefined) {
+      if (millis <= 0) {
+        throw new Error(`${millisLabel} expects a positive number of milliseconds.`);
+      }
+      return millis;
+    }
+  }
+  return undefined;
 }
 
 function extractImplicitWorkspaceTask(tokens) {
@@ -360,10 +387,18 @@ async function main() {
 
   const gpu = options.gpu ?? defaults.gpu ?? "auto";
 
+  const defaultCommandTimeoutMs =
+    resolveDurationMs({
+      secondsValue: defaults.timeoutSeconds,
+      secondsLabel: "config.defaults.timeoutSeconds",
+      millisValue: defaults.timeout,
+      millisLabel: "config.defaults.timeout",
+    }) ?? 60000;
   const timeout =
-    parseNumericSetting(options.timeout, "--timeout") ??
-    parseNumericSetting(defaults.timeout, "config.defaults.timeout") ??
-    60000;
+    resolveDurationMs({
+      secondsValue: options.timeout,
+      secondsLabel: "--timeout",
+    }) ?? defaultCommandTimeoutMs;
 
   let task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
   if (command === "workspace" && implicitWorkspaceTask && !options.task) {
@@ -399,13 +434,18 @@ async function main() {
     normalizeJournalStatus(options["prompt-journal-status"]) ??
     normalizeJournalStatus(defaults.promptJournalStatus);
 
-  const sessionTimeoutValue =
-    parseNumericSetting(options["session-timeout"], "--session-timeout") ??
-    parseNumericSetting(defaults.sessionTimeout, "config.defaults.sessionTimeout");
-  if (sessionTimeoutValue !== undefined && sessionTimeoutValue <= 0) {
-    throw new Error("--session-timeout expects a positive number of milliseconds.");
-  }
-  const sessionTimeoutMs = sessionTimeoutValue ?? null;
+  const defaultSessionTimeoutMs =
+    resolveDurationMs({
+      secondsValue: defaults.sessionTimeoutSeconds,
+      secondsLabel: "config.defaults.sessionTimeoutSeconds",
+      millisValue: defaults.sessionTimeout,
+      millisLabel: "config.defaults.sessionTimeout",
+    }) ?? null;
+  const sessionTimeoutMs =
+    resolveDurationMs({
+      secondsValue: options["session-timeout"],
+      secondsLabel: "--session-timeout",
+    }) ?? defaultSessionTimeoutMs;
   const runStart = Date.now();
   const sessionDeadline = sessionTimeoutMs ? runStart + sessionTimeoutMs : null;
 
@@ -488,11 +528,20 @@ async function main() {
 
   const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
   const promptTimeoutMs =
-    parseNumericSetting(promptDefaults.timeoutMs, "config.prompt.timeoutMs") ??
-    DEFAULT_PROMPT_TIMEOUT_MS;
+    resolveDurationMs({
+      secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
+      secondsLabel: "config.prompt.timeoutSeconds",
+      millisValue: promptDefaults.timeoutMs,
+      millisLabel: "config.prompt.timeoutMs",
+    }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
   const noTokenTimeoutMs =
-    parseNumericSetting(promptDefaults.noTokenTimeoutMs, "config.prompt.noTokenTimeoutMs") ??
-    DEFAULT_NO_TOKEN_TIMEOUT_MS;
+    resolveDurationMs({
+      secondsValue:
+        promptDefaults.noTokenTimeoutSeconds ?? promptDefaults.noTokenTimeout,
+      secondsLabel: "config.prompt.noTokenTimeoutSeconds",
+      millisValue: promptDefaults.noTokenTimeoutMs,
+      millisLabel: "config.prompt.noTokenTimeoutMs",
+    }) ?? DEFAULT_NO_TOKEN_TIMEOUT_MS;
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
     promptTimeoutMs,
@@ -720,6 +769,22 @@ async function main() {
     }
     return followUps;
   };
+  const decomposerTimeoutMs =
+    resolveDurationMs({
+      secondsValue: configData.prompt?.decomposer?.timeoutSeconds,
+      secondsLabel: "config.prompt.decomposer.timeoutSeconds",
+      millisValue: configData.prompt?.decomposer?.timeoutMs,
+      millisLabel: "config.prompt.decomposer.timeoutMs",
+    }) ??
+    resolveDurationMs({
+      secondsValue:
+        configData.prompt?.timeoutSeconds ?? configData.lmStudio?.prompt?.timeoutSeconds,
+      secondsLabel: "config.prompt.timeoutSeconds",
+      millisValue:
+        configData.prompt?.timeoutMs ?? configData.lmStudio?.prompt?.timeoutMs,
+      millisLabel: "config.prompt.timeoutMs",
+    }) ??
+    defaultCommandTimeoutMs;
   const promptDecomposer =
     restClient &&
     new PromptDecomposer({
@@ -727,13 +792,7 @@ async function main() {
       logger: verbose ? (message) => console.warn(message) : null,
       maxDepth: configData.prompt?.decomposer?.maxDepth,
       maxActions: configData.prompt?.decomposer?.maxActions,
-      timeoutMs: parseNumericSetting(
-        configData.prompt?.decomposer?.timeoutMs ??
-          configData.lmStudio?.prompt?.timeoutMs ??
-          configData.prompt?.timeoutMs ??
-          defaults.timeout,
-        "config.prompt.decomposer.timeoutMs",
-      ),
+      timeoutMs: decomposerTimeoutMs,
     });
   let performanceTracker = null;
   let scoringPhi = null;
@@ -1843,14 +1902,14 @@ async function createRecomposeHarness({
   let manager = null;
   if (recomposeMode === "live") {
     manager = new LMStudioManager(configData.lmStudio?.clientOptions);
-    const baseTimeout = parseNumericSetting(
-      promptDefaults.timeoutMs,
-      "config.prompt.timeoutMs",
-    );
-    const recomposePromptTimeout =
-      typeof baseTimeout === "number" && Number.isFinite(baseTimeout)
-        ? Math.max(baseTimeout, 300000)
-        : 300000;
+    const baseTimeoutMs =
+      resolveDurationMs({
+        secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
+        secondsLabel: "config.prompt.timeoutSeconds",
+        millisValue: promptDefaults.timeoutMs,
+        millisLabel: "config.prompt.timeoutMs",
+      }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
+    const recomposePromptTimeout = Math.max(baseTimeoutMs, 300000);
     phi4 = new Phi4Handler(manager, {
       systemPrompt: promptDefaults.system,
       promptTimeoutMs: recomposePromptTimeout,
@@ -2215,7 +2274,7 @@ Options:
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override Phi-4 context length (default: 32768)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
-  --timeout <ms>               Command timeout in milliseconds (default: 60000)
+  --timeout <s>                Command timeout in seconds (default: 60)
   --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%
   --max-cpu-percent <n>        Trigger warnings when CPU usage exceeds <n>%
   --max-vram-percent <n>       Trigger warnings when VRAM usage exceeds <n>%
@@ -2228,7 +2287,7 @@ Options:
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --prompt-journal [id]        Mirror each Phi/API step + operations into .miniphi/prompt-exchanges/stepwise
   --prompt-journal-status <s>  Finalize the journal as active|paused|completed|closed (default: completed)
-  --session-timeout <ms>       Hard limit for the entire MiniPhi run (optional)
+  --session-timeout <s>        Hard limit (seconds) for the entire MiniPhi run (optional)
   --debug-lm                   Print each objective + prompt when scoring is running
   --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)
   --assume-yes                 Auto-approve prompts when the policy is ask/session
