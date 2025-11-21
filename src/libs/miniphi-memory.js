@@ -314,6 +314,61 @@ export default class MiniPhiMemory {
     return { id: planId, path: filePath };
   }
 
+  /**
+   * Loads a summary of the tracked index files (executions, knowledge, prompts, etc.)
+   * so downstream prompts can mention recent counts without re-reading the entire state.
+   */
+  async loadIndexSummaries(limit = 6) {
+    await this.prepare();
+    const root = await this.#readJSON(this.rootIndexFile, { children: [] });
+    const children = Array.isArray(root.children) ? root.children : [];
+    const capped = children.slice(0, Math.max(0, Math.min(limit, children.length)));
+    const entries = [];
+    for (const child of capped) {
+      if (!child?.file) {
+        continue;
+      }
+      const targetPath = path.join(this.baseDir, child.file);
+      const data = await this.#readJSON(targetPath, null);
+      const entryCount = Array.isArray(data?.entries) ? data.entries.length : null;
+      const summary = typeof data?.summary === "string" ? data.summary.trim() : null;
+      const updatedAt = data?.updatedAt ?? data?.recordedAt ?? null;
+      entries.push({
+        name: child.name ?? child.file,
+        file: child.file,
+        entries: entryCount,
+        summary,
+        updatedAt,
+      });
+    }
+    return {
+      updatedAt: root.updatedAt ?? null,
+      entries,
+    };
+  }
+
+  /**
+   * Reads the benchmark history ledger so prompts can reference past benchmark digests.
+   */
+  async loadBenchmarkHistory(limit = 3) {
+    await this.prepare();
+    const history = await this.#readJSON(this.benchmarkHistoryFile, { entries: [] });
+    if (!Array.isArray(history?.entries)) {
+      return [];
+    }
+    const capped = history.entries.slice(0, Math.max(0, Math.min(limit, history.entries.length)));
+    return capped.map((entry) => ({
+      id: entry.id ?? null,
+      type: entry.type ?? "summary",
+      analyzedAt: entry.digest?.analyzedAt ?? entry.recordedAt ?? null,
+      directory: entry.digest?.directory ?? null,
+      totalRuns: entry.digest?.totalRuns ?? null,
+      warningRuns: entry.digest?.warningRuns ?? null,
+      mismatchRuns: entry.digest?.mismatchRuns ?? null,
+      artifacts: entry.artifacts ?? null,
+    }));
+  }
+
   async savePromptTemplateBaseline(payload) {
     if (!payload?.prompt) {
       throw new Error("savePromptTemplateBaseline requires a prompt payload.");

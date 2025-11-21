@@ -1150,16 +1150,19 @@ async function main() {
     return resourceSummary;
   };
 
-  const describeWorkspace = (dir, options = undefined) =>
-    generateWorkspaceSnapshot({
-      rootDir: dir,
-      workspaceProfiler,
-      capabilityInventory,
-      verbose,
-      navigator: options?.navigator ?? null,
-      objective: options?.objective ?? null,
-      executeHelper: options?.executeHelper ?? true,
-    });
+const describeWorkspace = (dir, options = undefined) =>
+  generateWorkspaceSnapshot({
+    rootDir: dir,
+    workspaceProfiler,
+    capabilityInventory,
+    verbose,
+    navigator: options?.navigator ?? null,
+    objective: options?.objective ?? null,
+    executeHelper: options?.executeHelper ?? true,
+    memory: options?.memory ?? null,
+    indexLimit: options?.indexLimit,
+    benchmarkLimit: options?.benchmarkLimit,
+  });
 
   try {
     await phi4.load({ contextLength, gpu });
@@ -1228,6 +1231,7 @@ async function main() {
       let workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
+        memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
@@ -1349,6 +1353,7 @@ async function main() {
       let workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
+        memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
@@ -1606,6 +1611,7 @@ async function main() {
       let workspaceContext = await describeWorkspace(analyzeCwd, {
         navigator,
         objective: task,
+        memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
@@ -2439,6 +2445,9 @@ async function generateWorkspaceSnapshot({
   navigator = null,
   objective = null,
   executeHelper = true,
+  memory = null,
+  indexLimit = 6,
+  benchmarkLimit = 3,
 }) {
   let profile;
   try {
@@ -2491,6 +2500,33 @@ async function generateWorkspaceSnapshot({
     capabilityDetails: capabilities?.details ?? null,
   };
 
+  let indexSummary = null;
+  let benchmarkHistory = null;
+  if (memory) {
+    try {
+      indexSummary = await memory.loadIndexSummaries(indexLimit);
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load .miniphi index summaries: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+    try {
+      benchmarkHistory = await memory.loadBenchmarkHistory(benchmarkLimit);
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load benchmark history: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
   let navigationHints = null;
   if (navigator) {
     try {
@@ -2516,6 +2552,8 @@ async function generateWorkspaceSnapshot({
     navigationBlock: navigationHints?.block ?? null,
     helperScript: navigationHints?.helper ?? null,
     navigationHints,
+    indexSummary,
+    benchmarkHistory,
   };
 }
 

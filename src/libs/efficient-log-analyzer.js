@@ -167,6 +167,8 @@ export default class EfficientLogAnalyzer {
         navigationBlock: workspaceContext?.navigationBlock ?? null,
         helperScript: workspaceContext?.helperScript ?? null,
         fixedReferences: workspaceContext?.fixedReferences ?? null,
+        indexSummaries: workspaceContext?.indexSummary ?? null,
+        benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
       },
     );
 
@@ -872,6 +874,55 @@ ${compressedContent}
     }
     if (extraContext.commandLibraryBlock) {
       lines.push(extraContext.commandLibraryBlock);
+    }
+    if (
+      extraContext.indexSummaries?.entries &&
+      Array.isArray(extraContext.indexSummaries.entries) &&
+      extraContext.indexSummaries.entries.length
+    ) {
+      const header = `MiniPhi index overview (updated ${extraContext.indexSummaries.updatedAt ?? "unknown"}):`;
+      const summaryText = extraContext.indexSummaries.entries
+        .map((entry) => {
+          const parts = [];
+          if (entry.entries !== null && entry.entries !== undefined) {
+            parts.push(`${entry.entries} entries`);
+          }
+          if (entry.summary) {
+            parts.push(entry.summary);
+          }
+          const fallback = parts.length ? parts.join(" | ") : "no summary";
+          return `- ${entry.name}: ${fallback}`;
+        })
+        .join("\n");
+      lines.push(`${header}\n${summaryText}`);
+    }
+    if (Array.isArray(extraContext.benchmarkHistory) && extraContext.benchmarkHistory.length) {
+      const header = `Recent benchmark digests (latest ${extraContext.benchmarkHistory.length}):`;
+      const historyText = extraContext.benchmarkHistory
+        .map((entry) => {
+          const parts = [];
+          if (entry.directory) {
+            parts.push(entry.directory);
+          }
+          if (entry.totalRuns !== null && entry.totalRuns !== undefined) {
+            parts.push(`${entry.totalRuns} run${entry.totalRuns === 1 ? "" : "s"}`);
+          }
+          if (entry.warningRuns !== null && entry.warningRuns !== undefined) {
+            parts.push(`${entry.warningRuns} warning entries`);
+          }
+          if (entry.mismatchRuns !== null && entry.mismatchRuns !== undefined) {
+            parts.push(`${entry.mismatchRuns} mismatch entries`);
+          }
+          const label = parts.length ? parts.join(" | ") : entry.type ?? "benchmark";
+          const timestamp = entry.analyzedAt ? `analyzed ${entry.analyzedAt}` : "analysis time unknown";
+          const artifactNote =
+            entry.artifacts?.summary && typeof entry.artifacts.summary === "string"
+              ? `summary artifact ${entry.artifacts.summary}`
+              : null;
+          return `- ${label} (${timestamp}${artifactNote ? `; ${artifactNote}` : ""})`;
+        })
+        .join("\n");
+      lines.push(`${header}\n${historyText}`);
     }
     if (extraContext.truncationPlan) {
       const planBlock = this.#formatTruncationPlan(extraContext.truncationPlan);

@@ -27,6 +27,7 @@ These are the currently "fixed reference points" of miniphi project:
 - `PromptSchemaRegistry` loads `docs/prompts/*.schema.json`, injects the schema block into every Phi-4 call (main prompts, scoring prompts, decomposers), and rejects responses that fail validation before they hit history storage.
 - `WorkspaceProfiler` (plus `FileConnectionAnalyzer` and the new `CapabilityInventory`) inspects the repo tree, renders ASCII file-connection graphs, captures repo/package scripts, and injects the combined hints into every Phi-4 prompt; `PromptRecorder` mirrors the exchanges and `PromptPerformanceTracker` stores scores + telemetry inside `miniphi-prompts.db`.
 - Runtime timeouts are now configured in seconds (CLI flags + `config*.json`), with Phi’s no-token guard bumped to 600 s per prompt so long-running API calls keep breathing room without stretching the overall session timeout.
+- Prompt contexts now summarize `.miniphi/index.json` plus the latest `.miniphi/history/benchmarks.json` entries before dispatch so `run`/`analyze-file` prompts reuse benchmark insights without rescanning large artifacts.
 
 ## Priority order (P0 ⇒ P2)
 1. **P0 – Prompt reliability & telemetry.** Continue hardening timeouts, prompt time tracking, and no-token guards (Project-wide Immediate #1).
@@ -82,19 +83,18 @@ These are the currently "fixed reference points" of miniphi project:
 - Benchmark suites currently focus on Bash recomposition; other language samples (GPU stressors, Windows helpers, etc.) are still TODO.
 
 ## Next Steps (runtime-focused)
-1. Wire `.miniphi/indices` and `.miniphi/history/benchmarks.json` directly into the prompt builder so `run`/`analyze-file` commands can reuse benchmark findings without re-reading large files.
-2. Expand `PromptDecomposer` into a first-class planner that detects multi-goal commands, proposes sub-prompts with schema references, and lets operators resume a given branch through `--prompt-id`.
-3. Add config profiles (named presets inside `config.json`) for LM Studio endpoints, GPU modes, prompt templates, and retention policies, and emit CLI help describing the active profile.
-4. Layer richer summarization backends (semantic chunking, embeddings, AST diffs) on top of `EfficientLogAnalyzer` so Phi receives higher-signal context for code and book workspaces.
-5. Ship `.miniphi` maintenance helpers (prune executions, archive research, health-check workspace size) and expose them via a new CLI subcommand.
-6. Harden orchestration observability: log LM Studio `/api/v0/status` snapshots, context settings, and resource baselines before each Phi call, then persist them next to every prompt exchange.
-7. Build a `.miniphi` diff viewer that compares two `history-notes` snapshots or prompt exchanges, highlighting which files, prompts, or health metrics changed between runs.
-8. Teach `web-research` to feed saved research snippets into follow-up `run`/`analyze-file` prompts automatically so investigations keep their citations without manual copy/paste.
-9. Add a CLI helper for replaying `.miniphi/prompt-exchanges/*.json` (per scope or per sub-prompt) so teams can iterate on specific Phi calls without re-running the parent command.
-10. Extend `WorkspaceProfiler` with explicit outline support (`SUMMARY.md`, `book.json`, manifest files) so document-heavy repos send richer cues into every Phi-4 prompt.
-11. Surface top-performing prompts from `miniphi-prompts.db` (`prompt-scores` helper) so operators can pick known-good templates for similar objectives.
-12. Integrate recomposition telemetry with the main runtime: allow `benchmark analyze` summaries to be referenced inside standard prompts to guide future refactors instead of tweaking the benchmark scripts themselves.
-13. **Self-edit orchestration verdict.** ApiNavigator + helper script storage proves MiniPhi can now learn workspace navigation paths from the model itself; the remaining step toward full self-editing maturity is piping those helper results into guarded `miniphi run` loops that patch this repo, capture diffs for review, and roll back automatically when the LM plan disagrees with the observed edits.
+1. Expand `PromptDecomposer` into a first-class planner that detects multi-goal commands, proposes sub-prompts with schema references, and lets operators resume a given branch through `--prompt-id`.
+2. Add config profiles (named presets inside `config.json`) for LM Studio endpoints, GPU modes, prompt templates, and retention policies, and emit CLI help describing the active profile.
+3. Layer richer summarization backends (semantic chunking, embeddings, AST diffs) on top of `EfficientLogAnalyzer` so Phi receives higher-signal context for code and book workspaces.
+4. Ship `.miniphi` maintenance helpers (prune executions, archive research, health-check workspace size) and expose them via a new CLI subcommand.
+5. Harden orchestration observability: log LM Studio `/api/v0/status` snapshots, context settings, and resource baselines before each Phi call, then persist them next to every prompt exchange.
+6. Build a `.miniphi` diff viewer that compares two `history-notes` snapshots or prompt exchanges, highlighting which files, prompts, or health metrics changed between runs.
+7. Teach `web-research` to feed saved research snippets into follow-up `run`/`analyze-file` prompts automatically so investigations keep their citations without manual copy/paste.
+8. Add a CLI helper for replaying `.miniphi/prompt-exchanges/*.json` (per scope or per sub-prompt) so teams can iterate on specific Phi calls without re-running the parent command.
+9. Extend `WorkspaceProfiler` with explicit outline support (`SUMMARY.md`, `book.json`, manifest files) so document-heavy repos send richer cues into every Phi-4 prompt.
+10. Surface top-performing prompts from `miniphi-prompts.db` (`prompt-scores` helper) so operators can pick known-good templates for similar objectives.
+11. Integrate recomposition telemetry with the main runtime: allow `benchmark analyze` summaries to be referenced inside standard prompts to guide future refactors instead of tweaking the benchmark scripts themselves.
+12. **Self-edit orchestration verdict.** ApiNavigator + helper script storage proves MiniPhi can now learn workspace navigation paths from the model itself; the remaining step toward full self-editing maturity is piping those helper results into guarded `miniphi run` loops that patch this repo, capture diffs for review, and roll back automatically when the LM plan disagrees with the observed edits.
 
 ### General vision Next Steps
 1. Layer heuristics + comment harvesting onto the new AST call-flow generator so each `shell.c::main` step includes “why” context (startup vs trap vs job-control) instead of just callee metadata.
