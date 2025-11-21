@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import StreamAnalyzer from "./stream-analyzer.js";
 
-const LOG_ANALYSIS_FALLBACK_SCHEMA = [
+export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
   '  "task": "repeat the task in <= 10 words",',
   '  "root_cause": "concise summary or null",',

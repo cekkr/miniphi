@@ -24,6 +24,7 @@ import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
+import PromptTemplateBaselineBuilder from "./libs/prompt-template-baselines.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
 import CommandAuthorizationManager, {
@@ -54,6 +55,7 @@ const COMMANDS = new Set([
   "recompose",
   "benchmark",
   "workspace",
+  "prompt-template",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -155,6 +157,23 @@ function parseDirectFileReferences(taskText, cwd) {
     cleanedTask: cleanedTask.trim() || taskText,
     references,
   };
+}
+
+function parseListOption(value) {
+  if (!value && value !== 0) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseListOption(entry)).filter(Boolean);
+  }
+  const text = value.toString().trim();
+  if (!text) {
+    return [];
+  }
+  return text
+    .split(/[,|]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 // normalizeDangerLevel and mergeFixedReferences moved to src/libs/core-utils.js
@@ -526,6 +545,11 @@ async function main() {
     return;
   }
 
+  if (command === "prompt-template") {
+    await handlePromptTemplateCommand({ options, verbose, schemaRegistry });
+    return;
+  }
+
   const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
   const promptTimeoutMs =
     resolveDurationMs({
@@ -871,82 +895,16 @@ async function main() {
     return resourceSummary;
   };
 
-  const describeWorkspace = async (dir, options = undefined) => {
-    let profile;
-    try {
-      profile = workspaceProfiler.describe(dir);
-    } catch (error) {
-      if (verbose) {
-        console.warn(
-          `[MiniPhi] Workspace profiling failed for ${dir}: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-      return null;
-    }
-    const manifestResult = await collectManifestSummary(dir, { limit: 10 }).catch((error) => {
-      if (verbose) {
-        console.warn(
-          `[MiniPhi] Workspace manifest scan failed for ${dir}: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-      return { files: [], manifest: [] };
+  const describeWorkspace = (dir, options = undefined) =>
+    generateWorkspaceSnapshot({
+      rootDir: dir,
+      workspaceProfiler,
+      capabilityInventory,
+      verbose,
+      navigator: options?.navigator ?? null,
+      objective: options?.objective ?? null,
+      executeHelper: options?.executeHelper ?? true,
     });
-    const readmeSnippet = await readReadmeSnippet({
-      candidates: [
-        path.join(dir, "README.md"),
-        path.join(dir, "README.md.md"),
-        path.join(dir, "docs", "README.md"),
-      ],
-    }).catch(() => null);
-    const hintBlock = buildWorkspaceHintBlock(
-      manifestResult.files,
-      dir,
-      readmeSnippet,
-      { limit: 8 },
-    );
-    const capabilities = await capabilityInventory.describe(dir).catch((error) => {
-      if (verbose) {
-        console.warn(
-          `[MiniPhi] Capability inventory failed for ${dir}: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-      return null;
-    });
-    const workspaceSnapshot = {
-      ...profile,
-      manifestPreview: manifestResult.manifest,
-      readmeSnippet,
-      hintBlock: hintBlock || null,
-      capabilitySummary: capabilities?.summary ?? null,
-      capabilityDetails: capabilities?.details ?? null,
-    };
-    let navigationHints = null;
-    const navigator = options?.navigator ?? null;
-    if (navigator) {
-      try {
-        navigationHints = await navigator.generateNavigationHints({
-          workspace: workspaceSnapshot,
-          capabilities,
-          objective: options?.objective ?? null,
-          cwd: dir,
-          executeHelper: options?.executeHelper ?? true,
-        });
-      } catch (error) {
-        if (verbose) {
-          console.warn(
-            `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
-          );
-        }
-      }
-    }
-    return {
-      ...workspaceSnapshot,
-      navigationSummary: navigationHints?.summary ?? null,
-      navigationBlock: navigationHints?.block ?? null,
-      helperScript: navigationHints?.helper ?? null,
-      navigationHints,
-    };
-  };
 
   try {
     await phi4.load({ contextLength, gpu });
@@ -2044,6 +2002,190 @@ async function loadBenchmarkPlan(planPath) {
   };
 }
 
+async function generateWorkspaceSnapshot({
+  rootDir,
+  workspaceProfiler,
+  capabilityInventory,
+  verbose = false,
+  navigator = null,
+  objective = null,
+  executeHelper = true,
+}) {
+  let profile;
+  try {
+    profile = workspaceProfiler.describe(rootDir);
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Workspace profiling failed for ${rootDir}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return null;
+  }
+
+  const manifestResult = await collectManifestSummary(rootDir, { limit: 10 }).catch((error) => {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Workspace manifest scan failed for ${rootDir}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return { files: [], manifest: [] };
+  });
+  const readmeSnippet = await readReadmeSnippet({
+    candidates: [
+      path.join(rootDir, "README.md"),
+      path.join(rootDir, "README.md.md"),
+      path.join(rootDir, "docs", "README.md"),
+    ],
+  }).catch(() => null);
+  const hintBlock = buildWorkspaceHintBlock(manifestResult.files, rootDir, readmeSnippet, {
+    limit: 8,
+  });
+
+  let capabilities = null;
+  try {
+    capabilities = await capabilityInventory.describe(rootDir);
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Capability inventory failed for ${rootDir}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  const workspaceSnapshot = {
+    ...profile,
+    manifestPreview: manifestResult.manifest,
+    readmeSnippet,
+    hintBlock: hintBlock || null,
+    capabilitySummary: capabilities?.summary ?? null,
+    capabilityDetails: capabilities?.details ?? null,
+  };
+
+  let navigationHints = null;
+  if (navigator) {
+    try {
+      navigationHints = await navigator.generateNavigationHints({
+        workspace: workspaceSnapshot,
+        capabilities,
+        objective,
+        cwd: rootDir,
+        executeHelper,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
+
+  return {
+    ...workspaceSnapshot,
+    navigationSummary: navigationHints?.summary ?? null,
+    navigationBlock: navigationHints?.block ?? null,
+    helperScript: navigationHints?.helper ?? null,
+    navigationHints,
+  };
+}
+
+async function handlePromptTemplateCommand({ options, verbose, schemaRegistry }) {
+  const rawBaseline =
+    (typeof options.baseline === "string" && options.baseline.trim()) ||
+    (typeof options.type === "string" && options.type.trim()) ||
+    "truncation";
+  const baseline = rawBaseline.toLowerCase();
+  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const task =
+    (typeof options.task === "string" && options.task.trim()) ||
+    "Explain how to truncate this oversized dataset so I can analyze it with Phi across multiple prompts while keeping history synced.";
+  const datasetSummary =
+    (typeof options["dataset-summary"] === "string" && options["dataset-summary"].trim()) ||
+    (typeof options.dataset === "string" && options.dataset.trim()) ||
+    `Oversized log/output data captured from ${path.basename(cwd) || "the workspace"}.`;
+  const totalLines =
+    parseNumericSetting(options["total-lines"], "--total-lines") ??
+    parseNumericSetting(options.lines, "--lines");
+  const chunkTarget =
+    parseNumericSetting(options["target-lines"], "--target-lines") ??
+    parseNumericSetting(options["chunk-size"], "--chunk-size");
+  const helperFocus = parseListOption(options["helper-focus"]);
+  const historyKeys = parseListOption(options["history-keys"]);
+  const notes =
+    typeof options.notes === "string" && options.notes.trim().length ? options.notes.trim() : null;
+  const skipWorkspace = Boolean(options["no-workspace"]);
+
+  let workspaceContext = null;
+  if (!skipWorkspace) {
+    const workspaceProfiler = new WorkspaceProfiler();
+    const capabilityInventory = new CapabilityInventory();
+    workspaceContext = await generateWorkspaceSnapshot({
+      rootDir: cwd,
+      workspaceProfiler,
+      capabilityInventory,
+      verbose,
+      navigator: null,
+      objective: task,
+      executeHelper: false,
+    });
+  }
+
+  const builder = new PromptTemplateBaselineBuilder({ schemaRegistry });
+  let template;
+  try {
+    template = builder.build({
+      baseline,
+      task,
+      datasetSummary,
+      datasetStats: { totalLines, chunkTarget },
+      helperFocus,
+      historyKeys,
+      notes,
+      workspaceContext,
+    });
+  } catch (error) {
+    console.error(
+      `[MiniPhi] Unable to build prompt baseline: ${error instanceof Error ? error.message : error}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const stateManager = new MiniPhiMemory(cwd);
+  await stateManager.prepare();
+  const labelCandidate = typeof options.label === "string" ? options.label.trim() : "";
+  const label = labelCandidate || `${baseline}-baseline`;
+  const saved = await stateManager.savePromptTemplateBaseline({
+    baseline,
+    label,
+    schemaId: template.schemaId,
+    task: template.task,
+    prompt: template.prompt,
+    metadata: template.metadata,
+    cwd,
+  });
+  const savedRel = path.relative(process.cwd(), saved.path);
+  console.log(
+    `[MiniPhi] Prompt template baseline ${saved.id} stored at ${savedRel || saved.path}`,
+  );
+
+  const outputPath =
+    typeof options.output === "string" && options.output.trim()
+      ? path.resolve(options.output.trim())
+      : null;
+  if (outputPath) {
+    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.promises.writeFile(outputPath, `${template.prompt}\n`, "utf8");
+    const rel = path.relative(process.cwd(), outputPath);
+    console.log(`[MiniPhi] Prompt text exported to ${rel || outputPath}`);
+  }
+
+  console.log("\n--- Prompt Template ---\n");
+  console.log(template.prompt);
+  console.log("\n--- End Template ---");
+}
+
 function resolvePlanPath(plan, candidate) {
   if (!candidate || typeof candidate !== "string") {
     return null;
@@ -2264,6 +2406,7 @@ Usage:
   node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
+  node src/index.js prompt-template --baseline truncation --task "Teach me how to chunk jest logs"
 
 Options:
   --cmd <command>              Command to execute in run mode
@@ -2293,6 +2436,18 @@ Options:
   --assume-yes                 Auto-approve prompts when the policy is ask/session
   --command-danger <level>     Danger classification for --cmd (low | mid | high; default: mid)
   (workspace mode also accepts free-form positional text: npx miniphi "Draft release notes".)
+
+Prompt template baselines:
+  --baseline <name>            Baseline template id to scaffold (default: truncation)
+  --dataset-summary <text>     Short description of the oversized dataset/logs
+  --total-lines <n>            Approximate number of lines captured in the dataset
+  --target-lines <n>           Desired per-chunk line budget for truncation_strategy
+  --history-keys <list>        Comma/pipe-separated JSON keys to persist between prompts
+  --helper-focus <list>        Comma/pipe-separated helper commands/tools to emphasize
+  --label <text>               Friendly label stored with the template artifact
+  --output <path>              Persist the generated prompt text to a separate file
+  --no-workspace               Skip workspace profiling when drafting the template
+  --notes <text>               Extra reminders appended to the prompt body
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)

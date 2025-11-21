@@ -29,6 +29,7 @@ export default class MiniPhiMemory {
     this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
     this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
     this.promptStepJournalDir = path.join(this.promptExchangesDir, "stepwise");
+    this.promptTemplatesDir = path.join(this.promptExchangesDir, "templates");
     this.helpersDir = path.join(this.baseDir, "helpers");
     this.fixedReferencesDir = path.join(this.promptExchangesDir, "fixed-references");
 
@@ -51,6 +52,7 @@ export default class MiniPhiMemory {
     );
     this.helperScriptsIndexFile = path.join(this.helpersDir, "index.json");
     this.promptStepJournalIndexFile = path.join(this.promptStepJournalDir, "index.json");
+    this.promptTemplatesIndexFile = path.join(this.promptTemplatesDir, "index.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -75,6 +77,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
     await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
     await fs.promises.mkdir(this.promptStepJournalDir, { recursive: true });
+    await fs.promises.mkdir(this.promptTemplatesDir, { recursive: true });
     await fs.promises.mkdir(this.helpersDir, { recursive: true });
     await fs.promises.mkdir(this.fixedReferencesDir, { recursive: true });
 
@@ -92,6 +95,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.promptDecompositionIndexFile, { entries: [] });
     await this.#ensureFile(this.helperScriptsIndexFile, { entries: [] });
     await this.#ensureFile(this.promptStepJournalIndexFile, { entries: [] });
+    await this.#ensureFile(this.promptTemplatesIndexFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -107,6 +111,7 @@ export default class MiniPhiMemory {
         { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
         { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
         { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
+        { name: "prompt-templates", file: this.#relative(this.promptTemplatesIndexFile) },
       ],
     });
 
@@ -277,6 +282,38 @@ export default class MiniPhiMemory {
       metadata: record.metadata ?? null,
     });
     return { id: planId, path: filePath };
+  }
+
+  async savePromptTemplateBaseline(payload) {
+    if (!payload?.prompt) {
+      throw new Error("savePromptTemplateBaseline requires a prompt payload.");
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const entryId = payload.id ?? randomUUID();
+    const record = {
+      id: entryId,
+      label: payload.label ?? null,
+      baseline: payload.baseline ?? null,
+      task: payload.task ?? null,
+      schemaId: payload.schemaId ?? null,
+      prompt: payload.prompt,
+      metadata: payload.metadata ?? null,
+      cwd: payload.cwd ?? this.startDir,
+      createdAt: timestamp,
+    };
+    const filePath = path.join(this.promptTemplatesDir, `${entryId}.json`);
+    await this.#writeJSON(filePath, record);
+    await this.#updatePromptTemplateIndex({
+      id: entryId,
+      label: record.label,
+      baseline: record.baseline,
+      schemaId: record.schemaId,
+      task: record.task,
+      file: this.#relative(filePath),
+      createdAt: timestamp,
+    });
+    return { id: entryId, path: filePath };
   }
 
   async loadPromptSession(promptId) {
@@ -557,6 +594,15 @@ export default class MiniPhiMemory {
     await this.#updateRootIndex();
   }
 
+  async #updatePromptTemplateIndex(entry) {
+    const index = await this.#readJSON(this.promptTemplatesIndexFile, { entries: [] });
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    index.updatedAt = new Date().toISOString();
+    await this.#writeJSON(this.promptTemplatesIndexFile, index);
+    await this.#updateRootIndex();
+  }
+
   async #updateHelperScriptsIndex(entry) {
     const index = await this.#readJSON(this.helperScriptsIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
@@ -578,8 +624,11 @@ export default class MiniPhiMemory {
       { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
       { name: "research", file: this.#relative(this.researchIndexFile) },
       { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
+      { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
       { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
       { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
+      { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
+      { name: "prompt-templates", file: this.#relative(this.promptTemplatesIndexFile) },
     ];
     await this.#writeJSON(this.rootIndexFile, root);
   }
