@@ -15,7 +15,7 @@
     "task": "Provide a precise technical analysis of the captured output.",
     "contextLength": 32768,
     "gpu": "auto",
-    "timeoutSeconds": 600,
+    "timeoutSeconds": 3600,
     "summaryLevels": 3,
     "chunkSize": 2000,
     "sessionTimeoutSeconds": 1800
