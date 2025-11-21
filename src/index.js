@@ -180,6 +180,27 @@ function parseListOption(value) {
     .filter((part) => part.length > 0);
 }
 
+async function appendForgottenRequirementNote({ targetPath, context, command, verbose }) {
+  if (!targetPath || !context) {
+    return false;
+  }
+  const trimmedContext = context.toString().trim();
+  if (!trimmedContext) {
+    return false;
+  }
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+  const timestamp = new Date().toISOString();
+  const scopeLabel = command ? ` (${command})` : "";
+  const noteLine = `- Forgotten requirement for ${timestamp}${scopeLabel}: ${trimmedContext}`;
+  const payload = `\n${noteLine}\n`;
+  await fs.promises.appendFile(targetPath, payload, "utf8");
+  if (verbose) {
+    const relPath = path.relative(process.cwd(), targetPath) || targetPath;
+    console.log(`[MiniPhi] Recorded placeholder requirement in ${relPath}`);
+  }
+  return true;
+}
+
 // normalizeDangerLevel and mergeFixedReferences moved to src/libs/core-utils.js
 
 function buildRestClientOptions(configData) {
@@ -426,6 +447,32 @@ async function main() {
   let task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
   if (command === "workspace" && implicitWorkspaceTask && !options.task) {
     task = implicitWorkspaceTask;
+  }
+
+  const skipForgottenNote = Boolean(options["no-forgotten-note"]);
+  const providedForgottenNote =
+    typeof options["forgotten-note"] === "string" ? options["forgotten-note"].trim() : null;
+  const shouldRecordForgottenNote =
+    !skipForgottenNote && ["run", "workspace", "analyze-file"].includes(command);
+  if (shouldRecordForgottenNote) {
+    const noteContext = providedForgottenNote || task;
+    const notePath = path.join(PROJECT_ROOT, "docs", "studies", "notes", "TODOs.md");
+    if (noteContext) {
+      try {
+        await appendForgottenRequirementNote({
+          targetPath: notePath,
+          context: noteContext,
+          command,
+          verbose,
+        });
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            `[MiniPhi] Unable to append forgotten requirement note: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      }
+    }
   }
 
   let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
@@ -2438,6 +2485,8 @@ Options:
   --max-cpu-percent <n>        Trigger warnings when CPU usage exceeds <n>%
   --max-vram-percent <n>       Trigger warnings when VRAM usage exceeds <n>%
   --resource-sample-interval <ms>  Resource sampling cadence (default: 5000)
+  --forgotten-note <text>      Custom text for the placeholder backlog entry recorded each session
+  --no-forgotten-note          Skip recording the placeholder backlog entry for this invocation
   --python-script <path>       Custom path to log_summarizer.py
   --chunk-size <lines>         Chunk size when analyzing files (default: 2000)
   --verbose                    Print progress details

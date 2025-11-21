@@ -40,9 +40,10 @@ async function main() {
 
   const cli = new CliExecutor();
   let hasFailures = false;
+  const aggregatedWarnings = [];
 
   for (const test of selected) {
-    const success = await runTest(cli, test, flags, {
+    const { success, warnings } = await runTest(cli, test, flags, {
       disableMonitor: flags.has("no-monitor")
         ? true
         : flags.has("force-monitor")
@@ -50,10 +51,22 @@ async function main() {
           : resourceMonitorDisabled,
       lmStudioBase: resolvedLmStudioBase,
     });
+    if (warnings.length) {
+      aggregatedWarnings.push({ test: test.name, warnings });
+    }
     if (!success) {
       hasFailures = true;
       if (flags.has("fail-fast")) {
         break;
+      }
+    }
+  }
+
+  if (aggregatedWarnings.length) {
+    console.warn("[benchmark] Resource monitor warnings were detected during the run:");
+    for (const entry of aggregatedWarnings) {
+      for (const warning of entry.warnings) {
+        console.warn(`[benchmark][${entry.test}] ${warning}`);
       }
     }
   }
@@ -115,36 +128,39 @@ async function runTest(cli, test, flags, options = undefined) {
       onStderr: (chunk) => streamChunk(chunk, "STDERR"),
     });
     log("INFO", `Test "${test.name}" PASS (${logFile})`);
-    await finalizeMonitor(monitor, log);
+    const warnings = await finalizeMonitor(monitor, log);
     logStream.end();
-    return true;
+    return { success: true, warnings };
   } catch (error) {
     log("ERROR", `Test "${test.name}" FAILED: ${error instanceof Error ? error.message : error}`);
-    await finalizeMonitor(monitor, log);
+    const warnings = await finalizeMonitor(monitor, log);
     logStream.end();
-    return false;
+    return { success: false, warnings };
   }
 }
 
 async function finalizeMonitor(monitor, log) {
   if (!monitor) {
-    return;
+    return [];
   }
   try {
     const summary = await monitor.stop();
+    const warnings = Array.isArray(summary?.summary?.warnings) ? summary.summary.warnings : [];
     if (summary?.summary?.stats) {
       log(
         "INFO",
         `Resource stats - memory avg ${summary.summary.stats.memory.avg ?? "n/a"}%, cpu avg ${summary.summary.stats.cpu.avg ?? "n/a"}%, vram avg ${summary.summary.stats.vram.avg ?? "n/a"}%.`,
       );
     }
-    if (summary?.summary?.warnings?.length) {
-      for (const warning of summary.summary.warnings) {
+    if (warnings.length) {
+      for (const warning of warnings) {
         log("WARN", warning);
       }
     }
+    return warnings;
   } catch (error) {
     log("WARN", `Unable to persist resource stats: ${error instanceof Error ? error.message : error}`);
+    return [];
   }
 }
 
