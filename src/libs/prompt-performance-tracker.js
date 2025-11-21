@@ -110,6 +110,15 @@ export default class PromptPerformanceTracker {
     }
 
     const traceContext = payload.traceContext;
+    const sessionContext = this.#resolveSessionContext(traceContext);
+    const {
+      sessionId,
+      objective,
+      workspacePath,
+      workspaceType,
+      workspaceSummary,
+      workspaceFingerprint,
+    } = sessionContext;
     const promptText = this.#sanitizeText(this.#extractPromptText(payload.request));
     if (!promptText) {
       return;
@@ -117,15 +126,6 @@ export default class PromptPerformanceTracker {
 
     const responseText = this.#sanitizeText(payload.response?.text ?? "");
     const reasoningPreview = this.#buildReasoningPreview(payload.response?.reasoning ?? []);
-    const workspacePath = this.#resolveWorkspacePath(traceContext.metadata);
-    const workspaceType = traceContext.metadata?.workspaceType ?? null;
-    const workspaceSummary = traceContext.metadata?.workspaceSummary ?? null;
-    const sessionId = traceContext.mainPromptId ?? traceContext.subPromptId;
-    const objective =
-      traceContext.label ??
-      traceContext.metadata?.task ??
-      traceContext.metadata?.objective ??
-      null;
     const durationMs =
       payload.response?.finishedAt && payload.response?.startedAt
         ? payload.response.finishedAt - payload.response.startedAt
@@ -242,6 +242,59 @@ export default class PromptPerformanceTracker {
     });
   }
 
+  /**
+   * Records auxiliary prompt events (timeouts, retries) for richer telemetry.
+   * @param {{
+   *   traceContext: object,
+   *   request?: Record<string, unknown> | null,
+   *   eventType: string,
+   *   severity?: string,
+   *   message: string,
+   *   metadata?: Record<string, unknown> | null
+   * }} payload
+   */
+  async recordEvent(payload) {
+    if (
+      !this.enabled ||
+      !this.db ||
+      !payload ||
+      !payload.traceContext ||
+      !payload.eventType ||
+      !payload.message
+    ) {
+      return;
+    }
+    const traceContext = payload.traceContext;
+    const sessionContext = this.#resolveSessionContext(traceContext);
+    const { sessionId, objective, workspacePath, workspaceType, workspaceFingerprint } =
+      sessionContext;
+    if (!sessionId) {
+      return;
+    }
+    const metadataJson = payload.metadata ? JSON.stringify(payload.metadata) : null;
+    const createdAt = new Date().toISOString();
+    await this.#persistSession({
+      sessionId,
+      objective,
+      workspacePath,
+      workspaceType,
+      workspaceFingerprint,
+      createdAt,
+    });
+    await this.#insertPromptEvent({
+      sessionId,
+      promptId: traceContext.subPromptId ?? payload.request?.id ?? null,
+      eventType: payload.eventType,
+      severity: payload.severity ?? "info",
+      message: payload.message,
+      metadataJson,
+      workspacePath,
+      workspaceType,
+      workspaceFingerprint,
+      createdAt,
+    });
+  }
+
   async #migrate() {
     if (!this.db) {
       return;
@@ -284,9 +337,25 @@ export default class PromptPerformanceTracker {
         computed_at TEXT NOT NULL,
         PRIMARY KEY (workspace_fingerprint, objective)
       );`,
+      `CREATE TABLE IF NOT EXISTS prompt_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        prompt_id TEXT,
+        event_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        message TEXT NOT NULL,
+        metadata_json TEXT,
+        workspace_path TEXT,
+        workspace_type TEXT,
+        workspace_fingerprint TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES prompt_sessions(session_id) ON DELETE SET NULL
+      );`,
       `CREATE INDEX IF NOT EXISTS idx_prompt_scores_workspace ON prompt_scores(workspace_fingerprint, objective);`,
       `CREATE INDEX IF NOT EXISTS idx_prompt_scores_session ON prompt_scores(session_id, created_at);`,
       `CREATE INDEX IF NOT EXISTS idx_prompt_scores_score ON prompt_scores(score DESC);`,
+      `CREATE INDEX IF NOT EXISTS idx_prompt_events_session ON prompt_events(session_id, created_at);`,
+      `CREATE INDEX IF NOT EXISTS idx_prompt_events_type ON prompt_events(event_type, created_at);`,
     ];
     for (const sql of migrations) {
       await this.db.exec(sql);
@@ -375,6 +444,49 @@ export default class PromptPerformanceTracker {
         "@followUpNeeded": entry.followUpNeeded ? 1 : 0,
         "@followUpReason": entry.followUpReason ?? null,
         "@evaluationJson": entry.evaluationJson ?? null,
+        "@metadataJson": entry.metadataJson ?? null,
+        "@workspacePath": entry.workspacePath ?? null,
+        "@workspaceType": entry.workspaceType ?? null,
+        "@workspaceFingerprint": entry.workspaceFingerprint ?? null,
+        "@createdAt": entry.createdAt,
+      },
+    );
+  }
+
+  async #insertPromptEvent(entry) {
+    if (!this.db) {
+      return;
+    }
+    await this.db.run(
+      `INSERT INTO prompt_events (
+        session_id,
+        prompt_id,
+        event_type,
+        severity,
+        message,
+        metadata_json,
+        workspace_path,
+        workspace_type,
+        workspace_fingerprint,
+        created_at
+      ) VALUES (
+        @sessionId,
+        @promptId,
+        @eventType,
+        @severity,
+        @message,
+        @metadataJson,
+        @workspacePath,
+        @workspaceType,
+        @workspaceFingerprint,
+        @createdAt
+      );`,
+      {
+        "@sessionId": entry.sessionId ?? null,
+        "@promptId": entry.promptId ?? null,
+        "@eventType": entry.eventType,
+        "@severity": entry.severity ?? "info",
+        "@message": entry.message,
         "@metadataJson": entry.metadataJson ?? null,
         "@workspacePath": entry.workspacePath ?? null,
         "@workspaceType": entry.workspaceType ?? null,
@@ -668,6 +780,29 @@ export default class PromptPerformanceTracker {
       return "Assistant response was empty.";
     }
     return null;
+  }
+
+  #resolveSessionContext(traceContext) {
+    if (!traceContext) {
+      return {
+        sessionId: null,
+        objective: null,
+        workspacePath: null,
+        workspaceType: null,
+        workspaceSummary: null,
+        workspaceFingerprint: null,
+      };
+    }
+    const metadata = traceContext.metadata ?? {};
+    const workspacePath = this.#resolveWorkspacePath(metadata);
+    return {
+      sessionId: traceContext.mainPromptId ?? traceContext.subPromptId ?? null,
+      objective: traceContext.label ?? metadata.task ?? metadata.objective ?? null,
+      workspacePath,
+      workspaceType: metadata.workspaceType ?? null,
+      workspaceSummary: metadata.workspaceSummary ?? null,
+      workspaceFingerprint: this.#fingerprint(workspacePath),
+    };
   }
 
   #fingerprint(input) {

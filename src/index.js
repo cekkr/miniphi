@@ -5,7 +5,11 @@ import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
-import LMStudioManager, { LMStudioRestClient, normalizeLmStudioHttpUrl } from "./libs/lmstudio-api.js";
+import LMStudioManager, {
+  LMStudioRestClient,
+  normalizeLmStudioHttpUrl,
+  normalizeLmStudioWsUrl,
+} from "./libs/lmstudio-api.js";
 import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
@@ -60,7 +64,7 @@ const COMMANDS = new Set([
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
-const DEFAULT_NO_TOKEN_TIMEOUT_MS = 600000;
+const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
@@ -492,6 +496,9 @@ async function main() {
   });
 
   const resolvedLmStudioBaseUrl = resolveLmStudioHttpBaseUrl(configData);
+  const resolvedLmStudioWsBase = normalizeLmStudioWsUrl(
+    configData?.lmStudio?.clientOptions?.baseUrl,
+  );
   const isLmStudioLocal = isLocalLmStudioBaseUrl(resolvedLmStudioBaseUrl);
   const resourceMonitorForcedDisabled = !isLmStudioLocal;
   if (resourceMonitorForcedDisabled && verbose) {
@@ -566,6 +573,15 @@ async function main() {
       millisValue: promptDefaults.noTokenTimeoutMs,
       millisLabel: "config.prompt.noTokenTimeoutMs",
     }) ?? DEFAULT_NO_TOKEN_TIMEOUT_MS;
+  if (verbose) {
+    const promptSeconds = Math.round(promptTimeoutMs / 1000);
+    const noTokenSeconds = Math.round(noTokenTimeoutMs / 1000);
+    const restLabel = resolvedLmStudioBaseUrl ?? "n/a";
+    const wsLabel = resolvedLmStudioWsBase ?? "default";
+    console.log(
+      `[MiniPhi] Prompt timeout ${promptSeconds}s | No-token timeout ${noTokenSeconds}s | LM Studio WS ${wsLabel} | REST ${restLabel}`,
+    );
+  }
   const phi4 = new Phi4Handler(manager, {
     systemPrompt: promptDefaults.system,
     promptTimeoutMs,

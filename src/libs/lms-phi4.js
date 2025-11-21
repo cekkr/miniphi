@@ -149,6 +149,15 @@ export class Phi4Handler {
         heartbeatTimer = setTimeout(() => {
           const seconds = Math.round(this.noTokenTimeoutMs / 1000);
           const message = `No Phi-4 tokens emitted in ${seconds} seconds; cancelling prompt.`;
+          this.#recordPromptEvent(traceContext, requestSnapshot, {
+            eventType: "no-token-timeout",
+            severity: "error",
+            message,
+            metadata: {
+              timeoutMs: this.noTokenTimeoutMs,
+              schemaId: traceContext.schemaId ?? requestSnapshot?.schemaId ?? null,
+            },
+          });
           if (typeof predictionHandle?.return === "function") {
             try {
               predictionHandle.return();
@@ -526,6 +535,31 @@ export class Phi4Handler {
         response: responseSnapshot,
         error: errorMessage ?? null,
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.emitWarning(message, "PromptPerformanceTracker");
+    }
+  }
+
+  #recordPromptEvent(traceContext, requestSnapshot, event) {
+    if (!this.performanceTracker || typeof this.performanceTracker.recordEvent !== "function") {
+      return;
+    }
+    try {
+      const result = this.performanceTracker.recordEvent({
+        traceContext,
+        request: requestSnapshot,
+        eventType: event?.eventType ?? "event",
+        severity: event?.severity ?? "info",
+        message: event?.message ?? "",
+        metadata: event?.metadata ?? null,
+      });
+      if (result && typeof result.catch === "function") {
+        result.catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          process.emitWarning(message, "PromptPerformanceTracker");
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptPerformanceTracker");
