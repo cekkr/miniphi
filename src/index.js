@@ -163,6 +163,76 @@ function parseDirectFileReferences(taskText, cwd) {
   };
 }
 
+function describeTruncationChunk(chunk) {
+  if (!chunk) {
+    return "chunk";
+  }
+  const parts = [chunk.goal ?? chunk.label ?? chunk.id ?? "chunk"];
+  if (chunk.startLine || chunk.endLine) {
+    const start = chunk.startLine ?? "?";
+    const end = chunk.endLine ?? "end";
+    parts.push(`lines ${start}-${end}`);
+  }
+  if (chunk.context) {
+    parts.push(chunk.context);
+  }
+  return parts.join(" | ");
+}
+
+function selectTruncationChunk(planRecord, selector = null) {
+  const chunks = planRecord?.plan?.chunkingPlan;
+  if (!Array.isArray(chunks) || chunks.length === 0) {
+    return null;
+  }
+  const sorted = [...chunks].sort((a, b) => {
+    const pa = Number.isFinite(a.priority) ? a.priority : Number.isFinite(a.index) ? a.index + 1 : Infinity;
+    const pb = Number.isFinite(b.priority) ? b.priority : Number.isFinite(b.index) ? b.index + 1 : Infinity;
+    if (pa === pb) {
+      return (a.index ?? 0) - (b.index ?? 0);
+    }
+    return pa - pb;
+  });
+  const defaultChunk = sorted[0];
+  if (!selector) {
+    return defaultChunk;
+  }
+  const normalized = selector.toString().trim();
+  if (!normalized) {
+    return defaultChunk;
+  }
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const priorityMatch = chunks.find(
+      (chunk) => Number.isFinite(chunk.priority) && chunk.priority === numeric,
+    );
+    if (priorityMatch) {
+      return priorityMatch;
+    }
+    const indexMatch = sorted[numeric - 1];
+    if (indexMatch) {
+      return indexMatch;
+    }
+  }
+  const lowered = normalized.toLowerCase();
+  const textMatch = chunks.find((chunk) => {
+    const goal = (chunk.goal ?? chunk.label ?? "").toLowerCase();
+    return goal.includes(lowered);
+  });
+  return textMatch ?? defaultChunk;
+}
+
+function buildLineRangeFromChunk(chunk) {
+  if (!chunk) {
+    return null;
+  }
+  const startLine = Number.isFinite(chunk.startLine) ? chunk.startLine : null;
+  const endLine = Number.isFinite(chunk.endLine) ? chunk.endLine : null;
+  if (startLine || endLine) {
+    return { startLine, endLine };
+  }
+  return null;
+}
+
 function parseListOption(value) {
   if (!value && value !== 0) {
     return [];
@@ -454,6 +524,14 @@ async function main() {
     typeof options["forgotten-note"] === "string" ? options["forgotten-note"].trim() : null;
   const shouldRecordForgottenNote =
     !skipForgottenNote && ["run", "workspace", "analyze-file"].includes(command);
+  const resumeTruncationId =
+    typeof options["resume-truncation"] === "string" && options["resume-truncation"].trim()
+      ? options["resume-truncation"].trim()
+      : null;
+  const truncationChunkSelector =
+    typeof options["truncation-chunk"] === "string" && options["truncation-chunk"].trim()
+      ? options["truncation-chunk"].trim()
+      : null;
   if (shouldRecordForgottenNote) {
     const noteContext = providedForgottenNote || task;
     const notePath = path.join(PROJECT_ROOT, "docs", "studies", "notes", "TODOs.md");
@@ -473,6 +551,12 @@ async function main() {
         }
       }
     }
+  }
+
+  if (resumeTruncationId && command !== "analyze-file") {
+    console.warn(
+      "[MiniPhi] --resume-truncation currently only applies to analyze-file runs; option ignored.",
+    );
   }
 
   let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
@@ -1364,6 +1448,37 @@ async function main() {
       archiveMetadata.cwd = analyzeCwd;
       stateManager = new MiniPhiMemory(archiveMetadata.cwd);
       await stateManager.prepare();
+      let truncationResume = null;
+      let selectedTruncationChunk = null;
+      let truncationLineRange = null;
+      if (resumeTruncationId) {
+        truncationResume = await stateManager.loadTruncationPlan(resumeTruncationId);
+        if (!truncationResume) {
+          console.warn(
+            `[MiniPhi] No truncation plan found for execution ${resumeTruncationId}; continuing without resume.`,
+          );
+          truncationResume = null;
+        } else if (
+          !truncationResume.plan ||
+          !Array.isArray(truncationResume.plan.chunkingPlan) ||
+          truncationResume.plan.chunkingPlan.length === 0
+        ) {
+          console.warn(
+            `[MiniPhi] Truncation plan ${resumeTruncationId} does not contain chunk targets; continuing without resume.`,
+          );
+          truncationResume = null;
+        } else {
+          selectedTruncationChunk = selectTruncationChunk(
+            truncationResume,
+            truncationChunkSelector,
+          );
+          truncationLineRange = buildLineRangeFromChunk(selectedTruncationChunk);
+          const chunkLabel = describeTruncationChunk(selectedTruncationChunk);
+          console.log(
+            `[MiniPhi] Loaded truncation plan ${resumeTruncationId} (${truncationResume.plan.chunkingPlan.length} chunk target${truncationResume.plan.chunkingPlan.length === 1 ? "" : "s"}). Focusing ${chunkLabel}.`,
+          );
+        }
+      }
       if (analyzeFixedReferences.length) {
         await stateManager.recordFixedReferences({
           references: analyzeFixedReferences,
@@ -1378,6 +1493,16 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
+      if (truncationResume) {
+        workspaceContext = {
+          ...(workspaceContext ?? {}),
+          truncationPlan: {
+            ...truncationResume,
+            executionId: truncationResume.executionId ?? resumeTruncationId,
+            selectedChunk: selectedTruncationChunk,
+          },
+        };
+      }
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -1454,6 +1579,7 @@ async function main() {
           maxLinesPerChunk: chunkSize,
           sessionDeadline,
           workspaceContext,
+          lineRange: truncationLineRange ?? null,
           promptContext: {
             scope: "main",
             label: task,
@@ -1476,6 +1602,16 @@ async function main() {
               navigationSummary: workspaceContext?.navigationSummary ?? null,
               navigationBlock: workspaceContext?.navigationBlock ?? null,
               helperScript: workspaceContext?.helperScript ?? null,
+              truncationResume: truncationResume
+                ? {
+                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                    chunkGoal:
+                      selectedTruncationChunk?.goal ??
+                      selectedTruncationChunk?.label ??
+                      null,
+                    lineRange: truncationLineRange ?? null,
+                  }
+                : null,
             },
           },
         });
@@ -1497,6 +1633,16 @@ async function main() {
               mode: "analyze-file",
               linesAnalyzed: result.linesAnalyzed ?? null,
               compressedTokens: result.compressedTokens ?? null,
+              truncationResume: truncationResume
+                ? {
+                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                    chunkGoal:
+                      selectedTruncationChunk?.goal ??
+                      selectedTruncationChunk?.label ??
+                      null,
+                    lineRange: truncationLineRange ?? null,
+                  }
+                : null,
             },
             workspaceSummary: workspaceContext?.summary ?? null,
             startedAt: result.startedAt ?? null,
@@ -1548,10 +1694,16 @@ async function main() {
         resourceUsage: resourceSummary?.summary ?? null,
         result,
         promptId,
+        truncationPlan: result?.truncationPlan ?? null,
       });
       if (archive && options.verbose) {
         const relativePath = path.relative(process.cwd(), archive.path);
         console.log(`[MiniPhi] Execution archived under ${relativePath || archive.path}`);
+      }
+      if (archive?.id && result?.truncationPlan?.plan) {
+        console.log(
+          `[MiniPhi] Saved truncation plan for execution ${archive.id}. Resume with --resume-truncation ${archive.id} when applying the chunking strategy.`,
+        );
       }
     }
 
@@ -2489,6 +2641,8 @@ Options:
   --no-forgotten-note          Skip recording the placeholder backlog entry for this invocation
   --python-script <path>       Custom path to log_summarizer.py
   --chunk-size <lines>         Chunk size when analyzing files (default: 2000)
+  --resume-truncation <id>     Reuse the truncation plan recorded for a previous analyze-file execution
+  --truncation-chunk <value>   Focus a specific chunk when resuming (priority/index/substring)
   --verbose                    Print progress details
   --no-stream                  Disable live streaming of Phi-4 output
   --no-summary                 Skip JSON summary footer

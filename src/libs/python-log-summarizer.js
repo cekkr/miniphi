@@ -55,11 +55,20 @@ export default class PythonLogSummarizer {
   }
 
   async summarizeFile(filePath, options = undefined) {
-    const { maxLinesPerChunk = 1000, recursionLevels = 3 } = options ?? {};
+    const { maxLinesPerChunk = 1000, recursionLevels = 3, lineRange = null } = options ?? {};
     const summaries = [];
     const stream = fs.createReadStream(filePath, { encoding: "utf-8" });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
     let buffer = [];
+    let linesIncluded = 0;
+    let currentLine = 0;
+    const startLine = Number.isFinite(lineRange?.startLine)
+      ? Math.max(1, Math.floor(lineRange.startLine))
+      : null;
+    const endLine = Number.isFinite(lineRange?.endLine)
+      ? Math.max(startLine ?? 1, Math.floor(lineRange.endLine))
+      : null;
+    let rangeCompleted = false;
 
     return new Promise((resolve, reject) => {
       const flushChunk = () => {
@@ -74,7 +83,21 @@ export default class PythonLogSummarizer {
       };
 
       rl.on("line", (line) => {
+        if (rangeCompleted) {
+          return;
+        }
+        currentLine += 1;
+        if (startLine && currentLine < startLine) {
+          return;
+        }
+        if (endLine && currentLine > endLine) {
+          rangeCompleted = true;
+          rl.close();
+          stream.destroy();
+          return;
+        }
         buffer.push(line);
+        linesIncluded += 1;
         if (buffer.length >= maxLinesPerChunk) {
           rl.pause();
           flushChunk()
@@ -88,7 +111,20 @@ export default class PythonLogSummarizer {
 
       rl.on("close", () => {
         flushChunk()
-          .then(() => resolve({ chunks: summaries, totalChunks: summaries.length }))
+          .then(() =>
+            resolve({
+              chunks: summaries,
+              totalChunks: summaries.length,
+              linesIncluded,
+              lineRange:
+                startLine || endLine
+                  ? {
+                      startLine: startLine ?? null,
+                      endLine: endLine ?? null,
+                    }
+                  : null,
+            }),
+          )
           .catch(reject);
       });
 

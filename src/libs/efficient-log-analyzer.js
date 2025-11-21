@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import StreamAnalyzer from "./stream-analyzer.js";
+import { extractTruncationPlanFromAnalysis } from "./core-utils.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -256,6 +257,21 @@ export default class EfficientLogAnalyzer {
       devLog,
       `Phi response captured (${invocationFinishedAt - invocationStartedAt} ms):\n${this.#truncateForLog(analysis)}`,
     );
+    const truncationPlan = extractTruncationPlanFromAnalysis(analysis);
+    if (truncationPlan) {
+      truncationPlan.source = usedFallback ? "fallback" : "phi";
+      if (truncationPlan.plan?.chunkingPlan?.length) {
+        const chunkCount = truncationPlan.plan.chunkingPlan.length;
+        const chunkPhrase = `${chunkCount} chunk${chunkCount === 1 ? "" : "s"}`;
+        console.log(
+          `[MiniPhi] Truncation plan captured (${chunkPhrase}); rerun with --resume-truncation <execution-id> to apply it.`,
+        );
+        this.#logDev(
+          devLog,
+          `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
+        );
+      }
+    }
     return {
       command,
       task,
@@ -268,6 +284,7 @@ export default class EfficientLogAnalyzer {
       schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
       startedAt: invocationStartedAt,
       finishedAt: invocationFinishedAt,
+      truncationPlan,
     };
   }
 
@@ -279,6 +296,7 @@ export default class EfficientLogAnalyzer {
       promptContext = undefined,
       workspaceContext = undefined,
       verbose = false,
+      lineRange = undefined,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
     const devLog = this.#startDevLog(`file-${this.#safeLabel(path.basename(filePath))}`, {
@@ -288,15 +306,23 @@ export default class EfficientLogAnalyzer {
       summaryLevels,
       maxLinesPerChunk: maxLines,
     });
-    this.#logDev(devLog, `Summarizing ${filePath} (maxLinesPerChunk=${maxLines})`);
-    console.log(
-      `[MiniPhi] Summarizing ${path.relative(process.cwd(), filePath) || filePath} ...`,
+    const rangeLabel =
+      lineRange && (lineRange.startLine || lineRange.endLine)
+        ? ` (lines ${lineRange.startLine ?? 1}-${lineRange.endLine ?? "end"})`
+        : "";
+    this.#logDev(
+      devLog,
+      `Summarizing ${filePath}${rangeLabel} (maxLinesPerChunk=${maxLines})`,
     );
+    const relativePath = path.relative(process.cwd(), filePath) || filePath;
+    console.log(`[MiniPhi] Summarizing ${relativePath}${rangeLabel} ...`);
     const summarizeStarted = Date.now();
-    const { chunks } = await this.summarizer.summarizeFile(filePath, {
+    const summaryResult = await this.summarizer.summarizeFile(filePath, {
       maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
       recursionLevels: summaryLevels,
+      lineRange,
     });
+    const { chunks, linesIncluded } = summaryResult;
     const summarizeFinished = Date.now();
     this.#logDev(
       devLog,
@@ -312,7 +338,10 @@ export default class EfficientLogAnalyzer {
       throw new Error(`No content found in ${filePath}`);
     }
 
-    const totalLines = chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
+    const totalLines =
+      typeof linesIncluded === "number"
+        ? linesIncluded
+        : chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
     const chunkSummaries = chunks.map((chunk, idx) => {
       const label = `Chunk ${idx + 1}`;
       this.#logDev(
@@ -408,6 +437,21 @@ export default class EfficientLogAnalyzer {
         analysis,
       )}`,
     );
+    const truncationPlan = extractTruncationPlanFromAnalysis(analysis);
+    if (truncationPlan) {
+      truncationPlan.source = usedFallback ? "fallback" : "phi";
+      if (truncationPlan.plan?.chunkingPlan?.length) {
+        const chunkCount = truncationPlan.plan.chunkingPlan.length;
+        const chunkPhrase = `${chunkCount} chunk${chunkCount === 1 ? "" : "s"}`;
+        console.log(
+          `[MiniPhi] Truncation plan captured (${chunkPhrase}); rerun with --resume-truncation <execution-id> to apply it.`,
+        );
+        this.#logDev(
+          devLog,
+          `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
+        );
+      }
+    }
     return {
       filePath,
       task,
@@ -420,6 +464,8 @@ export default class EfficientLogAnalyzer {
       schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
       startedAt: invocationStartedAt,
       finishedAt: invocationFinishedAt,
+      truncationPlan,
+      lineRange: lineRange ?? null,
     };
   }
 
@@ -824,8 +870,82 @@ ${compressedContent}
         lines.push(`Helper script (${helper.language ?? "node"}): ${helperParts.join(" | ")}`);
       }
     }
+    if (extraContext.truncationPlan) {
+      const planBlock = this.#formatTruncationPlan(extraContext.truncationPlan);
+      if (planBlock) {
+        lines.push(planBlock);
+      }
+    }
     if (!lines.length) {
       return "";
+    }
+    return lines.join("\n");
+  }
+
+  #formatTruncationPlan(context) {
+    if (!context) {
+      return "";
+    }
+    const plan = context.plan ?? context;
+    if (!plan || !Array.isArray(plan.chunkingPlan)) {
+      return "";
+    }
+    const lines = [];
+    const sourceLabelParts = [];
+    if (context.executionId) {
+      sourceLabelParts.push(`execution ${context.executionId}`);
+    }
+    if (context.createdAt) {
+      sourceLabelParts.push(`captured ${context.createdAt}`);
+    }
+    if (sourceLabelParts.length) {
+      lines.push(`Truncation plan from ${sourceLabelParts.join(" / ")}`);
+    } else {
+      lines.push("Truncation plan summary");
+    }
+    if (Array.isArray(plan.carryoverFields) && plan.carryoverFields.length) {
+      lines.push(`Carryover fields: ${plan.carryoverFields.join(", ")}`);
+    }
+    if (plan.historySchema) {
+      lines.push(`History schema: ${plan.historySchema}`);
+    }
+    const selected = context.selectedChunk;
+    if (selected) {
+      const selectedRange =
+        selected.startLine || selected.endLine
+          ? `lines ${selected.startLine ?? "?"}-${selected.endLine ?? "end"}`
+          : null;
+      const selectedParts = [`Active chunk: ${selected.goal ?? selected.label ?? "Chunk"}`];
+      if (selectedRange) {
+        selectedParts.push(selectedRange);
+      }
+      if (selected.context) {
+        selectedParts.push(selected.context);
+      }
+      lines.push(selectedParts.join(" | "));
+    }
+    const preview = plan.chunkingPlan.slice(0, 3).map((chunk) => {
+      const priorityLabel =
+        Number.isFinite(chunk.priority) && chunk.priority > 0
+          ? `#${chunk.priority}`
+          : `#${chunk.index + 1}`;
+      const range =
+        chunk.startLine || chunk.endLine
+          ? ` (lines ${chunk.startLine ?? "?"}-${chunk.endLine ?? "end"})`
+          : "";
+      const helperHint =
+        Array.isArray(chunk.helperCommands) && chunk.helperCommands.length
+          ? ` helpers: ${chunk.helperCommands.join(", ")}`
+          : "";
+      const contextNote = chunk.context ? ` — ${chunk.context}` : "";
+      return `- ${priorityLabel} ${chunk.goal}${range}${contextNote}${helperHint}`;
+    });
+    if (plan.chunkingPlan.length > preview.length) {
+      preview.push(`- ... (${plan.chunkingPlan.length - preview.length} more chunk targets)`);
+    }
+    lines.push(...preview);
+    if (plan.notes) {
+      lines.push(`Plan notes: ${plan.notes}`);
     }
     return lines.join("\n");
   }

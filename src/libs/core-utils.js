@@ -189,3 +189,171 @@ export function isLocalLmStudioBaseUrl(baseUrl) {
     return true;
   }
 }
+
+function toStringArray(candidate) {
+  if (!candidate && candidate !== 0) {
+    return [];
+  }
+  if (Array.isArray(candidate)) {
+    return candidate
+      .map((entry) => (typeof entry === "string" ? entry : String(entry ?? "")))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  return candidate
+    .toString()
+    .split(/[,|]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function normalizeLineRangeValue(value) {
+  if (!value && value !== 0) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    const [start, end] = value;
+    const startLine = Number(start);
+    const endLine = Number(end);
+    if (Number.isFinite(startLine) || Number.isFinite(endLine)) {
+      return {
+        startLine: Number.isFinite(startLine) ? Math.max(1, Math.floor(startLine)) : null,
+        endLine: Number.isFinite(endLine) ? Math.max(1, Math.floor(endLine)) : null,
+      };
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    const startCandidate =
+      value.start ?? value.begin ?? value.from ?? value.first ?? value.min ?? value.low;
+    const endCandidate = value.end ?? value.stop ?? value.to ?? value.last ?? value.max ?? value.high;
+    const startLine = Number(startCandidate);
+    const endLine = Number(endCandidate);
+    if (Number.isFinite(startLine) || Number.isFinite(endLine)) {
+      return {
+        startLine: Number.isFinite(startLine) ? Math.max(1, Math.floor(startLine)) : null,
+        endLine: Number.isFinite(endLine) ? Math.max(1, Math.floor(endLine)) : null,
+      };
+    }
+    return null;
+  }
+  const match = value.toString().match(/(\d+)\s*[-:,]\s*(\d+)/);
+  if (match) {
+    const startLine = Number(match[1]);
+    const endLine = Number(match[2]);
+    if (Number.isFinite(startLine) || Number.isFinite(endLine)) {
+      return {
+        startLine: Number.isFinite(startLine) ? Math.max(1, Math.floor(startLine)) : null,
+        endLine: Number.isFinite(endLine) ? Math.max(1, Math.floor(endLine)) : null,
+      };
+    }
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return {
+      startLine: Math.max(1, Math.floor(numeric)),
+      endLine: null,
+    };
+  }
+  return null;
+}
+
+export function normalizeTruncationPlan(strategy) {
+  if (!strategy || typeof strategy !== "object") {
+    return null;
+  }
+  const rawChunks = Array.isArray(strategy.chunking_plan ?? strategy.chunkingPlan)
+    ? strategy.chunking_plan ?? strategy.chunkingPlan
+    : [];
+  const chunkingPlan = rawChunks
+    .map((entry, index) => {
+      if (!entry) {
+        return null;
+      }
+      const range =
+        normalizeLineRangeValue(
+          entry.lines ?? entry.line_range ?? entry.lineWindow ?? entry.lineRange,
+        ) ?? null;
+      const helperCommands = toStringArray(
+        entry.helper_commands ?? entry.commands ?? entry.helpers ?? [],
+      );
+      return {
+        id: entry.id ?? `chunk-${index + 1}`,
+        index,
+        goal: entry.goal ?? entry.label ?? `Chunk ${index + 1}`,
+        label: entry.label ?? entry.goal ?? `Chunk ${index + 1}`,
+        priority: Number.isFinite(Number(entry.priority))
+          ? Number(entry.priority)
+          : index + 1,
+        context: entry.context ?? entry.summary ?? entry.notes ?? null,
+        notes: entry.notes ?? null,
+        startLine: range?.startLine ?? null,
+        endLine: range?.endLine ?? null,
+        helperCommands,
+        raw: entry,
+      };
+    })
+    .filter(Boolean);
+  const carryoverFields = toStringArray(strategy.carryover_fields ?? strategy.carryoverFields);
+  const helperFocus = toStringArray(strategy.helper_focus ?? strategy.helperFocus);
+  const helperCommands = toStringArray(strategy.helper_commands ?? strategy.helperCommands);
+  const historySchema =
+    typeof strategy.history_schema === "string"
+      ? strategy.history_schema
+      : typeof strategy.historySchema === "string"
+        ? strategy.historySchema
+        : null;
+  const shouldSplitFlag =
+    strategy.should_split ?? strategy.shouldSplit ?? (chunkingPlan.length > 0 ? true : null);
+  return {
+    shouldSplit: Boolean(shouldSplitFlag),
+    chunkingPlan,
+    carryoverFields,
+    historySchema,
+    helperFocus,
+    helperCommands,
+    notes: typeof strategy.notes === "string" ? strategy.notes : null,
+    raw: strategy,
+  };
+}
+
+export function extractTruncationPlanFromAnalysis(analysisText) {
+  if (!analysisText || typeof analysisText !== "string") {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(analysisText);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const strategy = parsed.truncation_strategy ?? parsed.truncationStrategy ?? null;
+  if (!strategy) {
+    return null;
+  }
+  const plan = normalizeTruncationPlan(strategy);
+  if (!plan) {
+    return null;
+  }
+  const nextStepsCandidate = parsed.next_steps ?? parsed.nextSteps;
+  const nextSteps = Array.isArray(nextStepsCandidate)
+    ? nextStepsCandidate
+        .filter((step) => typeof step === "string" && step.trim().length > 0)
+        .map((step) => step.trim())
+    : [];
+  const recommendedFixesCandidate =
+    parsed.recommended_fixes ?? parsed.recommendedFixes ?? [];
+  const recommendedFixes = Array.isArray(recommendedFixesCandidate)
+    ? recommendedFixesCandidate
+    : [];
+  return {
+    plan,
+    task: typeof parsed.task === "string" ? parsed.task : null,
+    summary: typeof parsed.summary === "string" ? parsed.summary : null,
+    nextSteps,
+    recommendedFixes,
+  };
+}

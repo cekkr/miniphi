@@ -195,6 +195,7 @@ export default class MiniPhiMemory {
       resourceUsage: payload.resourceUsage ?? null,
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
+      truncationPlan: null,
     };
 
     const promptFile = path.join(executionDir, "prompt.json");
@@ -236,6 +237,30 @@ export default class MiniPhiMemory {
       })),
       updatedAt: timestamp,
     });
+    let truncationPlanPath = null;
+    const planPayload = payload.truncationPlan ?? payload.result?.truncationPlan ?? null;
+    if (planPayload?.plan) {
+      const planRecord = {
+        executionId,
+        createdAt: timestamp,
+        task: planPayload.task ?? payload.task ?? null,
+        mode: payload.mode,
+        filePath: payload.filePath ?? null,
+        command: payload.command ?? null,
+        summary: planPayload.summary ?? null,
+        nextSteps: Array.isArray(planPayload.nextSteps) ? planPayload.nextSteps : [],
+        recommendedFixes: Array.isArray(planPayload.recommendedFixes)
+          ? planPayload.recommendedFixes
+          : [],
+        plan: planPayload.plan,
+        source: planPayload.source ?? null,
+        schemaId: payload.result?.schemaId ?? null,
+      };
+      truncationPlanPath = path.join(executionDir, "truncation-plan.json");
+      await this.#writeJSON(truncationPlanPath, planRecord);
+      metadata.truncationPlan = this.#relative(truncationPlanPath);
+    }
+
     await this.#writeJSON(executionIndexFile, {
       id: executionId,
       createdAt: timestamp,
@@ -245,6 +270,7 @@ export default class MiniPhiMemory {
         analysis: this.#relative(analysisFile),
         compression: this.#relative(compressionFile),
         segments: segments.map((segment) => segment.file),
+        truncationPlan: metadata.truncationPlan,
       },
     });
 
@@ -253,7 +279,7 @@ export default class MiniPhiMemory {
     await this.#updateTodoList(payload.result.analysis, executionId, timestamp);
     await this.#updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
 
-    return { id: executionId, path: executionDir };
+    return { id: executionId, path: executionDir, truncationPlanPath };
   }
 
   async savePromptDecomposition(payload) {
@@ -357,6 +383,20 @@ export default class MiniPhiMemory {
     index.entries = filtered.slice(0, 200);
     await this.#writeJSON(this.promptSessionsIndexFile, index);
     await this.#updateRootIndex();
+  }
+
+  async loadTruncationPlan(executionId) {
+    if (!executionId) {
+      return null;
+    }
+    await this.prepare();
+    const safeId = this.#sanitizeId(executionId);
+    const planFile = path.join(this.executionsDir, safeId, "truncation-plan.json");
+    try {
+      return await this.#readJSON(planFile, null);
+    } catch {
+      return null;
+    }
   }
 
   #findExistingMiniPhi(startDir) {

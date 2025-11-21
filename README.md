@@ -123,6 +123,7 @@ node src/index.js run --cmd "npm test" --task "Analyze why the tests fail"
 node src/index.js analyze-file --file ./logs/output.log --task "Summarize the recurring crash"
 ```
 - Logs are chunked (`--chunk-size 2000` default), summarized recursively (`--summary-levels 3` default), and the resulting prompt transcript lands in `.miniphi/prompt-exchanges/`.
+- When Phi-4 responds with a `truncation_strategy`, MiniPhi now saves the JSON plan under `.miniphi/executions/<id>/truncation-plan.json`, prints the execution id, and lets you resume with `--resume-truncation <id>` (optionally `--truncation-chunk <priority|label>`). The resumed run focuses the requested chunk—down to the line window when provided—so the follow-up prompt consumes the plan instead of starting from scratch.
 
 ## Command tour
 - `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--prompt-id`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
@@ -141,6 +142,8 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 - `--prompt-id <id>` or `--config defaults.promptId` let you resume a chat session; transcripts are written to `.miniphi/prompt-sessions/<id>.json`.
 - `--prompt-journal [id]` mirrors every prompt + downstream operation into `.miniphi/prompt-exchanges/stepwise/<id>/`; combine with `--prompt-journal-status paused|completed|closed` to pause/resume journals explicitly.
 - `--python-script <path>` overrides the bundled `log_summarizer.py` (miniPhi will auto-detect `python3`, `python`, or `py`).
+- `--resume-truncation <execution-id>` replays the truncation plan saved for a previous analyze-file run; use it as soon as the CLI tells you a plan was captured.
+- `--truncation-chunk <priority|label>` selects which chunk goal from the saved plan should drive the follow-up run. When the plan contains a line range, MiniPhi restricts summarization to that slice automatically.
 - `--session-timeout <s>` hard-stops the orchestration; Phi-4 receives the remaining budget with each prompt so runaway loops cannot hang the CLI.
 - `--no-summary` skips the JSON footer if another system is reading stdout.
 - `MINIPHI_CONFIG=/path/config.json` is honored if you prefer environment variables over flags.
