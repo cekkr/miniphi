@@ -7,7 +7,7 @@
       "baseUrl": "http://127.0.0.1:1234"
     },
     "prompt": {
-      "timeoutSeconds": 45,
+      "timeoutSeconds": 180,
       "noTokenTimeoutSeconds": 600
     }
   },
@@ -15,7 +15,7 @@
     "task": "Provide a precise technical analysis of the captured output.",
     "contextLength": 32768,
     "gpu": "auto",
-    "timeoutSeconds": 60,
+    "timeoutSeconds": 600,
     "summaryLevels": 3,
     "chunkSize": 2000,
     "sessionTimeoutSeconds": 1800
