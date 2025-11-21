@@ -8,7 +8,7 @@
     },
     "prompt": {
       "timeoutSeconds": 180,
-      "noTokenTimeoutSeconds": 600
+      "noTokenTimeoutSeconds": 1200
     }
   },
   "defaults": {
