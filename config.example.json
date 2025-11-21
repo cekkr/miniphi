@@ -7,7 +7,8 @@
       "baseUrl": "http://127.0.0.1:1234"
     },
     "prompt": {
-      "timeoutMs": 45000
+      "timeoutMs": 45000,
+      "noTokenTimeoutMs": 300000
     }
   },
   "defaults": {

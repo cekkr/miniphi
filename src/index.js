@@ -58,7 +58,7 @@ const COMMANDS = new Set([
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
-const DEFAULT_NO_TOKEN_TIMEOUT_MS = 120000;
+const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();

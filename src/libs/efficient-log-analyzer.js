@@ -181,6 +181,13 @@ export default class EfficientLogAnalyzer {
     const stopHeartbeat = !streamOutput
       ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
+    if (verbose) {
+      this.#emitVerbosePromptPreview(prompt, compression.tokens, {
+        schemaId: traceOptions.schemaId,
+        origin: `Command "${command}"`,
+        lines: lines.length,
+      });
+    }
     try {
       await this.phi4.chatStream(
         prompt,
@@ -222,10 +229,17 @@ export default class EfficientLogAnalyzer {
       } else {
         process.stdout.write("\n");
       }
-    } else if (usedFallback) {
-      console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
     } else {
-      console.log("[MiniPhi] Phi response received.");
+      if (usedFallback) {
+        console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
+      } else {
+        console.log("[MiniPhi] Phi response received.");
+      }
+      if (verbose) {
+        this.#emitVerboseResponsePreview(analysis, {
+          origin: `Command "${command}"`,
+        });
+      }
     }
 
     const invocationFinishedAt = Date.now();
@@ -323,6 +337,13 @@ export default class EfficientLogAnalyzer {
     const stopHeartbeat = !streamOutput
       ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
+    if (verbose) {
+      this.#emitVerbosePromptPreview(prompt, tokensUsed, {
+        schemaId: traceOptions.schemaId,
+        origin: `Log file ${path.basename(filePath)}`,
+        lines: linesUsed,
+      });
+    }
     try {
       await this.phi4.chatStream(
         prompt,
@@ -358,10 +379,17 @@ export default class EfficientLogAnalyzer {
       } else {
         process.stdout.write("\n");
       }
-    } else if (usedFallback) {
-      console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
     } else {
-      console.log("[MiniPhi] Phi response received.");
+      if (usedFallback) {
+        console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
+      } else {
+        console.log("[MiniPhi] Phi response received.");
+      }
+      if (verbose) {
+        this.#emitVerboseResponsePreview(analysis, {
+          origin: `Log file ${path.basename(filePath)}`,
+        });
+      }
     }
     const invocationFinishedAt = Date.now();
     this.#logDev(
@@ -781,6 +809,41 @@ ${compressedContent}
       throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
     }
     this.phi4.setPromptTimeout(remaining);
+  }
+
+  #emitVerbosePromptPreview(prompt, tokens, context = undefined) {
+    if (!prompt) {
+      return;
+    }
+    const schemaLabel = context?.schemaId ?? this.schemaId ?? "log-analysis";
+    const origin = context?.origin ?? "Phi request";
+    const lines =
+      typeof context?.lines === "number" && Number.isFinite(context.lines) ? context.lines : null;
+    const limit = context?.limit ?? 1200;
+    const lineClause = lines !== null ? `, ${lines} lines summarized` : "";
+    console.log(
+      `[MiniPhi] ${origin}: dispatching ${tokens ?? "unknown"} tokens to Phi-4 (schema=${schemaLabel}${lineClause}).`,
+    );
+    const truncated = typeof prompt === "string" && prompt.length > limit;
+    const preview = this.#truncateForLog(prompt, limit);
+    console.log(`[MiniPhi] --- Prompt preview (first ${limit} chars) ---\n${preview}`);
+    console.log(`[MiniPhi] --- End prompt preview${truncated ? " (truncated)" : ""} ---`);
+  }
+
+  #emitVerboseResponsePreview(response, context = undefined) {
+    const origin = context?.origin ?? "Phi response";
+    if (!response) {
+      console.log(`[MiniPhi] ${origin}: no response body captured.`);
+      return;
+    }
+    const limit = context?.limit ?? 1200;
+    const truncated = typeof response === "string" && response.length > limit;
+    const preview = this.#truncateForLog(response, limit);
+    console.log(
+      `[MiniPhi] ${origin}: captured ${response.length ?? preview.length} characters from Phi-4.`,
+    );
+    console.log(`[MiniPhi] --- Response preview (first ${limit} chars) ---\n${preview}`);
+    console.log(`[MiniPhi] --- End response preview${truncated ? " (truncated)" : ""} ---`);
   }
 
   #startDevLog(label, metadata = undefined) {
