@@ -61,6 +61,7 @@ const COMMANDS = new Set([
   "benchmark",
   "workspace",
   "prompt-template",
+  "command-library",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -161,6 +162,68 @@ function parseDirectFileReferences(taskText, cwd) {
   return {
     cleanedTask: cleanedTask.trim() || taskText,
     references,
+  };
+}
+
+function formatCommandLibraryBlock(entries, limit = 6) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return "";
+  }
+  const capped = entries.slice(0, Math.max(1, limit));
+  const lines = ["Command library recommendations:"];
+  for (const entry of capped) {
+    const parts = [`- ${entry.command}`];
+    if (entry.description) {
+      parts.push(entry.description);
+    }
+    const meta = [];
+    if (Array.isArray(entry.files) && entry.files.length) {
+      meta.push(`files: ${entry.files.slice(0, 2).join(", ")}`);
+    }
+    if (Array.isArray(entry.tags) && entry.tags.length) {
+      meta.push(`tags: ${entry.tags.join(", ")}`);
+    }
+    if (entry.owner) {
+      meta.push(`owner: ${entry.owner}`);
+    }
+    if (entry.source) {
+      meta.push(`source: ${entry.source}`);
+    }
+    if (meta.length) {
+      parts.push(`(${meta.join(" | ")})`);
+    }
+    lines.push(parts.join(" "));
+  }
+  if (entries.length > capped.length) {
+    lines.push(`- ... ${entries.length - capped.length} more stored command${entries.length - capped.length === 1 ? "" : "s"}`);
+  }
+  return lines.join("\n");
+}
+
+async function attachCommandLibraryToWorkspace(workspaceContext, memory, options = undefined) {
+  if (!memory) {
+    return workspaceContext;
+  }
+  const limit = Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
+  let entries = [];
+  try {
+    entries = await memory.loadCommandLibrary(limit);
+  } catch (error) {
+    if (options?.verbose) {
+      console.warn(
+        `[MiniPhi] Unable to load command library: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return workspaceContext;
+  }
+  if (!entries?.length) {
+    return workspaceContext;
+  }
+  const block = formatCommandLibraryBlock(entries, limit);
+  return {
+    ...(workspaceContext ?? {}),
+    commandLibraryEntries: entries,
+    commandLibraryBlock: block,
   };
 }
 
@@ -654,6 +717,11 @@ async function main() {
     return;
   }
 
+  if (command === "command-library") {
+    await handleCommandLibrary({ options, verbose });
+    return;
+  }
+
   // "recompose" command is ONLY for development testing purposes, like "benchmark". 
   if (command === "recompose") { 
     await handleRecompose({
@@ -1123,6 +1191,9 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
+      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
+        verbose,
+      });
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -1241,6 +1312,9 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
+      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
+        verbose,
+      });
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -1494,6 +1568,9 @@ async function main() {
         objective: task,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
+      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
+        verbose,
+      });
       if (truncationResume) {
         workspaceContext = {
           ...(workspaceContext ?? {}),
@@ -1859,6 +1936,82 @@ async function handleHistoryNotes({ options, verbose }) {
   if (snapshot.markdownPath) {
     const relMd = path.relative(process.cwd(), snapshot.markdownPath);
     console.log(`[MiniPhi][History] Markdown: ${relMd || snapshot.markdownPath}`);
+  }
+}
+
+async function handleCommandLibrary({ options, verbose }) {
+  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const memory = new MiniPhiMemory(cwd);
+  await memory.prepare();
+  const limit =
+    parseNumericSetting(options.limit, "--limit") ??
+    parseNumericSetting(options.count, "--count") ??
+    12;
+  let entries = await memory.loadCommandLibrary(limit ?? 12);
+  const search = typeof options.search === "string" ? options.search.trim().toLowerCase() : null;
+  const tag = typeof options.tag === "string" ? options.tag.trim().toLowerCase() : null;
+  if (tag) {
+    entries = entries.filter((entry) =>
+      Array.isArray(entry.tags) ? entry.tags.some((t) => t && t.toLowerCase().includes(tag)) : false,
+    );
+  }
+  if (search) {
+    entries = entries.filter((entry) => {
+      const haystack = [
+        entry.command,
+        entry.description,
+        ...(entry.files ?? []),
+        ...(entry.tags ?? []),
+        entry.owner,
+        entry.source,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
+  }
+  if (options.json) {
+    console.log(JSON.stringify(entries, null, 2));
+    return;
+  }
+  if (!entries.length) {
+    console.log("[MiniPhi][CommandLibrary] No commands matched the current filters.");
+    if (verbose) {
+      console.log(
+        `[MiniPhi][CommandLibrary] Library is stored under ${path.relative(process.cwd(), memory.commandLibraryFile) || memory.commandLibraryFile}`,
+      );
+    }
+    return;
+  }
+  console.log(
+    `[MiniPhi][CommandLibrary] Showing ${entries.length} command${entries.length === 1 ? "" : "s"} (cwd: ${cwd})`,
+  );
+  entries.forEach((entry, idx) => {
+    console.log(`\n${idx + 1}. ${entry.command}`);
+    if (entry.description) {
+      console.log(`   ${entry.description}`);
+    }
+    const metaParts = [];
+    if (entry.owner) metaParts.push(`owner: ${entry.owner}`);
+    if (entry.source) metaParts.push(`source: ${entry.source}`);
+    if (entry.createdAt) metaParts.push(`captured: ${entry.createdAt}`);
+    if (Array.isArray(entry.tags) && entry.tags.length) {
+      metaParts.push(`tags: ${entry.tags.join(", ")}`);
+    }
+    if (Array.isArray(entry.files) && entry.files.length) {
+      metaParts.push(`files: ${entry.files.slice(0, 4).join(", ")}`);
+    }
+    if (metaParts.length) {
+      console.log(`   ${metaParts.join(" | ")}`);
+    }
+  });
+  if (verbose) {
+    console.log(
+      `\n[MiniPhi][CommandLibrary] Stored at ${
+        path.relative(process.cwd(), memory.commandLibraryFile) || memory.commandLibraryFile
+      }`,
+    );
   }
 }
 
@@ -2643,6 +2796,7 @@ Usage:
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js history-notes --label "post benchmark"
+  node src/index.js command-library --limit 10
   node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
@@ -2693,6 +2847,13 @@ Prompt template baselines:
   --output <path>              Persist the generated prompt text to a separate file
   --no-workspace               Skip workspace profiling when drafting the template
   --notes <text>               Extra reminders appended to the prompt body
+
+Command library:
+  --limit <n>                  Number of commands to display (default: 12)
+  --search <text>              Filter commands by substring match
+  --tag <text>                 Filter commands by tag name
+  --json                       Output JSON instead of human-readable text
+  --cwd <path>                 Override which workspace library to inspect (default: cwd)
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)

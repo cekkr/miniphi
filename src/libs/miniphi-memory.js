@@ -436,6 +436,16 @@ export default class MiniPhiMemory {
     return additions;
   }
 
+  async loadCommandLibrary(limit = 20) {
+    await this.prepare();
+    const data = await this.#readJSON(this.commandLibraryFile, { entries: [] });
+    if (!Array.isArray(data.entries) || data.entries.length === 0) {
+      return [];
+    }
+    const maxEntries = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 20;
+    return data.entries.slice(0, maxEntries);
+  }
+
   async loadTruncationPlan(executionId) {
     if (!executionId) {
       return null;

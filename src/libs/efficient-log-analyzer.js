@@ -870,6 +870,9 @@ ${compressedContent}
         lines.push(`Helper script (${helper.language ?? "node"}): ${helperParts.join(" | ")}`);
       }
     }
+    if (extraContext.commandLibraryBlock) {
+      lines.push(extraContext.commandLibraryBlock);
+    }
     if (extraContext.truncationPlan) {
       const planBlock = this.#formatTruncationPlan(extraContext.truncationPlan);
       if (planBlock) {
