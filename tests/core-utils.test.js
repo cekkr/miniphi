@@ -9,6 +9,7 @@ import {
   buildResourceConfig,
   resolveLmStudioHttpBaseUrl,
   isLocalLmStudioBaseUrl,
+  extractContextRequestsFromAnalysis,
 } from "../src/libs/core-utils.js";
 
 test("normalizeDangerLevel clamps unknown values to mid", () => {
@@ -107,4 +108,33 @@ test("isLocalLmStudioBaseUrl detects loopback hosts", () => {
   assert.equal(isLocalLmStudioBaseUrl("http://localhost"), true);
   assert.equal(isLocalLmStudioBaseUrl("http://192.168.1.5:1234"), false);
   assert.equal(isLocalLmStudioBaseUrl("not a url"), true);
+});
+
+test("extractContextRequestsFromAnalysis returns normalized hints", () => {
+  const analysis = JSON.stringify({
+    context_requests: [
+      {
+        id: "chunk-1",
+        description: "Provide chunk 2",
+        details: "Lines 120-200 focus on parser errors",
+        priority: "high",
+        context: "parser.c",
+      },
+      {
+        request: "Need README excerpt",
+        scope: "README.md",
+        priority: "mid",
+      },
+      {
+        details: "Missing description only",
+      },
+    ],
+  });
+  const requests = extractContextRequestsFromAnalysis(analysis);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].id, "chunk-1");
+  assert.equal(requests[0].detail, "Lines 120-200 focus on parser errors");
+  assert.equal(requests[0].priority, "high");
+  assert.equal(requests[1].description, "Need README excerpt");
+  assert.equal(requests[1].context, "README.md");
 });

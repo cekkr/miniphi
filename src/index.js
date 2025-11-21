@@ -50,6 +50,7 @@ import {
   resolveLmStudioHttpBaseUrl,
   isLocalLmStudioBaseUrl,
   extractRecommendedCommandsFromAnalysis,
+  extractContextRequestsFromAnalysis,
 } from "./libs/core-utils.js";
 
 const COMMANDS = new Set([
@@ -198,6 +199,44 @@ function formatCommandLibraryBlock(entries, limit = 6) {
     lines.push(`- ... ${entries.length - capped.length} more stored command${entries.length - capped.length === 1 ? "" : "s"}`);
   }
   return lines.join("\n");
+}
+
+function displayContextRequests(contextRequests) {
+  if (!Array.isArray(contextRequests) || contextRequests.length === 0) {
+    return;
+  }
+  console.log("\n[MiniPhi] Phi requested additional context before continuing:");
+  contextRequests.forEach((request, index) => {
+    const prefix = `${index + 1}. ${request.description}`;
+    const extras = [];
+    if (request.context) {
+      extras.push(`context: ${request.context}`);
+    }
+    if (request.scope) {
+      extras.push(`scope: ${request.scope}`);
+    }
+    if (request.priority) {
+      extras.push(`priority: ${request.priority}`);
+    }
+    if (request.source) {
+      extras.push(`source: ${request.source}`);
+    }
+    console.log(`  ${prefix}${extras.length ? ` (${extras.join(", ")})` : ""}`);
+    if (request.detail) {
+      console.log(`     Details: ${request.detail}`);
+    }
+  });
+}
+
+function attachContextRequestsToResult(result) {
+  if (!result || typeof result !== "object") {
+    return;
+  }
+  const requests = extractContextRequestsFromAnalysis(result.analysis ?? "");
+  result.contextRequests = requests;
+  if (requests.length) {
+    displayContextRequests(requests);
+  }
 }
 
 async function attachCommandLibraryToWorkspace(workspaceContext, memory, options = undefined) {
@@ -1450,6 +1489,7 @@ async function main() {
             reason: "Primary --cmd execution",
           },
         });
+        attachContextRequestsToResult(result);
         if (promptJournal && result) {
           await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
             label: `run:${cmd}`,
@@ -1693,6 +1733,7 @@ async function main() {
             },
           },
         });
+        attachContextRequestsToResult(result);
         if (promptJournal && result) {
           await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
             label: `analyze-file:${path.basename(filePath)}`,

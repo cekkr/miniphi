@@ -194,6 +194,7 @@ export default class MiniPhiMemory {
       contextLength: payload.contextLength ?? null,
       linesAnalyzed: payload.result.linesAnalyzed,
       compressedTokens: payload.result.compressedTokens,
+      contextRequests: payload.result.contextRequests ?? [],
       resourceUsage: payload.resourceUsage ?? null,
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
@@ -227,6 +228,7 @@ export default class MiniPhiMemory {
     await this.#writeJSON(analysisFile, {
       analysis: payload.result.analysis,
       summary,
+      contextRequests: payload.result.contextRequests ?? [],
       updatedAt: timestamp,
     });
     await this.#writeJSON(compressionFile, {

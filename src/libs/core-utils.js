@@ -406,3 +406,61 @@ export function extractRecommendedCommandsFromAnalysis(analysisText) {
   });
   return commands;
 }
+
+export function extractContextRequestsFromAnalysis(analysisText) {
+  if (!analysisText || typeof analysisText !== "string") {
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(analysisText);
+  } catch {
+    return [];
+  }
+  const rawRequests = parsed?.context_requests ?? parsed?.contextRequests;
+  if (!Array.isArray(rawRequests) || rawRequests.length === 0) {
+    return [];
+  }
+  const normalized = [];
+  for (const request of rawRequests) {
+    if (!request || typeof request !== "object") {
+      continue;
+    }
+    const description =
+      (typeof request.description === "string" && request.description.trim().length > 0
+        ? request.description.trim()
+        : null) ||
+      (typeof request.request === "string" && request.request.trim().length > 0
+        ? request.request.trim()
+        : null);
+    if (!description) {
+      continue;
+    }
+    const detail =
+      (typeof request.details === "string" && request.details.trim().length > 0
+        ? request.details.trim()
+        : null) ||
+      (typeof request.detail === "string" && request.detail.trim().length > 0
+        ? request.detail.trim()
+        : null);
+    const priority =
+      typeof request.priority === "string" && request.priority.trim().length > 0
+        ? request.priority.trim().toLowerCase()
+        : null;
+    const context =
+      (typeof request.context === "string" && request.context.trim().length > 0
+        ? request.context.trim()
+        : null) ||
+      (typeof request.scope === "string" && request.scope.trim().length > 0
+        ? request.scope.trim()
+        : null);
+    const source =
+      typeof request.source === "string" && request.source.trim().length > 0
+        ? request.source.trim()
+        : null;
+    const id =
+      typeof request.id === "string" && request.id.trim().length > 0 ? request.id.trim() : null;
+    normalized.push({ id, description, detail, priority, context, source });
+  }
+  return normalized;
+}
