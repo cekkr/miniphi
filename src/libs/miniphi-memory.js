@@ -51,6 +51,7 @@ export default class MiniPhiMemory {
       "index.json",
     );
     this.helperScriptsIndexFile = path.join(this.helpersDir, "index.json");
+    this.commandLibraryFile = path.join(this.helpersDir, "command-library.json");
     this.promptStepJournalIndexFile = path.join(this.promptStepJournalDir, "index.json");
     this.promptTemplatesIndexFile = path.join(this.promptTemplatesDir, "index.json");
 
@@ -96,6 +97,7 @@ export default class MiniPhiMemory {
     await this.#ensureFile(this.helperScriptsIndexFile, { entries: [] });
     await this.#ensureFile(this.promptStepJournalIndexFile, { entries: [] });
     await this.#ensureFile(this.promptTemplatesIndexFile, { entries: [] });
+    await this.#ensureFile(this.commandLibraryFile, { entries: [] });
     await this.#ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -385,6 +387,55 @@ export default class MiniPhiMemory {
     await this.#updateRootIndex();
   }
 
+  async recordCommandIdeas(payload) {
+    if (!payload || !Array.isArray(payload.commands) || payload.commands.length === 0) {
+      return [];
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const data = await this.#readJSON(this.commandLibraryFile, { entries: [] });
+    const existingKeySet = new Set(
+      data.entries.map((entry) => entry.command?.trim().toLowerCase()).filter(Boolean),
+    );
+    const additions = [];
+    for (const idea of payload.commands) {
+      const text = typeof idea?.command === "string" ? idea.command.trim() : "";
+      if (!text) {
+        continue;
+      }
+      const normalized = text.toLowerCase();
+      if (existingKeySet.has(normalized)) {
+        continue;
+      }
+      existingKeySet.add(normalized);
+      const entry = {
+        id: randomUUID(),
+        command: text,
+        description: typeof idea?.description === "string" ? idea.description.trim() : null,
+        files: Array.isArray(idea?.files)
+          ? idea.files.map((file) => file?.toString().trim()).filter(Boolean).slice(0, 8)
+          : [],
+        owner: typeof idea?.owner === "string" ? idea.owner.trim() : null,
+        tags: Array.isArray(idea?.tags)
+          ? idea.tags.map((tag) => tag?.toString().trim()).filter(Boolean).slice(0, 8)
+          : [],
+        executionId: payload.executionId ?? null,
+        mode: payload.mode ?? null,
+        task: payload.task ?? null,
+        source: idea?.source ?? payload.source ?? "analysis",
+        createdAt: timestamp,
+      };
+      additions.push(entry);
+    }
+    if (!additions.length) {
+      return [];
+    }
+    data.entries = [...additions, ...data.entries].slice(0, 300);
+    await this.#writeJSON(this.commandLibraryFile, data);
+    await this.#updateRootIndex();
+    return additions;
+  }
+
   async loadTruncationPlan(executionId) {
     if (!executionId) {
       return null;
@@ -667,6 +718,7 @@ export default class MiniPhiMemory {
       { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
       { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
       { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
+      { name: "command-library", file: this.#relative(this.commandLibraryFile) },
       { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
       { name: "prompt-templates", file: this.#relative(this.promptTemplatesIndexFile) },
     ];

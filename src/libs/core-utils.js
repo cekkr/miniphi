@@ -357,3 +357,52 @@ export function extractTruncationPlanFromAnalysis(analysisText) {
     recommendedFixes,
   };
 }
+
+export function extractRecommendedCommandsFromAnalysis(analysisText) {
+  if (!analysisText || typeof analysisText !== "string") {
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(analysisText);
+  } catch {
+    return [];
+  }
+  const fixes = parsed?.recommended_fixes ?? parsed?.recommendedFixes;
+  if (!Array.isArray(fixes) || fixes.length === 0) {
+    return [];
+  }
+  const commands = [];
+  fixes.forEach((fix, index) => {
+    if (!fix) {
+      return;
+    }
+    const commandList = Array.isArray(fix.commands)
+      ? fix.commands
+      : Array.isArray(fix.scripts)
+        ? fix.scripts
+        : [];
+    commandList.forEach((commandText) => {
+      if (typeof commandText !== "string") {
+        return;
+      }
+      const trimmed = commandText.trim();
+      if (!trimmed) {
+        return;
+      }
+      commands.push({
+        command: trimmed,
+        description:
+          typeof fix.description === "string"
+            ? fix.description.trim()
+            : `Command suggestion from recommended fix #${index + 1}`,
+        files: Array.isArray(fix.files)
+          ? fix.files.map((file) => (typeof file === "string" ? file.trim() : null)).filter(Boolean)
+          : [],
+        owner: typeof fix.owner === "string" ? fix.owner.trim() : null,
+        tags: ["recommended-fix"],
+      });
+    });
+  });
+  return commands;
+}

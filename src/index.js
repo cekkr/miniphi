@@ -49,6 +49,7 @@ import {
   buildResourceConfig,
   resolveLmStudioHttpBaseUrl,
   isLocalLmStudioBaseUrl,
+  extractRecommendedCommandsFromAnalysis,
 } from "./libs/core-utils.js";
 
 const COMMANDS = new Set([
@@ -1705,6 +1706,25 @@ async function main() {
           `[MiniPhi] Saved truncation plan for execution ${archive.id}. Resume with --resume-truncation ${archive.id} when applying the chunking strategy.`,
         );
       }
+      if (archive?.id && result?.analysis) {
+        const learnedCommands = extractRecommendedCommandsFromAnalysis(result.analysis);
+        if (learnedCommands.length) {
+          await stateManager.recordCommandIdeas({
+            executionId: archive.id,
+            task,
+            mode: command,
+            commands: learnedCommands,
+            source: "analysis",
+          });
+          if (options.verbose) {
+            console.log(
+              `[MiniPhi] Learned ${learnedCommands.length} recommended command${
+                learnedCommands.length === 1 ? "" : "s"
+              } from the analysis output.`,
+            );
+          }
+        }
+      }
     }
 
     if (!options["no-summary"]) {
@@ -2327,6 +2347,10 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
     parseNumericSetting(options["chunk-size"], "--chunk-size");
   const helperFocus = parseListOption(options["helper-focus"]);
   const historyKeys = parseListOption(options["history-keys"]);
+  const schemaId =
+    (typeof options["schema-id"] === "string" && options["schema-id"].trim()) ||
+    (typeof options.schema === "string" && options.schema.trim()) ||
+    null;
   const notes =
     typeof options.notes === "string" && options.notes.trim().length ? options.notes.trim() : null;
   const skipWorkspace = Boolean(options["no-workspace"]);
@@ -2357,6 +2381,7 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
       helperFocus,
       historyKeys,
       notes,
+      schemaId,
       workspaceContext,
     });
   } catch (error) {
@@ -2663,6 +2688,7 @@ Prompt template baselines:
   --target-lines <n>           Desired per-chunk line budget for truncation_strategy
   --history-keys <list>        Comma/pipe-separated JSON keys to persist between prompts
   --helper-focus <list>        Comma/pipe-separated helper commands/tools to emphasize
+  --schema-id <id>             Schema identifier to embed (default: log-analysis)
   --label <text>               Friendly label stored with the template artifact
   --output <path>              Persist the generated prompt text to a separate file
   --no-workspace               Skip workspace profiling when drafting the template

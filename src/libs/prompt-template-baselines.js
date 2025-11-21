@@ -2,6 +2,8 @@ import { LOG_ANALYSIS_FALLBACK_SCHEMA } from "./efficient-log-analyzer.js";
 
 const DEFAULT_TRUNCATION_TASK =
   "Teach the operator how to split an oversized log or output dataset so Phi-4 can analyze it across multiple prompts without losing context.";
+const DEFAULT_ANALYSIS_TASK =
+  "Review the captured logs/command output and explain the failures with concrete evidence, recommended fixes, and next steps.";
 const DEFAULT_HISTORY_KEYS = ["chunk_label", "line_window", "symptom", "helper_commands"];
 
 function formatSchemaBlock(text) {
@@ -23,6 +25,12 @@ export default class PromptTemplateBaselineBuilder {
       case "truncate":
       case "chunking":
         return this._buildTruncationTemplate(payload ?? {});
+      case "analysis":
+      case "log-analysis":
+      case "loganalysis":
+      case "base":
+      case "log":
+        return this._buildLogAnalysisTemplate(payload ?? {});
       default:
         throw new Error(`Unsupported prompt template baseline: ${target}`);
     }
@@ -70,6 +78,67 @@ export default class PromptTemplateBaselineBuilder {
       notes,
     };
 
+    return { prompt, schemaId, task, metadata };
+  }
+
+  _buildLogAnalysisTemplate(payload) {
+    const schemaId = (payload.schemaId ?? "log-analysis").toString().trim() || "log-analysis";
+    const schemaBlock = formatSchemaBlock(
+      this.schemaRegistry?.buildInstructionBlock?.(schemaId) ?? null,
+    );
+    const task = (payload.task ?? DEFAULT_ANALYSIS_TASK).trim();
+    const datasetSummary = (
+      payload.datasetSummary ?? "Recent command output / logs captured from the workspace."
+    ).trim();
+    const datasetStats = {
+      totalLines: coerceNumber(payload.datasetStats?.totalLines),
+      chunkTarget: coerceNumber(payload.datasetStats?.chunkTarget),
+    };
+    const helperFocus = normalizeList(payload.helperFocus);
+    const notes = payload.notes?.trim() || null;
+    const workspaceBlock = this._formatWorkspaceSection(payload.workspaceContext);
+    const datasetBlock = this._formatDatasetSection(datasetSummary, datasetStats, helperFocus);
+    const reportingRules = this._formatReportingRules([
+      "Keep `evidence` tightly scoped to observed lines, pointing to the chunk label and an approximate line number.",
+      "Use `recommended_fixes[].commands` to capture concrete remediation commands/scripts. Leave the array empty when nothing applies instead of omitting the field.",
+      "Populate `truncation_strategy` whenever the dataset feels incomplete or needs chunking guidance so operators can resume deterministically.",
+    ]);
+    const contextExtras = helperFocus.length
+      ? `\n- Tools/helpers already available: ${helperFocus.join(", ")}`
+      : "";
+    const dataOverview = ["## Data Context", `- Summary: ${datasetSummary}`];
+    if (datasetStats.totalLines) {
+      dataOverview.push(`- Captured lines: ~${datasetStats.totalLines}`);
+    }
+    if (datasetStats.chunkTarget) {
+      dataOverview.push(`- Target lines per chunk: ${datasetStats.chunkTarget}`);
+    }
+    if (contextExtras) {
+      dataOverview.push(contextExtras.trim());
+    }
+
+    const sections = [
+      "# Baseline Prompt — Log/Command Analysis",
+      "You are MiniPhi's log analyst. Review the captured logs/output, explain root causes, cite evidence, recommend concrete fixes, and list next steps. Respond with JSON **only**.",
+      `Schema requirements:\n${schemaBlock}`,
+      `## Task\n${task}`,
+      dataOverview.filter(Boolean).join("\n"),
+      datasetBlock,
+      workspaceBlock,
+      reportingRules,
+      notes ? `## Extra Notes\n${notes}` : null,
+    ].filter(Boolean);
+
+    const prompt = sections.join("\n\n").trim();
+    const metadata = {
+      baseline: "log-analysis",
+      datasetSummary,
+      datasetStats,
+      helperFocus,
+      workspace: this._sanitizeWorkspaceMetadata(payload.workspaceContext),
+      notes,
+      schemaId,
+    };
     return { prompt, schemaId, task, metadata };
   }
 
@@ -126,6 +195,17 @@ export default class PromptTemplateBaselineBuilder {
     if (helperFocus.length) {
       lines.push(`- Emphasize how to leverage: ${helperFocus.join(", ")}.`);
     }
+    return lines.join("\n");
+  }
+
+  _formatReportingRules(extra = []) {
+    const rules = [
+      "Return valid JSON that matches the schema; never emit markdown or natural-language paragraphs outside the JSON.",
+      "Stay grounded in the provided data—do not hallucinate files, commands, or outcomes that were not observed.",
+      "Keep summaries concise (<= 2 sentences) and prefer bullet-proof evidence over speculation.",
+      ...extra,
+    ].filter(Boolean);
+    const lines = ["## Reporting Rules", ...rules.map((rule) => `- ${rule}`)];
     return lines.join("\n");
   }
 
