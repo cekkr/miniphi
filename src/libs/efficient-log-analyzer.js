@@ -269,6 +269,7 @@ export default class EfficientLogAnalyzer {
       sessionDeadline = undefined,
       promptContext = undefined,
       workspaceContext = undefined,
+      verbose = false,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
     const devLog = this.#startDevLog(`file-${this.#safeLabel(path.basename(filePath))}`, {

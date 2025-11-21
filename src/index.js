@@ -290,6 +290,7 @@ async function main() {
   const verbose = Boolean(options.verbose);
   const streamOutput = !options["no-stream"];
   const debugLm = Boolean(options["debug-lm"]);
+  process.env.MINIPHI_DEBUG_LM = debugLm ? "1" : "0";
 
   let configResult;
   try {

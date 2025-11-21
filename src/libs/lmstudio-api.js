@@ -112,9 +112,11 @@ export class LMStudioManager {
   async ejectModel(modelKey) {
     const model = this.loadedModels.get(modelKey);
     if (!model) {
-      console.warn(
-        `Model ${modelKey} was not cached by LMStudioManager; assuming it is already unloaded.`,
-      );
+      if (process.env.MINIPHI_DEBUG_LM === "1") {
+        console.warn(
+          `Model ${modelKey} was not cached by LMStudioManager; assuming it is already unloaded.`,
+        );
+      }
       return;
     }
 
