@@ -120,10 +120,12 @@ export class Phi4Handler {
 
     let attempt = 0;
     const maxSchemaRetries = 1;
-    const maxAttempts = 2 + maxSchemaRetries;
+    const maxHangRetries = 1;
+    const maxAttempts = 2 + maxSchemaRetries + maxHangRetries;
     const basePrompt = prompt;
     let currentPrompt = prompt;
     let schemaRetryCount = 0;
+    let hangRetryCount = 0;
     while (attempt < maxAttempts) {
       this.chatHistory.push({ role: "user", content: currentPrompt });
 
@@ -139,6 +141,38 @@ export class Phi4Handler {
       let predictionHandle = null;
       let streamError = null;
       let solutionStreamHandle = null;
+      let rawFragmentCount = 0;
+      let solutionTokenCount = 0;
+      const cancelPrediction = (message) => {
+        if (solutionStreamHandle && typeof solutionStreamHandle.destroy === "function") {
+          try {
+            solutionStreamHandle.destroy(new Error(message));
+          } catch {
+            // ignore destroy errors
+          }
+        }
+        if (typeof predictionHandle?.cancel === "function") {
+          try {
+            const result = predictionHandle.cancel();
+            if (result && typeof result.catch === "function") {
+              result.catch(() => {});
+            }
+          } catch {
+            // ignore best-effort cancellation errors
+          }
+          return;
+        }
+        if (typeof predictionHandle?.return === "function") {
+          try {
+            const result = predictionHandle.return();
+            if (result && typeof result.catch === "function") {
+              result.catch(() => {});
+            }
+          } catch {
+            // ignore best-effort cancellation errors
+          }
+        }
+      };
       const resetHeartbeat = () => {
         if (!Number.isFinite(this.noTokenTimeoutMs) || this.noTokenTimeoutMs <= 0) {
           return;
@@ -158,20 +192,7 @@ export class Phi4Handler {
               schemaId: traceContext.schemaId ?? requestSnapshot?.schemaId ?? null,
             },
           });
-          if (typeof predictionHandle?.return === "function") {
-            try {
-              predictionHandle.return();
-            } catch {
-              // ignore best-effort cancellation errors
-            }
-          }
-          if (solutionStreamHandle && typeof solutionStreamHandle.destroy === "function") {
-            try {
-              solutionStreamHandle.destroy(new Error(message));
-            } catch {
-              // ignore destroy errors
-            }
-          }
+          cancelPrediction(message);
           streamError = new Error(message);
         }, this.noTokenTimeoutMs);
       };
@@ -189,6 +210,10 @@ export class Phi4Handler {
           }
         });
         const readable = Readable.from(prediction);
+        readable.on("data", () => {
+          rawFragmentCount += 1;
+          resetHeartbeat();
+        });
         const solutionStream = readable.pipe(parser);
         solutionStreamHandle = solutionStream;
         const attachStreamError = (stream) => {
@@ -212,20 +237,23 @@ export class Phi4Handler {
             resetHeartbeat();
             if (onToken) onToken(token);
             assistantResponse += token;
+            solutionTokenCount += 1;
           }
           if (streamError) {
             throw streamError;
           }
-          return assistantResponse;
-        }, () => {
-          if (typeof prediction?.return === "function") {
+          if (typeof prediction?.result === "function") {
             try {
-              prediction.return();
+              const finalResult = await prediction.result();
+              if (!assistantResponse && finalResult?.content) {
+                assistantResponse = finalResult.content;
+              }
             } catch {
-              // ignore prediction cancellation errors
+              // ignore result resolution failures; streaming response already captured
             }
           }
-        });
+          return assistantResponse;
+        }, () => cancelPrediction("Phi-4 prompt timeout"));
 
         const finishedAt = Date.now();
         const validationResult = this._validateSchema(schemaDetails, result);
@@ -249,6 +277,10 @@ export class Phi4Handler {
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
+          stream: {
+            rawFragments: rawFragmentCount,
+            solutionTokens: solutionTokenCount,
+          },
           schemaId: schemaDetails?.id ?? null,
           schemaValidation,
         };
@@ -286,6 +318,25 @@ export class Phi4Handler {
           }
           continue;
         }
+        const hangRetryAllowed =
+          hangRetryCount < maxHangRetries && this._isStreamingHang(message);
+        if (hangRetryAllowed) {
+          hangRetryCount += 1;
+          attempt += 1;
+          this._recordPromptEvent(traceContext, requestSnapshot, {
+            eventType: "stream-retry",
+            severity: "warn",
+            message: `Retrying Phi-4 after streaming hang: ${message}`,
+            metadata: {
+              attempt,
+              hangRetryCount,
+              rawFragments: rawFragmentCount,
+              solutionTokens: solutionTokenCount,
+            },
+          });
+          currentPrompt = basePrompt;
+          continue;
+        }
         const schemaRetryAllowed =
           schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
         if (schemaRetryAllowed) {
@@ -315,6 +366,10 @@ export class Phi4Handler {
             reasoning: capturedThoughts,
             startedAt,
             finishedAt,
+            stream: {
+              rawFragments: rawFragmentCount,
+              solutionTokens: solutionTokenCount,
+            },
             schemaId: schemaDetails?.id ?? null,
             schemaValidation,
           },
@@ -330,6 +385,10 @@ export class Phi4Handler {
             finishedAt,
             schemaId: schemaDetails?.id ?? null,
             schemaValidation,
+            stream: {
+              rawFragments: rawFragmentCount,
+              solutionTokens: solutionTokenCount,
+            },
             tokensApprox: this._approximateTokens(result),
           },
           message,
@@ -350,6 +409,19 @@ export class Phi4Handler {
       return false;
     }
     return /model (?:not loaded|unloaded)/i.test(message) || /instance reference/i.test(message);
+  }
+
+  _isStreamingHang(message) {
+    if (!message || typeof message !== "string") {
+      return false;
+    }
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("no phi-4 tokens emitted") ||
+      normalized.includes("prompt session exceeded") ||
+      normalized.includes("timed out") ||
+      (normalized.includes("stream") && normalized.includes("timeout"))
+    );
   }
 
   /**
