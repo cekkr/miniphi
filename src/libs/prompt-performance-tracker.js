@@ -61,7 +61,7 @@ export default class PromptPerformanceTracker {
     }
     await this.db.exec("PRAGMA journal_mode = WAL;");
     await this.db.exec("PRAGMA foreign_keys = ON;");
-    await this.#migrate();
+    await this.migrate();
     this.enabled = true;
   }
 
@@ -295,7 +295,7 @@ export default class PromptPerformanceTracker {
     });
   }
 
-  async #migrate() {
+  async migrate() {
     if (!this.db) {
       return;
     }
