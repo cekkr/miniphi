@@ -117,7 +117,7 @@ export default class PromptPerformanceTracker {
       workspacePath,
       workspaceType,
       workspaceSummary,
-      workspaceFingerprint,
+      workspaceFingerprint: contextWorkspaceFingerprint,
     } = sessionContext;
     const promptText = this._sanitizeText(this._extractPromptText(payload.request));
     if (!promptText) {
@@ -204,7 +204,8 @@ export default class PromptPerformanceTracker {
     const followUpNeeded = this._resolveFollowUp(evaluation, payload.error, responseText);
     const followUpReason = this._resolveFollowUpReason(evaluation, payload.error, responseText);
 
-    const workspaceFingerprint = this._fingerprint(workspacePath);
+    const workspaceFingerprint =
+      contextWorkspaceFingerprint ?? this._fingerprint(workspacePath);
     const now = new Date().toISOString();
     await this._persistSession({
       sessionId,
