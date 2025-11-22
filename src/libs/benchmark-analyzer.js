@@ -14,11 +14,11 @@ export default class BenchmarkAnalyzer {
       throw new Error("Benchmark analyzer requires a target directory.");
     }
     const resolved = path.resolve(targetDir);
-    const runs = await this.#loadRuns(resolved);
-    const summary = this.#summarizeRuns(runs, resolved);
-    const artifacts = await this.#writeSummaryArtifacts(resolved, summary);
-    await this.#recordHistory(summary, { ...artifacts, type: "summary" });
-    this.#printSummary(summary, artifacts);
+    const runs = await this._loadRuns(resolved);
+    const summary = this._summarizeRuns(runs, resolved);
+    const artifacts = await this._writeSummaryArtifacts(resolved, summary);
+    await this._recordHistory(summary, { ...artifacts, type: "summary" });
+    this._printSummary(summary, artifacts);
     return summary;
   }
 
@@ -28,16 +28,16 @@ export default class BenchmarkAnalyzer {
     }
     const baselineResolved = path.resolve(baselineDir);
     const candidateResolved = path.resolve(candidateDir);
-    const baseline = this.#summarizeRuns(await this.#loadRuns(baselineResolved), baselineResolved);
-    const candidate = this.#summarizeRuns(await this.#loadRuns(candidateResolved), candidateResolved);
-    const comparison = this.#buildComparisonSummary(baseline, candidate);
-    const artifacts = await this.#writeComparisonArtifacts(candidateResolved, comparison);
-    await this.#recordHistory(comparison, { ...artifacts, type: "comparison" });
-    this.#printComparison(comparison, artifacts);
+    const baseline = this._summarizeRuns(await this._loadRuns(baselineResolved), baselineResolved);
+    const candidate = this._summarizeRuns(await this._loadRuns(candidateResolved), candidateResolved);
+    const comparison = this._buildComparisonSummary(baseline, candidate);
+    const artifacts = await this._writeComparisonArtifacts(candidateResolved, comparison);
+    await this._recordHistory(comparison, { ...artifacts, type: "comparison" });
+    this._printComparison(comparison, artifacts);
     return comparison;
   }
 
-  async #loadRuns(directory) {
+  async _loadRuns(directory) {
     const entries = await fs.promises.readdir(directory, { withFileTypes: true });
     const jsonFiles = entries
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
@@ -67,7 +67,7 @@ export default class BenchmarkAnalyzer {
     return runs;
   }
 
-  #summarizeRuns(runs, directory) {
+  _summarizeRuns(runs, directory) {
     const summary = {
       analyzedAt: new Date().toISOString(),
       directory,
@@ -155,30 +155,30 @@ export default class BenchmarkAnalyzer {
     return summary;
   }
 
-  async #writeSummaryArtifacts(directory, summary) {
+  async _writeSummaryArtifacts(directory, summary) {
     const summaryPath = path.join(directory, "SUMMARY.json");
     const markdownPath = path.join(directory, "SUMMARY.md");
     const htmlPath = path.join(directory, "SUMMARY.html");
     await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
-    await fs.promises.writeFile(markdownPath, this.#renderMarkdown(summary), "utf8");
-    await fs.promises.writeFile(htmlPath, this.#renderHtml(summary), "utf8");
+    await fs.promises.writeFile(markdownPath, this._renderMarkdown(summary), "utf8");
+    await fs.promises.writeFile(htmlPath, this._renderHtml(summary), "utf8");
     return { summaryPath, markdownPath, htmlPath };
   }
 
-  async #writeComparisonArtifacts(directory, comparison) {
+  async _writeComparisonArtifacts(directory, comparison) {
     const jsonPath = path.join(directory, "SUMMARY-COMPARE.json");
     const markdownPath = path.join(directory, "SUMMARY-COMPARE.md");
     await fs.promises.writeFile(jsonPath, JSON.stringify(comparison, null, 2), "utf8");
-    await fs.promises.writeFile(markdownPath, this.#renderComparisonMarkdown(comparison), "utf8");
+    await fs.promises.writeFile(markdownPath, this._renderComparisonMarkdown(comparison), "utf8");
     return { summaryPath: jsonPath, markdownPath, htmlPath: null };
   }
 
-  async #recordHistory(summary, artifacts) {
+  async _recordHistory(summary, artifacts) {
     if (!this.memory) {
       return;
     }
     await this.memory.prepare();
-    const todoItems = this.#buildTodoItems(summary);
+    const todoItems = this._buildTodoItems(summary);
     await this.memory.recordBenchmarkSummary(summary, {
       summaryPath: artifacts.summaryPath,
       markdownPath: artifacts.markdownPath,
@@ -188,7 +188,7 @@ export default class BenchmarkAnalyzer {
     });
   }
 
-  #buildTodoItems(summary) {
+  _buildTodoItems(summary) {
     if (!summary) {
       return [];
     }
@@ -214,7 +214,7 @@ export default class BenchmarkAnalyzer {
     return todos;
   }
 
-  #buildComparisonSummary(baseline, candidate) {
+  _buildComparisonSummary(baseline, candidate) {
     const comparison = {
       type: "comparison",
       analyzedAt: new Date().toISOString(),
@@ -292,7 +292,7 @@ export default class BenchmarkAnalyzer {
     return comparison;
   }
 
-  #renderComparisonMarkdown(comparison) {
+  _renderComparisonMarkdown(comparison) {
     const lines = [
       "# Benchmark Comparison",
       `- Baseline: ${comparison.baselineDir}`,
@@ -329,7 +329,7 @@ export default class BenchmarkAnalyzer {
     return `${lines.join("\n").trim()}\n`;
   }
 
-  #renderMarkdown(summary) {
+  _renderMarkdown(summary) {
     const lines = [
       "# Benchmark Summary",
       `- Directory: ${summary.directory}`,
@@ -377,7 +377,7 @@ export default class BenchmarkAnalyzer {
     return `${lines.join("\n").trim()}\n`;
   }
 
-  #renderHtml(summary) {
+  _renderHtml(summary) {
     const escape = (value) =>
       String(value ?? "").replace(/[&<>"']/g, (char) => {
         switch (char) {
@@ -390,7 +390,7 @@ export default class BenchmarkAnalyzer {
           case '"':
             return "&quot;";
           case "'":
-            return "&#39;";
+            return "&_39;";
           default:
             return char;
         }
@@ -438,7 +438,7 @@ export default class BenchmarkAnalyzer {
       "<style>",
       "body { font-family: Arial, sans-serif; padding: 24px; }",
       "table { border-collapse: collapse; margin-top: 8px; width: 100%; }",
-      "th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: right; }",
+      "th, td { border: 1px solid _ddd; padding: 4px 8px; text-align: right; }",
       "th:first-child, td:first-child { text-align: left; }",
       "section { margin-bottom: 24px; }",
       "</style>",
@@ -457,7 +457,7 @@ export default class BenchmarkAnalyzer {
     ].join("\n");
   }
 
-  #printSummary(summary, artifacts) {
+  _printSummary(summary, artifacts) {
     console.log(`[MiniPhi][Benchmark][Analyze] ${summary.totalRuns} runs analyzed under ${summary.directory}`);
     Object.entries(summary.directions).forEach(([direction, details]) => {
       console.log(
@@ -495,7 +495,7 @@ export default class BenchmarkAnalyzer {
     }
   }
 
-  #printComparison(comparison, artifacts) {
+  _printComparison(comparison, artifacts) {
     console.log(
       `[MiniPhi][Benchmark][Analyze] Compared ${comparison.candidateDir} against baseline ${comparison.baselineDir}`,
     );

@@ -74,8 +74,8 @@ export default class ResourceMonitor {
       return null;
     }
     await this.captureSample("session-stop");
-    const summary = this.#buildSummary();
-    const persisted = await this.#persist(summary);
+    const summary = this._buildSummary();
+    const persisted = await this._persist(summary);
     this.startedAt = null;
     return { summary, persisted };
   }
@@ -93,9 +93,9 @@ export default class ResourceMonitor {
     }
     this.samplingPromise = (async () => {
       const [memory, cpu, vram] = await Promise.all([
-        this.#readMemory(),
-        this.#readCpu(),
-        this.#readVram(),
+        this._readMemory(),
+        this._readCpu(),
+        this._readVram(),
       ]);
       const sample = {
         id: randomUUID(),
@@ -126,16 +126,16 @@ export default class ResourceMonitor {
       return null;
     }
     return {
-      memory: this.#evaluateMetric(target.memory.percent, this.thresholds.memory),
-      cpu: this.#evaluateMetric(target.cpu.percent, this.thresholds.cpu),
+      memory: this._evaluateMetric(target.memory.percent, this.thresholds.memory),
+      cpu: this._evaluateMetric(target.cpu.percent, this.thresholds.cpu),
       vram:
         typeof target.vram.percent === "number"
-          ? this.#evaluateMetric(target.vram.percent, this.thresholds.vram)
+          ? this._evaluateMetric(target.vram.percent, this.thresholds.vram)
           : { level: "unknown", percent: null },
     };
   }
 
-  #evaluateMetric(value, threshold) {
+  _evaluateMetric(value, threshold) {
     if (typeof value !== "number" || Number.isNaN(value)) {
       return { level: "unknown", percent: null };
     }
@@ -149,7 +149,7 @@ export default class ResourceMonitor {
     return { level, percent: Number(value.toFixed(2)) };
   }
 
-  #buildSummary() {
+  _buildSummary() {
     const finishedAt = new Date().toISOString();
     return {
       id: this.sessionId,
@@ -164,13 +164,13 @@ export default class ResourceMonitor {
       },
       thresholds: this.thresholds,
       sampleCount: this.samples.length,
-      stats: this.#computeStats(),
-      warnings: this.#collectWarnings(),
+      stats: this._computeStats(),
+      warnings: this._collectWarnings(),
       recentSamples: this.samples.slice(-20),
     };
   }
 
-  #computeStats() {
+  _computeStats() {
     const reducer = (key) => {
       const values = this.samples
         .map((sample) => sample[key]?.percent)
@@ -195,9 +195,9 @@ export default class ResourceMonitor {
     };
   }
 
-  #collectWarnings() {
+  _collectWarnings() {
     const warnings = [];
-    const stats = this.#computeStats();
+    const stats = this._computeStats();
 
     if (stats.memory.max !== null && stats.memory.max >= this.thresholds.memory) {
       warnings.push(
@@ -218,13 +218,13 @@ export default class ResourceMonitor {
     return warnings;
   }
 
-  async #persist(summary) {
+  async _persist(summary) {
     if (!this.historyFile) {
       return null;
     }
     const historyDir = path.dirname(this.historyFile);
     await fs.promises.mkdir(historyDir, { recursive: true });
-    const current = await this.#readJSON(this.historyFile, { entries: [] });
+    const current = await this._readJSON(this.historyFile, { entries: [] });
     const entry = {
       ...summary,
       recentSamples: summary.recentSamples,
@@ -235,7 +235,7 @@ export default class ResourceMonitor {
     return { path: this.historyFile, entry };
   }
 
-  async #readJSON(file, fallback) {
+  async _readJSON(file, fallback) {
     try {
       const raw = await fs.promises.readFile(file, "utf8");
       return JSON.parse(raw);
@@ -247,7 +247,7 @@ export default class ResourceMonitor {
     }
   }
 
-  async #readMemory() {
+  async _readMemory() {
     const totalBytes = os.totalmem();
     const freeBytes = os.freemem();
     const usedBytes = Math.max(0, totalBytes - freeBytes);
@@ -260,7 +260,7 @@ export default class ResourceMonitor {
     };
   }
 
-  async #readCpu() {
+  async _readCpu() {
     const cpus = os.cpus();
     if (!cpus || cpus.length === 0) {
       return { percent: 0, logicalCores: 0 };
@@ -293,11 +293,11 @@ export default class ResourceMonitor {
     };
   }
 
-  async #readVram() {
+  async _readVram() {
     const strategies = [
-      () => this.#queryNvidiaSmi(),
-      () => this.#queryWindowsAdapters(),
-      () => this.#queryMacSystemProfiler(),
+      () => this._queryNvidiaSmi(),
+      () => this._queryWindowsAdapters(),
+      () => this._queryMacSystemProfiler(),
     ];
 
     for (const strategy of strategies) {
@@ -320,8 +320,8 @@ export default class ResourceMonitor {
     };
   }
 
-  async #queryNvidiaSmi() {
-    const stdout = await this.#safeExec("nvidia-smi", [
+  async _queryNvidiaSmi() {
+    const stdout = await this._safeExec("nvidia-smi", [
       "--query-gpu=memory.total,memory.used",
       "--format=csv,noheader,nounits",
     ]);
@@ -362,11 +362,11 @@ export default class ResourceMonitor {
     };
   }
 
-  async #queryWindowsAdapters() {
+  async _queryWindowsAdapters() {
     if (os.platform() !== "win32") {
       return null;
     }
-    const stdout = await this.#safeExec("powershell.exe", [
+    const stdout = await this._safeExec("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
@@ -411,11 +411,11 @@ export default class ResourceMonitor {
     };
   }
 
-  async #queryMacSystemProfiler() {
+  async _queryMacSystemProfiler() {
     if (os.platform() !== "darwin") {
       return null;
     }
-    const stdout = await this.#safeExec("system_profiler", ["SPDisplaysDataType", "-json"]);
+    const stdout = await this._safeExec("system_profiler", ["SPDisplaysDataType", "-json"]);
     if (!stdout) {
       return null;
     }
@@ -430,7 +430,7 @@ export default class ResourceMonitor {
       .map((gpu) => {
         const name = gpu.sppci_model ?? gpu._name ?? "GPU";
         const raw = gpu.spdisplays_vram ?? gpu.spdisplays_vram_shared ?? "";
-        const totalMB = this.#parseVramString(raw);
+        const totalMB = this._parseVramString(raw);
         if (!totalMB) {
           return null;
         }
@@ -452,7 +452,7 @@ export default class ResourceMonitor {
     };
   }
 
-  #parseVramString(raw) {
+  _parseVramString(raw) {
     if (!raw || typeof raw !== "string") {
       return null;
     }
@@ -468,7 +468,7 @@ export default class ResourceMonitor {
     return unit === "GB" ? value * 1024 : value;
   }
 
-  async #safeExec(command, args, options = undefined) {
+  async _safeExec(command, args, options = undefined) {
     try {
       const { stdout } = await execFileAsync(command, args, {
         timeout: 4000,

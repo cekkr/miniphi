@@ -128,7 +128,7 @@ export default class WorkspaceProfiler {
           if (highlights.directories.length < this.sampleLimit) {
             highlights.directories.push(relative);
           }
-          if (current.depth + 1 <= this.maxDepth && !this.#shouldSkipDirectory(entry.name)) {
+          if (current.depth + 1 <= this.maxDepth && !this._shouldSkipDirectory(entry.name)) {
             queue.push({ dir: fullPath, depth: current.depth + 1 });
           }
           continue;
@@ -169,8 +169,8 @@ export default class WorkspaceProfiler {
       }
     }
 
-    const classification = this.#classify(stats);
-    const summary = this.#formatSummary(root, stats, highlights, classification);
+    const classification = this._classify(stats);
+    const summary = this._formatSummary(root, stats, highlights, classification);
     let connections = null;
     if (this.includeConnections && stats.codeFiles > 0 && this.connectionAnalyzer) {
       try {
@@ -195,7 +195,7 @@ export default class WorkspaceProfiler {
     };
   }
 
-  #shouldSkipDirectory(name) {
+  _shouldSkipDirectory(name) {
     const normalized = name.toLowerCase();
     if (IGNORED_DIRECTORIES.has(normalized)) {
       return true;
@@ -203,7 +203,7 @@ export default class WorkspaceProfiler {
     return normalized.startsWith(".");
   }
 
-  #classify(stats) {
+  _classify(stats) {
     const totalFiles = Math.max(1, stats.files);
     const docRatio = stats.docFiles / totalFiles;
     const codeRatio = stats.codeFiles / totalFiles;
@@ -252,7 +252,7 @@ export default class WorkspaceProfiler {
     };
   }
 
-  #formatSummary(root, stats, highlights, classification) {
+  _formatSummary(root, stats, highlights, classification) {
     const lines = [
       `- Root: ${root}`,
       `- Workspace type: ${classification.label}`,

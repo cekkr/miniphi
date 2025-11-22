@@ -32,12 +32,12 @@ export default class GlobalMiniPhiMemory {
       fs.promises.mkdir(this.metricsDir, { recursive: true }),
       fs.promises.mkdir(this.preferencesDir, { recursive: true }),
     ]);
-    await this.#writeSystemProfile();
+    await this._writeSystemProfile();
     this.prepared = true;
     return this.baseDir;
   }
 
-  async #writeSystemProfile() {
+  async _writeSystemProfile() {
     const profile = {
       updatedAt: nowIso(),
       platform: os.platform(),

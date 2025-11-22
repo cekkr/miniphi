@@ -64,7 +64,7 @@ export default class EfficientLogAnalyzer {
       authorizationContext = undefined,
     } = options ?? {};
 
-    const devLog = this.#startDevLog(`command-${this.#safeLabel(command)}`, {
+    const devLog = this._startDevLog(`command-${this._safeLabel(command)}`, {
       type: "command",
       command,
       task,
@@ -73,7 +73,7 @@ export default class EfficientLogAnalyzer {
     if (verbose) {
       console.log(`[MiniPhi] Executing command: ${command}`);
     }
-    this.#logDev(devLog, `Executing command "${command}" (cwd: ${cwd})`);
+    this._logDev(devLog, `Executing command "${command}" (cwd: ${cwd})`);
 
     const invocationStartedAt = Date.now();
     const lines = [];
@@ -126,7 +126,7 @@ export default class EfficientLogAnalyzer {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.#logDev(devLog, `Command failed: ${message}`);
+      this._logDev(devLog, `Command failed: ${message}`);
       throw new Error(`Command execution failed: ${message}`);
     }
 
@@ -140,9 +140,9 @@ export default class EfficientLogAnalyzer {
     if (verbose) {
       console.log(`[MiniPhi] Total lines captured: ${lines.length}`);
     }
-    this.#logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
+    this._logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
 
-    const compression = await this.#compressLines(lines, summaryLevels, verbose);
+    const compression = await this._compressLines(lines, summaryLevels, verbose);
     const prompt = this.generateSmartPrompt(
       task,
       compression.content,
@@ -178,23 +178,23 @@ export default class EfficientLogAnalyzer {
     if (!streamOutput) {
       console.log("[MiniPhi] Awaiting Phi response (stream output disabled)...");
     }
-    this.#logDev(
+    this._logDev(
       devLog,
-      `Prompt (${compression.tokens} tokens):\n${this.#truncateForLog(prompt)}`,
+      `Prompt (${compression.tokens} tokens):\n${this._truncateForLog(prompt)}`,
     );
 
     let analysis = "";
     let usedFallback = false;
-    this.#applyPromptTimeout(sessionDeadline);
+    this._applyPromptTimeout(sessionDeadline);
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
     };
     const stopHeartbeat = !streamOutput
-      ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
+      ? this._startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
     if (verbose) {
-      this.#emitVerbosePromptPreview(prompt, compression.tokens, {
+      this._emitVerbosePromptPreview(prompt, compression.tokens, {
         schemaId: traceOptions.schemaId,
         origin: `Command "${command}"`,
         lines: lines.length,
@@ -217,7 +217,7 @@ export default class EfficientLogAnalyzer {
           }
         },
         (err) => {
-          this.#logDev(devLog, `Phi error: ${err}`);
+          this._logDev(devLog, `Phi error: ${err}`);
           throw new Error(`Phi-4 inference error: ${err}`);
         },
         traceOptions,
@@ -226,8 +226,8 @@ export default class EfficientLogAnalyzer {
       usedFallback = true;
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
-      this.#logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
-      analysis = this.#buildFallbackAnalysis(task, reason, {
+      this._logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      analysis = this._buildFallbackAnalysis(task, reason, {
         datasetHint: `${lines.length} lines captured from ${command}`,
         rerunCommand: command,
       });
@@ -248,16 +248,16 @@ export default class EfficientLogAnalyzer {
         console.log("[MiniPhi] Phi response received.");
       }
       if (verbose) {
-        this.#emitVerboseResponsePreview(analysis, {
+        this._emitVerboseResponsePreview(analysis, {
           origin: `Command "${command}"`,
         });
       }
     }
 
     const invocationFinishedAt = Date.now();
-    this.#logDev(
+    this._logDev(
       devLog,
-      `Phi response captured (${invocationFinishedAt - invocationStartedAt} ms):\n${this.#truncateForLog(analysis)}`,
+      `Phi response captured (${invocationFinishedAt - invocationStartedAt} ms):\n${this._truncateForLog(analysis)}`,
     );
     const truncationPlan = extractTruncationPlanFromAnalysis(analysis);
     if (truncationPlan) {
@@ -268,7 +268,7 @@ export default class EfficientLogAnalyzer {
         console.log(
           `[MiniPhi] Truncation plan captured (${chunkPhrase}); rerun with --resume-truncation <execution-id> to apply it.`,
         );
-        this.#logDev(
+        this._logDev(
           devLog,
           `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
         );
@@ -301,7 +301,7 @@ export default class EfficientLogAnalyzer {
       lineRange = undefined,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
-    const devLog = this.#startDevLog(`file-${this.#safeLabel(path.basename(filePath))}`, {
+    const devLog = this._startDevLog(`file-${this._safeLabel(path.basename(filePath))}`, {
       type: "log-file",
       filePath,
       task,
@@ -312,7 +312,7 @@ export default class EfficientLogAnalyzer {
       lineRange && (lineRange.startLine || lineRange.endLine)
         ? ` (lines ${lineRange.startLine ?? 1}-${lineRange.endLine ?? "end"})`
         : "";
-    this.#logDev(
+    this._logDev(
       devLog,
       `Summarizing ${filePath}${rangeLabel} (maxLinesPerChunk=${maxLines})`,
     );
@@ -326,7 +326,7 @@ export default class EfficientLogAnalyzer {
     });
     const { chunks, linesIncluded } = summaryResult;
     const summarizeFinished = Date.now();
-    this.#logDev(
+    this._logDev(
       devLog,
       `Summarizer produced ${chunks.length} chunks in ${summarizeFinished - summarizeStarted} ms.`,
     );
@@ -346,16 +346,16 @@ export default class EfficientLogAnalyzer {
         : chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
     const chunkSummaries = chunks.map((chunk, idx) => {
       const label = `Chunk ${idx + 1}`;
-      this.#logDev(
+      this._logDev(
         devLog,
-        `${label}: ${chunk?.input_lines ?? 0} lines summarized → ${this.#truncateForLog(
+        `${label}: ${chunk?.input_lines ?? 0} lines summarized → ${this._truncateForLog(
           JSON.stringify(chunk?.summary ?? []),
         )}`,
       );
       return { chunk, label };
     });
-    const promptBudget = await this.#resolvePromptBudget();
-    const adjustment = this.#buildBudgetedPrompt({
+    const promptBudget = await this._resolvePromptBudget();
+    const adjustment = this._buildBudgetedPrompt({
       chunkSummaries,
       summaryLevels,
       task,
@@ -370,16 +370,16 @@ export default class EfficientLogAnalyzer {
 
     let analysis = "";
     let usedFallback = false;
-    this.#applyPromptTimeout(sessionDeadline);
+    this._applyPromptTimeout(sessionDeadline);
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
     };
     const stopHeartbeat = !streamOutput
-      ? this.#startHeartbeat("Still waiting for Phi response...", devLog)
+      ? this._startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
     if (verbose) {
-      this.#emitVerbosePromptPreview(prompt, tokensUsed, {
+      this._emitVerbosePromptPreview(prompt, tokensUsed, {
         schemaId: traceOptions.schemaId,
         origin: `Log file ${path.basename(filePath)}`,
         lines: linesUsed,
@@ -396,7 +396,7 @@ export default class EfficientLogAnalyzer {
         },
         undefined,
         (err) => {
-          this.#logDev(devLog, `Phi error: ${err}`);
+          this._logDev(devLog, `Phi error: ${err}`);
           throw new Error(`Phi-4 inference error: ${err}`);
         },
         traceOptions,
@@ -405,8 +405,8 @@ export default class EfficientLogAnalyzer {
       usedFallback = true;
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
-      this.#logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
-      analysis = this.#buildFallbackAnalysis(task, reason, {
+      this._logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      analysis = this._buildFallbackAnalysis(task, reason, {
         datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
         rerunCommand: filePath,
       });
@@ -427,15 +427,15 @@ export default class EfficientLogAnalyzer {
         console.log("[MiniPhi] Phi response received.");
       }
       if (verbose) {
-        this.#emitVerboseResponsePreview(analysis, {
+        this._emitVerboseResponsePreview(analysis, {
           origin: `Log file ${path.basename(filePath)}`,
         });
       }
     }
     const invocationFinishedAt = Date.now();
-    this.#logDev(
+    this._logDev(
       devLog,
-      `Phi response (${invocationFinishedAt - invocationStartedAt} ms):\n${this.#truncateForLog(
+      `Phi response (${invocationFinishedAt - invocationStartedAt} ms):\n${this._truncateForLog(
         analysis,
       )}`,
     );
@@ -448,7 +448,7 @@ export default class EfficientLogAnalyzer {
         console.log(
           `[MiniPhi] Truncation plan captured (${chunkPhrase}); rerun with --resume-truncation <execution-id> to apply it.`,
         );
-        this.#logDev(
+        this._logDev(
           devLog,
           `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
         );
@@ -514,9 +514,9 @@ export default class EfficientLogAnalyzer {
   }
 
   generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
-    const contextSupplement = this.#formatContextSupplement(extraContext);
+    const contextSupplement = this._formatContextSupplement(extraContext);
     const contextBlock = contextSupplement ? `\n\n${contextSupplement}` : "";
-    const schemaInstructions = this.#buildSchemaInstructions();
+    const schemaInstructions = this._buildSchemaInstructions();
     return `# Log/Output Analysis Task
 
 You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):
@@ -527,7 +527,7 @@ ${schemaInstructions}
 **Dataset Overview:**
 - Total lines: ${totalLines}
 - Compressed to: ${metadata.compressedTokens} tokens
-- Compression: ${this.#formatCompression(totalLines, metadata.compressedTokens)}
+- Compression: ${this._formatCompression(totalLines, metadata.compressedTokens)}
 - Approx. original bytes: ${metadata.originalSize ?? "unknown"}
 
 **Reporting Rules**
@@ -542,7 +542,7 @@ ${compressedContent}
 \`\`\``;
   }
 
-  #buildFallbackAnalysis(task, reason, context = undefined) {
+  _buildFallbackAnalysis(task, reason, context = undefined) {
     const taskLabel =
       typeof task === "string" && task.trim().length > 0
         ? task.trim().slice(0, 200)
@@ -606,7 +606,7 @@ ${compressedContent}
     return JSON.stringify(payload, null, 2);
   }
 
-  #buildSchemaInstructions() {
+  _buildSchemaInstructions() {
     if (this.schemaRegistry && this.schemaId) {
       const block = this.schemaRegistry.buildInstructionBlock(this.schemaId);
       if (block) {
@@ -616,7 +616,7 @@ ${compressedContent}
     return ["```json", LOG_ANALYSIS_FALLBACK_SCHEMA, "```"].join("\n");
   }
 
-  async #compressLines(lines, summaryLevels, verbose) {
+  async _compressLines(lines, summaryLevels, verbose) {
     if (lines.length === 0) {
       return { content: "Command produced no output.", tokens: 32 };
     }
@@ -645,7 +645,7 @@ ${compressedContent}
     return { content, tokens };
   }
 
-  #formatCompression(totalLines, compressedTokens) {
+  _formatCompression(totalLines, compressedTokens) {
     if (!totalLines || !compressedTokens) {
       return "N/A";
     }
@@ -654,7 +654,7 @@ ${compressedContent}
     return `${ratio.toFixed(1)}x`;
   }
 
-  async #resolvePromptBudget() {
+  async _resolvePromptBudget() {
     if (!this.phi4 || typeof this.phi4.getContextWindow !== "function") {
       return 4096;
     }
@@ -670,14 +670,14 @@ ${compressedContent}
     return 4096;
   }
 
-  #estimateTokens(text) {
+  _estimateTokens(text) {
     if (!text) {
       return 0;
     }
     return Math.max(1, Math.ceil(text.length / 4));
   }
 
-  #buildBudgetedPrompt({
+  _buildBudgetedPrompt({
     chunkSummaries,
     summaryLevels,
     task,
@@ -701,7 +701,7 @@ ${compressedContent}
     let prompt;
     let tokens;
     while (attempts < 20) {
-      composed = this.#composeChunkSummaries(chunkSummaries, chunkLimit, detailLevel);
+      composed = this._composeChunkSummaries(chunkSummaries, chunkLimit, detailLevel);
       const extraContext = {
         workspaceSummary: workspaceContext?.summary ?? null,
         workspaceType:
@@ -725,12 +725,12 @@ ${compressedContent}
         composed.text,
         composed.lines || totalLines || 1,
         {
-          compressedTokens: this.#estimateTokens(composed.text),
+          compressedTokens: this._estimateTokens(composed.text),
           originalSize: totalLines * 4,
         },
         extraContext,
       );
-      tokens = this.#estimateTokens(prompt);
+      tokens = this._estimateTokens(prompt);
       if (tokens <= promptBudget) {
         break;
       }
@@ -739,23 +739,23 @@ ${compressedContent}
         detailLevel -= 1;
         const note = `Prompt exceeded budget (${tokens} > ${promptBudget}); reducing summary detail to level ${detailLevel}.`;
         console.log(`[MiniPhi] ${note}`);
-        this.#logDev(devLog, note);
+        this._logDev(devLog, note);
         continue;
       }
       if (chunkLimit > 1) {
         chunkLimit -= 1;
         const msg = `Prompt still too large; dropping chunk ${chunkLimit + 1} and retrying.`;
         console.log(`[MiniPhi] ${msg}`);
-        this.#logDev(devLog, msg);
+        this._logDev(devLog, msg);
         continue;
       }
       break;
     }
     if (tokens > promptBudget) {
-      const truncated = this.#truncateToBudget(prompt, promptBudget);
+      const truncated = this._truncateToBudget(prompt, promptBudget);
       prompt = truncated.prompt;
       tokens = truncated.tokens;
-      this.#logDev(
+      this._logDev(
         devLog,
         `Prompt truncated to fit context window (${tokens}/${promptBudget} tokens).`,
       );
@@ -768,7 +768,7 @@ ${compressedContent}
     };
   }
 
-  #composeChunkSummaries(chunkSummaries, limit, maxLevel) {
+  _composeChunkSummaries(chunkSummaries, limit, maxLevel) {
     const segments = [];
     let lines = 0;
     const count = Math.max(1, Math.min(limit, chunkSummaries.length));
@@ -786,21 +786,21 @@ ${compressedContent}
     };
   }
 
-  #truncateToBudget(prompt, budgetTokens) {
+  _truncateToBudget(prompt, budgetTokens) {
     if (!prompt) {
       return { prompt: "", tokens: 0 };
     }
-    const estimate = this.#estimateTokens(prompt);
+    const estimate = this._estimateTokens(prompt);
     if (estimate <= budgetTokens) {
       return { prompt, tokens: estimate };
     }
     const ratio = budgetTokens / estimate;
     const maxChars = Math.max(512, Math.floor(prompt.length * ratio) - 100);
     const truncated = `${prompt.slice(0, maxChars)}\n[Prompt truncated due to context limit]`;
-    return { prompt: truncated, tokens: this.#estimateTokens(truncated) };
+    return { prompt: truncated, tokens: this._estimateTokens(truncated) };
   }
 
-  #formatContextSupplement(extraContext) {
+  _formatContextSupplement(extraContext) {
     if (!extraContext) {
       return "";
     }
@@ -925,7 +925,7 @@ ${compressedContent}
       lines.push(`${header}\n${historyText}`);
     }
     if (extraContext.truncationPlan) {
-      const planBlock = this.#formatTruncationPlan(extraContext.truncationPlan);
+      const planBlock = this._formatTruncationPlan(extraContext.truncationPlan);
       if (planBlock) {
         lines.push(planBlock);
       }
@@ -936,7 +936,7 @@ ${compressedContent}
     return lines.join("\n");
   }
 
-  #formatTruncationPlan(context) {
+  _formatTruncationPlan(context) {
     if (!context) {
       return "";
     }
@@ -1003,7 +1003,7 @@ ${compressedContent}
     }
     return lines.join("\n");
   }
-  #applyPromptTimeout(sessionDeadline) {
+  _applyPromptTimeout(sessionDeadline) {
     if (!sessionDeadline) {
       this.phi4.setPromptTimeout(null);
       return;
@@ -1015,7 +1015,7 @@ ${compressedContent}
     this.phi4.setPromptTimeout(remaining);
   }
 
-  #emitVerbosePromptPreview(prompt, tokens, context = undefined) {
+  _emitVerbosePromptPreview(prompt, tokens, context = undefined) {
     if (!prompt) {
       return;
     }
@@ -1029,12 +1029,12 @@ ${compressedContent}
       `[MiniPhi] ${origin}: dispatching ${tokens ?? "unknown"} tokens to Phi-4 (schema=${schemaLabel}${lineClause}).`,
     );
     const truncated = typeof prompt === "string" && prompt.length > limit;
-    const preview = this.#truncateForLog(prompt, limit);
+    const preview = this._truncateForLog(prompt, limit);
     console.log(`[MiniPhi] --- Prompt preview (first ${limit} chars) ---\n${preview}`);
     console.log(`[MiniPhi] --- End prompt preview${truncated ? " (truncated)" : ""} ---`);
   }
 
-  #emitVerboseResponsePreview(response, context = undefined) {
+  _emitVerboseResponsePreview(response, context = undefined) {
     const origin = context?.origin ?? "Phi response";
     if (!response) {
       console.log(`[MiniPhi] ${origin}: no response body captured.`);
@@ -1042,7 +1042,7 @@ ${compressedContent}
     }
     const limit = context?.limit ?? 1200;
     const truncated = typeof response === "string" && response.length > limit;
-    const preview = this.#truncateForLog(response, limit);
+    const preview = this._truncateForLog(response, limit);
     console.log(
       `[MiniPhi] ${origin}: captured ${response.length ?? preview.length} characters from Phi-4.`,
     );
@@ -1050,7 +1050,7 @@ ${compressedContent}
     console.log(`[MiniPhi] --- End response preview${truncated ? " (truncated)" : ""} ---`);
   }
 
-  #startDevLog(label, metadata = undefined) {
+  _startDevLog(label, metadata = undefined) {
     if (!this.devLogDir) {
       return null;
     }
@@ -1060,7 +1060,7 @@ ${compressedContent}
       return null;
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const safeLabel = this.#safeLabel(label) || "log";
+    const safeLabel = this._safeLabel(label) || "log";
     const filePath = path.join(this.devLogDir, `${stamp}-${safeLabel}.log`);
     const header = [
       `# MiniPhi Developer Log - ${label}`,
@@ -1078,7 +1078,7 @@ ${compressedContent}
     return { filePath };
   }
 
-  #logDev(handle, message) {
+  _logDev(handle, message) {
     if (!handle?.filePath || !message) {
       return;
     }
@@ -1090,7 +1090,7 @@ ${compressedContent}
     }
   }
 
-  #safeLabel(value) {
+  _safeLabel(value) {
     if (!value) {
       return "";
     }
@@ -1101,7 +1101,7 @@ ${compressedContent}
       .slice(0, 80);
   }
 
-  #truncateForLog(value, limit = 2000) {
+  _truncateForLog(value, limit = 2000) {
     if (!value) {
       return "";
     }
@@ -1112,7 +1112,7 @@ ${compressedContent}
     return `${text.slice(0, limit)}...`;
   }
 
-  #startHeartbeat(message, devLogHandle, intervalMs = 15000) {
+  _startHeartbeat(message, devLogHandle, intervalMs = 15000) {
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
       return () => {};
     }
@@ -1121,7 +1121,7 @@ ${compressedContent}
       const line = `[MiniPhi] ${message}`;
       console.log(line);
       if (!firedOnce) {
-        this.#logDev(devLogHandle, message);
+        this._logDev(devLogHandle, message);
         firedOnce = true;
       }
     };

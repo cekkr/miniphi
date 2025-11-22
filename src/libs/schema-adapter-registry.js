@@ -8,7 +8,7 @@ export default class SchemaAdapterRegistry {
     }
   }
 
-  #buildKey(type, version) {
+  _buildKey(type, version) {
     const normalizedType = (type ?? "default").toString().toLowerCase();
     const normalizedVersion = (version ?? "default").toString().toLowerCase();
     return `${normalizedType}:${normalizedVersion}`;
@@ -18,7 +18,7 @@ export default class SchemaAdapterRegistry {
     if (!definition?.type || !definition?.version) {
       throw new Error("SchemaAdapterRegistry.registerAdapter expects type and version.");
     }
-    const key = this.#buildKey(definition.type, definition.version);
+    const key = this._buildKey(definition.type, definition.version);
     this.adapters.set(key, {
       normalizeResponse:
         typeof definition.normalizeResponse === "function" ? definition.normalizeResponse : null,
@@ -31,7 +31,7 @@ export default class SchemaAdapterRegistry {
     if (!payload) {
       return payload;
     }
-    const key = this.#buildKey(type, version);
+    const key = this._buildKey(type, version);
     const adapter = this.adapters.get(key);
     if (!adapter?.normalizeResponse) {
       return payload;

@@ -81,11 +81,11 @@ export default class PromptDecomposer {
   async decompose(payload) {
     if (!payload?.objective || !this.restClient || this.disabled) {
       if (this.disabled) {
-        this.#log("[PromptDecomposer] Disabled after previous failures; skipping.");
+        this._log("[PromptDecomposer] Disabled after previous failures; skipping.");
       }
       return null;
     }
-    const requestBody = this.#buildRequestBody(payload);
+    const requestBody = this._buildRequestBody(payload);
     const messages = [
       {
         role: "system",
@@ -102,7 +102,7 @@ export default class PromptDecomposer {
     let errorMessage = null;
 
     try {
-      const completion = await this.#withTimeout(
+      const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
           temperature: this.temperature,
@@ -110,13 +110,13 @@ export default class PromptDecomposer {
         }),
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
-      normalizedPlan = this.#parsePlan(responseText, payload);
+      normalizedPlan = this._parsePlan(responseText, payload);
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
-      this.#log(`[PromptDecomposer] REST failure: ${errorMessage}`);
-      if (this.#shouldDisable(errorMessage)) {
+      this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
+      if (this._shouldDisable(errorMessage)) {
         this.disabled = true;
-        this.#log("[PromptDecomposer] Disabled after repeated failures.");
+        this._log("[PromptDecomposer] Disabled after repeated failures.");
       }
     }
 
@@ -163,7 +163,7 @@ export default class PromptDecomposer {
     return normalizedPlan;
   }
 
-  #buildRequestBody(payload) {
+  _buildRequestBody(payload) {
     return {
       objective: payload.objective,
       command: payload.command ?? null,
@@ -184,7 +184,7 @@ export default class PromptDecomposer {
     };
   }
 
-  #withTimeout(promise) {
+  _withTimeout(promise) {
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
       return promise;
     }
@@ -202,7 +202,7 @@ export default class PromptDecomposer {
     ]);
   }
 
-  #shouldDisable(message) {
+  _shouldDisable(message) {
     if (!message) {
       return false;
     }
@@ -214,7 +214,7 @@ export default class PromptDecomposer {
     );
   }
 
-  #parsePlan(responseText, payload) {
+  _parsePlan(responseText, payload) {
     const extracted = stripCodeFences(responseText);
     if (!extracted) {
       return null;
@@ -223,7 +223,7 @@ export default class PromptDecomposer {
     try {
       parsed = JSON.parse(extracted);
     } catch (error) {
-      this.#log(
+      this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": ${
           error instanceof Error ? error.message : error
         }`,
@@ -245,12 +245,12 @@ export default class PromptDecomposer {
           : [],
         notes: parsed.notes ?? null,
       },
-      outline: this.#formatOutline(parsed.steps),
+      outline: this._formatOutline(parsed.steps),
     };
     return normalized;
   }
 
-  #formatOutline(steps, depth = 0, lines = [], prefix = "") {
+  _formatOutline(steps, depth = 0, lines = [], prefix = "") {
     if (!Array.isArray(steps) || steps.length === 0) {
       const rendered = lines.join("\n").trimEnd();
       return rendered.length ? rendered : null;
@@ -273,7 +273,7 @@ export default class PromptDecomposer {
         lines.push(`${indent}   - ${desc}`);
       }
       if (Array.isArray(step?.children) && step.children.length > 0) {
-        this.#formatOutline(step.children, depth + 1, lines, id);
+        this._formatOutline(step.children, depth + 1, lines, id);
       }
       if (lines.length >= 80) {
         break;
@@ -283,7 +283,7 @@ export default class PromptDecomposer {
     return rendered.length ? rendered : null;
   }
 
-  #log(message) {
+  _log(message) {
     if (this.logger) {
       this.logger(message);
     }

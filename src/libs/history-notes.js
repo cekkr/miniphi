@@ -17,9 +17,9 @@ export default class HistoryNotesManager {
     const includeGit = options.includeGit !== false;
     const label = typeof options.label === "string" && options.label.trim() ? options.label.trim() : null;
     const baseDir = await this.memory.prepare();
-    const { entries, gitAvailable } = await this.#collectEntries(baseDir, includeGit);
+    const { entries, gitAvailable } = await this._collectEntries(baseDir, includeGit);
     const previous = await this.memory.loadLatestHistoryNote();
-    const diff = this.#diffEntries(entries, previous?.data?.entries ?? []);
+    const diff = this._diffEntries(entries, previous?.data?.entries ?? []);
 
     const note = {
       id: null,
@@ -43,7 +43,7 @@ export default class HistoryNotesManager {
         : null,
     };
 
-    const markdown = this.#buildMarkdown(note);
+    const markdown = this._buildMarkdown(note);
     const persisted = await this.memory.saveHistoryNote(note, markdown);
     if (persisted?.id) {
       note.id = persisted.id;
@@ -56,9 +56,9 @@ export default class HistoryNotesManager {
     };
   }
 
-  async #collectEntries(baseDir, includeGit) {
+  async _collectEntries(baseDir, includeGit) {
     const entries = [];
-    const gitAvailable = includeGit && this.#ensureGitReady();
+    const gitAvailable = includeGit && this._ensureGitReady();
     const stack = [""];
 
     while (stack.length) {
@@ -96,7 +96,7 @@ export default class HistoryNotesManager {
           lastModifiedMs: stats.mtimeMs,
         };
         if (gitAvailable) {
-          entry.git = this.#readGitInfo(absolutePath);
+          entry.git = this._readGitInfo(absolutePath);
         }
         entries.push(entry);
       }
@@ -106,7 +106,7 @@ export default class HistoryNotesManager {
     return { entries, gitAvailable };
   }
 
-  #diffEntries(currentEntries, previousEntries) {
+  _diffEntries(currentEntries, previousEntries) {
     const previousMap = new Map((previousEntries ?? []).map((entry) => [entry.path, entry]));
     const changed = [];
     const added = [];
@@ -148,7 +148,7 @@ export default class HistoryNotesManager {
     return { changed, added, removed, stableCount };
   }
 
-  #ensureGitReady() {
+  _ensureGitReady() {
     if (this.gitStatus.checked) {
       return this.gitStatus.available;
     }
@@ -165,7 +165,7 @@ export default class HistoryNotesManager {
     return this.gitStatus.available;
   }
 
-  #readGitInfo(absolutePath) {
+  _readGitInfo(absolutePath) {
     if (!this.gitStatus.available) {
       return null;
     }
@@ -189,7 +189,7 @@ export default class HistoryNotesManager {
     }
   }
 
-  #buildMarkdown(note) {
+  _buildMarkdown(note) {
     const lines = [];
     const baseRelative = path.relative(note.projectRoot, note.baseDir) || note.baseDir;
     lines.push(`# .miniphi History Snapshot`);

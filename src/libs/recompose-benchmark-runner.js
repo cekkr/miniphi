@@ -38,13 +38,13 @@ export default class RecomposeBenchmarkRunner {
     planRuns = null,
   } = {}) {
     const runQueue = Array.isArray(planRuns) && planRuns.length
-      ? planRuns.map((entry, index) => this.#normalizePlanDescriptor(entry, {
+      ? planRuns.map((entry, index) => this._normalizePlanDescriptor(entry, {
         defaultClean: clean,
         defaultPrefix: runPrefix,
         defaultResume: resumeDescriptions,
         index,
       }))
-      : this.#buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions });
+      : this._buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions });
     if (runQueue.length === 0) {
       throw new Error("At least one benchmark run is required.");
     }
@@ -58,7 +58,7 @@ export default class RecomposeBenchmarkRunner {
     for (const descriptor of runQueue) {
       counter += 1;
       const labelFallback = RecomposeBenchmarkRunner.formatRunLabel(descriptor.runPrefix ?? runPrefix, counter);
-      const runLabel = this.#sanitizeLabel(descriptor.runLabel) || labelFallback;
+      const runLabel = this._sanitizeLabel(descriptor.runLabel) || labelFallback;
       const reportPath = path.join(outputDir, `${runLabel}.json`);
       const logPath = path.join(outputDir, `${runLabel}.log`);
       const report = await this.tester.run({
@@ -74,12 +74,12 @@ export default class RecomposeBenchmarkRunner {
           fileName: `${runLabel}.prompts.log`,
           label: runLabel,
         })
-        : await this.#copyPromptLog(report.promptLog, outputDir, runLabel);
+        : await this._copyPromptLog(report.promptLog, outputDir, runLabel);
       if (promptLogCopyPath) {
-        report.promptLogExport = this.#relativePath(promptLogCopyPath);
+        report.promptLogExport = this._relativePath(promptLogCopyPath);
       }
       await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
-      const logLines = this.#buildLogLines({
+      const logLines = this._buildLogLines({
         runLabel,
         direction: descriptor.direction,
         report,
@@ -106,10 +106,10 @@ export default class RecomposeBenchmarkRunner {
     };
   }
 
-  #buildLogLines({ runLabel, direction, report, reportPath, logPath, promptLogPath }) {
+  _buildLogLines({ runLabel, direction, report, reportPath, logPath, promptLogPath }) {
     const lines = [`[MiniPhi][Benchmark] ${runLabel} direction=${direction}`];
     for (const step of report.steps ?? []) {
-      lines.push(this.#formatStep(step));
+      lines.push(this._formatStep(step));
       if (step.phase === "markdown-to-code" && Array.isArray(step.warnings) && step.warnings.length) {
         const sampleWarnings = step.warnings.slice(0, 5);
         sampleWarnings.forEach((warning) => {
@@ -122,17 +122,17 @@ export default class RecomposeBenchmarkRunner {
         }
       }
     }
-    const relReport = this.#relativePath(reportPath);
-    const relLog = this.#relativePath(logPath);
+    const relReport = this._relativePath(reportPath);
+    const relLog = this._relativePath(logPath);
     lines.push(`[MiniPhi][Benchmark] Report saved to ${relReport}`);
     lines.push(`[MiniPhi][Benchmark] Log saved to ${relLog}`);
     if (promptLogPath) {
-      lines.push(`[MiniPhi][Benchmark] Prompt log saved to ${this.#relativePath(promptLogPath)}`);
+      lines.push(`[MiniPhi][Benchmark] Prompt log saved to ${this._relativePath(promptLogPath)}`);
     }
     return lines;
   }
 
-  #formatStep(step) {
+  _formatStep(step) {
     if (!step?.phase) {
       return "[MiniPhi][Benchmark] Unknown step";
     }
@@ -148,7 +148,7 @@ export default class RecomposeBenchmarkRunner {
     }
   }
 
-  #relativePath(targetPath) {
+  _relativePath(targetPath) {
     if (!targetPath) {
       return "";
     }
@@ -156,7 +156,7 @@ export default class RecomposeBenchmarkRunner {
     return relative || targetPath;
   }
 
-  async #copyPromptLog(promptLog, outputDir, runLabel) {
+  async _copyPromptLog(promptLog, outputDir, runLabel) {
     if (!promptLog) {
       return null;
     }
@@ -166,13 +166,13 @@ export default class RecomposeBenchmarkRunner {
     } catch {
       return null;
     }
-    const safeLabel = this.#sanitizeLabel(runLabel) || "RUN";
+    const safeLabel = this._sanitizeLabel(runLabel) || "RUN";
     const targetPath = path.join(outputDir, `${safeLabel}.prompts.log`);
     await fs.promises.copyFile(sourcePath, targetPath);
     return targetPath;
   }
 
-  #buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions }) {
+  _buildDirectionalQueue(directions, repeat, { clean, runPrefix, resumeDescriptions }) {
     if (!Array.isArray(directions) || directions.length === 0) {
       throw new Error("At least one direction is required for a benchmark run.");
     }
@@ -195,7 +195,7 @@ export default class RecomposeBenchmarkRunner {
     return queue;
   }
 
-  #normalizePlanDescriptor(entry, { defaultClean, defaultPrefix, defaultResume, index }) {
+  _normalizePlanDescriptor(entry, { defaultClean, defaultPrefix, defaultResume, index }) {
     if (!entry || typeof entry !== "object") {
       throw new Error(`Plan entry ${index ?? 0} is not an object.`);
     }
@@ -205,14 +205,14 @@ export default class RecomposeBenchmarkRunner {
     }
     return {
       direction,
-      clean: this.#normalizeClean(entry.clean, defaultClean),
+      clean: this._normalizeClean(entry.clean, defaultClean),
       runPrefix: entry.runPrefix ?? defaultPrefix ?? "RUN",
       runLabel: entry.runLabel ?? entry.label ?? null,
-       resumeDescriptions: this.#normalizeBoolean(entry.resumeDescriptions, defaultResume),
+       resumeDescriptions: this._normalizeBoolean(entry.resumeDescriptions, defaultResume),
     };
   }
 
-  #normalizeClean(value, fallback) {
+  _normalizeClean(value, fallback) {
     if (value === undefined || value === null) {
       return Boolean(fallback);
     }
@@ -226,7 +226,7 @@ export default class RecomposeBenchmarkRunner {
     return Boolean(value);
   }
 
-  #normalizeBoolean(value, fallback) {
+  _normalizeBoolean(value, fallback) {
     if (value === undefined || value === null) {
       return Boolean(fallback);
     }
@@ -242,7 +242,7 @@ export default class RecomposeBenchmarkRunner {
     return Boolean(value);
   }
 
-  #sanitizeLabel(label) {
+  _sanitizeLabel(label) {
     if (!label || typeof label !== "string") {
       return null;
     }

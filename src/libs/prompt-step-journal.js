@@ -60,7 +60,7 @@ export default class PromptStepJournal {
     const safeId = sanitizeId(sessionId);
     const sessionDir = path.join(this.sessionsDir, safeId);
     const sessionFile = path.join(sessionDir, "session.json");
-    let session = await this.#readJSON(sessionFile);
+    let session = await this._readJSON(sessionFile);
     if (!session) {
       session = {
         id: sessionId,
@@ -78,8 +78,8 @@ export default class PromptStepJournal {
       };
     }
     await fs.promises.mkdir(sessionDir, { recursive: true });
-    await this.#writeJSON(sessionFile, session);
-    await this.#updateIndex(session, sessionFile);
+    await this._writeJSON(sessionFile, session);
+    await this._updateIndex(session, sessionFile);
     return { id: session.id, path: sessionFile, status: session.status, steps: session.steps ?? 0 };
   }
 
@@ -103,7 +103,7 @@ export default class PromptStepJournal {
   async appendStep(sessionId, payload) {
     if (!sessionId || !payload) return null;
     await this.prepare();
-    const { sessionDir, sessionFile, session } = await this.#loadSession(sessionId);
+    const { sessionDir, sessionFile, session } = await this._loadSession(sessionId);
     if (!session) {
       return null;
     }
@@ -112,8 +112,8 @@ export default class PromptStepJournal {
     const sequence = (session.steps ?? 0) + 1;
     const fileName = `step-${String(sequence).padStart(3, "0")}.json`;
     const stepFile = path.join(stepsDir, fileName);
-    const startedAt = this.#normalizeDate(payload.startedAt);
-    const finishedAt = this.#normalizeDate(payload.finishedAt);
+    const startedAt = this._normalizeDate(payload.startedAt);
+    const finishedAt = this._normalizeDate(payload.finishedAt);
     const entry = {
       id: `${session.id}#${sequence}`,
       sequence,
@@ -132,11 +132,11 @@ export default class PromptStepJournal {
         startedAt && finishedAt ? finishedAt.getTime() - startedAt.getTime() : null,
       recordedAt: new Date().toISOString(),
     };
-    await this.#writeJSON(stepFile, entry);
+    await this._writeJSON(stepFile, entry);
     session.steps = sequence;
     session.updatedAt = new Date().toISOString();
-    await this.#writeJSON(sessionFile, session);
-    await this.#updateIndex(session, sessionFile);
+    await this._writeJSON(sessionFile, session);
+    await this._updateIndex(session, sessionFile);
     return { id: entry.id, path: stepFile };
   }
 
@@ -149,7 +149,7 @@ export default class PromptStepJournal {
   async setStatus(sessionId, status, note = null) {
     if (!sessionId) return;
     await this.prepare();
-    const { sessionFile, session } = await this.#loadSession(sessionId);
+    const { sessionFile, session } = await this._loadSession(sessionId);
     if (!session) {
       return;
     }
@@ -158,23 +158,23 @@ export default class PromptStepJournal {
     if (note) {
       session.note = note;
     }
-    await this.#writeJSON(sessionFile, session);
-    await this.#updateIndex(session, sessionFile);
+    await this._writeJSON(sessionFile, session);
+    await this._updateIndex(session, sessionFile);
   }
 
-  async #loadSession(sessionId) {
+  async _loadSession(sessionId) {
     const safeId = sanitizeId(sessionId);
     const sessionDir = path.join(this.sessionsDir, safeId);
     const sessionFile = path.join(sessionDir, "session.json");
-    const session = await this.#readJSON(sessionFile);
+    const session = await this._readJSON(sessionFile);
     if (!session) {
       return { sessionDir, sessionFile, session: null };
     }
     return { sessionDir, sessionFile, session };
   }
 
-  async #updateIndex(session, sessionFile) {
-    const index = await this.#readJSON(this.indexFile, DEFAULT_INDEX);
+  async _updateIndex(session, sessionFile) {
+    const index = await this._readJSON(this.indexFile, DEFAULT_INDEX);
     const filtered = index.entries.filter((entry) => entry.id !== session.id);
     filtered.unshift({
       id: session.id,
@@ -184,10 +184,10 @@ export default class PromptStepJournal {
       file: path.relative(this.baseDir, sessionFile).replace(/\\/g, "/"),
     });
     index.entries = filtered.slice(0, 200);
-    await this.#writeJSON(this.indexFile, index);
+    await this._writeJSON(this.indexFile, index);
   }
 
-  async #readJSON(filePath, fallback = null) {
+  async _readJSON(filePath, fallback = null) {
     try {
       const raw = await fs.promises.readFile(filePath, "utf8");
       return JSON.parse(raw);
@@ -196,11 +196,11 @@ export default class PromptStepJournal {
     }
   }
 
-  async #writeJSON(filePath, data) {
+  async _writeJSON(filePath, data) {
     await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
   }
 
-  #normalizeDate(value) {
+  _normalizeDate(value) {
     if (!value) return null;
     if (value instanceof Date) {
       return value;

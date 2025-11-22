@@ -103,34 +103,34 @@ export default class PromptSchemaRegistry {
         ],
       };
     }
-    const errors = this.#validateData(schema.definition, parsed, "$");
+    const errors = this._validateData(schema.definition, parsed, "$");
     if (errors.length > 0) {
       return { valid: false, errors, parsed };
     }
     return { valid: true, parsed };
   }
 
-  #validateData(schema, value, pointer) {
+  _validateData(schema, value, pointer) {
     if (!schema || typeof schema !== "object") {
       return [];
     }
     const errors = [];
-    const expectedTypes = this.#normalizeTypes(schema.type);
-    if (expectedTypes.length > 0 && !expectedTypes.some((type) => this.#matchesType(type, value))) {
+    const expectedTypes = this._normalizeTypes(schema.type);
+    if (expectedTypes.length > 0 && !expectedTypes.some((type) => this._matchesType(type, value))) {
       errors.push(
         `${pointer}: expected ${expectedTypes.join(
           " | ",
-        )}, received ${this.#describeValue(value)}`,
+        )}, received ${this._describeValue(value)}`,
       );
       return errors;
     }
     if (schema.enum && Array.isArray(schema.enum) && !schema.enum.includes(value)) {
       errors.push(`${pointer}: value "${value}" is not in enum [${schema.enum.join(", ")}]`);
     }
-    if (this.#isObjectSchema(schema)) {
+    if (this._isObjectSchema(schema)) {
       const obj = value ?? {};
       if (typeof obj !== "object" || Array.isArray(obj)) {
-        errors.push(`${pointer}: expected object but received ${this.#describeValue(value)}`);
+        errors.push(`${pointer}: expected object but received ${this._describeValue(value)}`);
         return errors;
       }
       if (Array.isArray(schema.required)) {
@@ -149,13 +149,13 @@ export default class PromptSchemaRegistry {
       }
       for (const [key, propertySchema] of Object.entries(schema.properties ?? {})) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
-          errors.push(...this.#validateData(propertySchema, obj[key], `${pointer}.${key}`));
+          errors.push(...this._validateData(propertySchema, obj[key], `${pointer}.${key}`));
         }
       }
     }
-    if (this.#isArraySchema(schema)) {
+    if (this._isArraySchema(schema)) {
       if (!Array.isArray(value)) {
-        errors.push(`${pointer}: expected array but received ${this.#describeValue(value)}`);
+        errors.push(`${pointer}: expected array but received ${this._describeValue(value)}`);
       } else {
         if (typeof schema.minItems === "number" && value.length < schema.minItems) {
           errors.push(`${pointer}: expected at least ${schema.minItems} items (found ${value.length}).`);
@@ -163,7 +163,7 @@ export default class PromptSchemaRegistry {
         value.forEach((item, index) => {
           if (schema.items) {
             errors.push(
-              ...this.#validateData(schema.items, item, `${pointer}[${index}]`),
+              ...this._validateData(schema.items, item, `${pointer}[${index}]`),
             );
           }
         });
@@ -172,12 +172,12 @@ export default class PromptSchemaRegistry {
     return errors;
   }
 
-  #normalizeTypes(typeValue) {
+  _normalizeTypes(typeValue) {
     if (!typeValue) {
       return [];
     }
     if (Array.isArray(typeValue)) {
-      return typeValue.flatMap((entry) => this.#normalizeTypes(entry));
+      return typeValue.flatMap((entry) => this._normalizeTypes(entry));
     }
     if (typeof typeValue === "string") {
       return [typeValue.toLowerCase()];
@@ -185,7 +185,7 @@ export default class PromptSchemaRegistry {
     return [];
   }
 
-  #matchesType(expected, value) {
+  _matchesType(expected, value) {
     if (expected === "null") {
       return value === null;
     }
@@ -204,7 +204,7 @@ export default class PromptSchemaRegistry {
     return typeof value === expected;
   }
 
-  #describeValue(value) {
+  _describeValue(value) {
     if (value === null) {
       return "null";
     }
@@ -221,21 +221,21 @@ export default class PromptSchemaRegistry {
     return type;
   }
 
-  #isObjectSchema(schema) {
+  _isObjectSchema(schema) {
     if (!schema) return false;
     if (schema.properties || schema.required) {
       return true;
     }
-    const types = this.#normalizeTypes(schema.type);
+    const types = this._normalizeTypes(schema.type);
     return types.includes("object");
   }
 
-  #isArraySchema(schema) {
+  _isArraySchema(schema) {
     if (!schema) return false;
     if (schema.items) {
       return true;
     }
-    const types = this.#normalizeTypes(schema.type);
+    const types = this._normalizeTypes(schema.type);
     return types.includes("array");
   }
 }

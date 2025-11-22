@@ -32,7 +32,7 @@ export default class Phi4StreamParser extends Transform {
     if (this.state === "INITIAL") {
       if (token) {
         this.buffer += token;
-        this.#drainInitialBuffer();
+        this._drainInitialBuffer();
       }
       return callback();
     }
@@ -40,7 +40,7 @@ export default class Phi4StreamParser extends Transform {
     // THINKING state: accumulate into the thought buffer until we see </think>.
     if (token) {
       this.thoughtBuffer += token;
-      this.#drainThoughtBuffer();
+      this._drainThoughtBuffer();
     }
     callback();
   }
@@ -50,12 +50,12 @@ export default class Phi4StreamParser extends Transform {
       this.push({ content: this.buffer });
     } else if (this.state === "THINKING" && this.thoughtBuffer.length > 0) {
       // Emit truncated thought if stream aborted mid-think.
-      this.#emitThought(`${this.thoughtBuffer}[TRUNCATED_THOUGHT]`);
+      this._emitThought(`${this.thoughtBuffer}[TRUNCATED_THOUGHT]`);
     }
     callback();
   }
 
-  #emitThought(thought) {
+  _emitThought(thought) {
     if (!this.onThink) {
       return;
     }
@@ -70,7 +70,7 @@ export default class Phi4StreamParser extends Transform {
     }
   }
 
-  #drainInitialBuffer() {
+  _drainInitialBuffer() {
     const startIdx = this.buffer.indexOf(THINK_START);
     if (startIdx === -1) {
       if (this.buffer.length > THINK_START.length) {
@@ -91,17 +91,17 @@ export default class Phi4StreamParser extends Transform {
     this.state = "THINKING";
     this.thoughtBuffer = this.buffer.slice(startIdx);
     this.buffer = "";
-    this.#drainThoughtBuffer();
+    this._drainThoughtBuffer();
   }
 
-  #drainThoughtBuffer() {
+  _drainThoughtBuffer() {
     const endIdx = this.thoughtBuffer.indexOf(THINK_END);
     if (endIdx === -1) {
       return;
     }
     const closingIdx = endIdx + THINK_END.length;
     const fullThought = this.thoughtBuffer.slice(0, closingIdx);
-    this.#emitThought(fullThought);
+    this._emitThought(fullThought);
     const remainder = this.thoughtBuffer.slice(closingIdx);
     this.thoughtBuffer = "";
     this.state = "SOLUTION";

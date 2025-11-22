@@ -65,7 +65,7 @@ export class LMStudioManager {
    * @param {object} [clientOptions] - Optional options passed to LMStudioClient.
    */
   constructor(clientOptions = undefined) {
-    this.client = new LMStudioClient(this.#normalizeClientOptions(clientOptions));
+    this.client = new LMStudioClient(this._normalizeClientOptions(clientOptions));
     this.loadedModels = new Map();
     this.modelConfigs = new Map();
   }
@@ -85,12 +85,12 @@ export class LMStudioManager {
     const cachedModel = this.loadedModels.get(modelKey);
     if (cachedModel) {
       const cachedConfig = this.modelConfigs.get(modelKey);
-      if (!config || this.#isConfigCompatible(cachedConfig, config)) {
+      if (!config || this._isConfigCompatible(cachedConfig, config)) {
         return cachedModel;
       }
 
       // Reload with the new configuration to honor the caller's explicit request.
-      await this.#unload(modelKey, cachedModel);
+      await this._unload(modelKey, cachedModel);
     }
 
     const effectiveConfig = {
@@ -120,7 +120,7 @@ export class LMStudioManager {
       return;
     }
 
-    await this.#unload(modelKey, model);
+    await this._unload(modelKey, model);
   }
 
   /**
@@ -129,7 +129,7 @@ export class LMStudioManager {
   async ejectAll() {
     const unloadOperations = [];
     for (const [modelKey, model] of this.loadedModels.entries()) {
-      unloadOperations.push(this.#unload(modelKey, model));
+      unloadOperations.push(this._unload(modelKey, model));
     }
     await Promise.allSettled(unloadOperations);
   }
@@ -140,7 +140,7 @@ export class LMStudioManager {
    * @param {string} modelKey
    * @param {import("@lmstudio/sdk").LLM} model
    */
-  async #unload(modelKey, model) {
+  async _unload(modelKey, model) {
     try {
       await model.unload();
     } finally {
@@ -157,7 +157,7 @@ export class LMStudioManager {
    * @param {Record<string, unknown>} requested
    * @returns {boolean}
    */
-  #isConfigCompatible(cached, requested) {
+  _isConfigCompatible(cached, requested) {
     if (!cached) {
       return false;
     }
@@ -185,7 +185,7 @@ export class LMStudioManager {
   /**
    * @param {object} [options]
    */
-  #normalizeClientOptions(options = undefined) {
+  _normalizeClientOptions(options = undefined) {
     if (!options || typeof options !== "object") {
       return { baseUrl: DEFAULT_LMSTUDIO_WS_BASE_URL };
     }
@@ -215,7 +215,7 @@ export class LMStudioRestClient {
         options?.baseUrl ?? process.env.LMSTUDIO_REST_URL ?? DEFAULT_LMSTUDIO_HTTP_BASE_URL,
       ),
     );
-    this.apiVersion = this.#normalizeApiVersion(options?.apiVersion ?? "v0");
+    this.apiVersion = this._normalizeApiVersion(options?.apiVersion ?? "v0");
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_REST_TIMEOUT_MS;
     this.defaultModel = options?.defaultModel ?? DEFAULT_MODEL_KEY;
     this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
@@ -233,7 +233,7 @@ export class LMStudioRestClient {
    * @returns {Promise<object>}
    */
   async listModels() {
-    return this.#request("/models");
+    return this._request("/models");
   }
 
   /**
@@ -245,7 +245,7 @@ export class LMStudioRestClient {
       throw new Error("modelKey is required to query model details.");
     }
     const encoded = encodeURIComponent(modelKey);
-    return this.#request(`/models/${encoded}`);
+    return this._request(`/models/${encoded}`);
   }
 
   /**
@@ -270,7 +270,7 @@ export class LMStudioRestClient {
       model: payload.model ?? this.defaultModel,
       ...payload,
     };
-    return this.#post("/chat/completions", body);
+    return this._post("/chat/completions", body);
   }
 
   /**
@@ -296,7 +296,7 @@ export class LMStudioRestClient {
       model: payload.model ?? this.defaultModel,
       ...payload,
     };
-    return this.#post("/completions", body);
+    return this._post("/completions", body);
   }
 
   /**
@@ -316,7 +316,7 @@ export class LMStudioRestClient {
       model: payload.model ?? this.defaultModel,
       ...payload,
     };
-    return this.#post("/embeddings", body);
+    return this._post("/embeddings", body);
   }
 
   /**
@@ -336,18 +336,18 @@ export class LMStudioRestClient {
    * @param {string} path
    * @returns {Promise<object | string | null>}
    */
-  async #request(path) {
-    const url = this.#buildUrl(path);
-    return this.#execute(url, { method: "GET" });
+  async _request(path) {
+    const url = this._buildUrl(path);
+    return this._execute(url, { method: "GET" });
   }
 
   /**
    * @param {string} path
    * @param {Record<string, unknown>} body
    */
-  async #post(path, body) {
-    const url = this.#buildUrl(path);
-    return this.#execute(url, {
+  async _post(path, body) {
+    const url = this._buildUrl(path);
+    return this._execute(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -360,7 +360,7 @@ export class LMStudioRestClient {
    * @param {string} url
    * @param {RequestInit} init
    */
-  async #execute(url, init) {
+  async _execute(url, init) {
     const controller =
       typeof AbortController !== "undefined" && this.timeoutMs > 0
         ? new AbortController()
@@ -381,7 +381,7 @@ export class LMStudioRestClient {
       });
 
       const raw = await response.text();
-      const data = this.#parseJson(raw);
+      const data = this._parseJson(raw);
 
       if (!response.ok) {
         const message = data?.error?.message ?? data?.error ?? raw ?? "Unknown error";
@@ -411,7 +411,7 @@ export class LMStudioRestClient {
   /**
    * @param {string} maybePath
    */
-  #buildUrl(maybePath) {
+  _buildUrl(maybePath) {
     if (!maybePath) {
       throw new Error("Path is required.");
     }
@@ -426,7 +426,7 @@ export class LMStudioRestClient {
   /**
    * @param {string} apiVersion
    */
-  #normalizeApiVersion(apiVersion) {
+  _normalizeApiVersion(apiVersion) {
     return apiVersion.replace(/^\/+|\/+$/g, "");
   }
 
@@ -434,7 +434,7 @@ export class LMStudioRestClient {
    * @param {string} text
    * @returns {any}
    */
-  #parseJson(text) {
+  _parseJson(text) {
     if (!text) {
       return null;
     }

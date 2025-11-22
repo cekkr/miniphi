@@ -92,17 +92,17 @@ export default class ApiNavigator {
    */
   async generateNavigationHints(payload = undefined) {
     if (this.disabled) {
-      this.#log("[ApiNavigator] Disabled after previous failures; skipping navigation hints.");
+      this._log("[ApiNavigator] Disabled after previous failures; skipping navigation hints.");
       return null;
     }
     if (!this.restClient || !payload?.workspace) {
       return null;
     }
-    const plan = await this.#requestPlan(payload);
+    const plan = await this._requestPlan(payload);
     if (!plan) {
       return null;
     }
-    const normalizedPlan = this.#normalizePlan(plan);
+    const normalizedPlan = this._normalizePlan(plan);
     if (!normalizedPlan) {
       return null;
     }
@@ -113,16 +113,16 @@ export default class ApiNavigator {
       this.cli &&
       payload.executeHelper !== false
     ) {
-      helper = await this.#materializeHelperScript(normalizedPlan.helper_script, payload).catch(
+      helper = await this._materializeHelperScript(normalizedPlan.helper_script, payload).catch(
         (error) => {
-          this.#log(
+          this._log(
             `[ApiNavigator] Helper script failed: ${error instanceof Error ? error.message : error}`,
           );
           return null;
         },
       );
     }
-    const actions = this.#normalizeActions(normalizedPlan.actions);
+    const actions = this._normalizeActions(normalizedPlan.actions);
     return {
       summary: normalizedPlan.navigation_summary ?? null,
       recommendedPaths: Array.isArray(normalizedPlan.recommended_paths)
@@ -134,13 +134,13 @@ export default class ApiNavigator {
         : [],
       actions,
       helper,
-      block: this.#buildNavigationBlock(normalizedPlan, helper, actions),
+      block: this._buildNavigationBlock(normalizedPlan, helper, actions),
       raw: normalizedPlan,
       schemaVersion: normalizedPlan.schema_version ?? null,
     };
   }
 
-  #normalizePlan(plan) {
+  _normalizePlan(plan) {
     if (!plan) {
       return null;
     }
@@ -151,7 +151,7 @@ export default class ApiNavigator {
     return this.adapterRegistry.normalizeResponse("api-navigator", schemaVersion, plan);
   }
 
-  #normalizeActions(rawActions) {
+  _normalizeActions(rawActions) {
     if (!Array.isArray(rawActions)) {
       return [];
     }
@@ -169,7 +169,7 @@ export default class ApiNavigator {
       })
       .filter(Boolean);
   }
-  async #requestPlan(payload) {
+  async _requestPlan(payload) {
     const manifest = Array.isArray(payload.workspace?.manifestPreview)
       ? payload.workspace.manifestPreview.slice(0, 12)
       : [];
@@ -204,26 +204,26 @@ export default class ApiNavigator {
         max_tokens: -1,
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
-      return this.#parsePlan(raw);
+      return this._parsePlan(raw);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.#log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
-      if (this.#shouldDisable(message)) {
+      this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
+      if (this._shouldDisable(message)) {
         this.disabled = true;
-        this.#log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
+        this._log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
       }
       return null;
     }
   }
 
-  #shouldDisable(message) {
+  _shouldDisable(message) {
     if (!message) {
       return false;
     }
     return /timed out/i.test(message) || /ECONNREFUSED|ENOTFOUND/i.test(message);
   }
 
-  #parsePlan(raw) {
+  _parsePlan(raw) {
     const extracted = stripCodeFences(raw);
     if (!extracted) {
       return null;
@@ -231,14 +231,14 @@ export default class ApiNavigator {
     try {
       return JSON.parse(extracted);
     } catch (error) {
-      this.#log(
+      this._log(
         `[ApiNavigator] Unable to parse navigation plan: ${error instanceof Error ? error.message : error}`,
       );
       return null;
     }
   }
 
-  async #materializeHelperScript(definition, payload) {
+  async _materializeHelperScript(definition, payload) {
     if (!definition?.code) {
       return null;
     }
@@ -256,9 +256,9 @@ export default class ApiNavigator {
       return null;
     }
     let runRecord = null;
-    const execution = await this.#executeHelper(record.path, definition.language, payload.cwd);
+    const execution = await this._executeHelper(record.path, definition.language, payload.cwd);
     if (execution) {
-      const summary = this.#summarizeHelperOutput(execution.stdout, execution.stderr);
+      const summary = this._summarizeHelperOutput(execution.stdout, execution.stderr);
       runRecord = await this.memory.recordHelperScriptRun({
         id: record.entry.id,
         command: execution.command,
@@ -279,12 +279,12 @@ export default class ApiNavigator {
     };
   }
 
-  async #executeHelper(scriptPath, language, cwd) {
+  async _executeHelper(scriptPath, language, cwd) {
     if (!this.cli) {
       return null;
     }
     const absolutePath = path.resolve(scriptPath);
-    const normalizedLang = this.#normalizeLanguage(language);
+    const normalizedLang = this._normalizeLanguage(language);
     const runner = normalizedLang === "python" ? "python" : "node";
     const command = `${runner} "${absolutePath}"`;
     try {
@@ -309,7 +309,7 @@ export default class ApiNavigator {
     }
   }
 
-  #summarizeHelperOutput(stdout, stderr) {
+  _summarizeHelperOutput(stdout, stderr) {
     const segments = [];
     if (stdout) {
       segments.push(`stdout ${clampText(stdout)}`);
@@ -320,7 +320,7 @@ export default class ApiNavigator {
     return segments.join(" | ") || null;
   }
 
-  #buildNavigationBlock(plan, helper, actions = undefined) {
+  _buildNavigationBlock(plan, helper, actions = undefined) {
     const lines = [];
     if (plan.navigation_summary) {
       lines.push(`Navigation summary: ${plan.navigation_summary}`);
@@ -361,7 +361,7 @@ export default class ApiNavigator {
     return lines.join("\n") || null;
   }
 
-  #normalizeLanguage(language) {
+  _normalizeLanguage(language) {
     const normalized = (language ?? "").toString().trim().toLowerCase();
     if (normalized.startsWith("py")) {
       return "python";
@@ -372,7 +372,7 @@ export default class ApiNavigator {
     return "node";
   }
 
-  #log(message) {
+  _log(message) {
     if (this.logger) {
       this.logger(message);
     }

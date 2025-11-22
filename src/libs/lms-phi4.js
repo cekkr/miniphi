@@ -127,8 +127,8 @@ export class Phi4Handler {
     while (attempt < maxAttempts) {
       this.chatHistory.push({ role: "user", content: currentPrompt });
 
-      const traceContext = this.#buildTraceContext(traceOptions);
-      const schemaDetails = this.#resolveSchema(traceContext);
+      const traceContext = this._buildTraceContext(traceOptions);
+      const schemaDetails = this._resolveSchema(traceContext);
       const startedAt = Date.now();
       const capturedThoughts = [];
       let requestSnapshot = null;
@@ -149,7 +149,7 @@ export class Phi4Handler {
         heartbeatTimer = setTimeout(() => {
           const seconds = Math.round(this.noTokenTimeoutMs / 1000);
           const message = `No Phi-4 tokens emitted in ${seconds} seconds; cancelling prompt.`;
-          this.#recordPromptEvent(traceContext, requestSnapshot, {
+          this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "no-token-timeout",
             severity: "error",
             message,
@@ -177,8 +177,8 @@ export class Phi4Handler {
       };
 
       try {
-        this.chatHistory = await this.#truncateHistory();
-        requestSnapshot = this.#buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
+        this.chatHistory = await this._truncateHistory();
+        requestSnapshot = this._buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         const chat = Chat.from(this.chatHistory);
         const prediction = this.model.respond(chat);
         predictionHandle = prediction;
@@ -204,7 +204,7 @@ export class Phi4Handler {
         attachStreamError(solutionStream);
 
         resetHeartbeat();
-        result = await this.#withPromptTimeout(async () => {
+        result = await this._withPromptTimeout(async () => {
           let assistantResponse = "";
           for await (const fragment of solutionStream) {
             const token = fragment?.content ?? "";
@@ -228,10 +228,10 @@ export class Phi4Handler {
         });
 
         const finishedAt = Date.now();
-        const validationResult = this.#validateSchema(schemaDetails, result);
-        schemaValidation = this.#summarizeValidation(validationResult);
+        const validationResult = this._validateSchema(schemaDetails, result);
+        schemaValidation = this._summarizeValidation(validationResult);
         if (validationResult && !validationResult.valid) {
-          const summary = this.#summarizeSchemaErrors(validationResult.errors);
+          const summary = this._summarizeSchemaErrors(validationResult.errors);
           schemaFailureDetails = {
             summary,
             schemaId: schemaDetails?.id ?? traceContext.schemaId ?? "unknown",
@@ -252,17 +252,17 @@ export class Phi4Handler {
           schemaId: schemaDetails?.id ?? null,
           schemaValidation,
         };
-        await this.#recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
+        await this._recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
         if (heartbeatTimer) {
           clearTimeout(heartbeatTimer);
           heartbeatTimer = null;
         }
-        await this.#trackPromptPerformance(
+        await this._trackPromptPerformance(
           traceContext,
           requestSnapshot,
           {
             ...responseSnapshot,
-            tokensApprox: this.#approximateTokens(result),
+            tokensApprox: this._approximateTokens(result),
           },
           null,
         );
@@ -276,7 +276,7 @@ export class Phi4Handler {
         this.chatHistory.pop(); // remove user entry to preserve state
         const message = error instanceof Error ? error.message : String(error);
         const finishedAt = Date.now();
-        const shouldRetry = attempt === 0 && this.#isRecoverableModelError(message);
+        const shouldRetry = attempt === 0 && this._isRecoverableModelError(message);
         if (shouldRetry) {
           attempt += 1;
           try {
@@ -291,7 +291,7 @@ export class Phi4Handler {
         if (schemaRetryAllowed) {
           attempt += 1;
           schemaRetryCount += 1;
-          currentPrompt = this.#buildSchemaRetryPrompt(
+          currentPrompt = this._buildSchemaRetryPrompt(
             basePrompt,
             schemaDetails,
             schemaFailureDetails.summary,
@@ -307,7 +307,7 @@ export class Phi4Handler {
             errorForThrow = callbackError;
           }
         }
-        await this.#recordPromptExchange(
+        await this._recordPromptExchange(
           traceContext,
           requestSnapshot,
           {
@@ -320,7 +320,7 @@ export class Phi4Handler {
           },
           message,
         );
-        await this.#trackPromptPerformance(
+        await this._trackPromptPerformance(
           traceContext,
           requestSnapshot,
           {
@@ -330,7 +330,7 @@ export class Phi4Handler {
             finishedAt,
             schemaId: schemaDetails?.id ?? null,
             schemaValidation,
-            tokensApprox: this.#approximateTokens(result),
+            tokensApprox: this._approximateTokens(result),
           },
           message,
         );
@@ -345,7 +345,7 @@ export class Phi4Handler {
     throw new Error("Phi-4 chat stream exceeded retry budget.");
   }
 
-  #isRecoverableModelError(message) {
+  _isRecoverableModelError(message) {
     if (!message || typeof message !== "string") {
       return false;
     }
@@ -356,7 +356,7 @@ export class Phi4Handler {
    * Ensures chat history remains within the model's context window by trimming the oldest turns.
    * @returns {Promise<import("@lmstudio/sdk").MessageLike[]>}
    */
-  async #truncateHistory() {
+  async _truncateHistory() {
     if (!this.model) {
       throw new Error("Cannot truncate history without a loaded model.");
     }
@@ -434,7 +434,7 @@ export class Phi4Handler {
     }
   }
 
-  async #withPromptTimeout(task, onTimeout) {
+  async _withPromptTimeout(task, onTimeout) {
     const timeoutMs = this.promptTimeoutMs;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       return task();
@@ -457,7 +457,7 @@ export class Phi4Handler {
     }
   }
 
-  #buildTraceContext(options) {
+  _buildTraceContext(options) {
     const scope = options?.scope === "main" ? "main" : "sub";
     const subPromptId = options?.subPromptId ?? randomUUID();
     const schemaId =
@@ -474,7 +474,7 @@ export class Phi4Handler {
     };
   }
 
-  #buildRequestSnapshot(prompt, traceContext, schemaDetails = undefined) {
+  _buildRequestSnapshot(prompt, traceContext, schemaDetails = undefined) {
     const messages = this.chatHistory.map((entry) => ({
       role: entry.role,
       content: entry.content,
@@ -493,12 +493,12 @@ export class Phi4Handler {
     };
   }
 
-  async #recordPromptExchange(traceContext, requestSnapshot, responseSnapshot, errorMessage = null) {
+  async _recordPromptExchange(traceContext, requestSnapshot, responseSnapshot, errorMessage = null) {
     if (!this.promptRecorder || !requestSnapshot) {
       return;
     }
     try {
-      const metadata = this.#composeRecorderMetadata(traceContext, responseSnapshot);
+      const metadata = this._composeRecorderMetadata(traceContext, responseSnapshot);
       await this.promptRecorder.record({
         scope: traceContext.scope,
         label: traceContext.label,
@@ -511,7 +511,7 @@ export class Phi4Handler {
         response: responseSnapshot
           ? {
               ...responseSnapshot,
-              tokensApprox: this.#approximateTokens(responseSnapshot.text ?? ""),
+              tokensApprox: this._approximateTokens(responseSnapshot.text ?? ""),
               reasoningCount: responseSnapshot.reasoning?.length ?? 0,
             }
           : null,
@@ -524,7 +524,7 @@ export class Phi4Handler {
     }
   }
 
-  async #trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {
+  async _trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {
     if (!this.performanceTracker || !requestSnapshot) {
       return;
     }
@@ -541,7 +541,7 @@ export class Phi4Handler {
     }
   }
 
-  #recordPromptEvent(traceContext, requestSnapshot, event) {
+  _recordPromptEvent(traceContext, requestSnapshot, event) {
     if (!this.performanceTracker || typeof this.performanceTracker.recordEvent !== "function") {
       return;
     }
@@ -566,7 +566,7 @@ export class Phi4Handler {
     }
   }
 
-  #composeRecorderMetadata(traceContext, responseSnapshot) {
+  _composeRecorderMetadata(traceContext, responseSnapshot) {
     const base = traceContext.metadata ? { ...traceContext.metadata } : {};
     const duration =
       responseSnapshot?.finishedAt && responseSnapshot?.startedAt
@@ -584,7 +584,7 @@ export class Phi4Handler {
     return Object.keys(base).length > 0 ? base : null;
   }
 
-  #resolveSchema(traceContext) {
+  _resolveSchema(traceContext) {
     if (!this.schemaRegistry || !traceContext?.schemaId) {
       return null;
     }
@@ -597,14 +597,14 @@ export class Phi4Handler {
     return schema;
   }
 
-  #validateSchema(schemaDetails, responseText) {
+  _validateSchema(schemaDetails, responseText) {
     if (!schemaDetails || !this.schemaRegistry) {
       return null;
     }
     return this.schemaRegistry.validate(schemaDetails.id, responseText);
   }
 
-  #summarizeValidation(validation) {
+  _summarizeValidation(validation) {
     if (!validation) {
       return null;
     }
@@ -617,14 +617,14 @@ export class Phi4Handler {
     };
   }
 
-  #summarizeSchemaErrors(errors) {
+  _summarizeSchemaErrors(errors) {
     if (!errors || errors.length === 0) {
       return "Unknown schema mismatch.";
     }
     return errors.slice(0, 3).join("; ");
   }
 
-  #buildSchemaRetryPrompt(basePrompt, schemaDetails, summary, retryCount) {
+  _buildSchemaRetryPrompt(basePrompt, schemaDetails, summary, retryCount) {
     const normalizedBase = typeof basePrompt === "string" ? basePrompt.trimEnd() : "";
     const reminderLines = [
       normalizedBase,
@@ -641,7 +641,7 @@ export class Phi4Handler {
     return reminderLines.filter(Boolean).join("\n");
   }
 
-  #approximateTokens(text) {
+  _approximateTokens(text) {
     if (!text) {
       return 0;
     }

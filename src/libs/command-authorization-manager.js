@@ -55,7 +55,7 @@ export default class CommandAuthorizationManager {
       }
       return true;
     }
-    const approved = await this.#promptApproval(command, danger, context);
+    const approved = await this._promptApproval(command, danger, context);
     if (!approved) {
       throw new Error(`[MiniPhi] Command rejected by operator: ${command}`);
     }
@@ -65,9 +65,9 @@ export default class CommandAuthorizationManager {
     return true;
   }
 
-  async #promptApproval(command, danger, context) {
+  async _promptApproval(command, danger, context) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      this.#log(
+      this._log(
         `[Authorization] Non-interactive terminal detected; rejecting ${command} (danger=${danger}).`,
       );
       return false;
@@ -95,13 +95,13 @@ export default class CommandAuthorizationManager {
       });
     });
     const approved = response === "y" || response === "yes";
-    this.#log(
+    this._log(
       `[Authorization] ${approved ? "Approved" : "Rejected"} command ${command} (danger=${danger}).`,
     );
     return approved;
   }
 
-  #log(message) {
+  _log(message) {
     if (this.logger) {
       this.logger(message);
     }

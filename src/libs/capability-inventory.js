@@ -12,24 +12,24 @@ export default class CapabilityInventory {
   async describe(rootDir = process.cwd()) {
     const root = path.resolve(rootDir);
     const [packageScripts, scriptFiles, binTools] = await Promise.all([
-      this.#readPackageScripts(root),
-      this.#listScriptsDirectory(root),
-      this.#listNodeBin(root),
+      this._readPackageScripts(root),
+      this._listScriptsDirectory(root),
+      this._listNodeBin(root),
     ]);
     const capabilities = {
       packageScripts,
       scriptFiles,
       binTools,
       miniPhiCommands: DEFAULT_MINIPHI_COMMANDS,
-      osCommands: this.#detectOsCommands(),
+      osCommands: this._detectOsCommands(),
     };
     return {
-      summary: this.#formatSummary(capabilities),
+      summary: this._formatSummary(capabilities),
       details: capabilities,
     };
   }
 
-  async #readPackageScripts(root) {
+  async _readPackageScripts(root) {
     const packagePath = path.join(root, "package.json");
     try {
       const raw = await fs.promises.readFile(packagePath, "utf8");
@@ -46,7 +46,7 @@ export default class CapabilityInventory {
     }
   }
 
-  async #listScriptsDirectory(root) {
+  async _listScriptsDirectory(root) {
     const scriptsDir = path.join(root, "scripts");
     try {
       const stats = await fs.promises.stat(scriptsDir);
@@ -67,7 +67,7 @@ export default class CapabilityInventory {
     }
   }
 
-  async #listNodeBin(root) {
+  async _listNodeBin(root) {
     const binDir = path.join(root, "node_modules", ".bin");
     try {
       const stats = await fs.promises.stat(binDir);
@@ -88,7 +88,7 @@ export default class CapabilityInventory {
     }
   }
 
-  #detectOsCommands() {
+  _detectOsCommands() {
     if (process.platform === "win32") {
       return ["powershell.exe", "cmd.exe", "python", "node"];
     }
@@ -98,7 +98,7 @@ export default class CapabilityInventory {
     return ["bash", "sh", "python3", "node"];
   }
 
-  #formatSummary(capabilities) {
+  _formatSummary(capabilities) {
     const lines = [];
     if (capabilities.packageScripts.length) {
       const entries = capabilities.packageScripts

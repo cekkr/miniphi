@@ -88,11 +88,11 @@ export default class RecomposeTester {
       throw new Error(`Unsupported recompose direction "${direction}".`);
     }
 
-    this.#requirePhi();
+    this._requirePhi();
     if (typeof this.phi4?.clearHistory === "function") {
       this.phi4.clearHistory();
     }
-    await this.#startSession(options.sessionLabel ?? this.promptLabel);
+    await this._startSession(options.sessionLabel ?? this.promptLabel);
 
     const sampleDir = options.sampleDir ? path.resolve(options.sampleDir) : null;
     if (!sampleDir && (!options.codeDir || !options.descriptionsDir || !options.outputDir)) {
@@ -123,27 +123,27 @@ export default class RecomposeTester {
     const outputDir = resolvePath(options.outputDir, "output-dir");
     this.fileBlueprints.clear();
     this.baselineSignatures = new Map();
-    await this.#loadSampleMetadata(sampleDir, { codeDir, descriptionsDir });
+    await this._loadSampleMetadata(sampleDir, { codeDir, descriptionsDir });
 
     if (["code-to-markdown", "roundtrip"].includes(direction)) {
-      await this.#assertDirectory(codeDir, "code");
+      await this._assertDirectory(codeDir, "code");
     }
     if (["markdown-to-code", "roundtrip"].includes(direction)) {
-      await this.#assertDirectory(descriptionsDir, "descriptions");
+      await this._assertDirectory(descriptionsDir, "descriptions");
     }
 
     const resumeDescriptions = Boolean(options.resumeDescriptions);
     const shouldNarrate = direction === "code-to-markdown" || (direction === "roundtrip" && !resumeDescriptions);
     if (shouldNarrate && options.clean && ["code-to-markdown", "roundtrip"].includes(direction)) {
-      await this.#cleanDir(descriptionsDir);
+      await this._cleanDir(descriptionsDir);
     } else if (!shouldNarrate && options.clean && direction === "roundtrip") {
       console.log("[MiniPhi][Recompose] Skipping description clean because --resume-descriptions is active.");
     }
     if (options.clean && ["markdown-to-code", "roundtrip"].includes(direction)) {
-      await this.#cleanDir(outputDir);
+      await this._cleanDir(outputDir);
     }
     if (["code-to-markdown", "roundtrip"].includes(direction)) {
-      await this.#captureBaselineSignatures(codeDir);
+      await this._captureBaselineSignatures(codeDir);
     }
 
     const steps = [];
@@ -165,7 +165,7 @@ export default class RecomposeTester {
     if (direction === "roundtrip") {
       const initialComparison = await this.compareDirectories({ baselineDir: codeDir, candidateDir: outputDir });
       if ((initialComparison.mismatches?.length || initialComparison.missing?.length) && this.fileBlueprints.size) {
-        const repairStep = await this.#repairMismatches({
+        const repairStep = await this._repairMismatches({
           comparison: initialComparison,
           baselineDir: codeDir,
           candidateDir: outputDir,
@@ -179,18 +179,18 @@ export default class RecomposeTester {
 
     return {
       direction,
-      sampleDir: this.#relativeToCwd(sampleDir),
-      codeDir: this.#relativeToCwd(codeDir),
-      descriptionsDir: this.#relativeToCwd(descriptionsDir),
-      outputDir: this.#relativeToCwd(outputDir),
+      sampleDir: this._relativeToCwd(sampleDir),
+      codeDir: this._relativeToCwd(codeDir),
+      descriptionsDir: this._relativeToCwd(descriptionsDir),
+      outputDir: this._relativeToCwd(outputDir),
       steps,
-      sessionDir: this.#relativeToCwd(this.sessionDir),
-      promptLog: this.#relativeToCwd(this.promptLogPath),
+      sessionDir: this._relativeToCwd(this.sessionDir),
+      promptLog: this._relativeToCwd(this.promptLogPath),
       workspaceContext: this.workspaceContext
         ? {
             kind: this.workspaceContext.kind,
             summary: this.workspaceContext.summary,
-            sourceDir: this.#relativeToCwd(this.workspaceContext.sourceDir),
+            sourceDir: this._relativeToCwd(this.workspaceContext.sourceDir),
             metadata: this.sampleMetadata,
           }
         : null,
@@ -202,7 +202,7 @@ export default class RecomposeTester {
   async codeToMarkdown({ sourceDir, targetDir }) {
     const start = Date.now();
     const files = await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs });
-    const workspaceSummary = await this.#ensureWorkspaceSummaryFromCode(sourceDir, files);
+    const workspaceSummary = await this._ensureWorkspaceSummaryFromCode(sourceDir, files);
     let converted = 0;
     let skipped = 0;
     let cacheHits = 0;
@@ -212,7 +212,7 @@ export default class RecomposeTester {
       while (queue.length) {
         const relativePath = queue.shift();
         const absolute = path.join(sourceDir, relativePath);
-        if (await this.#isBinary(absolute)) {
+        if (await this._isBinary(absolute)) {
           skipped += 1;
           continue;
         }
@@ -228,8 +228,8 @@ export default class RecomposeTester {
           }
         }
         if (!document) {
-          const language = this.#languageFromExtension(path.extname(relativePath));
-          document = await this.#narrateSourceFile({
+          const language = this._languageFromExtension(path.extname(relativePath));
+          document = await this._narrateSourceFile({
             relativePath,
             language,
             content: normalized,
@@ -245,7 +245,7 @@ export default class RecomposeTester {
           }
         }
         const target = path.join(targetDir, `${relativePath}.md`);
-        await this.#ensureDir(path.dirname(target));
+        await this._ensureDir(path.dirname(target));
         await fs.promises.writeFile(target, document, "utf8");
         converted += 1;
       }
@@ -259,7 +259,7 @@ export default class RecomposeTester {
       skipped,
       cacheHits,
       concurrency: workerCount,
-      descriptionsDir: this.#relativeToCwd(targetDir),
+      descriptionsDir: this._relativeToCwd(targetDir),
     };
   }
 
@@ -268,14 +268,14 @@ export default class RecomposeTester {
     const files = (await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs })).filter((file) =>
       file.toLowerCase().endsWith(".md"),
     );
-    const workspaceSummary = await this.#ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
+    const workspaceSummary = await this._ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
     let converted = 0;
     const warnings = [];
 
     for (const relativePath of files) {
       const absolute = path.join(sourceDir, relativePath);
       const raw = await fs.promises.readFile(absolute, "utf8");
-      const { metadata, body } = this.#parseMarkdown(raw);
+      const { metadata, body } = this._parseMarkdown(raw);
       const narrative = body.trim();
       if (!narrative) {
         warnings.push({ path: relativePath, reason: "missing narrative content" });
@@ -283,9 +283,9 @@ export default class RecomposeTester {
       }
       const targetPathRelative =
         metadata.source ?? relativePath.replace(/\.md$/i, "").replace(/\\/g, "/");
-      const language = metadata.language ?? this.#languageFromExtension(path.extname(targetPathRelative));
+      const language = metadata.language ?? this._languageFromExtension(path.extname(targetPathRelative));
       try {
-        const plan = await this.#planCodeFromNarrative({
+        const plan = await this._planCodeFromNarrative({
           relativePath: targetPathRelative,
           narrative,
           workspaceSummary,
@@ -293,14 +293,14 @@ export default class RecomposeTester {
         const blueprint = { narrative, plan, language };
         this.fileBlueprints.set(targetPathRelative, blueprint);
         const signature = this.baselineSignatures.get(targetPathRelative) ?? null;
-        const code = await this.#attemptCodeGeneration({
+        const code = await this._attemptCodeGeneration({
           relativePath: targetPathRelative,
           blueprint,
           signature,
           repairContext: null,
         });
         const targetPath = path.join(targetDir, targetPathRelative);
-        await this.#ensureDir(path.dirname(targetPath));
+        await this._ensureDir(path.dirname(targetPath));
         await fs.promises.writeFile(targetPath, `${code.replace(/\s+$/, "")}\n`, "utf8");
         converted += 1;
       } catch (error) {
@@ -315,7 +315,7 @@ export default class RecomposeTester {
       processed: files.length,
       converted,
       skipped: files.length - converted,
-      outputDir: this.#relativeToCwd(targetDir),
+      outputDir: this._relativeToCwd(targetDir),
       warnings,
     };
   }
@@ -338,8 +338,8 @@ export default class RecomposeTester {
         missing.push(relative);
         continue;
       }
-      const baselineHash = await this.#hashFile(baselinePath);
-      const candidateHash = await this.#hashFile(candidatePath);
+      const baselineHash = await this._hashFile(baselinePath);
+      const candidateHash = await this._hashFile(candidatePath);
       if (baselineHash === candidateHash) {
         matches.push(relative);
       } else {
@@ -364,7 +364,7 @@ export default class RecomposeTester {
     };
   }
 
-  async #narrateSourceFile({ relativePath, language, content, workspaceSummary, sourceHash }) {
+  async _narrateSourceFile({ relativePath, language, content, workspaceSummary, sourceHash }) {
     const normalizedContent = content.replace(/\r\n/g, "\n");
     const hash = sourceHash ?? createHash("sha256").update(normalizedContent, "utf8").digest("hex");
     const prompt = [
@@ -381,12 +381,12 @@ export default class RecomposeTester {
       `"""`,
     ].join("\n\n");
 
-    const response = await this.#promptPhi(prompt, {
+    const response = await this._promptPhi(prompt, {
       label: "recompose:file-narrative",
       metadata: { file: relativePath },
     });
-    const structured = this.#structureNarrative(this.#sanitizeNarrative(response), relativePath, () =>
-      this.#fallbackFileNarrative({
+    const structured = this._structureNarrative(this._sanitizeNarrative(response), relativePath, () =>
+      this._fallbackFileNarrative({
         relativePath,
         language,
         content: normalizedContent,
@@ -403,14 +403,14 @@ export default class RecomposeTester {
       structured,
       "",
     ].join("\n");
-    await this.#writeSessionAsset(
-      path.join("files", `${this.#safeSessionName(relativePath)}.md`),
+    await this._writeSessionAsset(
+      path.join("files", `${this._safeSessionName(relativePath)}.md`),
       `# Narrative for ${relativePath}\n\n${structured}\n`,
     );
     return document;
   }
 
-  async #planCodeFromNarrative({ relativePath, narrative, workspaceSummary }) {
+  async _planCodeFromNarrative({ relativePath, narrative, workspaceSummary }) {
     const prompt = [
       "You previously helped convert code into prose for a secure recomposition test.",
       "Given the narrative description, outline the concrete implementation strategy.",
@@ -420,22 +420,22 @@ export default class RecomposeTester {
       formatMetadataSummary(this.sampleMetadata),
       `Narrative for ${relativePath}:\n${narrative}`,
     ].join("\n\n");
-    const plan = this.#structureNarrative(
-      await this.#promptPhi(prompt, {
+    const plan = this._structureNarrative(
+      await this._promptPhi(prompt, {
         label: "recompose:file-plan",
         metadata: { file: relativePath },
       }),
       relativePath,
-      () => this.#fallbackPlanFromNarrative(relativePath, narrative),
+      () => this._fallbackPlanFromNarrative(relativePath, narrative),
     );
-    await this.#writeSessionAsset(
-      path.join("plans", `${this.#safeSessionName(relativePath)}.md`),
+    await this._writeSessionAsset(
+      path.join("plans", `${this._safeSessionName(relativePath)}.md`),
       `# Plan for ${relativePath}\n\n${plan}\n`,
     );
     return plan;
   }
 
-  async #generateSourceFromPlan({
+  async _generateSourceFromPlan({
     relativePath,
     plan,
     narrative,
@@ -460,42 +460,42 @@ export default class RecomposeTester {
       basePrompt.push(`Guidance:\n${guidance}`);
     }
     basePrompt.push(`Emit the ${language || "text"} source code for ${relativePath}.`);
-    let response = await this.#promptPhi(basePrompt.join("\n\n"), {
+    let response = await this._promptPhi(basePrompt.join("\n\n"), {
       label: "recompose:codegen",
       metadata: { file: relativePath, language },
     });
-    let code = this.#extractCodeFromResponse(response);
+    let code = this._extractCodeFromResponse(response);
     if (!code) {
       const retryPrompt = [
         ...basePrompt,
         "Your previous answer lacked a fenced code block. Resend the FULL file with ``` fences.",
         `Previous attempt:\n${response}`,
       ];
-      response = await this.#promptPhi(retryPrompt.join("\n\n"), {
+      response = await this._promptPhi(retryPrompt.join("\n\n"), {
         label: "recompose:codegen-retry",
         metadata: { file: relativePath, language },
       });
-      code = this.#extractCodeFromResponse(response);
+      code = this._extractCodeFromResponse(response);
       if (!code) {
         throw new Error("Phi-4 response did not include a code block after retry.");
       }
     }
-    await this.#writeSessionAsset(
-      path.join("code", `${this.#safeSessionName(relativePath)}.txt`),
+    await this._writeSessionAsset(
+      path.join("code", `${this._safeSessionName(relativePath)}.txt`),
       code,
     );
     return code;
   }
 
-  async #attemptCodeGeneration({ relativePath, blueprint, signature, repairContext }) {
+  async _attemptCodeGeneration({ relativePath, blueprint, signature, repairContext }) {
     if (this.offlineFallbackActive) {
-      return this.#buildOfflineCodeStub({ relativePath, blueprint, signature });
+      return this._buildOfflineCodeStub({ relativePath, blueprint, signature });
     }
     const maxAttempts = signature ? 3 : 2;
     let guidance = null;
     let lastReason = null;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const code = await this.#generateSourceFromPlan({
+      const code = await this._generateSourceFromPlan({
         relativePath,
         plan: blueprint.plan,
         narrative: blueprint.narrative,
@@ -503,7 +503,7 @@ export default class RecomposeTester {
         repairContext,
         guidance,
       });
-      const validation = this.#validateGeneratedCode({ relativePath, code, signature });
+      const validation = this._validateGeneratedCode({ relativePath, code, signature });
       if (validation.ok) {
         return code;
       }
@@ -516,13 +516,13 @@ export default class RecomposeTester {
     throw new Error(lastReason ?? "Unable to satisfy structure constraints.");
   }
 
-  #validateGeneratedCode({ relativePath, code, signature }) {
+  _validateGeneratedCode({ relativePath, code, signature }) {
     if (!signature) {
       return { ok: true };
     }
     const issues = [];
     if (signature.exportStyle) {
-      const detected = this.#detectExportStyle(code);
+      const detected = this._detectExportStyle(code);
       if (detected && signature.exportStyle !== detected) {
         issues.push(
           `File ${relativePath} must use ${signature.exportStyle === "esm" ? "ES module exports" : "module.exports"} syntax.`,
@@ -530,7 +530,7 @@ export default class RecomposeTester {
       }
     }
     if (signature.exports?.length) {
-      const missing = signature.exports.filter((name) => !this.#codeContainsIdentifier(code, name));
+      const missing = signature.exports.filter((name) => !this._codeContainsIdentifier(code, name));
       if (missing.length) {
         issues.push(`Missing exported symbols: ${missing.join(", ")}`);
       }
@@ -545,11 +545,11 @@ export default class RecomposeTester {
     };
   }
 
-  async #ensureWorkspaceSummaryFromCode(sourceDir, files) {
+  async _ensureWorkspaceSummaryFromCode(sourceDir, files) {
     if (this.workspaceContext?.kind === "code" && this.workspaceContext.sourceDir === sourceDir) {
       return this.workspaceContext.summary;
     }
-    const glimpses = await this.#collectGlimpses(sourceDir, files);
+    const glimpses = await this._collectGlimpses(sourceDir, files);
     const workspaceHints = buildWorkspaceHintBlock(
       files,
       sourceDir,
@@ -566,29 +566,29 @@ export default class RecomposeTester {
     ]
       .filter(Boolean)
       .join("\n\n");
-    let summaryText = this.#sanitizeNarrative(await this.#promptPhi(promptParts, { label: "recompose:workspace-overview" }));
-    if (this.#needsWorkspaceRetry(summaryText)) {
+    let summaryText = this._sanitizeNarrative(await this._promptPhi(promptParts, { label: "recompose:workspace-overview" }));
+    if (this._needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
         promptParts,
         buildWorkspaceHintBlock(files, sourceDir, this.sampleMetadata?.readmeSnippet),
       ]
         .filter(Boolean)
         .join("\n\n");
-      summaryText = this.#sanitizeNarrative(
-        await this.#promptPhi(retryPrompt, { label: "recompose:workspace-overview-retry" }),
+      summaryText = this._sanitizeNarrative(
+        await this._promptPhi(retryPrompt, { label: "recompose:workspace-overview-retry" }),
       );
     }
-    const summary = this.#structureNarrative(
+    const summary = this._structureNarrative(
       summaryText,
       "workspace",
-      () => this.#fallbackWorkspaceSummaryFromCode(files.length, glimpses),
+      () => this._fallbackWorkspaceSummaryFromCode(files.length, glimpses),
     );
     this.workspaceContext = { kind: "code", summary, sourceDir, metadata: this.sampleMetadata };
-    await this.#writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
+    await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
   }
 
-  async #ensureWorkspaceSummaryFromDescriptions(sourceDir, files) {
+  async _ensureWorkspaceSummaryFromDescriptions(sourceDir, files) {
     if (this.workspaceContext?.summary) {
       return this.workspaceContext.summary;
     }
@@ -596,7 +596,7 @@ export default class RecomposeTester {
       files.slice(0, MAX_OVERVIEW_FILES).map(async (relativePath) => {
         const absolute = path.join(sourceDir, relativePath);
         const raw = await fs.promises.readFile(absolute, "utf8");
-        const { body } = this.#parseMarkdown(raw);
+        const { body } = this._parseMarkdown(raw);
         return `### ${relativePath}\n${body.split(/\n+/).slice(0, 6).join("\n")}`;
       }),
     );
@@ -606,33 +606,33 @@ export default class RecomposeTester {
       `Excerpts:\n${excerpts.join("\n\n")}`,
       formatMetadataSummary(this.sampleMetadata),
     ].join("\n\n");
-    let summaryText = this.#sanitizeNarrative(
-      await this.#promptPhi(prompt, { label: "recompose:workspace-from-descriptions" }),
+    let summaryText = this._sanitizeNarrative(
+      await this._promptPhi(prompt, { label: "recompose:workspace-from-descriptions" }),
     );
-    if (this.#needsWorkspaceRetry(summaryText)) {
+    if (this._needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
         prompt,
         buildWorkspaceHintBlock(files, sourceDir, this.sampleMetadata?.readmeSnippet),
       ].join("\n\n");
-      summaryText = this.#sanitizeNarrative(
-        await this.#promptPhi(retryPrompt, { label: "recompose:workspace-from-descriptions-retry" }),
+      summaryText = this._sanitizeNarrative(
+        await this._promptPhi(retryPrompt, { label: "recompose:workspace-from-descriptions-retry" }),
       );
     }
-    const summary = this.#structureNarrative(
+    const summary = this._structureNarrative(
       summaryText,
       "workspace",
-      () => this.#fallbackWorkspaceSummaryFromDescriptions(excerpts),
+      () => this._fallbackWorkspaceSummaryFromDescriptions(excerpts),
     );
     this.workspaceContext = { kind: "descriptions", summary, sourceDir, metadata: this.sampleMetadata };
-    await this.#writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
+    await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
   }
 
-  async #collectGlimpses(baseDir, files) {
+  async _collectGlimpses(baseDir, files) {
     if (!Array.isArray(files) || files.length === 0) {
       return "Workspace scan produced no narrative glimpses.";
     }
-    const prioritized = this.#prioritizeOverviewFiles(files);
+    const prioritized = this._prioritizeOverviewFiles(files);
     const glimpses = [];
     let included = 0;
     let budget = MAX_OVERVIEW_CHAR_BUDGET;
@@ -640,7 +640,7 @@ export default class RecomposeTester {
       if (included >= MAX_OVERVIEW_FILES || budget <= 0) {
         break;
       }
-      const summary = await this.#summarizeFileForOverview(baseDir, relative);
+      const summary = await this._summarizeFileForOverview(baseDir, relative);
       if (!summary) {
         continue;
       }
@@ -663,22 +663,22 @@ export default class RecomposeTester {
     return glimpses.join("\n\n");
   }
 
-  async #readSnippet(filePath) {
+  async _readSnippet(filePath) {
     const content = await fs.promises.readFile(filePath, "utf8");
     return content.replace(/\r\n/g, "\n").slice(0, MAX_SNIPPET_CHARS);
   }
 
-  #prioritizeOverviewFiles(files) {
+  _prioritizeOverviewFiles(files) {
     return [...(files ?? [])]
       .map((relative) => ({
         relative,
-        score: this.#overviewPriorityScore(relative),
+        score: this._overviewPriorityScore(relative),
       }))
       .sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative))
       .map((entry) => entry.relative);
   }
 
-  #overviewPriorityScore(relativePath) {
+  _overviewPriorityScore(relativePath) {
     const normalized = (relativePath ?? "").toLowerCase();
     let score = 200 - normalized.length;
     if (normalized.includes("readme")) {
@@ -701,12 +701,12 @@ export default class RecomposeTester {
     return score;
   }
 
-  async #summarizeFileForOverview(baseDir, relativePath) {
+  async _summarizeFileForOverview(baseDir, relativePath) {
     if (!relativePath) {
       return null;
     }
     const absolute = path.join(baseDir, relativePath);
-    if (await this.#isBinary(absolute)) {
+    if (await this._isBinary(absolute)) {
       return null;
     }
     let raw;
@@ -726,18 +726,18 @@ export default class RecomposeTester {
       if (!trimmed) {
         continue;
       }
-      const comment = this.#extractCommentNarrative(trimmed);
+      const comment = this._extractCommentNarrative(trimmed);
       if (comment) {
         summary.push(comment);
         continue;
       }
-      const codeLine = this.#summarizeCodeLine(trimmed);
+      const codeLine = this._summarizeCodeLine(trimmed);
       if (codeLine) {
         summary.push(codeLine);
       }
     }
     if (!summary.length) {
-      const fallback = this.#normalizeWhitespace(lines.slice(0, 6).join(" "));
+      const fallback = this._normalizeWhitespace(lines.slice(0, 6).join(" "));
       if (fallback) {
         summary.push(fallback.slice(0, 240));
       }
@@ -748,7 +748,7 @@ export default class RecomposeTester {
     return summary.map((line) => `- ${line}`).join("\n");
   }
 
-  #extractCommentNarrative(line) {
+  _extractCommentNarrative(line) {
     if (!line || !OVERVIEW_COMMENT_PREFIX.test(line)) {
       return null;
     }
@@ -759,7 +759,7 @@ export default class RecomposeTester {
       .trim();
   }
 
-  #summarizeCodeLine(line) {
+  _summarizeCodeLine(line) {
     if (!line) {
       return null;
     }
@@ -796,11 +796,11 @@ export default class RecomposeTester {
     return null;
   }
 
-  #normalizeWhitespace(text) {
+  _normalizeWhitespace(text) {
     return (text ?? "").replace(/\s+/g, " ").trim();
   }
 
-  async #captureBaselineSignatures(codeDir) {
+  async _captureBaselineSignatures(codeDir) {
     if (!codeDir) {
       return;
     }
@@ -815,13 +815,13 @@ export default class RecomposeTester {
     const files = await listWorkspaceFiles(codeDir, { ignoredDirs: this.ignoredDirs });
     for (const relativePath of files) {
       const absolute = path.join(codeDir, relativePath);
-      if (await this.#isBinary(absolute)) {
+      if (await this._isBinary(absolute)) {
         continue;
       }
       try {
         const content = await fs.promises.readFile(absolute, "utf8");
-        const exports = this.#extractExports(content.split(/\r?\n/));
-        const exportStyle = this.#detectExportStyle(content);
+        const exports = this._extractExports(content.split(/\r?\n/));
+        const exportStyle = this._detectExportStyle(content);
         this.baselineSignatures.set(relativePath.replace(/\\/g, "/"), { exports, exportStyle });
       } catch {
         // ignore failures
@@ -829,7 +829,7 @@ export default class RecomposeTester {
     }
   }
 
-  async #promptPhi(prompt, traceOptions = undefined) {
+  async _promptPhi(prompt, traceOptions = undefined) {
     const started = Date.now();
     let response = "";
     let error = null;
@@ -847,7 +847,7 @@ export default class RecomposeTester {
           `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} bypassed (offline fallback).`,
         );
       }
-      await this.#logPromptEvent({
+      await this._logPromptEvent({
         label: traceOptions?.label ?? this.promptLabel,
         prompt,
         response: "",
@@ -866,7 +866,7 @@ export default class RecomposeTester {
       return response;
     } catch (err) {
       error = err;
-      this.#handlePromptFailure(err);
+      this._handlePromptFailure(err);
       if (this.verboseLogging) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} failed: ${message}`);
@@ -879,7 +879,7 @@ export default class RecomposeTester {
           `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} completed in ${durationMs} ms`,
         );
       }
-      await this.#logPromptEvent({
+      await this._logPromptEvent({
         label: traceOptions?.label ?? this.promptLabel,
         prompt,
         response,
@@ -890,7 +890,7 @@ export default class RecomposeTester {
     }
   }
 
-  #sanitizeNarrative(text) {
+  _sanitizeNarrative(text) {
     if (!text) {
       return "";
     }
@@ -902,7 +902,7 @@ export default class RecomposeTester {
     return sanitized.replace(/\r\n/g, "\n").trim();
   }
 
-  #structureNarrative(text, label, fallbackFactory = null) {
+  _structureNarrative(text, label, fallbackFactory = null) {
     const trimmed = text?.trim();
     if (!trimmed) {
       return fallbackFactory ? fallbackFactory() : `## Overview\n${label} narrative unavailable.`;
@@ -917,7 +917,7 @@ export default class RecomposeTester {
       .join("\n\n");
   }
 
-  #extractCodeFromResponse(response) {
+  _extractCodeFromResponse(response) {
     if (!response) {
       return null;
     }
@@ -928,8 +928,8 @@ export default class RecomposeTester {
     return null;
   }
 
-  async #startSession(label) {
-    const slug = this.#slugify(label ?? this.promptLabel ?? "recompose");
+  async _startSession(label) {
+    const slug = this._slugify(label ?? this.promptLabel ?? "recompose");
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const root = this.sessionRoot ?? path.join(process.cwd(), ".miniphi", "recompose");
     this.sessionDir = path.join(root, `${timestamp}-${slug}`);
@@ -948,21 +948,21 @@ export default class RecomposeTester {
     await fs.promises.writeFile(this.promptLogPath, `${header}`, "utf8");
   }
 
-  async #writeSessionAsset(relativePath, content) {
+  async _writeSessionAsset(relativePath, content) {
     if (!this.sessionDir) {
       return null;
     }
     const target = path.join(this.sessionDir, relativePath);
-    await this.#ensureDir(path.dirname(target));
+    await this._ensureDir(path.dirname(target));
     await fs.promises.writeFile(target, content, "utf8");
     return target;
   }
 
-  #safeSessionName(relativePath) {
+  _safeSessionName(relativePath) {
     return relativePath.replace(/[\\/]+/g, "__");
   }
 
-  async #logPromptEvent({ label, prompt, response, error, metadata, durationMs }) {
+  async _logPromptEvent({ label, prompt, response, error, metadata, durationMs }) {
     if (!this.promptLogPath) {
       return;
     }
@@ -970,9 +970,9 @@ export default class RecomposeTester {
       `[${new Date().toISOString()}][${label ?? "prompt"}] ${error ? "ERROR" : "OK"} (${durationMs ?? 0} ms)`,
       metadata ? `meta: ${JSON.stringify(metadata)}` : null,
       "Prompt:",
-      this.#truncateForLog(prompt),
+      this._truncateForLog(prompt),
       "Response:",
-      error ? String(error instanceof Error ? error.message : error) : this.#truncateForLog(response),
+      error ? String(error instanceof Error ? error.message : error) : this._truncateForLog(response),
       "",
     ].filter(Boolean);
     await fs.promises.appendFile(this.promptLogPath, `${lines.join("\n")}\n`, "utf8");
@@ -991,16 +991,16 @@ export default class RecomposeTester {
       return null;
     }
     const targetDir = path.resolve(options.targetDir ?? path.dirname(sourcePath));
-    await this.#ensureDir(targetDir);
+    await this._ensureDir(targetDir);
     const defaultName = `${this.sessionLabel ?? "recompose"}.prompts.log`;
     const fileHint = options.fileName ?? options.label ?? defaultName;
-    const fileName = this.#sanitizeExportName(fileHint);
+    const fileName = this._sanitizeExportName(fileHint);
     const destinationPath = path.join(targetDir, fileName);
     await fs.promises.copyFile(sourcePath, destinationPath);
     return destinationPath;
   }
 
-  #truncateForLog(text) {
+  _truncateForLog(text) {
     if (!text) {
       return "(empty)";
     }
@@ -1011,27 +1011,27 @@ export default class RecomposeTester {
     return `${normalized.slice(0, LOG_SNIPPET_LIMIT)}…`;
   }
 
-  #fallbackFileNarrative({ relativePath, language, content }) {
+  _fallbackFileNarrative({ relativePath, language, content }) {
     if (language === "markdown") {
-      return this.#fallbackMarkdownNarrative(relativePath, content);
+      return this._fallbackMarkdownNarrative(relativePath, content);
     }
     const lines = content.split(/\r?\n/);
-    const imports = this.#extractImports(lines);
-    const exports = this.#extractExports(lines);
-    const classNames = this.#extractClasses(lines);
+    const imports = this._extractImports(lines);
+    const exports = this._extractExports(lines);
+    const classNames = this._extractClasses(lines);
     const responsibilities = [];
     if (imports.length) {
       responsibilities.push(
-        `Pulls in ${imports.length} helper${imports.length === 1 ? "" : "s"} (${this.#summarizeList(imports)}).`,
+        `Pulls in ${imports.length} helper${imports.length === 1 ? "" : "s"} (${this._summarizeList(imports)}).`,
       );
     }
     if (exports.length) {
       responsibilities.push(
-        `Exposes ${exports.length} exported symbol${exports.length === 1 ? "" : "s"} (${this.#summarizeList(exports)}).`,
+        `Exposes ${exports.length} exported symbol${exports.length === 1 ? "" : "s"} (${this._summarizeList(exports)}).`,
       );
     }
     if (classNames.length) {
-      responsibilities.push(`Defines class constructs such as ${this.#summarizeList(classNames)}.`);
+      responsibilities.push(`Defines class constructs such as ${this._summarizeList(classNames)}.`);
     }
     const approxLength = lines.length;
     const structure = [
@@ -1039,16 +1039,16 @@ export default class RecomposeTester {
       `The file ${relativePath} operates as a ${language} module with roughly ${approxLength} line${approxLength === 1 ? "" : "s"}.`,
       responsibilities.length ? responsibilities.join(" ") : "It focuses on orchestration and light data shaping.",
       "## Key Elements",
-      imports.length ? `- Dependencies: ${this.#summarizeList(imports, 6)}` : "- Dependencies: internal-only helpers.",
-      exports.length ? `- Public interface: ${this.#summarizeList(exports, 6)}` : "- Public interface: internal utilities only.",
-      classNames.length ? `- Classes: ${this.#summarizeList(classNames, 4)}` : "- Classes: none, relies on functions.",
+      imports.length ? `- Dependencies: ${this._summarizeList(imports, 6)}` : "- Dependencies: internal-only helpers.",
+      exports.length ? `- Public interface: ${this._summarizeList(exports, 6)}` : "- Public interface: internal utilities only.",
+      classNames.length ? `- Classes: ${this._summarizeList(classNames, 4)}` : "- Classes: none, relies on functions.",
       "## Flow & Edge Cases",
       "Execution revolves around sanitizing input, coordinating helper utilities, and emitting structured results/logs. Edge cases are handled defensively (nullish names, insufficient samples, or missing state) prior to returning values.",
     ];
     return structure.join("\n\n");
   }
 
-  #fallbackMarkdownNarrative(relativePath, content) {
+  _fallbackMarkdownNarrative(relativePath, content) {
     const headings = content
       .split(/\r?\n/)
       .filter((line) => /^#+\s+/.test(line))
@@ -1067,8 +1067,8 @@ export default class RecomposeTester {
     return sections.join("\n\n");
   }
 
-  #sanitizeExportName(name) {
-    const fallback = `${this.#slugify(this.sessionLabel ?? "recompose")}.prompts.log`;
+  _sanitizeExportName(name) {
+    const fallback = `${this._slugify(this.sessionLabel ?? "recompose")}.prompts.log`;
     if (!name) {
       return fallback;
     }
@@ -1082,7 +1082,7 @@ export default class RecomposeTester {
     return normalized;
   }
 
-  #fallbackPlanFromNarrative(relativePath, narrative) {
+  _fallbackPlanFromNarrative(relativePath, narrative) {
     const trimmed = narrative.trim();
     const excerpt = trimmed ? trimmed.replace(/\s+/g, " ").slice(0, 400) : null;
     return [
@@ -1097,7 +1097,7 @@ export default class RecomposeTester {
     ].join("\n\n");
   }
 
-  #fallbackWorkspaceSummaryFromCode(fileCount, glimpses) {
+  _fallbackWorkspaceSummaryFromCode(fileCount, glimpses) {
     const fileNames = glimpses
       .split(/\n+/)
       .filter((line) => line.startsWith("### "))
@@ -1113,7 +1113,7 @@ export default class RecomposeTester {
     ].join("\n\n");
   }
 
-  #fallbackWorkspaceSummaryFromDescriptions(excerpts) {
+  _fallbackWorkspaceSummaryFromDescriptions(excerpts) {
     return [
       "## Architecture Rhythm",
       "Descriptions emphasize a greeting-to-analysis journey: values are validated, normalized, summarized, then logged.",
@@ -1124,7 +1124,7 @@ export default class RecomposeTester {
     ].join("\n\n");
   }
 
-  #handlePromptFailure(error) {
+  _handlePromptFailure(error) {
     if (this.offlineFallbackActive || this.promptFailureBudget <= 0) {
       return;
     }
@@ -1141,9 +1141,9 @@ export default class RecomposeTester {
     }
   }
 
-  #buildOfflineCodeStub({ relativePath, blueprint, signature }) {
-    const normalizedName = this.#normalizeExportName(relativePath);
-    const summary = this.#normalizeWhitespace(blueprint?.narrative ?? "");
+  _buildOfflineCodeStub({ relativePath, blueprint, signature }) {
+    const normalizedName = this._normalizeExportName(relativePath);
+    const summary = this._normalizeWhitespace(blueprint?.narrative ?? "");
     const exports = Array.isArray(signature?.exports) && signature.exports.length ? signature.exports : null;
     const exportStyle = signature?.exportStyle ?? "commonjs";
     const lines = [];
@@ -1154,7 +1154,7 @@ export default class RecomposeTester {
     if (exportStyle === "esm") {
       if (exports) {
         for (const name of exports) {
-          const safe = this.#normalizeExportName(name);
+          const safe = this._normalizeExportName(name);
           lines.push(`export function ${safe}() {`);
           lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
           lines.push("}");
@@ -1167,23 +1167,23 @@ export default class RecomposeTester {
     } else {
       const exportNames = exports ?? [`${normalizedName}Stub`];
       for (const name of exportNames) {
-        const safe = this.#normalizeExportName(name);
+        const safe = this._normalizeExportName(name);
         lines.push(`function ${safe}() {`);
         lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
         lines.push("}");
       }
       if (exportNames.length === 1) {
-        lines.push(`module.exports = ${this.#normalizeExportName(exportNames[0])};`);
+        lines.push(`module.exports = ${this._normalizeExportName(exportNames[0])};`);
       } else {
         lines.push(
-          `module.exports = { ${exportNames.map((name) => this.#normalizeExportName(name)).join(", ")} };`,
+          `module.exports = { ${exportNames.map((name) => this._normalizeExportName(name)).join(", ")} };`,
         );
       }
     }
     return lines.join("\n");
   }
 
-  #normalizeExportName(name) {
+  _normalizeExportName(name) {
     if (!name) {
       return "offlineStub";
     }
@@ -1191,7 +1191,7 @@ export default class RecomposeTester {
     return sanitized || "offlineStub";
   }
 
-  #extractImports(lines) {
+  _extractImports(lines) {
     const matches = [];
     const regex = /import\s+[^;]+from\s+["'](.+?)["']/g;
     for (const line of lines) {
@@ -1203,7 +1203,7 @@ export default class RecomposeTester {
     return Array.from(new Set(matches));
   }
 
-  #extractExports(lines) {
+  _extractExports(lines) {
     const exports = new Set();
     const patterns = [
       /export\s+function\s+([a-zA-Z0-9_]+)/g,
@@ -1228,7 +1228,7 @@ export default class RecomposeTester {
     return Array.from(exports);
   }
 
-  #extractClasses(lines) {
+  _extractClasses(lines) {
     const regex = /class\s+([a-zA-Z0-9_]+)/g;
     const classes = new Set();
     lines.forEach((line) => {
@@ -1240,7 +1240,7 @@ export default class RecomposeTester {
     return Array.from(classes);
   }
 
-  #summarizeList(items, limit = 5) {
+  _summarizeList(items, limit = 5) {
     if (!items.length) {
       return "none";
     }
@@ -1252,7 +1252,7 @@ export default class RecomposeTester {
     return `${prefix}, and ${unique.length - limit} more`;
   }
 
-  #detectExportStyle(source) {
+  _detectExportStyle(source) {
     if (!source) {
       return null;
     }
@@ -1265,7 +1265,7 @@ export default class RecomposeTester {
     return null;
   }
 
-  #codeContainsIdentifier(source, identifier) {
+  _codeContainsIdentifier(source, identifier) {
     if (!source || !identifier) {
       return false;
     }
@@ -1273,7 +1273,7 @@ export default class RecomposeTester {
     return pattern.test(source);
   }
 
-  async #isBinary(filePath) {
+  async _isBinary(filePath) {
     const handle = await fs.promises.open(filePath, "r");
     const buffer = Buffer.alloc(8192);
     try {
@@ -1292,7 +1292,7 @@ export default class RecomposeTester {
     return false;
   }
 
-  #languageFromExtension(ext) {
+  _languageFromExtension(ext) {
     switch (ext.toLowerCase()) {
       case ".js":
       case ".jsx":
@@ -1342,7 +1342,7 @@ export default class RecomposeTester {
     }
   }
 
-  #parseMarkdown(raw) {
+  _parseMarkdown(raw) {
     if (!raw) {
       return { metadata: {}, body: "" };
     }
@@ -1368,20 +1368,20 @@ export default class RecomposeTester {
     return { metadata, body: body.trim() };
   }
 
-  async #hashFile(filePath) {
+  async _hashFile(filePath) {
     const content = await fs.promises.readFile(filePath);
     return createHash("sha256").update(content).digest("hex");
   }
 
-  async #ensureDir(dirPath) {
+  async _ensureDir(dirPath) {
     await fs.promises.mkdir(dirPath, { recursive: true });
   }
 
-  async #cleanDir(targetDir) {
+  async _cleanDir(targetDir) {
     await fs.promises.rm(targetDir, { recursive: true, force: true });
   }
 
-  async #repairMismatches({ comparison, baselineDir, candidateDir }) {
+  async _repairMismatches({ comparison, baselineDir, candidateDir }) {
     const targets = [];
     for (const mismatch of comparison.mismatches ?? []) {
       targets.push({ path: mismatch.path, type: "mismatch" });
@@ -1392,7 +1392,7 @@ export default class RecomposeTester {
     if (!targets.length) {
       return null;
     }
-    const prioritized = targets.sort((a, b) => this.#repairPriority(b.path) - this.#repairPriority(a.path));
+    const prioritized = targets.sort((a, b) => this._repairPriority(b.path) - this._repairPriority(a.path));
     const summary = {
       phase: "repair",
       attempted: 0,
@@ -1411,20 +1411,20 @@ export default class RecomposeTester {
       summary.attempted += 1;
       try {
         const signature = this.baselineSignatures.get(target.path) ?? null;
-        const repairContext = await this.#buildDiffSummary({
+        const repairContext = await this._buildDiffSummary({
           relativePath: target.path,
           type: target.type,
           baselineDir,
           candidateDir,
         });
-        const code = await this.#attemptCodeGeneration({
+        const code = await this._attemptCodeGeneration({
           relativePath: target.path,
           blueprint,
           signature,
           repairContext,
         });
         const destination = path.join(candidateDir, target.path);
-        await this.#ensureDir(path.dirname(destination));
+        await this._ensureDir(path.dirname(destination));
         await fs.promises.writeFile(destination, `${code.replace(/\s+$/, "")}\n`, "utf8");
         summary.repaired += 1;
       } catch (error) {
@@ -1436,7 +1436,7 @@ export default class RecomposeTester {
     return summary;
   }
 
-  async #buildDiffSummary({ relativePath, type, baselineDir, candidateDir }) {
+  async _buildDiffSummary({ relativePath, type, baselineDir, candidateDir }) {
     const baselinePath = path.join(baselineDir, relativePath);
     const candidatePath = path.join(candidateDir, relativePath);
     let baseline = "";
@@ -1451,16 +1451,16 @@ export default class RecomposeTester {
     } catch {
       candidate = "";
     }
-    const diff = this.#summarizeDiff(baseline, candidate);
+    const diff = this._summarizeDiff(baseline, candidate);
     return [
       `Repairs required for ${relativePath}`,
-      baseline ? `Baseline preview:\n${this.#truncateLine(baseline.slice(0, 400))}` : "Baseline preview unavailable.",
-      type === "missing" ? "Candidate preview: file missing entirely." : `Candidate preview:\n${this.#truncateLine(candidate.slice(0, 400))}`,
+      baseline ? `Baseline preview:\n${this._truncateLine(baseline.slice(0, 400))}` : "Baseline preview unavailable.",
+      type === "missing" ? "Candidate preview: file missing entirely." : `Candidate preview:\n${this._truncateLine(candidate.slice(0, 400))}`,
       diff ? `Diff sketch:\n${diff}` : "Diff sketch unavailable.",
     ].join("\n\n");
   }
 
-  #summarizeDiff(baseline, candidate) {
+  _summarizeDiff(baseline, candidate) {
     if (!baseline && !candidate) {
       return null;
     }
@@ -1474,13 +1474,13 @@ export default class RecomposeTester {
       if (left === right) {
         continue;
       }
-      output.push(`- [${i + 1}] ${this.#truncateLine(left)}`);
-      output.push(`+ [${i + 1}] ${this.#truncateLine(right)}`);
+      output.push(`- [${i + 1}] ${this._truncateLine(left)}`);
+      output.push(`+ [${i + 1}] ${this._truncateLine(right)}`);
     }
     return output.length ? output.join("\n") : null;
   }
 
-  #truncateLine(text, max = 160) {
+  _truncateLine(text, max = 160) {
     const normalized = (text ?? "").replace(/\s+/g, " ").trim();
     if (!normalized) {
       return "(empty)";
@@ -1491,7 +1491,7 @@ export default class RecomposeTester {
     return `${normalized.slice(0, max)}…`;
   }
 
-  #repairPriority(relativePath) {
+  _repairPriority(relativePath) {
     const normalized = relativePath.toLowerCase();
     if (PRIORITY_REPAIR_TARGETS.some((token) => normalized.includes(token))) {
       return 2;
@@ -1499,7 +1499,7 @@ export default class RecomposeTester {
     return 1;
   }
 
-  async #assertDirectory(dirPath, label) {
+  async _assertDirectory(dirPath, label) {
     try {
       const stats = await fs.promises.stat(dirPath);
       if (!stats.isDirectory()) {
@@ -1510,7 +1510,7 @@ export default class RecomposeTester {
     }
   }
 
-  #relativeToCwd(target) {
+  _relativeToCwd(target) {
     if (!target) {
       return null;
     }
@@ -1521,7 +1521,7 @@ export default class RecomposeTester {
     return target;
   }
 
-  #slugify(text) {
+  _slugify(text) {
     const normalized = (text ?? "")
       .toString()
       .trim()
@@ -1531,13 +1531,13 @@ export default class RecomposeTester {
     return normalized || "recompose";
   }
 
-  #requirePhi() {
+  _requirePhi() {
     if (!this.offlineFallbackActive && !this.phi4) {
       throw new Error("Phi-4 handler is required for live recompose benchmarks.");
     }
   }
 
-  async #loadSampleMetadata(sampleDir, { codeDir, descriptionsDir } = {}) {
+  async _loadSampleMetadata(sampleDir, { codeDir, descriptionsDir } = {}) {
     if (!sampleDir) {
       this.sampleMetadata = null;
       return;
@@ -1550,7 +1550,7 @@ export default class RecomposeTester {
         descriptionsDir ? path.join(descriptionsDir, "README.md") : null,
       ].filter(Boolean),
     });
-    const plan = await this.#readSamplePlan(sampleDir);
+    const plan = await this._readSamplePlan(sampleDir);
     const manifestResult = codeDir
       ? await collectManifestSummary(codeDir, { ignoredDirs: this.ignoredDirs, limit: 12 })
       : { manifest: [] };
@@ -1563,7 +1563,7 @@ export default class RecomposeTester {
     };
   }
 
-  async #readSamplePlan(sampleDir) {
+  async _readSamplePlan(sampleDir) {
     const candidates = ["benchmark-plan.yaml", "benchmark-plan.yml", "benchmark-plan.json"];
     for (const candidate of candidates) {
       const absolute = path.join(sampleDir, candidate);
@@ -1577,7 +1577,7 @@ export default class RecomposeTester {
         const name = data?.timestamp ?? data?.name ?? path.parse(candidate).name;
         return {
           name,
-          path: this.#relativeToCwd(absolute),
+          path: this._relativeToCwd(absolute),
           runs: Array.isArray(data?.runs) ? data.runs.length : 0,
         };
       } catch {
@@ -1587,7 +1587,7 @@ export default class RecomposeTester {
     return null;
   }
 
-  #needsWorkspaceRetry(text) {
+  _needsWorkspaceRetry(text) {
     if (!text) {
       return true;
     }

@@ -61,7 +61,7 @@ export default class PromptPerformanceTracker {
     }
     await this.db.exec("PRAGMA journal_mode = WAL;");
     await this.db.exec("PRAGMA foreign_keys = ON;");
-    await this.migrate();
+    await this._migrate();
     this.enabled = true;
   }
 
@@ -110,7 +110,7 @@ export default class PromptPerformanceTracker {
     }
 
     const traceContext = payload.traceContext;
-    const sessionContext = this.#resolveSessionContext(traceContext);
+    const sessionContext = this._resolveSessionContext(traceContext);
     const {
       sessionId,
       objective,
@@ -119,13 +119,13 @@ export default class PromptPerformanceTracker {
       workspaceSummary,
       workspaceFingerprint,
     } = sessionContext;
-    const promptText = this.#sanitizeText(this.#extractPromptText(payload.request));
+    const promptText = this._sanitizeText(this._extractPromptText(payload.request));
     if (!promptText) {
       return;
     }
 
-    const responseText = this.#sanitizeText(payload.response?.text ?? "");
-    const reasoningPreview = this.#buildReasoningPreview(payload.response?.reasoning ?? []);
+    const responseText = this._sanitizeText(payload.response?.text ?? "");
+    const reasoningPreview = this._buildReasoningPreview(payload.response?.reasoning ?? []);
     const durationMs =
       payload.response?.finishedAt && payload.response?.startedAt
         ? payload.response.finishedAt - payload.response.startedAt
@@ -176,7 +176,7 @@ export default class PromptPerformanceTracker {
 
     let evaluation = null;
     if (this.semanticEvaluator) {
-      const evalPrompt = this.#buildEvaluationPrompt({
+      const evalPrompt = this._buildEvaluationPrompt({
         objective,
         workspacePath,
         workspaceType,
@@ -191,22 +191,22 @@ export default class PromptPerformanceTracker {
       });
       try {
         const raw = await this.semanticEvaluator(evalPrompt, traceContext);
-        evaluation = this.#parseEvaluation(raw);
+        evaluation = this._parseEvaluation(raw);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         process.emitWarning(`Prompt evaluator failed: ${message}`, "PromptPerformanceTracker");
       }
     }
 
-    const score = this.#normalizeScore(
-      evaluation?.score ?? this.#estimateScore(responseText, payload.error, payload.response),
+    const score = this._normalizeScore(
+      evaluation?.score ?? this._estimateScore(responseText, payload.error, payload.response),
     );
-    const followUpNeeded = this.#resolveFollowUp(evaluation, payload.error, responseText);
-    const followUpReason = this.#resolveFollowUpReason(evaluation, payload.error, responseText);
+    const followUpNeeded = this._resolveFollowUp(evaluation, payload.error, responseText);
+    const followUpReason = this._resolveFollowUpReason(evaluation, payload.error, responseText);
 
-    const workspaceFingerprint = this.#fingerprint(workspacePath);
+    const workspaceFingerprint = this._fingerprint(workspacePath);
     const now = new Date().toISOString();
-    await this.#persistSession({
+    await this._persistSession({
       sessionId,
       objective,
       workspacePath,
@@ -215,7 +215,7 @@ export default class PromptPerformanceTracker {
       createdAt: now,
     });
 
-    await this.#insertPromptScore({
+    await this._insertPromptScore({
       scope: traceContext.scope,
       sessionId,
       promptId: traceContext.subPromptId,
@@ -234,7 +234,7 @@ export default class PromptPerformanceTracker {
       createdAt: now,
     });
 
-    await this.#snapshotBestPrompt({
+    await this._snapshotBestPrompt({
       objective,
       workspaceFingerprint,
       workspaceType,
@@ -265,7 +265,7 @@ export default class PromptPerformanceTracker {
       return;
     }
     const traceContext = payload.traceContext;
-    const sessionContext = this.#resolveSessionContext(traceContext);
+    const sessionContext = this._resolveSessionContext(traceContext);
     const { sessionId, objective, workspacePath, workspaceType, workspaceFingerprint } =
       sessionContext;
     if (!sessionId) {
@@ -273,7 +273,7 @@ export default class PromptPerformanceTracker {
     }
     const metadataJson = payload.metadata ? JSON.stringify(payload.metadata) : null;
     const createdAt = new Date().toISOString();
-    await this.#persistSession({
+    await this._persistSession({
       sessionId,
       objective,
       workspacePath,
@@ -281,7 +281,7 @@ export default class PromptPerformanceTracker {
       workspaceFingerprint,
       createdAt,
     });
-    await this.#insertPromptEvent({
+    await this._insertPromptEvent({
       sessionId,
       promptId: traceContext.subPromptId ?? payload.request?.id ?? null,
       eventType: payload.eventType,
@@ -295,7 +295,7 @@ export default class PromptPerformanceTracker {
     });
   }
 
-  async migrate() {
+  async _migrate() {
     if (!this.db) {
       return;
     }
@@ -362,7 +362,7 @@ export default class PromptPerformanceTracker {
     }
   }
 
-  async #persistSession({
+  async _persistSession({
     sessionId,
     objective,
     workspacePath,
@@ -392,7 +392,7 @@ export default class PromptPerformanceTracker {
     );
   }
 
-  async #insertPromptScore(entry) {
+  async _insertPromptScore(entry) {
     if (!this.db) {
       return;
     }
@@ -438,8 +438,8 @@ export default class PromptPerformanceTracker {
         "@promptId": entry.promptId,
         "@promptLabel": entry.promptLabel ?? null,
         "@objective": entry.objective ?? null,
-        "@promptText": this.#sanitizeText(entry.promptText),
-        "@responseText": this.#sanitizeText(entry.responseText),
+        "@promptText": this._sanitizeText(entry.promptText),
+        "@responseText": this._sanitizeText(entry.responseText),
         "@score": entry.score ?? null,
         "@followUpNeeded": entry.followUpNeeded ? 1 : 0,
         "@followUpReason": entry.followUpReason ?? null,
@@ -453,7 +453,7 @@ export default class PromptPerformanceTracker {
     );
   }
 
-  async #insertPromptEvent(entry) {
+  async _insertPromptEvent(entry) {
     if (!this.db) {
       return;
     }
@@ -496,7 +496,7 @@ export default class PromptPerformanceTracker {
     );
   }
 
-  async #snapshotBestPrompt({ objective, workspaceFingerprint, workspaceType, workspacePath }) {
+  async _snapshotBestPrompt({ objective, workspaceFingerprint, workspaceType, workspacePath }) {
     if (!this.db || !objective || !workspaceFingerprint) {
       return;
     }
@@ -545,7 +545,7 @@ export default class PromptPerformanceTracker {
       bestPrompt: {
         promptId: best.prompt_id,
         score: best.score,
-        prompt: this.#sanitizeText(best.prompt_text),
+        prompt: this._sanitizeText(best.prompt_text),
         summary: evaluation?.summary ?? null,
         category: evaluation?.prompt_category ?? null,
         recommendedPattern: evaluation?.recommended_prompt_pattern ?? null,
@@ -596,7 +596,7 @@ export default class PromptPerformanceTracker {
     );
   }
 
-  #extractPromptText(request) {
+  _extractPromptText(request) {
     if (!request) {
       return "";
     }
@@ -612,7 +612,7 @@ export default class PromptPerformanceTracker {
     return "";
   }
 
-  #buildReasoningPreview(reasoning) {
+  _buildReasoningPreview(reasoning) {
     if (!Array.isArray(reasoning) || reasoning.length === 0) {
       return null;
     }
@@ -620,7 +620,7 @@ export default class PromptPerformanceTracker {
     return recent.join("\n").trim();
   }
 
-  #resolveWorkspacePath(metadata) {
+  _resolveWorkspacePath(metadata) {
     if (!metadata) {
       return null;
     }
@@ -635,11 +635,11 @@ export default class PromptPerformanceTracker {
     return null;
   }
 
-  #buildEvaluationPrompt(details) {
+  _buildEvaluationPrompt(details) {
     const workspaceSummary = details.workspaceSummary
       ? `Workspace summary:\n${details.workspaceSummary}\n`
       : "";
-    const schemaBlock = this.#buildSchemaInstructions(
+    const schemaBlock = this._buildSchemaInstructions(
       this.scoreSchemaId,
       PROMPT_SCORE_FALLBACK_SCHEMA,
     );
@@ -671,7 +671,7 @@ export default class PromptPerformanceTracker {
       .join("\n");
   }
 
-  #buildSchemaInstructions(schemaId, fallbackSchema) {
+  _buildSchemaInstructions(schemaId, fallbackSchema) {
     if (this.schemaRegistry && schemaId) {
       const block = this.schemaRegistry.buildInstructionBlock(schemaId);
       if (block) {
@@ -681,7 +681,7 @@ export default class PromptPerformanceTracker {
     return ["```json", fallbackSchema, "```"].join("\n");
   }
 
-  #parseEvaluation(raw) {
+  _parseEvaluation(raw) {
     if (!raw) {
       return null;
     }
@@ -694,13 +694,13 @@ export default class PromptPerformanceTracker {
       if (!parsed || typeof parsed !== "object") {
         return null;
       }
-      return this.#normalizeEvaluationShape(parsed);
+      return this._normalizeEvaluationShape(parsed);
     } catch {
       return null;
     }
   }
 
-  #normalizeEvaluationShape(payload) {
+  _normalizeEvaluationShape(payload) {
     const normalized = { ...payload };
     if (Array.isArray(normalized.tags)) {
       normalized.tags = normalized.tags
@@ -722,7 +722,7 @@ export default class PromptPerformanceTracker {
     return normalized;
   }
 
-  #estimateScore(responseText, error, responseSnapshot) {
+  _estimateScore(responseText, error, responseSnapshot) {
     if (error) {
       return 25;
     }
@@ -737,7 +737,7 @@ export default class PromptPerformanceTracker {
     return base + reasoningBonus;
   }
 
-  #normalizeScore(value) {
+  _normalizeScore(value) {
     if (!Number.isFinite(value)) {
       return 0;
     }
@@ -750,7 +750,7 @@ export default class PromptPerformanceTracker {
     return Math.round(value * 10) / 10;
   }
 
-  #resolveFollowUp(evaluation, error, responseText) {
+  _resolveFollowUp(evaluation, error, responseText) {
     if (typeof evaluation?.follow_up_needed === "boolean") {
       return evaluation.follow_up_needed;
     }
@@ -769,7 +769,7 @@ export default class PromptPerformanceTracker {
     );
   }
 
-  #resolveFollowUpReason(evaluation, error, responseText) {
+  _resolveFollowUpReason(evaluation, error, responseText) {
     if (evaluation?.follow_up_reason) {
       return evaluation.follow_up_reason;
     }
@@ -782,7 +782,7 @@ export default class PromptPerformanceTracker {
     return null;
   }
 
-  #resolveSessionContext(traceContext) {
+  _resolveSessionContext(traceContext) {
     if (!traceContext) {
       return {
         sessionId: null,
@@ -794,25 +794,25 @@ export default class PromptPerformanceTracker {
       };
     }
     const metadata = traceContext.metadata ?? {};
-    const workspacePath = this.#resolveWorkspacePath(metadata);
+    const workspacePath = this._resolveWorkspacePath(metadata);
     return {
       sessionId: traceContext.mainPromptId ?? traceContext.subPromptId ?? null,
       objective: traceContext.label ?? metadata.task ?? metadata.objective ?? null,
       workspacePath,
       workspaceType: metadata.workspaceType ?? null,
       workspaceSummary: metadata.workspaceSummary ?? null,
-      workspaceFingerprint: this.#fingerprint(workspacePath),
+      workspaceFingerprint: this._fingerprint(workspacePath),
     };
   }
 
-  #fingerprint(input) {
+  _fingerprint(input) {
     if (!input) {
       return null;
     }
     return createHash("sha1").update(input).digest("hex");
   }
 
-  #sanitizeText(value, limit = MAX_STORED_TEXT) {
+  _sanitizeText(value, limit = MAX_STORED_TEXT) {
     if (!value) {
       return "";
     }

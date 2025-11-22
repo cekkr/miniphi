@@ -10,12 +10,12 @@ const DEFAULT_SEGMENT_SIZE = 2000; // characters per chunk to stay context-frien
 export default class MiniPhiMemory {
   constructor(startDir = process.cwd()) {
     this.startDir = path.resolve(startDir);
-    const existingBase = this.#findExistingMiniPhi(this.startDir);
+    const existingBase = this._findExistingMiniPhi(this.startDir);
     if (existingBase) {
       this.projectRoot = path.dirname(existingBase);
       this.baseDir = existingBase;
     } else {
-      this.projectRoot = this.#detectProjectRoot(this.startDir);
+      this.projectRoot = this._detectProjectRoot(this.startDir);
       this.baseDir = path.join(this.projectRoot, ".miniphi");
     }
 
@@ -82,43 +82,43 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.helpersDir, { recursive: true });
     await fs.promises.mkdir(this.fixedReferencesDir, { recursive: true });
 
-    await this.#ensureFile(this.promptsFile, { history: [] });
-    await this.#ensureFile(this.knowledgeFile, { entries: [] });
-    await this.#ensureFile(this.todoFile, { items: [] });
-    await this.#ensureFile(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
-    await this.#ensureFile(this.knowledgeIndexFile, { entries: [] });
-    await this.#ensureFile(this.resourceUsageFile, { entries: [] });
-    await this.#ensureFile(this.promptSessionsIndexFile, { entries: [] });
-    await this.#ensureFile(this.researchIndexFile, { entries: [] });
-    await this.#ensureFile(this.historyNotesIndexFile, { entries: [] });
-    await this.#ensureFile(this.benchmarkHistoryFile, { entries: [] });
-    await this.#ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
-    await this.#ensureFile(this.promptDecompositionIndexFile, { entries: [] });
-    await this.#ensureFile(this.helperScriptsIndexFile, { entries: [] });
-    await this.#ensureFile(this.promptStepJournalIndexFile, { entries: [] });
-    await this.#ensureFile(this.promptTemplatesIndexFile, { entries: [] });
-    await this.#ensureFile(this.commandLibraryFile, { entries: [] });
-    await this.#ensureFile(this.rootIndexFile, {
+    await this._ensureFile(this.promptsFile, { history: [] });
+    await this._ensureFile(this.knowledgeFile, { entries: [] });
+    await this._ensureFile(this.todoFile, { items: [] });
+    await this._ensureFile(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
+    await this._ensureFile(this.knowledgeIndexFile, { entries: [] });
+    await this._ensureFile(this.resourceUsageFile, { entries: [] });
+    await this._ensureFile(this.promptSessionsIndexFile, { entries: [] });
+    await this._ensureFile(this.researchIndexFile, { entries: [] });
+    await this._ensureFile(this.historyNotesIndexFile, { entries: [] });
+    await this._ensureFile(this.benchmarkHistoryFile, { entries: [] });
+    await this._ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
+    await this._ensureFile(this.promptDecompositionIndexFile, { entries: [] });
+    await this._ensureFile(this.helperScriptsIndexFile, { entries: [] });
+    await this._ensureFile(this.promptStepJournalIndexFile, { entries: [] });
+    await this._ensureFile(this.promptTemplatesIndexFile, { entries: [] });
+    await this._ensureFile(this.commandLibraryFile, { entries: [] });
+    await this._ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
-        { name: "executions", file: this.#relative(this.executionsIndexFile) },
-        { name: "knowledge", file: this.#relative(this.knowledgeIndexFile) },
-        { name: "prompts", file: this.#relative(this.promptsFile) },
-        { name: "todo", file: this.#relative(this.todoFile) },
-        { name: "health", file: this.#relative(this.resourceUsageFile) },
-        { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
-        { name: "research", file: this.#relative(this.researchIndexFile) },
-        { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
-        { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
-        { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
-        { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
-        { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
-        { name: "prompt-templates", file: this.#relative(this.promptTemplatesIndexFile) },
+        { name: "executions", file: this._relative(this.executionsIndexFile) },
+        { name: "knowledge", file: this._relative(this.knowledgeIndexFile) },
+        { name: "prompts", file: this._relative(this.promptsFile) },
+        { name: "todo", file: this._relative(this.todoFile) },
+        { name: "health", file: this._relative(this.resourceUsageFile) },
+        { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
+        { name: "research", file: this._relative(this.researchIndexFile) },
+        { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },
+        { name: "benchmarks", file: this._relative(this.benchmarkHistoryFile) },
+        { name: "prompt-decompositions", file: this._relative(this.promptDecompositionIndexFile) },
+        { name: "helpers", file: this._relative(this.helperScriptsIndexFile) },
+        { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
+        { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
       ],
     });
 
     this.prepared = true;
-    await this.#updateRootIndex();
+    await this._updateRootIndex();
     return this.baseDir;
   }
 
@@ -146,7 +146,7 @@ export default class MiniPhiMemory {
         error: ref.error ?? null,
       })),
     };
-    await this.#writeJSON(filePath, entry);
+    await this._writeJSON(filePath, entry);
     return { entry, path: filePath };
   }
 
@@ -207,31 +207,31 @@ export default class MiniPhiMemory {
     const metadataFile = path.join(executionDir, "execution.json");
     const executionIndexFile = path.join(executionDir, "index.json");
 
-    const segments = this.#chunkContent(payload.result.compressedContent ?? "");
+    const segments = this._chunkContent(payload.result.compressedContent ?? "");
     await Promise.all(
       segments.map((segment, idx) => {
         const fileName = path.join(segmentsDir, `segment-${String(idx + 1).padStart(3, "0")}.json`);
-        segment.file = this.#relative(fileName);
-        return this.#writeJSON(fileName, segment);
+        segment.file = this._relative(fileName);
+        return this._writeJSON(fileName, segment);
       }),
     );
 
-    const summary = this.#synthesizeSummary(payload.result.analysis);
+    const summary = this._synthesizeSummary(payload.result.analysis);
 
-    await this.#writeJSON(metadataFile, metadata);
-    await this.#writeJSON(promptFile, {
+    await this._writeJSON(metadataFile, metadata);
+    await this._writeJSON(promptFile, {
       task: payload.task,
       prompt: payload.result.prompt,
       contextLength: payload.contextLength ?? null,
       updatedAt: timestamp,
     });
-    await this.#writeJSON(analysisFile, {
+    await this._writeJSON(analysisFile, {
       analysis: payload.result.analysis,
       summary,
       contextRequests: payload.result.contextRequests ?? [],
       updatedAt: timestamp,
     });
-    await this.#writeJSON(compressionFile, {
+    await this._writeJSON(compressionFile, {
       tokens: payload.result.compressedTokens,
       segments: segments.map((segment) => ({
         id: segment.id,
@@ -261,27 +261,27 @@ export default class MiniPhiMemory {
         schemaId: payload.result?.schemaId ?? null,
       };
       truncationPlanPath = path.join(executionDir, "truncation-plan.json");
-      await this.#writeJSON(truncationPlanPath, planRecord);
-      metadata.truncationPlan = this.#relative(truncationPlanPath);
+      await this._writeJSON(truncationPlanPath, planRecord);
+      metadata.truncationPlan = this._relative(truncationPlanPath);
     }
 
-    await this.#writeJSON(executionIndexFile, {
+    await this._writeJSON(executionIndexFile, {
       id: executionId,
       createdAt: timestamp,
       files: {
-        metadata: this.#relative(metadataFile),
-        prompt: this.#relative(promptFile),
-        analysis: this.#relative(analysisFile),
-        compression: this.#relative(compressionFile),
+        metadata: this._relative(metadataFile),
+        prompt: this._relative(promptFile),
+        analysis: this._relative(analysisFile),
+        compression: this._relative(compressionFile),
         segments: segments.map((segment) => segment.file),
         truncationPlan: metadata.truncationPlan,
       },
     });
 
-    await this.#updatePromptsHistory(payload, executionId, timestamp, promptFile);
-    await this.#updateKnowledgeBase(payload, executionId, timestamp, summary);
-    await this.#updateTodoList(payload.result.analysis, executionId, timestamp);
-    await this.#updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
+    await this._updatePromptsHistory(payload, executionId, timestamp, promptFile);
+    await this._updateKnowledgeBase(payload, executionId, timestamp, summary);
+    await this._updateTodoList(payload.result.analysis, executionId, timestamp);
+    await this._updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
 
     return { id: executionId, path: executionDir, truncationPlanPath };
   }
@@ -302,12 +302,12 @@ export default class MiniPhiMemory {
       plan: payload.plan,
     };
     const filePath = path.join(this.promptDecompositionsDir, `${planId}.json`);
-    await this.#writeJSON(filePath, record);
-    await this.#updatePromptDecompositionIndex({
+    await this._writeJSON(filePath, record);
+    await this._updatePromptDecompositionIndex({
       id: planId,
       createdAt: timestamp,
       summary: record.summary,
-      file: this.#relative(filePath),
+      file: this._relative(filePath),
       outline: record.outline ?? null,
       metadata: record.metadata ?? null,
     });
@@ -320,7 +320,7 @@ export default class MiniPhiMemory {
    */
   async loadIndexSummaries(limit = 6) {
     await this.prepare();
-    const root = await this.#readJSON(this.rootIndexFile, { children: [] });
+    const root = await this._readJSON(this.rootIndexFile, { children: [] });
     const children = Array.isArray(root.children) ? root.children : [];
     const capped = children.slice(0, Math.max(0, Math.min(limit, children.length)));
     const entries = [];
@@ -329,7 +329,7 @@ export default class MiniPhiMemory {
         continue;
       }
       const targetPath = path.join(this.baseDir, child.file);
-      const data = await this.#readJSON(targetPath, null);
+      const data = await this._readJSON(targetPath, null);
       const entryCount = Array.isArray(data?.entries) ? data.entries.length : null;
       const summary = typeof data?.summary === "string" ? data.summary.trim() : null;
       const updatedAt = data?.updatedAt ?? data?.recordedAt ?? null;
@@ -352,7 +352,7 @@ export default class MiniPhiMemory {
    */
   async loadBenchmarkHistory(limit = 3) {
     await this.prepare();
-    const history = await this.#readJSON(this.benchmarkHistoryFile, { entries: [] });
+    const history = await this._readJSON(this.benchmarkHistoryFile, { entries: [] });
     if (!Array.isArray(history?.entries)) {
       return [];
     }
@@ -388,14 +388,14 @@ export default class MiniPhiMemory {
       createdAt: timestamp,
     };
     const filePath = path.join(this.promptTemplatesDir, `${entryId}.json`);
-    await this.#writeJSON(filePath, record);
-    await this.#updatePromptTemplateIndex({
+    await this._writeJSON(filePath, record);
+    await this._updatePromptTemplateIndex({
       id: entryId,
       label: record.label,
       baseline: record.baseline,
       schemaId: record.schemaId,
       task: record.task,
-      file: this.#relative(filePath),
+      file: this._relative(filePath),
       createdAt: timestamp,
     });
     return { id: entryId, path: filePath };
@@ -406,10 +406,10 @@ export default class MiniPhiMemory {
       return null;
     }
     await this.prepare();
-    const safeId = this.#sanitizeId(promptId);
+    const safeId = this._sanitizeId(promptId);
     const sessionFile = path.join(this.sessionsDir, `${safeId}.json`);
     try {
-      const data = await this.#readJSON(sessionFile, null);
+      const data = await this._readJSON(sessionFile, null);
       if (data && Array.isArray(data.history)) {
         return data.history;
       }
@@ -424,24 +424,24 @@ export default class MiniPhiMemory {
       return;
     }
     await this.prepare();
-    const safeId = this.#sanitizeId(promptId);
+    const safeId = this._sanitizeId(promptId);
     const sessionFile = path.join(this.sessionsDir, `${safeId}.json`);
-    await this.#writeJSON(sessionFile, {
+    await this._writeJSON(sessionFile, {
       id: promptId,
       savedAt: new Date().toISOString(),
       history: Array.isArray(history) ? history : [],
     });
-    const index = await this.#readJSON(this.promptSessionsIndexFile, { entries: [] });
+    const index = await this._readJSON(this.promptSessionsIndexFile, { entries: [] });
     const filtered = index.entries.filter((entry) => entry.id !== promptId);
     filtered.unshift({
       id: promptId,
-      file: this.#relative(sessionFile),
+      file: this._relative(sessionFile),
       updatedAt: new Date().toISOString(),
       size: Array.isArray(history) ? history.length : 0,
     });
     index.entries = filtered.slice(0, 200);
-    await this.#writeJSON(this.promptSessionsIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.promptSessionsIndexFile, index);
+    await this._updateRootIndex();
   }
 
   async recordCommandIdeas(payload) {
@@ -450,7 +450,7 @@ export default class MiniPhiMemory {
     }
     await this.prepare();
     const timestamp = new Date().toISOString();
-    const data = await this.#readJSON(this.commandLibraryFile, { entries: [] });
+    const data = await this._readJSON(this.commandLibraryFile, { entries: [] });
     const existingKeySet = new Set(
       data.entries.map((entry) => entry.command?.trim().toLowerCase()).filter(Boolean),
     );
@@ -488,14 +488,14 @@ export default class MiniPhiMemory {
       return [];
     }
     data.entries = [...additions, ...data.entries].slice(0, 300);
-    await this.#writeJSON(this.commandLibraryFile, data);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.commandLibraryFile, data);
+    await this._updateRootIndex();
     return additions;
   }
 
   async loadCommandLibrary(limit = 20) {
     await this.prepare();
-    const data = await this.#readJSON(this.commandLibraryFile, { entries: [] });
+    const data = await this._readJSON(this.commandLibraryFile, { entries: [] });
     if (!Array.isArray(data.entries) || data.entries.length === 0) {
       return [];
     }
@@ -508,16 +508,16 @@ export default class MiniPhiMemory {
       return null;
     }
     await this.prepare();
-    const safeId = this.#sanitizeId(executionId);
+    const safeId = this._sanitizeId(executionId);
     const planFile = path.join(this.executionsDir, safeId, "truncation-plan.json");
     try {
-      return await this.#readJSON(planFile, null);
+      return await this._readJSON(planFile, null);
     } catch {
       return null;
     }
   }
 
-  #findExistingMiniPhi(startDir) {
+  _findExistingMiniPhi(startDir) {
     let current = startDir;
     const { root } = path.parse(current);
 
@@ -534,7 +534,7 @@ export default class MiniPhiMemory {
     return null;
   }
 
-  #detectProjectRoot(startDir) {
+  _detectProjectRoot(startDir) {
     let current = startDir;
     const { root } = path.parse(current);
 
@@ -550,14 +550,14 @@ export default class MiniPhiMemory {
     return startDir;
   }
 
-  #sanitizeId(raw) {
+  _sanitizeId(raw) {
     if (!raw) {
       return "";
     }
     return raw.replace(/[^A-Za-z0-9._-]/g, "_");
   }
 
-  #normalizeHelperLanguage(language) {
+  _normalizeHelperLanguage(language) {
     const normalized = (language ?? "").toString().trim().toLowerCase();
     if (normalized.startsWith("py")) {
       return "python";
@@ -568,19 +568,19 @@ export default class MiniPhiMemory {
     return "node";
   }
 
-  async #ensureFile(filePath, defaultValue) {
+  async _ensureFile(filePath, defaultValue) {
     try {
       await fs.promises.access(filePath, fs.constants.F_OK);
     } catch {
-      await this.#writeJSON(filePath, defaultValue);
+      await this._writeJSON(filePath, defaultValue);
     }
   }
 
-  async #writeJSON(filePath, data) {
+  async _writeJSON(filePath, data) {
     await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
   }
 
-  async #readJSON(filePath, fallback) {
+  async _readJSON(filePath, fallback) {
     try {
       const content = await fs.promises.readFile(filePath, "utf8");
       return JSON.parse(content);
@@ -589,11 +589,11 @@ export default class MiniPhiMemory {
     }
   }
 
-  #relative(target) {
+  _relative(target) {
     return path.relative(this.baseDir, target).replace(/\\/g, "/");
   }
 
-  #chunkContent(content) {
+  _chunkContent(content) {
     if (!content || !content.trim()) {
       return [];
     }
@@ -607,7 +607,7 @@ export default class MiniPhiMemory {
     lines.forEach((line, index) => {
       const projected = charCount + line.length + 1;
       if (projected > DEFAULT_SEGMENT_SIZE && buffer.length) {
-        segments.push(this.#createSegment(segments.length + 1, startLine, buffer));
+        segments.push(this._createSegment(segments.length + 1, startLine, buffer));
         buffer = [];
         charCount = 0;
         startLine = index + 1;
@@ -617,13 +617,13 @@ export default class MiniPhiMemory {
     });
 
     if (buffer.length) {
-      segments.push(this.#createSegment(segments.length + 1, startLine, buffer));
+      segments.push(this._createSegment(segments.length + 1, startLine, buffer));
     }
 
     return segments;
   }
 
-  #createSegment(id, startLine, buffer) {
+  _createSegment(id, startLine, buffer) {
     const text = buffer.join("\n");
     return {
       id,
@@ -634,7 +634,7 @@ export default class MiniPhiMemory {
     };
   }
 
-  #synthesizeSummary(analysis = "") {
+  _synthesizeSummary(analysis = "") {
     if (!analysis) {
       return "";
     }
@@ -642,13 +642,13 @@ export default class MiniPhiMemory {
     return sentences.slice(0, 3).join(" ").trim();
   }
 
-  async #updatePromptsHistory(payload, executionId, timestamp, promptFile) {
-    const history = await this.#readJSON(this.promptsFile, { history: [] });
+  async _updatePromptsHistory(payload, executionId, timestamp, promptFile) {
+    const history = await this._readJSON(this.promptsFile, { history: [] });
     const entry = {
       executionId,
       task: payload.task,
-      promptHash: this.#hashText(payload.result.prompt ?? payload.task ?? ""),
-      promptFile: this.#relative(promptFile),
+      promptHash: this._hashText(payload.result.prompt ?? payload.task ?? ""),
+      promptFile: this._relative(promptFile),
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
     };
@@ -656,16 +656,16 @@ export default class MiniPhiMemory {
     history.history.unshift(entry);
     history.history = history.history.slice(0, 200);
 
-    await this.#writeJSON(this.promptsFile, history);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.promptsFile, history);
+    await this._updateRootIndex();
   }
 
-  async #updateKnowledgeBase(payload, executionId, timestamp, summary) {
+  async _updateKnowledgeBase(payload, executionId, timestamp, summary) {
     if (!payload.result.analysis) {
       return;
     }
 
-    const knowledge = await this.#readJSON(this.knowledgeFile, { entries: [] });
+    const knowledge = await this._readJSON(this.knowledgeFile, { entries: [] });
     const entry = {
       id: randomUUID(),
       executionId,
@@ -676,9 +676,9 @@ export default class MiniPhiMemory {
 
     knowledge.entries.unshift(entry);
     knowledge.entries = knowledge.entries.slice(0, 200);
-    await this.#writeJSON(this.knowledgeFile, knowledge);
+    await this._writeJSON(this.knowledgeFile, knowledge);
 
-    await this.#writeJSON(this.knowledgeIndexFile, {
+    await this._writeJSON(this.knowledgeIndexFile, {
       updatedAt: timestamp,
       entries: knowledge.entries.map((item) => ({
         id: item.id,
@@ -688,16 +688,16 @@ export default class MiniPhiMemory {
         createdAt: item.createdAt,
       })),
     });
-    await this.#updateRootIndex();
+    await this._updateRootIndex();
   }
 
-  async #updateTodoList(analysis, executionId, timestamp) {
-    const nextActions = this.#extractNextActions(analysis);
+  async _updateTodoList(analysis, executionId, timestamp) {
+    const nextActions = this._extractNextActions(analysis);
     if (nextActions.length === 0) {
       return;
     }
 
-    const todo = await this.#readJSON(this.todoFile, { items: [] });
+    const todo = await this._readJSON(this.todoFile, { items: [] });
     const existingTexts = new Set(todo.items.map((item) => item.text.toLowerCase()));
 
     for (const action of nextActions) {
@@ -714,12 +714,12 @@ export default class MiniPhiMemory {
       existingTexts.add(action.toLowerCase());
     }
 
-    await this.#writeJSON(this.todoFile, todo);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.todoFile, todo);
+    await this._updateRootIndex();
   }
 
-  async #updateExecutionIndex(executionId, metadata, executionIndexFile, task) {
-    const index = await this.#readJSON(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
+  async _updateExecutionIndex(executionId, metadata, executionIndexFile, task) {
+    const index = await this._readJSON(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
     const entry = {
       id: executionId,
       task,
@@ -727,69 +727,69 @@ export default class MiniPhiMemory {
       createdAt: metadata.createdAt,
       linesAnalyzed: metadata.linesAnalyzed,
       compressedTokens: metadata.compressedTokens,
-      path: this.#relative(executionIndexFile),
+      path: this._relative(executionIndexFile),
     };
 
     index.entries.unshift(entry);
     index.entries = index.entries.slice(0, 200);
 
-    const key = this.#hashText(task ?? "unknown-task");
+    const key = this._hashText(task ?? "unknown-task");
     const taskEntry = index.byTask[key] ?? { task, executions: [] };
     taskEntry.executions = [executionId, ...taskEntry.executions.filter((id) => id !== executionId)].slice(0, 20);
     index.byTask[key] = taskEntry;
     index.latest = entry;
 
-    await this.#writeJSON(this.executionsIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.executionsIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  async #updatePromptDecompositionIndex(entry) {
-    const index = await this.#readJSON(this.promptDecompositionIndexFile, { entries: [] });
+  async _updatePromptDecompositionIndex(entry) {
+    const index = await this._readJSON(this.promptDecompositionIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
     index.entries = [entry, ...filtered].slice(0, 200);
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.promptDecompositionIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.promptDecompositionIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  async #updatePromptTemplateIndex(entry) {
-    const index = await this.#readJSON(this.promptTemplatesIndexFile, { entries: [] });
+  async _updatePromptTemplateIndex(entry) {
+    const index = await this._readJSON(this.promptTemplatesIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
     index.entries = [entry, ...filtered].slice(0, 200);
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.promptTemplatesIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.promptTemplatesIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  async #updateHelperScriptsIndex(entry) {
-    const index = await this.#readJSON(this.helperScriptsIndexFile, { entries: [] });
+  async _updateHelperScriptsIndex(entry) {
+    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
     index.entries = [entry, ...filtered].slice(0, 200);
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.helperScriptsIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.helperScriptsIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  async #updateRootIndex() {
-    const root = await this.#readJSON(this.rootIndexFile, { children: [] });
+  async _updateRootIndex() {
+    const root = await this._readJSON(this.rootIndexFile, { children: [] });
     root.updatedAt = new Date().toISOString();
     root.children = [
-      { name: "executions", file: this.#relative(this.executionsIndexFile) },
-      { name: "knowledge", file: this.#relative(this.knowledgeIndexFile) },
-      { name: "prompts", file: this.#relative(this.promptsFile) },
-      { name: "todo", file: this.#relative(this.todoFile) },
-      { name: "health", file: this.#relative(this.resourceUsageFile) },
-      { name: "prompt-sessions", file: this.#relative(this.promptSessionsIndexFile) },
-      { name: "research", file: this.#relative(this.researchIndexFile) },
-      { name: "history-notes", file: this.#relative(this.historyNotesIndexFile) },
-      { name: "benchmarks", file: this.#relative(this.benchmarkHistoryFile) },
-      { name: "prompt-decompositions", file: this.#relative(this.promptDecompositionIndexFile) },
-      { name: "helpers", file: this.#relative(this.helperScriptsIndexFile) },
-      { name: "command-library", file: this.#relative(this.commandLibraryFile) },
-      { name: "prompt-step-journals", file: this.#relative(this.promptStepJournalIndexFile) },
-      { name: "prompt-templates", file: this.#relative(this.promptTemplatesIndexFile) },
+      { name: "executions", file: this._relative(this.executionsIndexFile) },
+      { name: "knowledge", file: this._relative(this.knowledgeIndexFile) },
+      { name: "prompts", file: this._relative(this.promptsFile) },
+      { name: "todo", file: this._relative(this.todoFile) },
+      { name: "health", file: this._relative(this.resourceUsageFile) },
+      { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
+      { name: "research", file: this._relative(this.researchIndexFile) },
+      { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },
+      { name: "benchmarks", file: this._relative(this.benchmarkHistoryFile) },
+      { name: "prompt-decompositions", file: this._relative(this.promptDecompositionIndexFile) },
+      { name: "helpers", file: this._relative(this.helperScriptsIndexFile) },
+      { name: "command-library", file: this._relative(this.commandLibraryFile) },
+      { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
+      { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
     ];
-    await this.#writeJSON(this.rootIndexFile, root);
+    await this._writeJSON(this.rootIndexFile, root);
   }
 
   async recordBenchmarkSummary(summary, options = {}) {
@@ -797,28 +797,28 @@ export default class MiniPhiMemory {
       return;
     }
     await this.prepare();
-    const history = await this.#readJSON(this.benchmarkHistoryFile, { entries: [] });
-    const digest = this.#condenseBenchmarkSummary(summary);
+    const history = await this._readJSON(this.benchmarkHistoryFile, { entries: [] });
+    const digest = this._condenseBenchmarkSummary(summary);
     const entry = {
       id: randomUUID(),
       recordedAt: new Date().toISOString(),
       digest,
       artifacts: {
-        summary: options.summaryPath ? this.#relative(options.summaryPath) : null,
-        markdown: options.markdownPath ? this.#relative(options.markdownPath) : null,
-        html: options.htmlPath ? this.#relative(options.htmlPath) : null,
+        summary: options.summaryPath ? this._relative(options.summaryPath) : null,
+        markdown: options.markdownPath ? this._relative(options.markdownPath) : null,
+        html: options.htmlPath ? this._relative(options.htmlPath) : null,
       },
       type: options.type ?? "summary",
     };
     history.entries.unshift(entry);
     history.entries = history.entries.slice(0, 200);
-    await this.#writeJSON(this.benchmarkHistoryFile, history);
+    await this._writeJSON(this.benchmarkHistoryFile, history);
     if (Array.isArray(options.todoItems) && options.todoItems.length) {
       await this.addTodoItems(options.todoItems, {
         source: entry.artifacts.summary ?? digest.directory,
       });
     }
-    await this.#updateRootIndex();
+    await this._updateRootIndex();
   }
 
   async recordHelperScript(script) {
@@ -827,8 +827,8 @@ export default class MiniPhiMemory {
     }
     await this.prepare();
     const timestamp = new Date().toISOString();
-    const language = this.#normalizeHelperLanguage(script.language);
-    const slug = this.#slugify(script.name ?? `helper-${language}`);
+    const language = this._normalizeHelperLanguage(script.language);
+    const slug = this._slugify(script.name ?? `helper-${language}`);
     const ext = language === "python" ? ".py" : ".js";
     const fileName = `${timestamp.replace(/[:.]/g, "-")}-${slug}${ext}`;
     const helperPath = path.join(this.helpersDir, fileName);
@@ -842,11 +842,11 @@ export default class MiniPhiMemory {
       source: script.source ?? null,
       objective: script.objective ?? null,
       workspaceType: script.workspaceType ?? null,
-      path: this.#relative(helperPath),
+      path: this._relative(helperPath),
       notes: script.notes ?? null,
       runs: [],
     };
-    await this.#updateHelperScriptsIndex(entry);
+    await this._updateHelperScriptsIndex(entry);
     return { entry, path: helperPath };
   }
 
@@ -855,7 +855,7 @@ export default class MiniPhiMemory {
       return null;
     }
     await this.prepare();
-    const index = await this.#readJSON(this.helperScriptsIndexFile, { entries: [] });
+    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
     const entryIndex = index.entries.findIndex((item) => item.id === run.id);
     if (entryIndex === -1) {
       return null;
@@ -877,8 +877,8 @@ export default class MiniPhiMemory {
       ranAt: timestamp,
       exitCode: run.exitCode ?? 0,
       command: run.command ?? null,
-      stdout: stdoutPath ? this.#relative(stdoutPath) : null,
-      stderr: stderrPath ? this.#relative(stderrPath) : null,
+      stdout: stdoutPath ? this._relative(stdoutPath) : null,
+      stderr: stderrPath ? this._relative(stderrPath) : null,
       summary: run.summary ?? null,
     };
     entry.lastRun = runRecord;
@@ -886,8 +886,8 @@ export default class MiniPhiMemory {
     entry.runs = [runRecord, ...previous].slice(0, 5);
     index.entries[entryIndex] = entry;
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.helperScriptsIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.helperScriptsIndexFile, index);
+    await this._updateRootIndex();
     return runRecord;
   }
 
@@ -896,7 +896,7 @@ export default class MiniPhiMemory {
       return;
     }
     await this.prepare();
-    const todo = await this.#readJSON(this.todoFile, { items: [] });
+    const todo = await this._readJSON(this.todoFile, { items: [] });
     const normalized = new Set(todo.items.map((item) => item.text.toLowerCase()));
     const now = new Date().toISOString();
     items.forEach((text) => {
@@ -912,8 +912,8 @@ export default class MiniPhiMemory {
       });
       normalized.add(text.toLowerCase());
     });
-    await this.#writeJSON(this.todoFile, todo);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.todoFile, todo);
+    await this._updateRootIndex();
   }
 
   async getCachedNarrative(hash) {
@@ -921,7 +921,7 @@ export default class MiniPhiMemory {
       return null;
     }
     await this.prepare();
-    const cache = await this.#loadNarrativeCache();
+    const cache = await this._loadNarrativeCache();
     return cache.entries[hash] ?? null;
   }
 
@@ -930,7 +930,7 @@ export default class MiniPhiMemory {
       return;
     }
     await this.prepare();
-    const cache = await this.#loadNarrativeCache();
+    const cache = await this._loadNarrativeCache();
     cache.entries[hash] = {
       document: payload.document,
       relativePath: payload.relativePath ?? null,
@@ -944,11 +944,11 @@ export default class MiniPhiMemory {
       const removed = cache.order.pop();
       delete cache.entries[removed];
     }
-    await this.#writeJSON(this.recomposeNarrativesFile, cache);
+    await this._writeJSON(this.recomposeNarrativesFile, cache);
     this.recomposeNarrativesCache = cache;
   }
 
-  #condenseBenchmarkSummary(summary) {
+  _condenseBenchmarkSummary(summary) {
     const directions = {};
     Object.entries(summary.directions ?? {}).forEach(([direction, details]) => {
       const phases = {};
@@ -977,11 +977,11 @@ export default class MiniPhiMemory {
     };
   }
 
-  async #loadNarrativeCache() {
+  async _loadNarrativeCache() {
     if (this.recomposeNarrativesCache) {
       return this.recomposeNarrativesCache;
     }
-    const cache = (await this.#readJSON(this.recomposeNarrativesFile, { entries: {}, order: [] })) ?? {
+    const cache = (await this._readJSON(this.recomposeNarrativesFile, { entries: {}, order: [] })) ?? {
       entries: {},
       order: [],
     };
@@ -1002,17 +1002,17 @@ export default class MiniPhiMemory {
       id: report.id ?? randomUUID(),
       savedAt: timestamp,
     };
-    const slug = this.#slugify(normalized.query ?? "research");
+    const slug = this._slugify(normalized.query ?? "research");
     const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
     const jsonPath = path.join(this.researchDir, `${baseName}.json`);
-    await this.#writeJSON(jsonPath, normalized);
-    await this.#updateResearchIndex({
+    await this._writeJSON(jsonPath, normalized);
+    await this._updateResearchIndex({
       id: normalized.id,
       query: normalized.query,
       provider: normalized.provider ?? "duckduckgo",
       savedAt: normalized.savedAt,
       results: normalized.results?.length ?? 0,
-      file: this.#relative(jsonPath),
+      file: this._relative(jsonPath),
     });
     return { path: jsonPath, id: normalized.id };
   }
@@ -1028,22 +1028,22 @@ export default class MiniPhiMemory {
       id: note.id ?? randomUUID(),
       generatedAt: timestamp,
     };
-    const slug = this.#slugify(normalized.label ?? "history");
+    const slug = this._slugify(normalized.label ?? "history");
     const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
     const jsonPath = path.join(this.historyNotesDir, `${baseName}.json`);
     const markdownPath = markdownContent ? path.join(this.historyNotesDir, `${baseName}.md`) : null;
-    await this.#writeJSON(jsonPath, normalized);
+    await this._writeJSON(jsonPath, normalized);
     if (markdownPath) {
       await fs.promises.writeFile(markdownPath, markdownContent, "utf8");
     }
-    await this.#updateHistoryNotesIndex({
+    await this._updateHistoryNotesIndex({
       id: normalized.id,
       generatedAt: normalized.generatedAt,
       changed: normalized.changedFiles?.length ?? 0,
       added: normalized.addedFiles?.length ?? 0,
       removed: normalized.removedFiles?.length ?? 0,
-      file: this.#relative(jsonPath),
-      markdown: markdownPath ? this.#relative(markdownPath) : null,
+      file: this._relative(jsonPath),
+      markdown: markdownPath ? this._relative(markdownPath) : null,
     });
     return { jsonPath, markdownPath, id: normalized.id };
   }
@@ -1062,36 +1062,36 @@ export default class MiniPhiMemory {
     }
     const latest = jsonFiles[jsonFiles.length - 1];
     const fullPath = path.join(this.historyNotesDir, latest);
-    const data = await this.#readJSON(fullPath, null);
+    const data = await this._readJSON(fullPath, null);
     if (!data) {
       return null;
     }
     return { data, path: fullPath };
   }
 
-  async #updateResearchIndex(entry) {
-    const index = await this.#readJSON(this.researchIndexFile, { entries: [] });
+  async _updateResearchIndex(entry) {
+    const index = await this._readJSON(this.researchIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
     index.entries = [entry, ...filtered].slice(0, 200);
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.researchIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.researchIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  async #updateHistoryNotesIndex(entry) {
-    const index = await this.#readJSON(this.historyNotesIndexFile, { entries: [] });
+  async _updateHistoryNotesIndex(entry) {
+    const index = await this._readJSON(this.historyNotesIndexFile, { entries: [] });
     const filtered = index.entries.filter((item) => item.id !== entry.id);
     index.entries = [entry, ...filtered].slice(0, 200);
     index.updatedAt = new Date().toISOString();
-    await this.#writeJSON(this.historyNotesIndexFile, index);
-    await this.#updateRootIndex();
+    await this._writeJSON(this.historyNotesIndexFile, index);
+    await this._updateRootIndex();
   }
 
-  #hashText(text) {
+  _hashText(text) {
     return createHash("sha1").update(text ?? "", "utf8").digest("hex");
   }
 
-  #slugify(text) {
+  _slugify(text) {
     const normalized = (text ?? "")
       .toString()
       .trim()
@@ -1101,7 +1101,7 @@ export default class MiniPhiMemory {
     return normalized.slice(0, 48) || "note";
   }
 
-  #extractNextActions(analysis = "") {
+  _extractNextActions(analysis = "") {
     if (!analysis.trim()) {
       return [];
     }

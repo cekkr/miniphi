@@ -16,8 +16,8 @@ export default class PythonLogSummarizer {
     if (!Array.isArray(lines) || lines.length === 0) {
       return { success: true, input_lines: 0, summary: [] };
     }
-    this.#ensureScriptExists();
-    const child = await this.#spawnPythonProcess();
+    this._ensureScriptExists();
+    const child = await this._spawnPythonProcess();
 
     const payload = JSON.stringify({ lines, levels });
     let stdout = "";
@@ -133,13 +133,13 @@ export default class PythonLogSummarizer {
     });
   }
 
-  #ensureScriptExists() {
+  _ensureScriptExists() {
     if (!fs.existsSync(this.scriptPath)) {
       throw new Error(`Python summarizer script not found at ${this.scriptPath}`);
     }
   }
 
-  #spawnPythonProcess() {
+  _spawnPythonProcess() {
     return new Promise((resolve, reject) => {
       const tryLaunch = (index) => {
         if (index >= PYTHON_CANDIDATES.length) {

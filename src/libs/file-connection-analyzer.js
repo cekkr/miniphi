@@ -44,14 +44,14 @@ export default class FileConnectionAnalyzer {
     if (!fs.existsSync(root)) {
       throw new Error(`Workspace root not found: ${root}`);
     }
-    const files = this.#collectFiles(root);
+    const files = this._collectFiles(root);
     const nodes = new Map();
     const importCache = new Map();
 
     for (const filePath of files) {
       const relative = path.relative(root, filePath).replace(/\\/g, "/");
-      const content = this.#readFileSafely(filePath);
-      const imports = this.#extractImports(filePath, content, root, importCache);
+      const content = this._readFileSafely(filePath);
+      const imports = this._extractImports(filePath, content, root, importCache);
       nodes.set(relative, {
         path: relative,
         imports,
@@ -71,9 +71,9 @@ export default class FileConnectionAnalyzer {
       });
     }
 
-    const hotspots = this.#buildHotspots(nodes);
-    const summary = this.#buildSummary(hotspots, nodes.size, edgeCount);
-    const graph = this.#buildGraphSample(nodes);
+    const hotspots = this._buildHotspots(nodes);
+    const summary = this._buildSummary(hotspots, nodes.size, edgeCount);
+    const graph = this._buildGraphSample(nodes);
 
     return {
       root,
@@ -86,7 +86,7 @@ export default class FileConnectionAnalyzer {
     };
   }
 
-  #collectFiles(root) {
+  _collectFiles(root) {
     const queue = [root];
     const collected = [];
     const visited = new Set();
@@ -131,7 +131,7 @@ export default class FileConnectionAnalyzer {
     return collected;
   }
 
-  #readFileSafely(filePath) {
+  _readFileSafely(filePath) {
     try {
       const buffer = fs.readFileSync(filePath);
       return buffer.slice(0, this.maxBytes).toString("utf8");
@@ -140,20 +140,20 @@ export default class FileConnectionAnalyzer {
     }
   }
 
-  #extractImports(filePath, content, root, cache) {
+  _extractImports(filePath, content, root, cache) {
     const ext = path.extname(filePath).toLowerCase();
     const imports = new Set();
 
     if (ext === ".py") {
-      this.#extractPythonImports(filePath, content, root, imports, cache);
+      this._extractPythonImports(filePath, content, root, imports, cache);
     } else {
-      this.#extractJsImports(filePath, content, root, imports, cache);
+      this._extractJsImports(filePath, content, root, imports, cache);
     }
 
     return Array.from(imports);
   }
 
-  #extractJsImports(filePath, content, root, imports, cache) {
+  _extractJsImports(filePath, content, root, imports, cache) {
     const patterns = [
       /import\s+[^"'`]+?from\s+["'`](.+?)["'`]/g,
       /import\s+["'`](.+?)["'`]/g,
@@ -164,7 +164,7 @@ export default class FileConnectionAnalyzer {
       let match;
       while ((match = regex.exec(content)) !== null) {
         const spec = match[1];
-        const resolved = this.#resolveModulePath(filePath, spec, root, cache);
+        const resolved = this._resolveModulePath(filePath, spec, root, cache);
         if (resolved) {
           imports.add(resolved);
         }
@@ -172,20 +172,20 @@ export default class FileConnectionAnalyzer {
     }
   }
 
-  #extractPythonImports(filePath, content, root, imports, cache) {
+  _extractPythonImports(filePath, content, root, imports, cache) {
     const regex = /\bfrom\s+([.\w]+)\s+import\b|\bimport\s+([.\w]+)/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
       const spec = match[1] ?? match[2] ?? "";
       if (!spec) continue;
-      const resolved = this.#resolvePythonModule(filePath, spec, root, cache);
+      const resolved = this._resolvePythonModule(filePath, spec, root, cache);
       if (resolved) {
         imports.add(resolved);
       }
     }
   }
 
-  #resolveModulePath(filePath, specifier, root, cache) {
+  _resolveModulePath(filePath, specifier, root, cache) {
     if (!specifier || (!specifier.startsWith(".") && !specifier.startsWith("/"))) {
       return null;
     }
@@ -204,7 +204,7 @@ export default class FileConnectionAnalyzer {
     }
 
     for (const candidate of attempts) {
-      const resolved = this.#validateCandidate(candidate, root, cache);
+      const resolved = this._validateCandidate(candidate, root, cache);
       if (resolved) {
         return resolved;
       }
@@ -212,7 +212,7 @@ export default class FileConnectionAnalyzer {
     return null;
   }
 
-  #resolvePythonModule(filePath, specifier, root, cache) {
+  _resolvePythonModule(filePath, specifier, root, cache) {
     const baseDir = path.dirname(filePath);
     if (specifier.startsWith(".")) {
       const relativeDepth = specifier.match(/^\.*/)[0].length;
@@ -222,13 +222,13 @@ export default class FileConnectionAnalyzer {
       }
       const remainder = specifier.slice(relativeDepth).replace(/\./g, "/");
       const candidate = path.join(targetDir, remainder || "");
-      return this.#validateCandidate(`${candidate}.py`, root, cache);
+      return this._validateCandidate(`${candidate}.py`, root, cache);
     }
     const absolute = path.join(root, specifier.replace(/\./g, "/"));
-    return this.#validateCandidate(`${absolute}.py`, root, cache);
+    return this._validateCandidate(`${absolute}.py`, root, cache);
   }
 
-  #validateCandidate(candidatePath, root, cache) {
+  _validateCandidate(candidatePath, root, cache) {
     const normalized = path.normalize(candidatePath);
     if (!normalized.startsWith(root)) {
       return null;
@@ -248,7 +248,7 @@ export default class FileConnectionAnalyzer {
     return relative;
   }
 
-  #buildHotspots(nodes) {
+  _buildHotspots(nodes) {
     const allNodes = Array.from(nodes.values()).map((node) => ({
       path: node.path,
       imports: node.imports.length,
@@ -267,7 +267,7 @@ export default class FileConnectionAnalyzer {
     return { topImporters, topDependents };
   }
 
-  #buildSummary(hotspots, nodeCount, edgeCount) {
+  _buildSummary(hotspots, nodeCount, edgeCount) {
     const lines = [
       `Scanned ${nodeCount} files (${edgeCount} verified internal connections).`,
     ];
@@ -286,7 +286,7 @@ export default class FileConnectionAnalyzer {
     return lines.join("\n\n");
   }
 
-  #buildGraphSample(nodes) {
+  _buildGraphSample(nodes) {
     const ranked = Array.from(nodes.values())
       .map((node) => ({
         path: node.path,

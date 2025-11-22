@@ -24,8 +24,8 @@ export default class WebResearcher {
     );
 
     const startedAt = Date.now();
-    const raw = await this.#dispatchProvider(provider, trimmed);
-    const normalizedResults = this.#normalizeResults(provider, raw).slice(0, maxResults);
+    const raw = await this._dispatchProvider(provider, trimmed);
+    const normalizedResults = this._normalizeResults(provider, raw).slice(0, maxResults);
 
     return {
       id: randomUUID(),
@@ -40,16 +40,16 @@ export default class WebResearcher {
     };
   }
 
-  async #dispatchProvider(provider, query) {
+  async _dispatchProvider(provider, query) {
     switch (provider) {
       case "duckduckgo":
-        return this.#fetchDuckDuckGo(query);
+        return this._fetchDuckDuckGo(query);
       default:
         throw new Error(`Unsupported web research provider "${provider}".`);
     }
   }
 
-  async #fetchDuckDuckGo(query) {
+  async _fetchDuckDuckGo(query) {
     if (typeof fetch !== "function") {
       throw new Error("Global fetch is not available in this Node runtime.");
     }
@@ -72,14 +72,14 @@ export default class WebResearcher {
     return response.json();
   }
 
-  #normalizeResults(provider, rawPayload) {
+  _normalizeResults(provider, rawPayload) {
     if (provider === "duckduckgo") {
-      return this.#extractDuckDuckGo(rawPayload);
+      return this._extractDuckDuckGo(rawPayload);
     }
     return [];
   }
 
-  #extractDuckDuckGo(payload) {
+  _extractDuckDuckGo(payload) {
     const unique = new Map();
     const pushResult = (result) => {
       if (!result?.url) {
@@ -96,7 +96,7 @@ export default class WebResearcher {
       pushResult({
         title: payload.Heading || payload.AbstractSource || payload.AbstractURL,
         url: payload.AbstractURL,
-        snippet: this.#sanitizeSnippet(payload.AbstractText || payload.Abstract),
+        snippet: this._sanitizeSnippet(payload.AbstractText || payload.Abstract),
         source: payload.AbstractSource || "duckduckgo",
         rank: 0,
       });
@@ -107,8 +107,8 @@ export default class WebResearcher {
         pushResult({
           title: item.Text ?? item.Result ?? item.FirstURL ?? `Result #${index + 1}`,
           url: item.FirstURL ?? item.Result,
-          snippet: this.#sanitizeSnippet(item.Text ?? item.Result),
-          source: this.#sourceFromUrl(item.FirstURL),
+          snippet: this._sanitizeSnippet(item.Text ?? item.Result),
+          source: this._sourceFromUrl(item.FirstURL),
           rank: index + 1,
         });
       });
@@ -127,8 +127,8 @@ export default class WebResearcher {
           pushResult({
             title: topic.Text ?? topic.FirstURL,
             url: topic.FirstURL,
-            snippet: this.#sanitizeSnippet(topic.Text),
-            source: this.#sourceFromUrl(topic.FirstURL),
+            snippet: this._sanitizeSnippet(topic.Text),
+            source: this._sourceFromUrl(topic.FirstURL),
             rank: unique.size + 1,
           });
         }
@@ -139,14 +139,14 @@ export default class WebResearcher {
     return Array.from(unique.values());
   }
 
-  #sanitizeSnippet(snippet) {
+  _sanitizeSnippet(snippet) {
     if (!snippet) {
       return "";
     }
     return snippet.replace(/\s+/g, " ").trim();
   }
 
-  #sourceFromUrl(url) {
+  _sourceFromUrl(url) {
     try {
       const parsed = new URL(url);
       return parsed.hostname.replace(/^www\./i, "");

@@ -71,12 +71,12 @@ export default class PromptRecorder {
       error: exchange.error ?? null,
     };
     await fs.promises.writeFile(recordPath, JSON.stringify(payload, null, 2), "utf8");
-    await this.#updateIndex(payload, recordPath);
+    await this._updateIndex(payload, recordPath);
     return { id, path: recordPath };
   }
 
-  async #updateIndex(payload, recordPath) {
-    const index = await this.#readIndex();
+  async _updateIndex(payload, recordPath) {
+    const index = await this._readIndex();
     const summary = {
       id: payload.id,
       scope: payload.scope,
@@ -94,7 +94,7 @@ export default class PromptRecorder {
     await fs.promises.writeFile(this.indexFile, JSON.stringify(index, null, 2), "utf8");
   }
 
-  async #readIndex() {
+  async _readIndex() {
     try {
       const raw = await fs.promises.readFile(this.indexFile, "utf8");
       return JSON.parse(raw);
