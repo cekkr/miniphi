@@ -10,6 +10,7 @@ import {
   resolveLmStudioHttpBaseUrl,
   isLocalLmStudioBaseUrl,
   extractContextRequestsFromAnalysis,
+  extractJsonBlock,
 } from "../src/libs/core-utils.js";
 
 test("normalizeDangerLevel clamps unknown values to mid", () => {
@@ -137,4 +138,20 @@ test("extractContextRequestsFromAnalysis returns normalized hints", () => {
   assert.equal(requests[0].priority, "high");
   assert.equal(requests[1].description, "Need README excerpt");
   assert.equal(requests[1].context, "README.md");
+});
+
+test("extractJsonBlock tolerates fences, think blocks, and trailing prose", () => {
+  const raw = `<think>draft</think>
+  Sure, here's the plan:
+  \`\`\`json
+  {"plan_id":"123","steps":[{"id":"1","title":"Do thing"}]}
+  \`\`\`
+  Thanks!`;
+  const parsed = extractJsonBlock(raw);
+  assert.equal(parsed.plan_id, "123");
+  assert.equal(parsed.steps[0].id, "1");
+});
+
+test("extractJsonBlock returns null when no JSON is present", () => {
+  assert.equal(extractJsonBlock("Just a note without objects."), null);
 });

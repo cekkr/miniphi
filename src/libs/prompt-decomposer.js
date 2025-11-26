@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { extractJsonBlock } from "./core-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
 
 const DEFAULT_MAX_DEPTH = 3;
@@ -33,25 +34,6 @@ const PLAN_SCHEMA = [
   '  "notes": "extra context or null"',
   "}",
 ].join("\n");
-
-function stripCodeFences(text = "") {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("```")) {
-    const firstNewline = trimmed.indexOf("\n");
-    if (firstNewline !== -1) {
-      const fence = trimmed.slice(0, firstNewline);
-      if (/```json/i.test(fence)) {
-        return trimmed.slice(firstNewline + 1).replace(/```$/, "").trim();
-      }
-    }
-    return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
-  }
-  return trimmed;
-}
-
-function stripThinkBlocks(text = "") {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-}
 
 export default class PromptDecomposer {
   constructor(options = undefined) {
@@ -111,6 +93,7 @@ export default class PromptDecomposer {
           messages,
           temperature: this.temperature,
           max_tokens: -1,
+          response_format: { type: "json_object" },
         }),
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
@@ -219,18 +202,10 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload) {
-    const extracted = stripThinkBlocks(stripCodeFences(responseText));
-    if (!extracted) {
-      return null;
-    }
-    let parsed;
-    try {
-      parsed = JSON.parse(extracted);
-    } catch (error) {
+    const parsed = extractJsonBlock(responseText);
+    if (!parsed || typeof parsed !== "object") {
       this._log(
-        `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": ${
-          error instanceof Error ? error.message : error
-        }`,
+        `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
       );
       return null;
     }

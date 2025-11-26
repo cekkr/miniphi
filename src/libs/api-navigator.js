@@ -1,4 +1,5 @@
 import path from "path";
+import { extractJsonBlock } from "./core-utils.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
@@ -36,22 +37,6 @@ const SYSTEM_PROMPT = [
   "When additional telemetry is required (e.g., enumerating files, parsing manifests), emit a minimal helper script.",
   "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies.",
 ].join(" ");
-
-function stripCodeFences(text = "") {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("```")) {
-    const nextLine = trimmed.indexOf("\n");
-    const fence = trimmed.slice(0, nextLine === -1 ? trimmed.length : nextLine);
-    if (/```json/i.test(fence)) {
-      return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
-    }
-    return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
-  }
-  return trimmed;
-}
 
 function clampText(text, limit = OUTPUT_PREVIEW_LIMIT) {
   if (!text) {
@@ -202,6 +187,7 @@ export default class ApiNavigator {
         messages,
         temperature: this.temperature,
         max_tokens: -1,
+        response_format: { type: "json_object" },
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);
@@ -224,18 +210,12 @@ export default class ApiNavigator {
   }
 
   _parsePlan(raw) {
-    const extracted = stripCodeFences(raw);
-    if (!extracted) {
+    const parsed = extractJsonBlock(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return null;
     }
-    try {
-      return JSON.parse(extracted);
-    } catch (error) {
-      this._log(
-        `[ApiNavigator] Unable to parse navigation plan: ${error instanceof Error ? error.message : error}`,
-      );
-      return null;
-    }
+    return parsed;
   }
 
   async _materializeHelperScript(definition, payload) {

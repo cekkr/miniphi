@@ -319,15 +319,7 @@ export function normalizeTruncationPlan(strategy) {
 }
 
 export function extractTruncationPlanFromAnalysis(analysisText) {
-  if (!analysisText || typeof analysisText !== "string") {
-    return null;
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(analysisText);
-  } catch {
-    return null;
-  }
+  const parsed = extractJsonBlock(analysisText);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
@@ -360,15 +352,7 @@ export function extractTruncationPlanFromAnalysis(analysisText) {
 }
 
 export function extractRecommendedCommandsFromAnalysis(analysisText) {
-  if (!analysisText || typeof analysisText !== "string") {
-    return [];
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(analysisText);
-  } catch {
-    return [];
-  }
+  const parsed = extractJsonBlock(analysisText);
   const fixes = parsed?.recommended_fixes ?? parsed?.recommendedFixes;
   if (!Array.isArray(fixes) || fixes.length === 0) {
     return [];
@@ -409,15 +393,7 @@ export function extractRecommendedCommandsFromAnalysis(analysisText) {
 }
 
 export function extractContextRequestsFromAnalysis(analysisText) {
-  if (!analysisText || typeof analysisText !== "string") {
-    return [];
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(analysisText);
-  } catch {
-    return [];
-  }
+  const parsed = extractJsonBlock(analysisText);
   const rawRequests = parsed?.context_requests ?? parsed?.contextRequests;
   if (!Array.isArray(rawRequests) || rawRequests.length === 0) {
     return [];
@@ -464,6 +440,75 @@ export function extractContextRequestsFromAnalysis(analysisText) {
     normalized.push({ id, description, detail, priority, context, source });
   }
   return normalized;
+}
+
+function stripThinkBlocks(text = "") {
+  if (!text) {
+    return "";
+  }
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+function stripJsonLikeFences(payload = "") {
+  if (!payload) {
+    return "";
+  }
+  const trimmed = payload.trim();
+  if (!trimmed.startsWith("```")) {
+    return trimmed;
+  }
+  const firstLineEnd = trimmed.indexOf("\n");
+  if (firstLineEnd === -1) {
+    return trimmed;
+  }
+  const fence = trimmed.slice(0, firstLineEnd);
+  if (/```json/i.test(fence)) {
+    return trimmed.slice(firstLineEnd + 1).replace(/```$/, "").trim();
+  }
+  return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
+}
+
+function sliceLikelyJsonPayload(text, openChar, closeChar) {
+  if (!text || typeof text !== "string") {
+    return null;
+  }
+  const start = text.indexOf(openChar);
+  const end = text.lastIndexOf(closeChar);
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+  return text.slice(start, end + 1).trim();
+}
+
+export function extractJsonBlock(text) {
+  if (!text || typeof text !== "string") {
+    return null;
+  }
+  const cleaned = stripThinkBlocks(stripJsonLikeFences(text));
+  const trimmed = cleaned.trim();
+  const candidates = [];
+  if (trimmed) {
+    candidates.push(trimmed);
+  }
+  const objectCandidate = sliceLikelyJsonPayload(trimmed, "{", "}");
+  if (objectCandidate) {
+    candidates.push(objectCandidate);
+  }
+  const arrayCandidate = sliceLikelyJsonPayload(trimmed, "[", "]");
+  if (arrayCandidate) {
+    candidates.push(arrayCandidate);
+  }
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // keep searching other candidates
+    }
+  }
+  return null;
 }
 
 const NON_COMMAND_EXTENSIONS = new Set([
