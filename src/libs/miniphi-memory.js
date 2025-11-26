@@ -40,6 +40,7 @@ export default class MiniPhiMemory {
     this.executionsIndexFile = path.join(this.indicesDir, "executions-index.json");
     this.knowledgeIndexFile = path.join(this.indicesDir, "knowledge-index.json");
     this.resourceUsageFile = path.join(this.healthDir, "resource-usage.json");
+    this.lmStudioStatusFile = path.join(this.healthDir, "lmstudio-status.json");
     this.promptSessionsIndexFile = path.join(this.indicesDir, "prompt-sessions-index.json");
     this.researchIndexFile = path.join(this.indicesDir, "research-index.json");
     this.historyNotesIndexFile = path.join(this.indicesDir, "history-notes-index.json");
@@ -88,6 +89,7 @@ export default class MiniPhiMemory {
     await this._ensureFile(this.executionsIndexFile, { entries: [], byTask: {}, latest: null });
     await this._ensureFile(this.knowledgeIndexFile, { entries: [] });
     await this._ensureFile(this.resourceUsageFile, { entries: [] });
+    await this._ensureFile(this.lmStudioStatusFile, { entries: [] });
     await this._ensureFile(this.promptSessionsIndexFile, { entries: [] });
     await this._ensureFile(this.researchIndexFile, { entries: [] });
     await this._ensureFile(this.historyNotesIndexFile, { entries: [] });
@@ -106,6 +108,7 @@ export default class MiniPhiMemory {
         { name: "prompts", file: this._relative(this.promptsFile) },
         { name: "todo", file: this._relative(this.todoFile) },
         { name: "health", file: this._relative(this.resourceUsageFile) },
+        { name: "lmstudio-status", file: this._relative(this.lmStudioStatusFile) },
         { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
         { name: "research", file: this._relative(this.researchIndexFile) },
         { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },
@@ -148,6 +151,33 @@ export default class MiniPhiMemory {
     };
     await this._writeJSON(filePath, entry);
     return { entry, path: filePath };
+  }
+
+  async recordLmStudioStatus(snapshot, options = undefined) {
+    if (!snapshot) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const entry = {
+      id: randomUUID(),
+      recordedAt: timestamp,
+      label: options?.label ?? null,
+      baseUrl: snapshot.baseUrl ?? null,
+      transport: snapshot.transport ?? null,
+      status: snapshot.status ?? snapshot,
+    };
+    const history = await this._readJSON(this.lmStudioStatusFile, { entries: [] });
+    const entries = Array.isArray(history.entries) ? history.entries : [];
+    const updated = [entry, ...entries].slice(0, 50);
+    const payload = {
+      entries: updated,
+      latest: entry,
+      updatedAt: timestamp,
+    };
+    await this._writeJSON(this.lmStudioStatusFile, payload);
+    await this._updateRootIndex();
+    return { entry, path: this.lmStudioStatusFile, relative: this._relative(this.lmStudioStatusFile) };
   }
 
  /**
@@ -779,6 +809,7 @@ export default class MiniPhiMemory {
       { name: "prompts", file: this._relative(this.promptsFile) },
       { name: "todo", file: this._relative(this.todoFile) },
       { name: "health", file: this._relative(this.resourceUsageFile) },
+      { name: "lmstudio-status", file: this._relative(this.lmStudioStatusFile) },
       { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
       { name: "research", file: this._relative(this.researchIndexFile) },
       { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },

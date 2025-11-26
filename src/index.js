@@ -266,6 +266,54 @@ async function attachCommandLibraryToWorkspace(workspaceContext, memory, options
   };
 }
 
+async function recordLmStudioStatusSnapshot(restClient, memory, options = undefined) {
+  if (!restClient || !memory) {
+    return null;
+  }
+  try {
+    const status = await restClient.getStatus();
+    const snapshot = {
+      status: status ?? null,
+      baseUrl: restClient.baseUrl ?? null,
+      transport: options?.transport ?? "rest",
+    };
+    const record = await memory.recordLmStudioStatus(snapshot, { label: options?.label ?? null });
+    if (options?.verbose) {
+      const model =
+        status?.loaded_model ??
+        status?.model ??
+        status?.model_key ??
+        status?.modelKey ??
+        status?.defaultModel ??
+        null;
+      const contextLength =
+        status?.context_length ??
+        status?.contextLength ??
+        status?.context_length_limit ??
+        status?.context_length_max ??
+        null;
+      const gpu = status?.gpu ?? status?.device ?? status?.hardware ?? null;
+      const relPath = record?.path ? path.relative(process.cwd(), record.path) : null;
+      console.log(
+        `[MiniPhi] LM Studio status: model=${model ?? "unknown"} ctx=${contextLength ?? "?"} gpu=${gpu ?? "?"}`,
+      );
+      if (record?.path) {
+        console.log(
+          `[MiniPhi] LM Studio status snapshot stored at ${relPath && !relPath.startsWith("..") ? relPath : record.path}`,
+        );
+      }
+    }
+    return record;
+  } catch (error) {
+    if (options?.verbose) {
+      console.warn(
+        `[MiniPhi] LM Studio status check failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return null;
+  }
+}
+
 function describeTruncationChunk(chunk) {
   if (!chunk) {
     return "chunk";
@@ -1235,6 +1283,11 @@ const describeWorkspace = (dir, options = undefined) =>
       archiveMetadata.cwd = cwd;
       stateManager = new MiniPhiMemory(cwd);
       await stateManager.prepare();
+      await recordLmStudioStatusSnapshot(restClient, stateManager, {
+        label: "workspace",
+        verbose,
+        transport: "rest",
+      });
       if (workspaceFixedReferences.length) {
         await stateManager.recordFixedReferences({
           references: workspaceFixedReferences,
@@ -1357,6 +1410,11 @@ const describeWorkspace = (dir, options = undefined) =>
       archiveMetadata.cwd = cwd;
       stateManager = new MiniPhiMemory(cwd);
       await stateManager.prepare();
+      await recordLmStudioStatusSnapshot(restClient, stateManager, {
+        label: "run",
+        verbose,
+        transport: "rest",
+      });
       if (fixedReferences.length) {
         await stateManager.recordFixedReferences({
           references: fixedReferences,
@@ -1584,6 +1642,11 @@ const describeWorkspace = (dir, options = undefined) =>
       archiveMetadata.cwd = analyzeCwd;
       stateManager = new MiniPhiMemory(archiveMetadata.cwd);
       await stateManager.prepare();
+      await recordLmStudioStatusSnapshot(restClient, stateManager, {
+        label: "analyze-file",
+        verbose,
+        transport: "rest",
+      });
       let truncationResume = null;
       let selectedTruncationChunk = null;
       let truncationLineRange = null;

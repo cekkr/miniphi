@@ -237,6 +237,37 @@ export class LMStudioRestClient {
   }
 
   /**
+   * Retrieves the LM Studio status snapshot (model, context length, GPU).
+   * @returns {Promise<object | null>}
+   */
+  async getStatus() {
+    try {
+      const payload = await this._request("/status");
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        if (typeof payload.error === "string" && !payload.ok) {
+          return { ok: false, error: payload.error, status: payload };
+        }
+        return { ok: true, ...payload };
+      }
+      return { ok: true, status: payload ?? null };
+    } catch (error) {
+      const statusCode = typeof error?.status === "number" ? error.status : null;
+      let fallback = null;
+      try {
+        fallback = await this.listModels();
+      } catch {
+        // ignore fallback failures to preserve the original error context
+      }
+      return {
+        ok: false,
+        statusCode,
+        error: error instanceof Error ? error.message : String(error ?? "Unknown error"),
+        fallback,
+      };
+    }
+  }
+
+  /**
    * Retrieves detailed information about a single model.
    * @param {string} modelKey
    */
