@@ -388,6 +388,16 @@ function buildRestClientOptions(configData) {
   if (candidateBase) {
     options.baseUrl = normalizeLmStudioHttpUrl(candidateBase);
   }
+  if (typeof options.timeoutMs === "undefined") {
+    const promptTimeoutSeconds =
+      configData?.lmStudio?.prompt?.timeoutSeconds ??
+      configData?.prompt?.timeoutSeconds ??
+      null;
+    const promptTimeoutMs = Number(promptTimeoutSeconds) * 1000;
+    if (Number.isFinite(promptTimeoutMs) && promptTimeoutMs > 0) {
+      options.timeoutMs = Math.floor(promptTimeoutMs);
+    }
+  }
   return Object.keys(options).length ? options : undefined;
 }
 
