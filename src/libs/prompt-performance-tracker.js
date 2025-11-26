@@ -686,7 +686,8 @@ export default class PromptPerformanceTracker {
     if (!raw) {
       return null;
     }
-    const match = String(raw).match(/\{[\s\S]*\}/);
+    const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "");
+    const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) {
       return null;
     }
