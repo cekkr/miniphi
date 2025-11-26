@@ -28,6 +28,7 @@ These are the currently "fixed reference points" of miniphi project:
 - `WorkspaceProfiler` (plus `FileConnectionAnalyzer` and the new `CapabilityInventory`) inspects the repo tree, renders ASCII file-connection graphs, captures repo/package scripts, and injects the combined hints into every Phi-4 prompt; `PromptRecorder` mirrors the exchanges and `PromptPerformanceTracker` stores scores + telemetry inside `miniphi-prompts.db`.
 - Runtime timeouts are now configured in seconds (CLI flags + `config*.json`), with Phi’s no-token guard bumped to 600 s per prompt so long-running API calls keep breathing room without stretching the overall session timeout.
 - Prompt contexts now summarize `.miniphi/index.json` plus the latest `.miniphi/history/benchmarks.json` entries before dispatch so `run`/`analyze-file` prompts reuse benchmark insights without rescanning large artifacts.
+- Phi-4 prompts now fall back from REST to WS transport automatically after a REST failure, preserving chat history while avoiding repeated REST stalls.
 
 ## Priority order (P0 ⇒ P2)
 1. **P0 – JSON-only Phi contracts.** Force structured responses for navigator/decomposer/truncation prompts (`response_format=json_object`), strip `<think>`/preambles/fences before parsing, and fail fast on prose so helper commands stay machine-usable.

@@ -140,6 +140,7 @@ export class Phi4Handler {
     let currentPrompt = prompt;
     let schemaRetryCount = 0;
     let hangRetryCount = 0;
+    let restFallbackUsed = false;
     while (attempt < maxAttempts) {
       this.chatHistory.push({ role: "user", content: currentPrompt });
 
@@ -361,6 +362,23 @@ export class Phi4Handler {
           } catch {
             // swallow load errors so the retry can surface the original failure
           }
+          continue;
+        }
+        if (useRestTransport && !restFallbackUsed) {
+          restFallbackUsed = true;
+          attempt += 1;
+          this.preferRestTransport = false;
+          this._recordPromptEvent(traceContext, requestSnapshot, {
+            eventType: "rest-fallback",
+            severity: "warn",
+            message: `REST transport failed; retrying with WS (${message})`,
+            metadata: {
+              attempt,
+              transport: "rest",
+              schemaId: traceContext.schemaId ?? null,
+            },
+          });
+          currentPrompt = basePrompt;
           continue;
         }
         const hangRetryAllowed =
