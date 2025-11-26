@@ -517,30 +517,35 @@ export default class EfficientLogAnalyzer {
     const contextSupplement = this._formatContextSupplement(extraContext);
     const contextBlock = contextSupplement ? `\n\n${contextSupplement}` : "";
     const schemaInstructions = this._buildSchemaInstructions();
-    return `# Log/Output Analysis Task
+    const payload = {
+      task,
+      dataset: {
+        total_lines: totalLines,
+        compressed_tokens: metadata.compressedTokens,
+        compression: this._formatCompression(totalLines, metadata.compressedTokens),
+        approx_original_bytes: metadata.originalSize ?? "unknown",
+      },
+      context: contextBlock?.trim() || null,
+      reporting_rules: [
+        "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
+        "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
+        "If information is unavailable, set the field to null instead of fabricating a value.",
+        "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
+        "Respond with raw JSON only—no code fences, no markdown, no <think> blocks, and no prose outside the JSON object.",
+      ],
+      data: compressedContent,
+      schema_instructions: schemaInstructions,
+    };
 
-You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):
-${schemaInstructions}
-
-**Task:** ${task}${contextBlock}
-
-**Dataset Overview:**
-- Total lines: ${totalLines}
-- Compressed to: ${metadata.compressedTokens} tokens
-- Compression: ${this._formatCompression(totalLines, metadata.compressedTokens)}
-- Approx. original bytes: ${metadata.originalSize ?? "unknown"}
-
-**Reporting Rules**
-1. Every evidence entry must mention the chunk/section name (e.g., "Chunk 2" or "Level 1") and include an approximate \`line_hint\`. Use \`null\` only if no line reference exists.
-2. Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.
-3. If information is unavailable, set the field to \`null\` instead of fabricating a value.
-4. When the dataset is truncated or you need more context, populate \`truncation_strategy\` with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use \`null\` when no truncation plan is required.
-5. Respond with raw JSON only—no code fences, no markdown, no \`<think>\` blocks, and no prose outside the JSON object.
-
-**Data:**
-\`\`\`
-${compressedContent}
-\`\`\``;
+    return [
+      "# Log/Output Analysis Task",
+      "You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):",
+      schemaInstructions,
+      "Input payload (JSON):",
+      "```json",
+      JSON.stringify(payload, null, 2),
+      "```",
+    ].join("\n");
   }
 
   _buildFallbackAnalysis(task, reason, context = undefined) {
