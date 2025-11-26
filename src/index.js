@@ -868,6 +868,9 @@ async function main() {
       );
     }
   }
+  if (restClient) {
+    phi4.setRestClient(restClient, { preferRestTransport: !isLmStudioLocal });
+  }
   const buildNavigator = (memoryInstance) =>
     restClient
       ? new ApiNavigator({
@@ -1172,6 +1175,9 @@ const describeWorkspace = (dir, options = undefined) =>
           schemaRegistry,
           noTokenTimeoutMs,
         });
+      if (restClient) {
+        scoringPhi.setRestClient(restClient, { preferRestTransport: !isLmStudioLocal });
+      }
       try {
         await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
         performanceTracker.setSemanticEvaluator(async (evaluationPrompt, parentTrace) => {
@@ -2289,6 +2295,8 @@ async function createRecomposeHarness({
   gpu,
   schemaRegistry,
   promptDbPath,
+  restClient = null,
+  preferRestTransport = false,
   recomposeMode = "live",
 }) {
   let phi4 = null;
@@ -2308,6 +2316,9 @@ async function createRecomposeHarness({
       promptTimeoutMs: recomposePromptTimeout,
       schemaRegistry,
     });
+    if (restClient) {
+      phi4.setRestClient(restClient, { preferRestTransport });
+    }
     const loadOptions = { contextLength, gpu };
     await phi4.load(loadOptions);
   }

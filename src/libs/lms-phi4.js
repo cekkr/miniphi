@@ -30,6 +30,8 @@ export class Phi4Handler {
       typeof options?.promptTimeoutMs === "number" && Number.isFinite(options.promptTimeoutMs)
         ? options.promptTimeoutMs
         : null;
+    this.restClient = options?.restClient ?? null;
+    this.preferRestTransport = Boolean(options?.preferRestTransport);
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
     this.promptRecorder = options?.promptRecorder ?? null;
     this.performanceTracker = options?.performanceTracker ?? null;
@@ -78,6 +80,18 @@ export class Phi4Handler {
    */
   setPromptRecorder(recorder) {
     this.promptRecorder = recorder ?? null;
+  }
+
+  /**
+   * Configures the REST client and transport preference for Phi-4 calls.
+   * @param {import("./lmstudio-api.js").LMStudioRestClient | null} restClient
+   * @param {{ preferRestTransport?: boolean }} [options]
+   */
+  setRestClient(restClient, options = undefined) {
+    this.restClient = restClient ?? null;
+    if (typeof options?.preferRestTransport === "boolean") {
+      this.preferRestTransport = options.preferRestTransport;
+    }
   }
 
   /**
@@ -143,6 +157,7 @@ export class Phi4Handler {
       let solutionStreamHandle = null;
       let rawFragmentCount = 0;
       let solutionTokenCount = 0;
+      const useRestTransport = this._shouldUseRest(traceContext);
       const cancelPrediction = (message) => {
         if (solutionStreamHandle && typeof solutionStreamHandle.destroy === "function") {
           try {
@@ -200,60 +215,72 @@ export class Phi4Handler {
       try {
         this.chatHistory = await this._truncateHistory();
         requestSnapshot = this._buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
-        const chat = Chat.from(this.chatHistory);
-        const prediction = this.model.respond(chat);
-        predictionHandle = prediction;
-        const parser = new Phi4StreamParser((thought) => {
-          capturedThoughts.push(thought);
-          if (onThink) {
-            onThink(thought);
+        if (useRestTransport) {
+          result = await this._withPromptTimeout(
+            async () => this._invokeRestCompletion(),
+            () => {},
+          );
+          rawFragmentCount = result ? 1 : 0;
+          solutionTokenCount = this._approximateTokens(result);
+          if (onToken && result) {
+            onToken(result);
           }
-        });
-        const readable = Readable.from(prediction);
-        readable.on("data", () => {
-          rawFragmentCount += 1;
-          resetHeartbeat();
-        });
-        const solutionStream = readable.pipe(parser);
-        solutionStreamHandle = solutionStream;
-        const attachStreamError = (stream) => {
-          if (!stream || typeof stream.once !== "function") {
-            return;
-          }
-          stream.once("error", (err) => {
-            const normalized = err instanceof Error ? err : new Error(String(err));
-            streamError = normalized;
-          });
-        };
-        attachStreamError(readable);
-        attachStreamError(solutionStream);
-
-        resetHeartbeat();
-        result = await this._withPromptTimeout(async () => {
-          let assistantResponse = "";
-          for await (const fragment of solutionStream) {
-            const token = fragment?.content ?? "";
-            if (!token) continue;
-            resetHeartbeat();
-            if (onToken) onToken(token);
-            assistantResponse += token;
-            solutionTokenCount += 1;
-          }
-          if (streamError) {
-            throw streamError;
-          }
-          if (typeof prediction?.result === "function") {
-            try {
-              const finalResult = await prediction.result();
-              if (!assistantResponse && finalResult?.content) {
-                assistantResponse = finalResult.content;
-              }
-            } catch {
-              // ignore result resolution failures; streaming response already captured
+        } else {
+          const chat = Chat.from(this.chatHistory);
+          const prediction = this.model.respond(chat);
+          predictionHandle = prediction;
+          const parser = new Phi4StreamParser((thought) => {
+            capturedThoughts.push(thought);
+            if (onThink) {
+              onThink(thought);
             }
-          }
-          return assistantResponse;
-        }, () => cancelPrediction("Phi-4 prompt timeout"));
+          });
+          const readable = Readable.from(prediction);
+          readable.on("data", () => {
+            rawFragmentCount += 1;
+            resetHeartbeat();
+          });
+          const solutionStream = readable.pipe(parser);
+          solutionStreamHandle = solutionStream;
+          const attachStreamError = (stream) => {
+            if (!stream || typeof stream.once !== "function") {
+              return;
+            }
+            stream.once("error", (err) => {
+              const normalized = err instanceof Error ? err : new Error(String(err));
+              streamError = normalized;
+            });
+          };
+          attachStreamError(readable);
+          attachStreamError(solutionStream);
+
+          resetHeartbeat();
+          result = await this._withPromptTimeout(async () => {
+            let assistantResponse = "";
+            for await (const fragment of solutionStream) {
+              const token = fragment?.content ?? "";
+              if (!token) continue;
+              resetHeartbeat();
+              if (onToken) onToken(token);
+              assistantResponse += token;
+              solutionTokenCount += 1;
+            }
+            if (streamError) {
+              throw streamError;
+            }
+            if (typeof prediction?.result === "function") {
+              try {
+                const finalResult = await prediction.result();
+                if (!assistantResponse && finalResult?.content) {
+                  assistantResponse = finalResult.content;
+                }
+              } catch {
+                // ignore result resolution failures; streaming response already captured
+              }
+            }
+            return assistantResponse;
+          }, () => cancelPrediction("Phi-4 prompt timeout"));
+        }
 
         const finishedAt = Date.now();
         const validationResult = this._validateSchema(schemaDetails, result);
@@ -422,6 +449,53 @@ export class Phi4Handler {
       normalized.includes("timed out") ||
       (normalized.includes("stream") && normalized.includes("timeout"))
     );
+  }
+
+  _shouldUseRest(traceContext = undefined) {
+    if (!this.restClient) {
+      return false;
+    }
+    if (process.env.MINIPHI_FORCE_REST === "1") {
+      return true;
+    }
+    if (typeof traceContext?.transport === "string") {
+      return traceContext.transport === "rest";
+    }
+    return this.preferRestTransport;
+  }
+
+  _buildRestMessages() {
+    if (!Array.isArray(this.chatHistory)) {
+      return [];
+    }
+    return this.chatHistory
+      .filter((entry) => entry && typeof entry.role === "string" && typeof entry.content === "string")
+      .map((entry) => ({
+        role: entry.role,
+        content: entry.content,
+      }));
+  }
+
+  async _invokeRestCompletion() {
+    if (!this.restClient) {
+      throw new Error("LM Studio REST client is not configured for Phi-4.");
+    }
+    const messages = this._buildRestMessages();
+    const response = await this.restClient.createChatCompletion({
+      messages,
+      stream: false,
+      max_tokens: -1,
+    });
+    const choice = response?.choices?.[0];
+    const text =
+      choice?.message?.content ??
+      choice?.delta?.content ??
+      (typeof response === "string" ? response : null) ??
+      "";
+    if (!text) {
+      throw new Error("Phi-4 REST completion returned an empty response.");
+    }
+    return text;
   }
 
   /**
