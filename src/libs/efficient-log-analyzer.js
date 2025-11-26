@@ -535,6 +535,7 @@ ${schemaInstructions}
 2. Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.
 3. If information is unavailable, set the field to \`null\` instead of fabricating a value.
 4. When the dataset is truncated or you need more context, populate \`truncation_strategy\` with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use \`null\` when no truncation plan is required.
+5. Respond with raw JSON only—no code fences, no markdown, no \`<think>\` blocks, and no prose outside the JSON object.
 
 **Data:**
 \`\`\`

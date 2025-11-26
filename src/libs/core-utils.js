@@ -1,3 +1,4 @@
+import path from "path";
 import { normalizeLmStudioHttpUrl } from "./lmstudio-api.js";
 
 const VALID_DANGER_LEVELS = new Set(["low", "mid", "high"]);
@@ -387,7 +388,7 @@ export function extractRecommendedCommandsFromAnalysis(analysisText) {
         return;
       }
       const trimmed = commandText.trim();
-      if (!trimmed) {
+      if (!trimmed || !_isExecutableCommand(trimmed)) {
         return;
       }
       commands.push({
@@ -463,4 +464,46 @@ export function extractContextRequestsFromAnalysis(analysisText) {
     normalized.push({ id, description, detail, priority, context, source });
   }
   return normalized;
+}
+
+const NON_COMMAND_EXTENSIONS = new Set([
+  ".c",
+  ".h",
+  ".hpp",
+  ".hh",
+  ".md",
+  ".markdown",
+  ".txt",
+  ".log",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".lock",
+  ".csv",
+  ".tsv",
+  ".html",
+  ".htm",
+  ".xml",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".svg",
+]);
+
+function _isExecutableCommand(text) {
+  if (!text || typeof text !== "string") {
+    return false;
+  }
+  const normalized = text.trim();
+  if (!normalized || normalized.length > 240 || normalized.includes("\n")) {
+    return false;
+  }
+  const ext = path.extname(normalized).toLowerCase();
+  if (ext && NON_COMMAND_EXTENSIONS.has(ext) && !normalized.includes(" ")) {
+    return false;
+  }
+  return true;
 }
