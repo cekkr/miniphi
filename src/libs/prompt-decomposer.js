@@ -50,7 +50,7 @@ function stripCodeFences(text = "") {
 }
 
 function stripThinkBlocks(text = "") {
-  return text.replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
 export default class PromptDecomposer {
