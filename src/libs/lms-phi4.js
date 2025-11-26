@@ -213,7 +213,25 @@ export class Phi4Handler {
       };
 
       try {
-        this.chatHistory = await this._truncateHistory();
+        try {
+          // Skip SDK-based truncation when using REST transport, since it does not rely on a loaded model.
+          this.chatHistory = useRestTransport ? this.chatHistory : await this._truncateHistory();
+        } catch (truncateError) {
+          const message =
+            truncateError instanceof Error ? truncateError.message : String(truncateError ?? "");
+          const recoverable = !useRestTransport && this._isRecoverableModelError(message);
+          if (recoverable) {
+            attempt += 1;
+            try {
+              await this.load();
+            } catch {
+              // ignore reload errors; retry loop will surface the failure
+            }
+            this.chatHistory.pop(); // remove the user entry added at the start of the loop
+            continue;
+          }
+          throw truncateError;
+        }
         requestSnapshot = this._buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         if (useRestTransport) {
           result = await this._withPromptTimeout(

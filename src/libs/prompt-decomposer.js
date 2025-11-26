@@ -49,6 +49,10 @@ function stripCodeFences(text = "") {
   return trimmed;
 }
 
+function stripThinkBlocks(text = "") {
+  return text.replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+}
+
 export default class PromptDecomposer {
   constructor(options = undefined) {
     this.restClient =
@@ -215,7 +219,7 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload) {
-    const extracted = stripCodeFences(responseText);
+    const extracted = stripThinkBlocks(stripCodeFences(responseText));
     if (!extracted) {
       return null;
     }
