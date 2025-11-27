@@ -141,7 +141,10 @@ export class Phi4Handler {
     let schemaRetryCount = 0;
     let hangRetryCount = 0;
     let restFallbackUsed = false;
+    let heartbeatTimer = null;
+    let lastErrorMessage = null;
     while (attempt < maxAttempts) {
+      heartbeatTimer = null;
       this.chatHistory.push({ role: "user", content: currentPrompt });
 
       const traceContext = this._buildTraceContext(traceOptions);
@@ -347,6 +350,7 @@ export class Phi4Handler {
 
         return result;
       } catch (error) {
+        lastErrorMessage = error instanceof Error ? error.message : String(error);
         if (heartbeatTimer) {
           clearTimeout(heartbeatTimer);
           heartbeatTimer = null;
@@ -466,9 +470,14 @@ export class Phi4Handler {
 
     if (heartbeatTimer) {
       clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
     }
 
-    throw new Error("Phi-4 chat stream exceeded retry budget.");
+    const budgetDetails =
+      typeof lastErrorMessage === "string" && lastErrorMessage
+        ? ` Last error: ${lastErrorMessage}`
+        : "";
+    throw new Error(`Phi-4 chat stream exceeded retry budget.${budgetDetails}`);
   }
 
   _isRecoverableModelError(message) {
