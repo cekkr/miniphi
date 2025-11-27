@@ -5,6 +5,55 @@ const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
 const OUTPUT_PREVIEW_LIMIT = 420;
 
+const NAVIGATION_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    schema_version: { type: "string" },
+    navigation_summary: { type: "string" },
+    recommended_paths: { type: "array", items: { type: "string" }, default: [] },
+    file_types: { type: "array", items: { type: "string" }, default: [] },
+    focus_commands: { type: "array", items: { type: "string" }, default: [] },
+    actions: {
+      type: "array",
+      default: [],
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["command", "reason", "danger"],
+        properties: {
+          command: { type: "string" },
+          reason: { type: "string" },
+          danger: { type: "string", enum: ["low", "mid", "high"] },
+          authorization_hint: { type: ["string", "null"] },
+        },
+      },
+    },
+    helper_script: {
+      type: "object",
+      additionalProperties: false,
+      required: ["language", "code"],
+      properties: {
+        language: { type: "string", enum: ["node", "python"] },
+        name: { type: "string" },
+        description: { type: "string" },
+        code: { type: "string" },
+      },
+    },
+    notes: { type: "string" },
+  },
+  required: ["actions"],
+};
+
+const NAVIGATION_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "navigation_plan",
+    strict: true,
+    schema: NAVIGATION_JSON_SCHEMA,
+  },
+};
+
 const NAVIGATION_SCHEMA = [
   "{",
   '  "schema_version": "string // schema identifier (default navigation-plan@v1)",',
@@ -158,6 +207,7 @@ export default class ApiNavigator {
     const manifest = Array.isArray(payload.workspace?.manifestPreview)
       ? payload.workspace.manifestPreview.slice(0, 12)
       : [];
+    const responseFormat = NAVIGATION_RESPONSE_FORMAT;
     const body = {
       objective: payload.objective ?? null,
       cwd: payload.cwd ?? process.cwd(),
@@ -187,13 +237,31 @@ export default class ApiNavigator {
         messages,
         temperature: this.temperature,
         max_tokens: -1,
-        // LM Studio REST currently accepts "text" or "json_schema"; fall back to text and parse JSON blocks.
-        response_format: { type: "text" },
+        response_format: responseFormat,
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (this._isResponseFormatError(message)) {
+        try {
+          this._log(
+            "[ApiNavigator] response_format rejected; retrying with text and JSON block parsing.",
+          );
+          const completion = await this.restClient.createChatCompletion({
+            messages,
+            temperature: this.temperature,
+            max_tokens: -1,
+            response_format: { type: "text" },
+          });
+          const raw = completion?.choices?.[0]?.message?.content ?? "";
+          return this._parsePlan(raw);
+        } catch (retryError) {
+          const retryMessage =
+            retryError instanceof Error ? retryError.message : String(retryError);
+          this._log(`[ApiNavigator] Retry after response_format failure also failed: ${retryMessage}`);
+        }
+      }
       this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
       if (this._shouldDisable(message)) {
         this.disabled = true;
@@ -217,6 +285,16 @@ export default class ApiNavigator {
       return null;
     }
     return parsed;
+  }
+
+  _isResponseFormatError(message) {
+    if (!message) return false;
+    const normalized = message.toString().toLowerCase();
+    return (
+      normalized.includes("response_format") ||
+      normalized.includes("json_schema") ||
+      normalized.includes("json object")
+    );
   }
 
   async _materializeHelperScript(definition, payload) {

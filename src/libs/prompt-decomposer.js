@@ -35,6 +35,43 @@ const PLAN_SCHEMA = [
   "}",
 ].join("\n");
 
+const PLAN_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["plan_id", "summary", "steps"],
+  properties: {
+    plan_id: { type: "string" },
+    summary: { type: "string" },
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "title", "description", "requires_subprompt", "children"],
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          requires_subprompt: { type: "boolean" },
+          recommendation: { type: ["string", "null"] },
+          children: { type: "array" },
+        },
+      },
+    },
+    recommended_tools: { type: "array", items: { type: "string" }, default: [] },
+    notes: { type: ["string", "null"] },
+  },
+};
+
+const PLAN_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "prompt_decomposition",
+    strict: true,
+    schema: PLAN_JSON_SCHEMA,
+  },
+};
+
 export default class PromptDecomposer {
   constructor(options = undefined) {
     this.restClient =
@@ -93,14 +130,33 @@ export default class PromptDecomposer {
           messages,
           temperature: this.temperature,
           max_tokens: -1,
-          // REST requires text or json_schema; use text and rely on JSON extraction downstream.
-          response_format: { type: "text" },
+          response_format: PLAN_RESPONSE_FORMAT,
         }),
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
       normalizedPlan = this._parsePlan(responseText, payload);
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
+      if (this._isResponseFormatError(errorMessage)) {
+        try {
+          this._log(
+            "[PromptDecomposer] response_format rejected; retrying with text and JSON block parsing.",
+          );
+          const completion = await this._withTimeout(
+            this.restClient.createChatCompletion({
+              messages,
+              temperature: this.temperature,
+              max_tokens: -1,
+              response_format: { type: "text" },
+            }),
+          );
+          responseText = completion?.choices?.[0]?.message?.content ?? "";
+          normalizedPlan = this._parsePlan(responseText, payload);
+          errorMessage = null;
+        } catch (retryError) {
+          errorMessage = retryError instanceof Error ? retryError.message : String(retryError);
+        }
+      }
       this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
       if (this._shouldDisable(errorMessage)) {
         this.disabled = true;
@@ -267,5 +323,17 @@ export default class PromptDecomposer {
     if (this.logger) {
       this.logger(message);
     }
+  }
+
+  _isResponseFormatError(message) {
+    if (!message) {
+      return false;
+    }
+    const normalized = message.toString().toLowerCase();
+    return (
+      normalized.includes("response_format") ||
+      normalized.includes("json_schema") ||
+      normalized.includes("json object")
+    );
   }
 }

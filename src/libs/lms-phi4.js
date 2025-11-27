@@ -389,19 +389,25 @@ export class Phi4Handler {
         if (hangRetryAllowed) {
           hangRetryCount += 1;
           attempt += 1;
+          let transport = useRestTransport ? "rest" : "ws";
           if (useRestTransport) {
             // REST stalled; flip to WS transport for the retry.
             this.preferRestTransport = false;
+          } else if (this.restClient) {
+            // WS stalled; flip to REST transport if available.
+            this.preferRestTransport = true;
+            transport = "ws->rest";
           }
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "stream-retry",
             severity: "warn",
-            message: `Retrying Phi-4 after streaming hang (${useRestTransport ? "switching to WS" : "same transport"}): ${message}`,
+            message: `Retrying Phi-4 after streaming hang (${transport}): ${message}`,
             metadata: {
               attempt,
               hangRetryCount,
               rawFragments: rawFragmentCount,
               solutionTokens: solutionTokenCount,
+              transport,
             },
           });
           currentPrompt = basePrompt;
