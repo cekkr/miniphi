@@ -485,6 +485,8 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       planId: context.planResult.planId ?? null,
       summary: context.planResult.summary ?? null,
       mode: context.mode ?? null,
+      branch: context.planResult.branch ?? null,
+      source: context.planSource ?? null,
     },
     workspaceSummary: context.workspaceSummary ?? null,
   });
@@ -508,6 +510,64 @@ async function recordNavigationPlanInJournal(journal, sessionId, context = undef
     },
     workspaceSummary: context.workspaceSummary ?? null,
   });
+}
+
+function renderPlanOutline(steps, depth = 0, lines = [], prefix = "", maxLines = 80) {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return lines.length ? lines.join("\n").trimEnd() || null : null;
+  }
+  for (const step of steps) {
+    if (lines.length >= maxLines) {
+      break;
+    }
+    const id = step?.id ?? `${prefix || depth + 1}`;
+    const title = step?.title ?? "Untitled step";
+    const desc = typeof step?.description === "string" ? step.description.trim() : "";
+    const flags = [];
+    if (step?.requires_subprompt) {
+      flags.push("sub-prompt");
+    }
+    if (step?.recommendation) {
+      flags.push(step.recommendation);
+    }
+    const indent = "  ".repeat(depth);
+    const flagText = flags.length ? ` (${flags.join(" | ")})` : "";
+    lines.push(`${indent}${id}. ${title}${flagText}`);
+    if (desc) {
+      lines.push(`${indent}   - ${desc}`);
+    }
+    if (Array.isArray(step?.children) && step.children.length > 0) {
+      renderPlanOutline(step.children, depth + 1, lines, id, maxLines);
+    }
+  }
+  return lines.slice(0, maxLines).join("\n").trimEnd() || null;
+}
+
+function normalizePlanRecord(planRecord, branch = null) {
+  if (!planRecord || typeof planRecord !== "object") {
+    return null;
+  }
+  const planPayload = planRecord.plan ?? null;
+  if (!planPayload) {
+    return null;
+  }
+  const planId = planRecord.id ?? planPayload.plan_id ?? null;
+  const outline = planRecord.outline ?? renderPlanOutline(planPayload.steps);
+  return {
+    planId,
+    summary: planRecord.summary ?? planPayload.summary ?? null,
+    plan: planPayload,
+    outline,
+    branch: branch || null,
+  };
+}
+
+function parsePlanBranchOption(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
 async function recordAnalysisStepInJournal(journal, sessionId, payload = undefined) {
@@ -596,7 +656,11 @@ async function main() {
 
   let configResult;
   try {
-    configResult = loadConfig(options.config);
+    const requestedProfile =
+      typeof options.profile === "string" && options.profile.trim()
+        ? options.profile.trim()
+        : null;
+    configResult = loadConfig(options.config, { profile: requestedProfile });
   } catch (error) {
     console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
@@ -607,6 +671,33 @@ async function main() {
   if (configPath && verbose) {
     const relPath = path.relative(process.cwd(), configPath) || configPath;
     console.log(`[MiniPhi] Loaded configuration from ${relPath}`);
+  }
+  const activeProfile = configResult?.profileName ?? null;
+  if (activeProfile) {
+    const profileDetails = [];
+    const lmStudioBase = resolveLmStudioHttpBaseUrl(configData);
+    if (lmStudioBase) {
+      profileDetails.push(`LM Studio: ${lmStudioBase}`);
+    }
+    if (configData?.defaults?.gpu) {
+      profileDetails.push(`GPU: ${configData.defaults.gpu}`);
+    }
+    const templateLabel =
+      configData?.promptTemplates?.default ??
+      configData?.promptTemplates?.active ??
+      configData?.prompt?.templateId ??
+      null;
+    if (templateLabel) {
+      profileDetails.push(`prompt template: ${templateLabel}`);
+    }
+    const retention = configData?.retention ?? {};
+    if (retention.executions || retention.history) {
+      profileDetails.push(
+        `retention: exec ${retention.executions ?? "auto"}/history ${retention.history ?? "auto"}`,
+      );
+    }
+    const summary = profileDetails.length ? profileDetails.join(" | ") : "no overrides detected";
+    console.log(`[MiniPhi] Active profile "${activeProfile}" (${summary}).`);
   }
 
   try {
@@ -719,6 +810,8 @@ async function main() {
       "[MiniPhi] --resume-truncation currently only applies to analyze-file runs; option ignored.",
     );
   }
+  const planBranch = parsePlanBranchOption(options["plan-branch"]);
+  const refreshPlan = Boolean(options["refresh-plan"]);
 
   let promptId = typeof options["prompt-id"] === "string" ? options["prompt-id"].trim() : null;
   if (!promptId && typeof defaults.promptId === "string") {
@@ -1334,7 +1427,32 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       let planResult = null;
-      if (promptDecomposer) {
+      let planSource = null;
+      let resumePlan = null;
+      if (promptId && !refreshPlan) {
+        try {
+          resumePlan = await stateManager.loadLatestPromptDecomposition({
+            promptId: promptGroupId,
+            mode: "workspace",
+          });
+          if (resumePlan) {
+            planResult = normalizePlanRecord(resumePlan, planBranch);
+            planSource = "resume";
+            if (verbose && planResult?.planId) {
+              console.log(
+                `[MiniPhi] Reusing workspace plan ${planResult.planId} from prompt-id ${promptGroupId}.`,
+              );
+            }
+          }
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Unable to load saved plan for ${promptGroupId}: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        }
+      }
+      if (!planResult && promptDecomposer) {
         try {
           planResult = await promptDecomposer.decompose({
             objective: task,
@@ -1344,7 +1462,12 @@ const describeWorkspace = (dir, options = undefined) =>
             storage: stateManager,
             mainPromptId: promptGroupId,
             metadata: { mode: "workspace" },
+            resumePlan,
+            planBranch,
           });
+          if (planResult) {
+            planSource = resumePlan ? "refreshed" : "fresh";
+          }
         } catch (error) {
           if (verbose) {
             console.warn(
@@ -1359,6 +1482,8 @@ const describeWorkspace = (dir, options = undefined) =>
           taskPlanSummary: planResult.summary ?? null,
           taskPlanId: planResult.planId ?? null,
           taskPlanOutline: planResult.outline ?? null,
+          taskPlanBranch: planResult.branch ?? planBranch ?? null,
+          taskPlanSource: planSource ?? null,
         };
       }
       if (promptJournal) {
@@ -1368,6 +1493,7 @@ const describeWorkspace = (dir, options = undefined) =>
           command: null,
           workspaceSummary: workspaceContext?.summary ?? null,
           mode: "workspace",
+          planSource,
         });
         if (workspaceContext?.navigationHints) {
           await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
@@ -1452,178 +1578,197 @@ const describeWorkspace = (dir, options = undefined) =>
         promptJournal = null;
       }
       let planResult = null;
-        promptRecorder = new PromptRecorder(stateManager.baseDir);
-        await promptRecorder.prepare();
-        phi4.setPromptRecorder(promptRecorder);
-        if (verbose) {
-          console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
+      let planSource = null;
+      let resumePlan = null;
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
+      phi4.setPromptRecorder(promptRecorder);
+      if (verbose) {
+        console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
+      }
+      if (promptId) {
+        const history = await stateManager.loadPromptSession(promptId);
+        if (history) {
+          phi4.setHistory(history);
         }
-        if (promptId) {
-          const history = await stateManager.loadPromptSession(promptId);
-          if (history) {
-            phi4.setHistory(history);
-          }
-        }
-        if (promptDecomposer) {
-          try {
-            planResult = await promptDecomposer.decompose({
-              objective: task,
-              command: cmd,
-              workspace: workspaceContext,
-              promptRecorder,
-              storage: stateManager,
-              mainPromptId: promptGroupId,
-              metadata: { mode: "run" },
-            });
-          } catch (error) {
-            if (verbose) {
-              console.warn(
-                `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+      }
+      if (promptId && !refreshPlan) {
+        try {
+          resumePlan = await stateManager.loadLatestPromptDecomposition({
+            promptId: promptGroupId,
+            mode: "run",
+          });
+          if (resumePlan) {
+            planResult = normalizePlanRecord(resumePlan, planBranch);
+            planSource = "resume";
+            if (verbose && planResult?.planId) {
+              console.log(
+                `[MiniPhi] Reusing run plan ${planResult.planId} from prompt-id ${promptGroupId}.`,
               );
             }
           }
-        }
-        if (planResult) {
-          workspaceContext = {
-            ...(workspaceContext ?? {}),
-            taskPlanSummary: planResult.summary ?? null,
-            taskPlanId: planResult.planId ?? null,
-            taskPlanOutline: planResult.outline ?? null,
-          };
-          if (planResult.outline && verbose) {
-            const outlineLines = planResult.outline.split(/\r?\n/);
-            const preview = outlineLines.slice(0, 10).join("\n");
-            const suffix = outlineLines.length > 10 ? "\n..." : "";
-            console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Unable to load saved plan for ${promptGroupId}: ${error instanceof Error ? error.message : error}`,
+            );
           }
         }
-        if (promptJournal) {
-          await recordPlanStepInJournal(promptJournal, promptJournalId, {
-            planResult,
-            objective: task,
-            command: filePath,
-            workspaceSummary: workspaceContext?.summary ?? null,
-            mode: "analyze-file",
-          });
-          if (workspaceContext?.navigationHints) {
-            await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
-              navigationHints: workspaceContext.navigationHints,
-              workspaceSummary: workspaceContext.summary ?? null,
-              objective: task,
-            });
-          }
-        }
-        if (promptJournal) {
-          await recordPlanStepInJournal(promptJournal, promptJournalId, {
-            planResult,
+      }
+      if (!planResult && promptDecomposer) {
+        try {
+          planResult = await promptDecomposer.decompose({
             objective: task,
             command: cmd,
-            workspaceSummary: workspaceContext?.summary ?? null,
-            mode: "run",
+            workspace: workspaceContext,
+            promptRecorder,
+            storage: stateManager,
+            mainPromptId: promptGroupId,
+            metadata: { mode: "run" },
+            resumePlan,
+            planBranch,
           });
-          if (workspaceContext?.navigationHints) {
-            await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
-              navigationHints: workspaceContext.navigationHints,
-              workspaceSummary: workspaceContext.summary ?? null,
-              objective: task,
-            });
+          if (planResult) {
+            planSource = resumePlan ? "refreshed" : "fresh";
+          }
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+            );
           }
         }
-        await initializeResourceMonitor(`run:${cmd}`);
-        result = await analyzer.analyzeCommandOutput(cmd, task, {
-          summaryLevels,
-          verbose,
-          streamOutput,
-          cwd,
-          timeout,
-          sessionDeadline,
-          workspaceContext,
-          promptContext: {
-            scope: "main",
-            label: task,
-            mainPromptId: promptGroupId,
-            metadata: {
-              mode: "run",
+      }
+      if (planResult) {
+        workspaceContext = {
+          ...(workspaceContext ?? {}),
+          taskPlanSummary: planResult.summary ?? null,
+          taskPlanId: planResult.planId ?? null,
+          taskPlanOutline: planResult.outline ?? null,
+          taskPlanBranch: planResult.branch ?? planBranch ?? null,
+          taskPlanSource: planSource ?? null,
+        };
+        if (planResult.outline && verbose) {
+          const outlineLines = planResult.outline.split(/\r?\n/);
+          const preview = outlineLines.slice(0, 10).join("\n");
+          const suffix = outlineLines.length > 10 ? "\n..." : "";
+          console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
+        }
+      }
+      if (promptJournal) {
+        await recordPlanStepInJournal(promptJournal, promptJournalId, {
+          planResult,
+          objective: task,
+          command: cmd,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          mode: "run",
+          planSource,
+        });
+        if (workspaceContext?.navigationHints) {
+          await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
+            navigationHints: workspaceContext.navigationHints,
+            workspaceSummary: workspaceContext.summary ?? null,
+            objective: task,
+          });
+        }
+      }
+      await initializeResourceMonitor(`run:${cmd}`);
+      result = await analyzer.analyzeCommandOutput(cmd, task, {
+        summaryLevels,
+        verbose,
+        streamOutput,
+        cwd,
+        timeout,
+        sessionDeadline,
+        workspaceContext,
+        promptContext: {
+          scope: "main",
+          label: task,
+          mainPromptId: promptGroupId,
+          metadata: {
+            mode: "run",
+            command: cmd,
+            cwd,
+            workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+            workspaceSummary: workspaceContext?.summary ?? null,
+            workspaceHint: workspaceContext?.hintBlock ?? null,
+            workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+            workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+            taskPlanId: planResult?.planId ?? null,
+            taskPlanOutline: planResult?.outline ?? null,
+            taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+            taskPlanSource: workspaceContext?.taskPlanSource ?? null,
+            workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+            workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+            capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+            capabilities: workspaceContext?.capabilityDetails ?? null,
+            navigationSummary: workspaceContext?.navigationSummary ?? null,
+            navigationBlock: workspaceContext?.navigationBlock ?? null,
+            helperScript: workspaceContext?.helperScript ?? null,
+          },
+        },
+        commandDanger: userCommandDanger,
+        commandSource: "user",
+        authorizationContext: {
+          reason: "Primary --cmd execution",
+        },
+      });
+      attachContextRequestsToResult(result);
+      if (promptJournal && result) {
+        await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+          label: `run:${cmd}`,
+          prompt: result.prompt,
+          response: result.analysis,
+          schemaId: result.schemaId ?? null,
+          operations: [
+            {
+              type: "command",
               command: cmd,
               cwd,
-              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
-              workspaceSummary: workspaceContext?.summary ?? null,
-              workspaceHint: workspaceContext?.hintBlock ?? null,
-              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
-              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
-              taskPlanId: planResult?.planId ?? null,
-              taskPlanOutline: planResult?.outline ?? null,
-              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
-              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
-              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-              capabilities: workspaceContext?.capabilityDetails ?? null,
-              navigationSummary: workspaceContext?.navigationSummary ?? null,
-              navigationBlock: workspaceContext?.navigationBlock ?? null,
-              helperScript: workspaceContext?.helperScript ?? null,
+              danger: userCommandDanger,
+              status: "executed",
+              summary: `Captured ${result.linesAnalyzed ?? 0} lines`,
             },
+          ],
+          metadata: {
+            mode: "run",
+            linesAnalyzed: result.linesAnalyzed ?? null,
+            compressedTokens: result.compressedTokens ?? null,
           },
-          commandDanger: userCommandDanger,
-          commandSource: "user",
-          authorizationContext: {
-            reason: "Primary --cmd execution",
-          },
+          workspaceSummary: workspaceContext?.summary ?? null,
+          startedAt: result.startedAt ?? null,
+          finishedAt: result.finishedAt ?? null,
         });
-        attachContextRequestsToResult(result);
-        if (promptJournal && result) {
-          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-            label: `run:${cmd}`,
-            prompt: result.prompt,
-            response: result.analysis,
-            schemaId: result.schemaId ?? null,
-            operations: [
-              {
-                type: "command",
-                command: cmd,
-                cwd,
-                danger: userCommandDanger,
-                status: "executed",
-                summary: `Captured ${result.linesAnalyzed ?? 0} lines`,
-              },
-            ],
-            metadata: {
-              mode: "run",
-              linesAnalyzed: result.linesAnalyzed ?? null,
-              compressedTokens: result.compressedTokens ?? null,
-            },
+      }
+      const navigatorActions =
+        (workspaceContext?.navigationHints?.actions ?? []).length > 0
+          ? workspaceContext.navigationHints.actions
+          : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
+              command,
+              danger: "mid",
+            }));
+      if (navigatorActions.length) {
+        const followUps = await runNavigatorFollowUps({
+          commands: navigatorActions,
+          cwd,
+          workspaceContext,
+          summaryLevels,
+          streamOutput,
+          timeout,
+          sessionDeadline,
+          promptGroupId,
+          baseMetadata: {
+            parentCommand: cmd,
+            parentMode: "run",
             workspaceSummary: workspaceContext?.summary ?? null,
-            startedAt: result.startedAt ?? null,
-            finishedAt: result.finishedAt ?? null,
-          });
+          },
+          promptJournal,
+          promptJournalId,
+        });
+        if (followUps.length) {
+          result.navigatorFollowUps = followUps;
         }
-        const navigatorActions =
-          (workspaceContext?.navigationHints?.actions ?? []).length > 0
-            ? workspaceContext.navigationHints.actions
-            : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
-                command,
-                danger: "mid",
-              }));
-        if (navigatorActions.length) {
-          const followUps = await runNavigatorFollowUps({
-            commands: navigatorActions,
-            cwd,
-            workspaceContext,
-            summaryLevels,
-            streamOutput,
-            timeout,
-            sessionDeadline,
-            promptGroupId,
-            baseMetadata: {
-              parentCommand: cmd,
-              parentMode: "run",
-              workspaceSummary: workspaceContext?.summary ?? null,
-            },
-            promptJournal,
-            promptJournalId,
-          });
-          if (followUps.length) {
-            result.navigatorFollowUps = followUps;
-          }
-        }
+      }
     } else if (command === "analyze-file") {
       const fileFromFlag = options.file ?? options.path ?? positionals[0];
       if (!fileFromFlag) {
@@ -1729,160 +1874,206 @@ const describeWorkspace = (dir, options = undefined) =>
         promptJournal = null;
       }
       let planResult = null;
-
-        promptRecorder = new PromptRecorder(stateManager.baseDir);
-        await promptRecorder.prepare();
-        phi4.setPromptRecorder(promptRecorder);
-        if (verbose) {
-          console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
+      let planSource = null;
+      let resumePlan = null;
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
+      phi4.setPromptRecorder(promptRecorder);
+      if (verbose) {
+        console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
+      }
+      if (promptId) {
+        const history = await stateManager.loadPromptSession(promptId);
+        if (history) {
+          phi4.setHistory(history);
         }
-        if (promptId) {
-          const history = await stateManager.loadPromptSession(promptId);
-          if (history) {
-            phi4.setHistory(history);
-          }
-        }
-        if (promptDecomposer) {
-          try {
-            planResult = await promptDecomposer.decompose({
-              objective: task,
-              command: filePath,
-              workspace: workspaceContext,
-              promptRecorder,
-              storage: stateManager,
-              mainPromptId: promptGroupId,
-              metadata: { mode: "analyze-file" },
-            });
-          } catch (error) {
-            if (verbose) {
-              console.warn(
-                `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+      }
+      if (promptId && !refreshPlan) {
+        try {
+          resumePlan = await stateManager.loadLatestPromptDecomposition({
+            promptId: promptGroupId,
+            mode: "analyze-file",
+          });
+          if (resumePlan) {
+            planResult = normalizePlanRecord(resumePlan, planBranch);
+            planSource = "resume";
+            if (verbose && planResult?.planId) {
+              console.log(
+                `[MiniPhi] Reusing analyze-file plan ${planResult.planId} from prompt-id ${promptGroupId}.`,
               );
             }
           }
-        }
-        if (planResult) {
-          workspaceContext = {
-            ...(workspaceContext ?? {}),
-            taskPlanSummary: planResult.summary ?? null,
-            taskPlanId: planResult.planId ?? null,
-            taskPlanOutline: planResult.outline ?? null,
-          };
-          if (planResult.outline && verbose) {
-            const outlineLines = planResult.outline.split(/\r?\n/);
-            const preview = outlineLines.slice(0, 10).join("\n");
-            const suffix = outlineLines.length > 10 ? "\n..." : "";
-            console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
-          }
-        }
-        await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
-        result = await analyzer.analyzeLogFile(filePath, task, {
-          summaryLevels,
-          streamOutput,
-          maxLinesPerChunk: chunkSize,
-          sessionDeadline,
-          workspaceContext,
-          lineRange: truncationLineRange ?? null,
-          promptContext: {
-            scope: "main",
-            label: task,
-            mainPromptId: promptGroupId,
-            metadata: {
-              mode: "analyze-file",
-              filePath,
-              cwd: analyzeCwd,
-              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
-              workspaceSummary: workspaceContext?.summary ?? null,
-              workspaceHint: workspaceContext?.hintBlock ?? null,
-              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
-              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
-              taskPlanId: planResult?.planId ?? null,
-              taskPlanOutline: planResult?.outline ?? null,
-              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
-              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
-              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-              capabilities: workspaceContext?.capabilityDetails ?? null,
-              navigationSummary: workspaceContext?.navigationSummary ?? null,
-              navigationBlock: workspaceContext?.navigationBlock ?? null,
-              helperScript: workspaceContext?.helperScript ?? null,
-              truncationResume: truncationResume
-                ? {
-                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
-                    chunkGoal:
-                      selectedTruncationChunk?.goal ??
-                      selectedTruncationChunk?.label ??
-                      null,
-                    lineRange: truncationLineRange ?? null,
-                  }
-                : null,
-            },
-          },
-        });
-        attachContextRequestsToResult(result);
-        if (promptJournal && result) {
-          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-            label: `analyze-file:${path.basename(filePath)}`,
-            prompt: result.prompt,
-            response: result.analysis,
-            schemaId: result.schemaId ?? null,
-            operations: [
-              {
-                type: "file-analysis",
-                file: filePath,
-                status: "completed",
-                summary: `Analyzed ${result.linesAnalyzed ?? 0} lines`,
-              },
-            ],
-            metadata: {
-              mode: "analyze-file",
-              linesAnalyzed: result.linesAnalyzed ?? null,
-              compressedTokens: result.compressedTokens ?? null,
-              truncationResume: truncationResume
-                ? {
-                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
-                    chunkGoal:
-                      selectedTruncationChunk?.goal ??
-                      selectedTruncationChunk?.label ??
-                      null,
-                    lineRange: truncationLineRange ?? null,
-                  }
-                : null,
-            },
-            workspaceSummary: workspaceContext?.summary ?? null,
-            startedAt: result.startedAt ?? null,
-            finishedAt: result.finishedAt ?? null,
-          });
-        }
-        const analyzeNavigatorActions =
-          (workspaceContext?.navigationHints?.actions ?? []).length > 0
-            ? workspaceContext.navigationHints.actions
-            : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
-                command,
-                danger: "mid",
-              }));
-        if (analyzeNavigatorActions.length) {
-          const followUps = await runNavigatorFollowUps({
-            commands: analyzeNavigatorActions,
-            cwd: analyzeCwd,
-            workspaceContext,
-            summaryLevels,
-            streamOutput,
-            timeout,
-            sessionDeadline,
-            promptGroupId,
-            baseMetadata: {
-              parentCommand: filePath,
-              parentMode: "analyze-file",
-              workspaceSummary: workspaceContext?.summary ?? null,
-            },
-            promptJournal,
-            promptJournalId,
-          });
-          if (followUps.length) {
-            result.navigatorFollowUps = followUps;
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Unable to load saved plan for ${promptGroupId}: ${error instanceof Error ? error.message : error}`,
+            );
           }
         }
       }
+      if (!planResult && promptDecomposer) {
+        try {
+          planResult = await promptDecomposer.decompose({
+            objective: task,
+            command: filePath,
+            workspace: workspaceContext,
+            promptRecorder,
+            storage: stateManager,
+            mainPromptId: promptGroupId,
+            metadata: { mode: "analyze-file" },
+            resumePlan,
+            planBranch,
+          });
+          if (planResult) {
+            planSource = resumePlan ? "refreshed" : "fresh";
+          }
+        } catch (error) {
+          if (verbose) {
+            console.warn(
+              `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        }
+      }
+      if (planResult) {
+        workspaceContext = {
+          ...(workspaceContext ?? {}),
+          taskPlanSummary: planResult.summary ?? null,
+          taskPlanId: planResult.planId ?? null,
+          taskPlanOutline: planResult.outline ?? null,
+          taskPlanBranch: planResult.branch ?? planBranch ?? null,
+          taskPlanSource: planSource ?? null,
+        };
+        if (planResult.outline && verbose) {
+          const outlineLines = planResult.outline.split(/\r?\n/);
+          const preview = outlineLines.slice(0, 10).join("\n");
+          const suffix = outlineLines.length > 10 ? "\n..." : "";
+          console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
+        }
+      }
+      if (promptJournal) {
+        await recordPlanStepInJournal(promptJournal, promptJournalId, {
+          planResult,
+          objective: task,
+          command: filePath,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          mode: "analyze-file",
+          planSource,
+        });
+        if (workspaceContext?.navigationHints) {
+          await recordNavigationPlanInJournal(promptJournal, promptJournalId, {
+            navigationHints: workspaceContext.navigationHints,
+            workspaceSummary: workspaceContext.summary ?? null,
+            objective: task,
+          });
+        }
+      }
+      await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
+      result = await analyzer.analyzeLogFile(filePath, task, {
+        summaryLevels,
+        streamOutput,
+        maxLinesPerChunk: chunkSize,
+        sessionDeadline,
+        workspaceContext,
+        lineRange: truncationLineRange ?? null,
+        promptContext: {
+          scope: "main",
+          label: task,
+          mainPromptId: promptGroupId,
+          metadata: {
+            mode: "analyze-file",
+            filePath,
+            cwd: analyzeCwd,
+            workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+            workspaceSummary: workspaceContext?.summary ?? null,
+            workspaceHint: workspaceContext?.hintBlock ?? null,
+            workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+            workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+            taskPlanId: planResult?.planId ?? null,
+            taskPlanOutline: planResult?.outline ?? null,
+            taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+            taskPlanSource: workspaceContext?.taskPlanSource ?? null,
+            workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+            workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+            capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+            capabilities: workspaceContext?.capabilityDetails ?? null,
+            navigationSummary: workspaceContext?.navigationSummary ?? null,
+            navigationBlock: workspaceContext?.navigationBlock ?? null,
+            helperScript: workspaceContext?.helperScript ?? null,
+            truncationResume: truncationResume
+              ? {
+                  executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                  chunkGoal:
+                    selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
+                  lineRange: truncationLineRange ?? null,
+                }
+              : null,
+          },
+        },
+      });
+      attachContextRequestsToResult(result);
+      if (promptJournal && result) {
+        await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+          label: `analyze-file:${path.basename(filePath)}`,
+          prompt: result.prompt,
+          response: result.analysis,
+          schemaId: result.schemaId ?? null,
+          operations: [
+            {
+              type: "file-analysis",
+              file: filePath,
+              status: "completed",
+              summary: `Analyzed ${result.linesAnalyzed ?? 0} lines`,
+            },
+          ],
+          metadata: {
+            mode: "analyze-file",
+            linesAnalyzed: result.linesAnalyzed ?? null,
+            compressedTokens: result.compressedTokens ?? null,
+            truncationResume: truncationResume
+              ? {
+                  executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                  chunkGoal:
+                    selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
+                  lineRange: truncationLineRange ?? null,
+                }
+              : null,
+          },
+          workspaceSummary: workspaceContext?.summary ?? null,
+          startedAt: result.startedAt ?? null,
+          finishedAt: result.finishedAt ?? null,
+        });
+      }
+      const analyzeNavigatorActions =
+        (workspaceContext?.navigationHints?.actions ?? []).length > 0
+          ? workspaceContext.navigationHints.actions
+          : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
+              command,
+              danger: "mid",
+            }));
+      if (analyzeNavigatorActions.length) {
+        const followUps = await runNavigatorFollowUps({
+          commands: analyzeNavigatorActions,
+          cwd: analyzeCwd,
+          workspaceContext,
+          summaryLevels,
+          streamOutput,
+          timeout,
+          sessionDeadline,
+          promptGroupId,
+          baseMetadata: {
+            parentCommand: filePath,
+            parentMode: "analyze-file",
+            workspaceSummary: workspaceContext?.summary ?? null,
+          },
+          promptJournal,
+          promptJournalId,
+        });
+        if (followUps.length) {
+          result.navigatorFollowUps = followUps;
+        }
+      }
+    }
 
     await stopResourceMonitorIfNeeded();
 
@@ -2970,6 +3161,7 @@ Options:
   --file <path>                File to analyze in analyze-file mode
   --task <description>         Task instructions for Phi-4
   --config <path>              Path to optional config.json (searches upward by default)
+  --profile <name>             Named config profile to apply from config.json
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override Phi-4 context length (default: 32768)
@@ -2989,6 +3181,8 @@ Options:
   --no-stream                  Disable live streaming of Phi-4 output
   --no-summary                 Skip JSON summary footer
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
+  --plan-branch <id>           Focus a saved decomposition branch when reusing --prompt-id
+  --refresh-plan               Force a fresh plan even if one exists for the prompt session
   --prompt-journal [id]        Mirror each Phi/API step + operations into .miniphi/prompt-exchanges/stepwise
   --prompt-journal-status <s>  Finalize the journal as active|paused|completed|closed (default: completed)
   --session-timeout <s>        Hard limit (seconds) for the entire MiniPhi run (optional)

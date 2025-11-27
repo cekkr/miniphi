@@ -128,7 +128,7 @@ node src/index.js analyze-file --file ./logs/output.log --task "Summarize the re
 - If Phi still needs more information before continuing, it can describe the missing snippets via `context_requests`. MiniPhi prints those requests to the console and stores the hints in `.miniphi/executions/<id>/analysis.json`, so you can gather the exact context the model asks for instead of resending everything.
 
 ## Command tour
-- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--prompt-id`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
+- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.
 - `web-research` performs DuckDuckGo Instant Answer lookups. Use positional queries or `--query`, set `--max-results`, `--provider`, `--include-raw`, `--no-save`, and optional `--note`. Results live under `.miniphi/research/`.
 - `history-notes` snapshots `.miniphi/` and optionally attaches git metadata. Use `--label`, `--history-root`, and `--no-git`.
@@ -138,11 +138,12 @@ node src/index.js analyze-file --file ./logs/output.log --task "Summarize the re
 - `benchmark analyze` reads `RUN-###.json` files, emits `SUMMARY.json|md|html`, and supports `--path` or positional directories plus repeated `--compare` flags to diff baselines vs candidates.
 - `benchmark plan scaffold` inspects a sample (default `hello-flow`) and prints a commented YAML template; use `--sample`, `--benchmark-root`, and `--output` to persist it.
 
-Every command accepts `--config <path>` (falls back to searching upward for `config.json`) and `--verbose` for progress logs. `--debug-lm` prints every objective + prompt as the prompt scoring database runs.
+Every command accepts `--config <path>` (falls back to searching upward for `config.json`), optional `--profile <name>` to activate a named config preset, and `--verbose` for progress logs. `--debug-lm` prints every objective + prompt as the prompt scoring database runs.
 
 ## Frequently used flags
 - `--task` describes what Phi-4 should do with the log or command output. If omitted, it defaults to `"Provide a precise technical analysis"` from `config.example.json`.
 - `--prompt-id <id>` or `--config defaults.promptId` let you resume a chat session; transcripts are written to `.miniphi/prompt-sessions/<id>.json`.
+- `--plan-branch <step-id>` focuses a saved plan branch (paired with `--prompt-id`) instead of recomputing the decomposition; add `--refresh-plan` to force a new plan even when one is cached.
 - `--prompt-journal [id]` mirrors every prompt + downstream operation into `.miniphi/prompt-exchanges/stepwise/<id>/`; combine with `--prompt-journal-status paused|completed|closed` to pause/resume journals explicitly.
 - `--python-script <path>` overrides the bundled `log_summarizer.py` (miniPhi will auto-detect `python3`, `python`, or `py`).
 - `--resume-truncation <execution-id>` replays the truncation plan saved for a previous analyze-file run; use it as soon as the CLI tells you a plan was captured.
@@ -150,6 +151,7 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 - `--session-timeout <s>` hard-stops the orchestration; Phi-4 receives the remaining budget with each prompt so runaway loops cannot hang the CLI.
 - `--no-summary` skips the JSON footer if another system is reading stdout.
 - `MINIPHI_CONFIG=/path/config.json` is honored if you prefer environment variables over flags.
+- `MINIPHI_PROFILE=<name>` activates a named profile inside config.json so you can pin LM Studio endpoints, GPU modes, prompt templates, or retention policies without rewriting the base config.
 
 ## Hidden `.miniphi` workspace
 miniPhi always writes to the nearest `.miniphi/` directory (creating one if it does not exist):

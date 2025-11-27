@@ -344,6 +344,34 @@ export default class MiniPhiMemory {
     return { id: planId, path: filePath };
   }
 
+  async loadLatestPromptDecomposition(options = undefined) {
+    const promptId = options?.promptId ?? options?.mainPromptId ?? null;
+    const mode = options?.mode ?? null;
+    await this.prepare();
+    const index = await this._readJSON(this.promptDecompositionIndexFile, { entries: [] });
+    const entries = Array.isArray(index.entries) ? index.entries : [];
+    for (const entry of entries) {
+      const metadata = entry?.metadata ?? {};
+      if (promptId && metadata?.mainPromptId && metadata.mainPromptId !== promptId) {
+        continue;
+      }
+      if (mode && metadata?.extra?.mode && metadata.extra.mode !== mode) {
+        continue;
+      }
+      if (!entry?.file) {
+        continue;
+      }
+      const targetPath = path.isAbsolute(entry.file)
+        ? entry.file
+        : path.join(this.baseDir, entry.file);
+      const record = await this._readJSON(targetPath, null);
+      if (record && record.plan) {
+        return { ...record, path: targetPath };
+      }
+    }
+    return null;
+  }
+
   /**
    * Loads a summary of the tracked index files (executions, knowledge, prompts, etc.)
    * so downstream prompts can mention recent counts without re-reading the entire state.

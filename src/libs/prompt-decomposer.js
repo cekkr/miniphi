@@ -6,6 +6,7 @@ const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 45000;
+const MAX_STEP_PREVIEW = 10;
 
 const SYSTEM_PROMPT = [
   "You are the MiniPhi prompt decomposer.",
@@ -99,6 +100,8 @@ export default class PromptDecomposer {
    *   storage?: import("./miniphi-memory.js").default | null,
    *   mainPromptId?: string | null,
    *   metadata?: Record<string, unknown> | null,
+   *   resumePlan?: object | null,
+   *   planBranch?: string | null,
    * }} payload
    */
   async decompose(payload) {
@@ -200,6 +203,7 @@ export default class PromptDecomposer {
           workspaceType: payload.workspace?.classification?.label ?? null,
           mainPromptId: payload.mainPromptId ?? null,
           extra: payload.metadata ?? null,
+          planBranch: payload.planBranch ?? null,
         },
       });
     }
@@ -208,7 +212,9 @@ export default class PromptDecomposer {
   }
 
   _buildRequestBody(payload) {
-    return {
+    const commandAnalysis = this._analyzeCommand(payload.command);
+    const resume = this._buildResumeContext(payload);
+    const body = {
       objective: payload.objective,
       command: payload.command ?? null,
       workspace: {
@@ -224,8 +230,18 @@ export default class PromptDecomposer {
       expectations: {
         recursive: true,
         captureTools: true,
+        jsonOnly: true,
+        stripPreambles: true,
+        resumeBranch: payload.planBranch ?? null,
       },
     };
+    if (commandAnalysis) {
+      body.command_analysis = commandAnalysis;
+    }
+    if (resume) {
+      body.resume = resume;
+    }
+    return body;
   }
 
   _withTimeout(promise) {
@@ -259,10 +275,18 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload) {
-    const parsed = extractJsonBlock(responseText);
-    if (!parsed || typeof parsed !== "object") {
+    const cleaned = this._cleanResponseText(responseText);
+    const parsed = extractJsonBlock(cleaned);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
+      );
+      return null;
+    }
+    const validation = this._validatePlanShape(parsed);
+    if (!validation.valid) {
+      this._log(
+        `[PromptDecomposer] JSON plan failed validation for "${payload.objective}": ${validation.error}`,
       );
       return null;
     }
@@ -275,18 +299,123 @@ export default class PromptDecomposer {
       plan: {
         plan_id: planId,
         summary,
-        steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+        steps: validation.steps ?? [],
         recommended_tools: Array.isArray(parsed.recommended_tools)
           ? parsed.recommended_tools
           : [],
         notes: parsed.notes ?? null,
       },
-      outline: this._formatOutline(parsed.steps),
+      outline: this._formatOutline(validation.steps),
+      branch: payload.planBranch ?? null,
     };
     return normalized;
   }
 
-  _formatOutline(steps, depth = 0, lines = [], prefix = "") {
+  _validatePlanShape(parsed) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { valid: false, error: "plan must be a JSON object" };
+    }
+    if (!Array.isArray(parsed.steps)) {
+      return { valid: false, error: "plan.steps must be an array" };
+    }
+    const normalizedSteps = this._normalizeSteps(parsed.steps);
+    if (!normalizedSteps.valid) {
+      return { valid: false, error: normalizedSteps.error };
+    }
+    return {
+      valid: true,
+      steps: normalizedSteps.steps,
+    };
+  }
+
+  _normalizeSteps(steps, depth = 0) {
+    if (!Array.isArray(steps)) {
+      return { valid: false, error: "steps must be an array" };
+    }
+    const normalized = [];
+    for (const step of steps) {
+      if (typeof step !== "object" || !step) {
+        return { valid: false, error: "each step must be an object" };
+      }
+      const children = Array.isArray(step.children) ? step.children : [];
+      const normalizedStep = {
+        id: typeof step.id === "string" ? step.id : String(normalized.length + 1),
+        title: typeof step.title === "string" ? step.title : "Untitled step",
+        description: typeof step.description === "string" ? step.description : "",
+        requires_subprompt: Boolean(step.requires_subprompt),
+        recommendation:
+          typeof step.recommendation === "string" || step.recommendation === null
+            ? step.recommendation
+            : null,
+        children: [],
+      };
+      if (children.length > 0) {
+        const childResult = this._normalizeSteps(children, depth + 1);
+        if (!childResult.valid) {
+          return childResult;
+        }
+        normalizedStep.children = childResult.steps;
+      }
+      normalized.push(normalizedStep);
+      if (normalized.length >= this.maxActions * (depth + 1)) {
+        break;
+      }
+    }
+    return { valid: true, steps: normalized };
+  }
+
+  _cleanResponseText(text) {
+    if (!text || typeof text !== "string") {
+      return "";
+    }
+    const withoutThink = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+    return withoutThink.replace(/```[\w-]*\n?/gi, "").replace(/```/g, "").trim();
+  }
+
+  _buildResumeContext(payload) {
+    const plan = payload?.resumePlan ?? null;
+    const branch = payload?.planBranch ?? null;
+    const promptId = payload?.mainPromptId ?? null;
+    if (!plan && !branch && !promptId) {
+      return null;
+    }
+    const planPayload = plan?.plan ?? plan;
+    const planId = planPayload?.plan_id ?? planPayload?.planId ?? planPayload?.id ?? null;
+    const planPreview = Array.isArray(planPayload?.steps)
+      ? planPayload.steps.slice(0, MAX_STEP_PREVIEW).map((step) => ({
+          id: step?.id ?? null,
+          title: step?.title ?? null,
+          requires_subprompt: Boolean(step?.requires_subprompt),
+          has_children: Array.isArray(step?.children) && step.children.length > 0,
+        }))
+      : null;
+    return {
+      prompt_id: promptId,
+      branch: branch || null,
+      previous_plan_id: planId,
+      outline: this._formatOutline(planPayload?.steps ?? null, 0, [], "", 24),
+      preview_steps: planPreview,
+    };
+  }
+
+  _analyzeCommand(command) {
+    if (!command || typeof command !== "string") {
+      return null;
+    }
+    const pieces = command
+      .split(/&&|\|\||;|\n/)
+      .map((piece) => piece.trim())
+      .filter(Boolean);
+    const isPipeline = command.includes("|");
+    return {
+      raw: command,
+      multi_goal: pieces.length > 1,
+      segments: pieces.slice(0, MAX_STEP_PREVIEW),
+      is_pipeline: isPipeline,
+    };
+  }
+
+  _formatOutline(steps, depth = 0, lines = [], prefix = "", maxLines = 80) {
     if (!Array.isArray(steps) || steps.length === 0) {
       const rendered = lines.join("\n").trimEnd();
       return rendered.length ? rendered : null;
@@ -311,11 +440,11 @@ export default class PromptDecomposer {
       if (Array.isArray(step?.children) && step.children.length > 0) {
         this._formatOutline(step.children, depth + 1, lines, id);
       }
-      if (lines.length >= 80) {
+      if (lines.length >= maxLines) {
         break;
       }
     }
-    const rendered = lines.slice(0, 80).join("\n").trimEnd();
+    const rendered = lines.slice(0, maxLines).join("\n").trimEnd();
     return rendered.length ? rendered : null;
   }
 
