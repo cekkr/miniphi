@@ -187,7 +187,8 @@ export default class ApiNavigator {
         messages,
         temperature: this.temperature,
         max_tokens: -1,
-        response_format: { type: "json_object" },
+        // LM Studio REST currently accepts "text" or "json_schema"; fall back to text and parse JSON blocks.
+        response_format: { type: "text" },
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);

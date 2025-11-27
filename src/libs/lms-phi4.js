@@ -155,7 +155,6 @@ export class Phi4Handler {
       let result = "";
       let schemaValidation = null;
       let schemaFailureDetails = null;
-      let heartbeatTimer = null;
       let predictionHandle = null;
       let streamError = null;
       let solutionStreamHandle = null;

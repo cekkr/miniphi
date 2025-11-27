@@ -93,7 +93,8 @@ export default class PromptDecomposer {
           messages,
           temperature: this.temperature,
           max_tokens: -1,
-          response_format: { type: "json_object" },
+          // REST requires text or json_schema; use text and rely on JSON extraction downstream.
+          response_format: { type: "text" },
         }),
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
