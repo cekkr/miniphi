@@ -10,6 +10,7 @@ import LMStudioManager, {
   normalizeLmStudioHttpUrl,
   normalizeLmStudioWsUrl,
 } from "./libs/lmstudio-api.js";
+import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
 import Phi4Handler from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
@@ -424,7 +425,7 @@ async function appendForgottenRequirementNote({ targetPath, context, command, ve
 
 // normalizeDangerLevel and mergeFixedReferences moved to src/libs/core-utils.js
 
-function buildRestClientOptions(configData) {
+function buildRestClientOptions(configData, modelSelection = undefined) {
   const overrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
   const options = overrides && typeof overrides === "object" ? { ...overrides } : {};
   const explicitBase =
@@ -445,6 +446,12 @@ function buildRestClientOptions(configData) {
     if (Number.isFinite(promptTimeoutMs) && promptTimeoutMs > 0) {
       options.timeoutMs = Math.floor(promptTimeoutMs);
     }
+  }
+  if (modelSelection?.modelKey) {
+    options.defaultModel = modelSelection.modelKey;
+  }
+  if (Number.isFinite(modelSelection?.contextLength)) {
+    options.defaultContextLength = modelSelection.contextLength;
   }
   return Object.keys(options).length ? options : undefined;
 }
@@ -746,12 +753,48 @@ async function main() {
     parseNumericSetting(defaults.summaryLevels, "config.defaults.summaryLevels") ??
     3;
 
-  const contextLength =
-    parseNumericSetting(options["context-length"], "--context-length") ??
-    parseNumericSetting(defaults.contextLength, "config.defaults.contextLength") ??
-    32768;
+  const cliContextLength = parseNumericSetting(options["context-length"], "--context-length");
+  const configContextLength = parseNumericSetting(
+    defaults.contextLength,
+    "config.defaults.contextLength",
+  );
+  const defaultContextFallback = DEFAULT_CONTEXT_LENGTH;
+  const contextLengthExplicit =
+    cliContextLength !== undefined && cliContextLength !== null
+      ? true
+      : configContextLength !== undefined && configContextLength !== null
+        ? configContextLength !== defaultContextFallback
+        : false;
+  let contextLength = cliContextLength ?? configContextLength ?? defaultContextFallback;
 
   const gpu = options.gpu ?? defaults.gpu ?? "auto";
+
+  const requestedModel =
+    typeof options.model === "string" && options.model.trim()
+      ? options.model.trim()
+      : typeof configData?.defaults?.model === "string" && configData.defaults.model.trim()
+        ? configData.defaults.model.trim()
+        : typeof configData?.lmStudio?.model === "string" && configData.lmStudio.model.trim()
+          ? configData.lmStudio.model.trim()
+          : typeof process.env.MINIPHI_MODEL === "string" && process.env.MINIPHI_MODEL.trim()
+            ? process.env.MINIPHI_MODEL.trim()
+            : null;
+  const modelSelection = resolveModelConfig({
+    model: requestedModel,
+    contextLength,
+    contextIsExplicit: contextLengthExplicit,
+  });
+  contextLength = modelSelection.contextLength;
+  const resolvedSystemPrompt = promptDefaults.system ?? modelSelection.systemPrompt ?? undefined;
+  if (verbose) {
+    const modelLabel = modelSelection.preset?.label ?? modelSelection.modelKey;
+    const aliasNote =
+      modelSelection.normalizedFromAlias && requestedModel ? ` (from ${requestedModel})` : "";
+    const clampNote = modelSelection.clampedToPreset ? " (preset cap)" : "";
+    console.log(
+      `[MiniPhi] Model ${modelLabel}${aliasNote} | Context length ${contextLength}${clampNote}`,
+    );
+  }
 
   const defaultCommandTimeoutMs =
     resolveDurationMs({
@@ -924,6 +967,8 @@ async function main() {
       debugLm,
       gpu,
       schemaRegistry,
+      systemPrompt: resolvedSystemPrompt,
+      modelKey: modelSelection.modelKey,
     });
     return;
   }
@@ -938,6 +983,8 @@ async function main() {
       debugLm,
       gpu,
       schemaRegistry,
+      systemPrompt: resolvedSystemPrompt,
+      modelKey: modelSelection.modelKey,
     });
     return;
   }
@@ -973,10 +1020,11 @@ async function main() {
     );
   }
   const phi4 = new Phi4Handler(manager, {
-    systemPrompt: promptDefaults.system,
+    systemPrompt: resolvedSystemPrompt,
     promptTimeoutMs,
     schemaRegistry,
     noTokenTimeoutMs,
+    modelKey: modelSelection.modelKey,
   });
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
@@ -1011,7 +1059,7 @@ async function main() {
   };
   let restClient = null;
   try {
-    restClient = new LMStudioRestClient(buildRestClientOptions(configData));
+    restClient = new LMStudioRestClient(buildRestClientOptions(configData, modelSelection));
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -1257,7 +1305,11 @@ async function main() {
   let stateManager;
   let promptRecorder = null;
   let promptJournal = null;
-  const archiveMetadata = { promptId };
+  const archiveMetadata = {
+    promptId,
+    model: modelSelection.modelKey,
+    contextLength,
+  };
   let resourceMonitor;
   let resourceSummary = null;
   const initializeResourceMonitor = async (label) => {
@@ -1325,6 +1377,7 @@ const describeWorkspace = (dir, options = undefined) =>
           systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
           schemaRegistry,
           noTokenTimeoutMs,
+          modelKey: modelSelection.modelKey,
         });
       if (restClient) {
         scoringPhi.setRestClient(restClient, { preferRestTransport: !isLmStudioLocal });
@@ -2342,6 +2395,8 @@ async function handleRecompose({
   debugLm,
   gpu,
   schemaRegistry,
+  systemPrompt,
+  modelKey,
 }) {
   const sessionLabel =
     typeof options.label === "string"
@@ -2365,6 +2420,8 @@ async function handleRecompose({
     schemaRegistry,
     promptDbPath: globalMemory.promptDbPath,
     recomposeMode,
+    systemPrompt,
+    modelKey,
   });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
@@ -2443,6 +2500,8 @@ async function handleBenchmark({
   debugLm,
   gpu,
   schemaRegistry,
+  systemPrompt,
+  modelKey,
 }) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
@@ -2500,6 +2559,8 @@ async function handleBenchmark({
     schemaRegistry,
     promptDbPath: globalMemory.promptDbPath,
     recomposeMode: "live",
+    systemPrompt,
+    modelKey,
   });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
@@ -2562,6 +2623,8 @@ async function createRecomposeHarness({
   restClient = null,
   preferRestTransport = false,
   recomposeMode = "live",
+  systemPrompt = undefined,
+  modelKey = undefined,
 }) {
   let phi4 = null;
   let manager = null;
@@ -2576,9 +2639,10 @@ async function createRecomposeHarness({
       }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
     const recomposePromptTimeout = Math.max(baseTimeoutMs, 300000);
     phi4 = new Phi4Handler(manager, {
-      systemPrompt: promptDefaults.system,
+      systemPrompt: systemPrompt ?? promptDefaults.system,
       promptTimeoutMs: recomposePromptTimeout,
       schemaRegistry,
+      modelKey,
     });
     if (restClient) {
       phi4.setRestClient(restClient, { preferRestTransport });
@@ -2641,6 +2705,7 @@ function parseArgs(tokens) {
     t: "task",
     f: "file",
     p: "python-script",
+    m: "model",
   };
   const shortBooleanFlags = {
     v: "verbose",
@@ -3159,12 +3224,13 @@ Usage:
 Options:
   --cmd <command>              Command to execute in run mode
   --file <path>                File to analyze in analyze-file mode
-  --task <description>         Task instructions for Phi-4
+  --task <description>         Task instructions for the model
   --config <path>              Path to optional config.json (searches upward by default)
   --profile <name>             Named config profile to apply from config.json
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
-  --context-length <tokens>    Override Phi-4 context length (default: 32768)
+  --context-length <tokens>    Override model context length (default: 32768)
+  --model <id>                 LM Studio model key or alias (phi-4, ibm/granite-4-h-tiny, mistralai/devstral-small-2507)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
   --timeout <s>                Command timeout in seconds (default: 60)
   --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%
@@ -3178,7 +3244,7 @@ Options:
   --resume-truncation <id>     Reuse the truncation plan recorded for a previous analyze-file execution
   --truncation-chunk <value>   Focus a specific chunk when resuming (priority/index/substring)
   --verbose                    Print progress details
-  --no-stream                  Disable live streaming of Phi-4 output
+  --no-stream                  Disable live streaming of model output
   --no-summary                 Skip JSON summary footer
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --plan-branch <id>           Focus a saved decomposition branch when reusing --prompt-id

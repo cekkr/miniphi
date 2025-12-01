@@ -3,8 +3,8 @@ import { Readable } from "stream";
 import { randomUUID } from "crypto";
 import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
+import { DEFAULT_MODEL_KEY } from "./model-presets.js";
 
-const MODEL_KEY = "microsoft/Phi-4-reasoning-plus";
 const DEFAULT_SYSTEM_PROMPT = [
   "You are MiniPhi, a local workspace agent.",
   "Inspect the provided workspace context (codebases, documentation hubs, or book-style markdown collections) and adapt your strategy accordingly.",
@@ -14,7 +14,7 @@ const DEFAULT_SYSTEM_PROMPT = [
 ].join(" ");
 
 /**
- * Layer 2 handler that encapsulates Phi-4 specific behavior (system prompt, history management,
+ * Layer 2 handler that encapsulates LM Studio chat behavior (system prompt, history management,
  * <think> parsing and streaming support). Relies on LMStudioManager for the actual model handles.
  */
 export class Phi4Handler {
@@ -25,6 +25,7 @@ export class Phi4Handler {
   constructor(manager = new LMStudioManager(), options = undefined) {
     this.manager = manager;
     this.model = null;
+    this.modelKey = options?.modelKey ?? DEFAULT_MODEL_KEY;
     this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.promptTimeoutMs =
       typeof options?.promptTimeoutMs === "number" && Number.isFinite(options.promptTimeoutMs)
@@ -40,21 +41,21 @@ export class Phi4Handler {
   }
 
   /**
-   * Loads Phi-4 Reasoning Plus with the requested configuration (defaults to 32k context).
+   * Loads the configured model with the requested configuration (defaults to 32k context).
    * @param {import("@lmstudio/sdk").LLMLoadModelConfig} [config]
    */
   async load(config = undefined) {
-    this.model = await this.manager.getModel(MODEL_KEY, {
+    this.model = await this.manager.getModel(this.modelKey, {
       contextLength: 32768,
       ...(config ?? {}),
     });
   }
 
   /**
-   * Ejects the Phi-4 model and resets history cache.
+   * Ejects the active model and resets history cache.
    */
   async eject() {
-    await this.manager.ejectModel(MODEL_KEY);
+    await this.manager.ejectModel(this.modelKey);
     this.model = null;
     this.clearHistory();
   }
@@ -83,7 +84,7 @@ export class Phi4Handler {
   }
 
   /**
-   * Configures the REST client and transport preference for Phi-4 calls.
+   * Configures the REST client and transport preference for LM Studio calls.
    * @param {import("./lmstudio-api.js").LMStudioRestClient | null} restClient
    * @param {{ preferRestTransport?: boolean }} [options]
    */
@@ -111,7 +112,7 @@ export class Phi4Handler {
   }
 
   /**
-   * Streams a Phi-4 response while emitting think & solution tokens separately via callbacks.
+   * Streams a model response while emitting think & solution tokens separately via callbacks.
    *
    * @param {string} prompt user prompt
    * @param {(token: string) => void} [onToken] solution token callback
@@ -200,7 +201,7 @@ export class Phi4Handler {
         }
         heartbeatTimer = setTimeout(() => {
           const seconds = Math.round(this.noTokenTimeoutMs / 1000);
-          const message = `No Phi-4 tokens emitted in ${seconds} seconds; cancelling prompt.`;
+          const message = `No ${this.modelKey} tokens emitted in ${seconds} seconds; cancelling prompt.`;
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "no-token-timeout",
             severity: "error",
@@ -300,7 +301,7 @@ export class Phi4Handler {
               }
             }
             return assistantResponse;
-          }, () => cancelPrediction("Phi-4 prompt timeout"));
+          }, () => cancelPrediction(`${this.modelKey} prompt timeout`));
         }
 
         const finishedAt = Date.now();
@@ -313,7 +314,9 @@ export class Phi4Handler {
             schemaId: schemaDetails?.id ?? traceContext.schemaId ?? "unknown",
           };
           throw new Error(
-            `Phi-4 response failed schema validation (${schemaDetails?.id ?? "unknown"}): ${summary}`,
+            `${this.modelKey} response failed schema validation (${
+              schemaDetails?.id ?? "unknown"
+            }): ${summary}`,
           );
         }
         if (result.length > 0) {
@@ -401,7 +404,7 @@ export class Phi4Handler {
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "stream-retry",
             severity: "warn",
-            message: `Retrying Phi-4 after streaming hang (${transport}): ${message}`,
+            message: `Retrying ${this.modelKey} after streaming hang (${transport}): ${message}`,
             metadata: {
               attempt,
               hangRetryCount,
@@ -482,7 +485,7 @@ export class Phi4Handler {
       typeof lastErrorMessage === "string" && lastErrorMessage
         ? ` Last error: ${lastErrorMessage}`
         : "";
-    throw new Error(`Phi-4 chat stream exceeded retry budget.${budgetDetails}`);
+    throw new Error(`${this.modelKey} chat stream exceeded retry budget.${budgetDetails}`);
   }
 
   _isRecoverableModelError(message) {
@@ -498,7 +501,7 @@ export class Phi4Handler {
     }
     const normalized = message.toLowerCase();
     return (
-      normalized.includes("no phi-4 tokens emitted") ||
+      normalized.includes("tokens emitted") ||
       normalized.includes("prompt session exceeded") ||
       normalized.includes("timed out") ||
       (normalized.includes("stream") && normalized.includes("timeout"))
@@ -532,7 +535,7 @@ export class Phi4Handler {
 
   async _invokeRestCompletion() {
     if (!this.restClient) {
-      throw new Error("LM Studio REST client is not configured for Phi-4.");
+      throw new Error(`LM Studio REST client is not configured for model ${this.modelKey}.`);
     }
     const messages = this._buildRestMessages();
     const response = await this.restClient.createChatCompletion({
@@ -547,7 +550,7 @@ export class Phi4Handler {
       (typeof response === "string" ? response : null) ??
       "";
     if (!text) {
-      throw new Error("Phi-4 REST completion returned an empty response.");
+      throw new Error(`LM Studio REST completion returned an empty response for ${this.modelKey}.`);
     }
     return text;
   }
@@ -646,7 +649,7 @@ export class Phi4Handler {
           onTimeout();
         }
         const minutes = Math.round((timeoutMs / 60000) * 10) / 10;
-        reject(new Error(`Phi-4 prompt session exceeded ${minutes} minute limit.`));
+        reject(new Error(`${this.modelKey} prompt session exceeded ${minutes} minute limit.`));
       }, timeoutMs);
     });
 
@@ -681,7 +684,7 @@ export class Phi4Handler {
     }));
     return {
       id: traceContext.subPromptId,
-      model: MODEL_KEY,
+      model: this.modelKey,
       systemPrompt: this.systemPrompt,
       historyLength: messages.length,
       promptChars: prompt.length,
