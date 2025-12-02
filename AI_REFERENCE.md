@@ -192,6 +192,11 @@ These are the currently "fixed reference points" of miniphi project:
 - When a prompt journal step burns minutes without tokens (step three of the same run sat for 1,259,743 ms per `.miniphi/prompt-exchanges/stepwise/besh-regression/steps/step-003.json:26`), immediately launch a lightweight “helper commands/scripts” prompt that reuses the compressed dataset and asks Phi for shell plans we can execute manually. Store the helpers under `.miniphi/helpers/` and link them back into the journal entry so every retry expands the command/script inventory even if the main schema response fails again.
 - Stop re-dispatching identical analyzer prompts that already failed: `.miniphi/executions/4354cd51-a6ce-488e-a2f3-eff725aa61af/execution.json:2-14` shows the fourth besh journal run still compressed 4,117 lines into 2,656 tokens before hanging, and `.miniphi/prompt-exchanges/stepwise/besh-regression/steps/step-004.json:26` logged another 1,299,869 ms stall. Cache the “fallback summary” state by dataset hash + prompt journal id so MiniPhi either reuses the prior JSON or jumps straight into the truncation/helper flows instead of burning another full Phi call.
 
+### Deferred follow-ups (Dec 2, 2025)
+- Gate navigator command proposals/execution through the capability inventory (dry-run `--help`/file probes) so samples like `besh` stop suggesting `npm run lint` or missing Python helpers.
+- Wire dropped-chunk metadata from `promptAdjustments` into prompt journals and truncation resume flows so omitted slices automatically become follow-up tasks instead of silent context loss.
+- Add a VRAM-aware monitor for Windows hosts to replace the “VRAM usage could not be determined on this host” placeholder in prompt journals and executions.
+
 ## Project-wide Immediate Next Steps
 1. **JSON-only prompt channels.** Enforce `response_format=json_object` for navigator/decomposer/truncation prompts, strip `<think>`/code fences/preambles when parsing, and add tests so command-learning and truncation flows reject prose.
 2. **Prompt reliability + telemetry.** Align every config/profile (`config.json`, `.example`, future per-profile files) with the new 300s no-token timeout, expose the active timeout + LM Studio endpoint inside verbose logs, and extend `PromptPerformanceTracker` to emit structured “slow start” events instead of silent warnings inside `stderr`.

@@ -342,7 +342,11 @@ export default class ApiNavigator {
     if (!this.cli) {
       return null;
     }
-    const absolutePath = path.resolve(scriptPath);
+    const cleanedPath = this._normalizeHelperPath(scriptPath);
+    if (!cleanedPath) {
+      return null;
+    }
+    const absolutePath = path.resolve(cleanedPath);
     const normalizedLang = this._normalizeLanguage(language);
     const runner = normalizedLang === "python" ? "python" : "node";
     const command = `${runner} "${absolutePath}"`;
@@ -366,6 +370,13 @@ export default class ApiNavigator {
         stderr: error.stderr ?? (error instanceof Error ? error.message : String(error)),
       };
     }
+  }
+
+  _normalizeHelperPath(candidate) {
+    if (!candidate || typeof candidate !== "string") {
+      return "";
+    }
+    return candidate.trim().replace(/^['"]+|['"]+$/g, "");
   }
 
   _summarizeHelperOutput(stdout, stderr) {

@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import StreamAnalyzer from "./stream-analyzer.js";
-import { extractTruncationPlanFromAnalysis } from "./core-utils.js";
+import { extractJsonBlock, extractTruncationPlanFromAnalysis } from "./core-utils.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -258,6 +258,22 @@ export default class EfficientLogAnalyzer {
       }
     }
 
+    if (!usedFallback) {
+      const sanitized = this._sanitizeJsonResponse(analysis);
+      if (sanitized) {
+        analysis = sanitized;
+      } else {
+        usedFallback = true;
+        const reason = "Phi response did not contain valid JSON";
+        console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
+        this._logDev(devLog, `${reason}; emitting fallback JSON.`);
+        analysis = this._buildFallbackAnalysis(task, reason, {
+          datasetHint: `${lines.length} lines captured from ${command}`,
+          rerunCommand: command,
+        });
+      }
+    }
+
     const invocationFinishedAt = Date.now();
     this._logDev(
       devLog,
@@ -368,7 +384,8 @@ export default class EfficientLogAnalyzer {
       promptBudget,
       devLog,
     });
-    const { prompt, body, linesUsed, tokensUsed } = adjustment;
+    const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
+      adjustment;
 
     const invocationStartedAt = Date.now();
 
@@ -383,6 +400,12 @@ export default class EfficientLogAnalyzer {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
     };
+    if (droppedChunks > 0) {
+      this._logDev(devLog, `Prompt omitted ${droppedChunks} chunk(s) to fit the context budget.`);
+    }
+    if (detailReductions > 0) {
+      this._logDev(devLog, `Summary detail reduced by ${detailReductions} level(s) for budgeting.`);
+    }
     const stopHeartbeat = !streamOutput
       ? this._startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
@@ -440,6 +463,21 @@ export default class EfficientLogAnalyzer {
         });
       }
     }
+    if (!usedFallback) {
+      const sanitized = this._sanitizeJsonResponse(analysis);
+      if (sanitized) {
+        analysis = sanitized;
+      } else {
+        usedFallback = true;
+        const reason = "Phi response did not contain valid JSON";
+        console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
+        this._logDev(devLog, `${reason}; emitting fallback JSON.`);
+        analysis = this._buildFallbackAnalysis(task, reason, {
+          datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
+          rerunCommand: filePath,
+        });
+      }
+    }
     const invocationFinishedAt = Date.now();
     this._logDev(
       devLog,
@@ -462,6 +500,11 @@ export default class EfficientLogAnalyzer {
         );
       }
     }
+    const promptAdjustments = {
+      droppedChunks: droppedChunks ?? 0,
+      detailLevel: detailLevel ?? null,
+      detailReductions: detailReductions ?? 0,
+    };
     return {
       filePath,
       task,
@@ -476,6 +519,7 @@ export default class EfficientLogAnalyzer {
       finishedAt: invocationFinishedAt,
       truncationPlan,
       lineRange: lineRange ?? null,
+      promptAdjustments,
     };
   }
 
@@ -710,6 +754,8 @@ export default class EfficientLogAnalyzer {
         tokensUsed: 1,
       };
     }
+    let droppedChunks = 0;
+    const startingDetail = detailLevel;
     let attempts = 0;
     let composed;
     let prompt;
@@ -758,6 +804,7 @@ export default class EfficientLogAnalyzer {
       }
       if (chunkLimit > 1) {
         chunkLimit -= 1;
+        droppedChunks += 1;
         const msg = `Prompt still too large; dropping chunk ${chunkLimit + 1} and retrying.`;
         console.log(`[MiniPhi] ${msg}`);
         this._logDev(devLog, msg);
@@ -774,11 +821,15 @@ export default class EfficientLogAnalyzer {
         `Prompt truncated to fit context window (${tokens}/${promptBudget} tokens).`,
       );
     }
+    const detailReductions = Math.max(0, startingDetail - detailLevel);
     return {
       prompt,
       body: composed?.text ?? "",
       linesUsed: composed?.lines ?? totalLines,
       tokensUsed: tokens,
+      droppedChunks,
+      detailLevel,
+      detailReductions,
     };
   }
 
@@ -812,6 +863,17 @@ export default class EfficientLogAnalyzer {
     const maxChars = Math.max(512, Math.floor(prompt.length * ratio) - 100);
     const truncated = `${prompt.slice(0, maxChars)}\n[Prompt truncated due to context limit]`;
     return { prompt: truncated, tokens: this._estimateTokens(truncated) };
+  }
+
+  _sanitizeJsonResponse(text) {
+    if (!text) {
+      return null;
+    }
+    const parsed = extractJsonBlock(text);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      return null;
+    }
+    return JSON.stringify(parsed, null, 2);
   }
 
   _formatContextSupplement(extraContext) {
