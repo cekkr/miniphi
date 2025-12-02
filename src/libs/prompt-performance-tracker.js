@@ -41,6 +41,9 @@ export default class PromptPerformanceTracker {
     this.semanticEvaluator = null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.scoreSchemaId = options?.scoreSchemaId ?? "prompt-score";
+    this.scoringSuspended = false;
+    this.scoringSuspendedReason = null;
+    this.scoringSuspendedNotified = false;
   }
 
   async prepare() {
@@ -175,7 +178,14 @@ export default class PromptPerformanceTracker {
     }
 
     let evaluation = null;
-    if (this.semanticEvaluator) {
+    if (this.scoringSuspended) {
+      if (this.debug && !this.scoringSuspendedNotified) {
+        console.warn(
+          `[MiniPhi][Debug][LM] Prompt scoring suspended${this.scoringSuspendedReason ? `: ${this.scoringSuspendedReason}` : ""}`,
+        );
+        this.scoringSuspendedNotified = true;
+      }
+    } else if (this.semanticEvaluator) {
       const evalPrompt = this._buildEvaluationPrompt({
         objective,
         workspacePath,
@@ -194,7 +204,20 @@ export default class PromptPerformanceTracker {
         evaluation = this._parseEvaluation(raw);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        process.emitWarning(`Prompt evaluator failed: ${message}`, "PromptPerformanceTracker");
+        const proseFailure =
+          /schema validation/i.test(message) ||
+          /not valid json/i.test(message) ||
+          /response was not valid json/i.test(message) ||
+          /failed json parse/i.test(message);
+        if (proseFailure) {
+          this.scoringSuspended = true;
+          this.scoringSuspendedReason = message;
+          if (this.debug) {
+            console.warn(`[MiniPhi][Debug][LM] Prompt scoring suspended: ${message}`);
+          }
+        } else {
+          process.emitWarning(`Prompt evaluator failed: ${message}`, "PromptPerformanceTracker");
+        }
       }
     }
 

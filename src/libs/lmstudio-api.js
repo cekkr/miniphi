@@ -1,4 +1,5 @@
 import { LMStudioClient } from "@lmstudio/sdk";
+import { createRequire } from "module";
 import { DEFAULT_MODEL_KEY } from "./model-presets.js";
 
 const DEFAULT_CONTEXT_LENGTH = 16384;
@@ -10,6 +11,15 @@ const DEFAULT_LOAD_CONFIG = {
 const DEFAULT_LMSTUDIO_HTTP_BASE_URL = "http://127.0.0.1:1234";
 const DEFAULT_LMSTUDIO_WS_BASE_URL = "ws://127.0.0.1:1234";
 const DEFAULT_REST_TIMEOUT_MS = 30000;
+const require = createRequire(import.meta.url);
+let SDK_VERSION = null;
+try {
+  // Reading the SDK version lets callers warn on protocol mismatches.
+  const pkg = require("@lmstudio/sdk/package.json");
+  SDK_VERSION = pkg?.version ?? null;
+} catch {
+  SDK_VERSION = null;
+}
 
 function trimTrailingSlash(url) {
   if (!url) {
@@ -68,6 +78,14 @@ export class LMStudioManager {
     this.client = new LMStudioClient(this._normalizeClientOptions(clientOptions));
     this.loadedModels = new Map();
     this.modelConfigs = new Map();
+  }
+
+  /**
+   * Exposes the installed @lmstudio/sdk version so callers can detect mismatches with the server.
+   * @returns {string | null}
+   */
+  getSdkVersion() {
+    return SDK_VERSION;
   }
 
   /**

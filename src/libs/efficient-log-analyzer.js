@@ -185,7 +185,11 @@ export default class EfficientLogAnalyzer {
 
     let analysis = "";
     let usedFallback = false;
-    this._applyPromptTimeout(sessionDeadline);
+    this._applyPromptTimeout(sessionDeadline, {
+      lineCount: lines.length,
+      tokens: compression.tokens,
+      source: "command",
+    });
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
@@ -370,7 +374,11 @@ export default class EfficientLogAnalyzer {
 
     let analysis = "";
     let usedFallback = false;
-    this._applyPromptTimeout(sessionDeadline);
+    this._applyPromptTimeout(sessionDeadline, {
+      lineCount: linesUsed,
+      tokens: tokensUsed,
+      source: "file",
+    });
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
@@ -1009,16 +1017,38 @@ export default class EfficientLogAnalyzer {
     }
     return lines.join("\n");
   }
-  _applyPromptTimeout(sessionDeadline) {
-    if (!sessionDeadline) {
-      this.phi4.setPromptTimeout(null);
-      return;
+  _applyPromptTimeout(sessionDeadline, promptHints = undefined) {
+    const timeout = this._computePromptTimeout(sessionDeadline, promptHints);
+    this.phi4.setPromptTimeout(timeout);
+  }
+
+  _computePromptTimeout(sessionDeadline, promptHints = undefined) {
+    const baseTimeout = Number.isFinite(this.phi4?.promptTimeoutMs)
+      ? this.phi4.promptTimeoutMs
+      : null;
+    let timeout = baseTimeout ?? null;
+    if (sessionDeadline) {
+      const remaining = sessionDeadline - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) {
+        throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
+      }
+      timeout = timeout ? Math.min(timeout, remaining) : remaining;
     }
-    const remaining = sessionDeadline - Date.now();
-    if (!Number.isFinite(remaining) || remaining <= 0) {
-      throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
+    const lineCount =
+      Number.isFinite(promptHints?.lineCount) && promptHints.lineCount >= 0
+        ? promptHints.lineCount
+        : null;
+    const tokenEstimate =
+      Number.isFinite(promptHints?.tokens) && promptHints.tokens >= 0
+        ? promptHints.tokens
+        : null;
+    const tinyLog =
+      (lineCount !== null && lineCount <= 20) || (tokenEstimate !== null && tokenEstimate <= 800);
+    if (tinyLog) {
+      const tinyCapMs = 120000;
+      timeout = timeout ? Math.min(timeout, tinyCapMs) : tinyCapMs;
     }
-    this.phi4.setPromptTimeout(remaining);
+    return timeout;
   }
 
   _emitVerbosePromptPreview(prompt, tokens, context = undefined) {

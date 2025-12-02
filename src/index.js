@@ -315,6 +315,58 @@ async function recordLmStudioStatusSnapshot(restClient, memory, options = undefi
   }
 }
 
+async function checkLmStudioCompatibility(restClient, manager, options = undefined) {
+  const result = {
+    ok: true,
+    reason: null,
+    serverVersion: null,
+    sdkVersion: typeof manager?.getSdkVersion === "function" ? manager.getSdkVersion() : null,
+    preferRest: false,
+  };
+  if (!restClient) {
+    return result;
+  }
+  let statusPayload = null;
+  try {
+    statusPayload = await restClient.getStatus();
+    result.serverVersion =
+      statusPayload?.version ??
+      statusPayload?.status?.version ??
+      statusPayload?.status?.server_version ??
+      statusPayload?.status?.serverVersion ??
+      null;
+    const statusError = statusPayload?.error ?? statusPayload?.status?.error ?? null;
+    if (typeof statusError === "string" && /unexpected endpoint/i.test(statusError)) {
+      result.ok = false;
+      result.reason =
+        "LM Studio status endpoint unavailable; SDK/Server versions likely out of sync. Update LM Studio or align the SDK.";
+      result.preferRest = true;
+    }
+  } catch (error) {
+    result.ok = false;
+    result.reason =
+      error instanceof Error ? error.message : `LM Studio status check failed: ${String(error)}`;
+    result.preferRest = true;
+  }
+
+  if (result.ok) {
+    try {
+      await restClient.listModels();
+    } catch (error) {
+      result.ok = false;
+      result.reason =
+        error instanceof Error ? error.message : `LM Studio /models check failed: ${String(error)}`;
+      result.preferRest = true;
+    }
+  }
+
+  if (!result.ok && options?.verbose) {
+    const sdkLabel = result.sdkVersion ? ` (SDK ${result.sdkVersion})` : "";
+    console.warn(`[MiniPhi] LM Studio compatibility warning${sdkLabel}: ${result.reason}`);
+  }
+  return result;
+}
+
 function describeTruncationChunk(chunk) {
   if (!chunk) {
     return "chunk";
@@ -1058,8 +1110,14 @@ async function main() {
     return !navigatorBlocklist.some((regex) => regex.test(trimmed));
   };
   let restClient = null;
+  let lmStudioCompatibility = { ok: true, preferRest: !isLmStudioLocal };
+  let preferRestTransport = !isLmStudioLocal;
   try {
     restClient = new LMStudioRestClient(buildRestClientOptions(configData, modelSelection));
+    lmStudioCompatibility = await checkLmStudioCompatibility(restClient, manager, { verbose });
+    if (typeof lmStudioCompatibility?.preferRest === "boolean") {
+      preferRestTransport = lmStudioCompatibility.preferRest;
+    }
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -1068,7 +1126,7 @@ async function main() {
     }
   }
   if (restClient) {
-    phi4.setRestClient(restClient, { preferRestTransport: !isLmStudioLocal });
+    phi4.setRestClient(restClient, { preferRestTransport });
   }
   const buildNavigator = (memoryInstance) =>
     restClient
@@ -1380,7 +1438,7 @@ const describeWorkspace = (dir, options = undefined) =>
           modelKey: modelSelection.modelKey,
         });
       if (restClient) {
-        scoringPhi.setRestClient(restClient, { preferRestTransport: !isLmStudioLocal });
+        scoringPhi.setRestClient(restClient, { preferRestTransport });
       }
       try {
         await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
