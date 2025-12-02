@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node --test ./tests/**/*.test.js",
+    "lint": "node --test ./tests/**/*.test.js",
     "benchmark": "node benchmark/run-tests.js",
     "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose",
     "sample:besh-journal": "node src/index.js analyze-file --file samples/besh/bsh.c --task \"Audit the besh shell and capture a prompt journal\" --summary-levels 4 --prompt-journal besh-regression --prompt-journal-status paused --no-stream"
