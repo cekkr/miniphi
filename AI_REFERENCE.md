@@ -180,6 +180,14 @@ These are the currently "fixed reference points" of miniphi project:
 - When the overview prompt fails, subsequent code/description conversions abort silently; capture the partial overview result and surface it in the CLI output with a retry recommendation instead of only logging to `.miniphi/recompose/<timestamp>/prompts.log`.
 
 ## General next steps
+### High-priority general-purpose focus
+- Treat non-code workspaces (books, docs, data) as first-class: detect repo shape, frame decomposer/plan prompts around that context, and cache the workspace hints so follow-up runs default to the right editing behaviors.
+- Make general-purpose helper reuse safe: version helpers under project and global `.miniphi/helpers/`, keep rollback copies, monitor stdout/exit timing to kill potential infinite loops, and allow optional stdin injection when replaying helpers.
+- Stand up a general-purpose benchmark loop that exercises truncation-first planning plus command/script synthesis; review stdout step-by-step to catch hangs and archive the resulting prompts/helpers inside `.miniphi/` for reuse.
+- Cache best prompt/command compositions (with schema ids and context budgets) in both repo and global `.miniphi/` so future runs can reapply proven scaffolds automatically while retiring entries that fail validation.
+- Enforce minimal-token prompting by default: keep schema blocks slim, include `needs_more_context`/`missing_snippets` style fields so the model can request only essential additions, and drive chunked prompts automatically when the context budget is exceeded.
+
+### Runtime hardening backlog
 - Mirror the “external LM Studio disables ResourceMonitor” guard inside `benchmark/run-tests.js` so benchmark suites stop emitting false RAM/VRAM warnings when the APIs run over the network, and pipe those warnings back into the CLI summary for parity.
 - Harden `EfficientLogAnalyzer` with a watchdog + deterministic fallback JSON so `npm run sample:besh-journal` can emit partial-but-valid schema output instead of stalling at the 28.8-minute limit; rerun the sample afterward to refresh `.miniphi/prompt-exchanges`.
 - Feed `PromptDecomposer` and navigator plans directly into multi-pass analyzer runs (one Phi call per chunk) so large files can be split/merged automatically instead of relying on a single monolithic prompt.
