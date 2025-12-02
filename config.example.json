@@ -14,8 +14,8 @@
   },
   "defaults": {
     "task": "Provide a precise technical analysis of the captured output.",
-    "model": "microsoft/phi-4-reasoning-plus",
-    "contextLength": 32768,
+    "model": "ibm/granite-4-h-tiny",
+    "contextLength": 16384,
     "gpu": "auto",
     "timeoutSeconds": 3600,
     "summaryLevels": 3,

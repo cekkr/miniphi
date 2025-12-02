@@ -35,7 +35,7 @@ Natural next step: tackle the new TODOs (plan scaffolder + analyze diffs) when y
 
 Next steps:
 
-Start LM Studio with microsoft/phi-4-reasoning-plus, then run node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean to produce new .miniphi/recompose/... sessions and confirm the prompt chain.
+Start LM Studio with ibm/granite-4-h-tiny (or swap in microsoft/phi-4-reasoning-plus if you need the larger context), then run node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean to produce new .miniphi/recompose/... sessions and confirm the prompt chain.
 Inspect .miniphi/prompt-exchanges/ and .miniphi/recompose/<timestamp>/ output from a live run to ensure the workspace overview, per-file plans, and generated code land as expected.
 
 # Next steps 1

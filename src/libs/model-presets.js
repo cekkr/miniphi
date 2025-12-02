@@ -1,6 +1,7 @@
-export const DEFAULT_MODEL_KEY = "microsoft/phi-4-reasoning-plus";
+export const DEFAULT_MODEL_KEY = "ibm/granite-4-h-tiny";
 
-export const DEFAULT_CONTEXT_LENGTH = 32768;
+export const DEFAULT_CONTEXT_LENGTH = 16384;
+const PHI_REASONING_PLUS_KEY = "microsoft/phi-4-reasoning-plus";
 const CODING_SYSTEM_PROMPT = [
   "You are MiniPhi, a local coding agent.",
   "Prioritize precise code edits, minimal filler, and clear diffs when proposing changes.",
@@ -10,18 +11,18 @@ const CODING_SYSTEM_PROMPT = [
 export const MODEL_PRESETS = {
   [DEFAULT_MODEL_KEY]: {
     key: DEFAULT_MODEL_KEY,
-    label: "Phi-4 Reasoning+",
-    purpose: "general",
-    defaultContextLength: DEFAULT_CONTEXT_LENGTH,
-    maxContextLength: 131072,
-  },
-  "ibm/granite-4-h-tiny": {
-    key: "ibm/granite-4-h-tiny",
     label: "Granite 4 H Tiny",
     purpose: "coding",
     defaultContextLength: 16384,
     maxContextLength: 32768,
     systemPrompt: CODING_SYSTEM_PROMPT,
+  },
+  [PHI_REASONING_PLUS_KEY]: {
+    key: PHI_REASONING_PLUS_KEY,
+    label: "Phi-4 Reasoning+",
+    purpose: "general",
+    defaultContextLength: 32768,
+    maxContextLength: 131072,
   },
   "mistralai/devstral-small-2507": {
     key: "mistralai/devstral-small-2507",
@@ -34,11 +35,11 @@ export const MODEL_PRESETS = {
 };
 
 const MODEL_ALIASES = new Map([
-  ["phi", DEFAULT_MODEL_KEY],
-  ["phi-4", DEFAULT_MODEL_KEY],
-  ["phi4", DEFAULT_MODEL_KEY],
-  ["phi-4-reasoning-plus", DEFAULT_MODEL_KEY],
-  ["microsoft/phi-4-reasoning-plus", DEFAULT_MODEL_KEY],
+  ["phi", PHI_REASONING_PLUS_KEY],
+  ["phi-4", PHI_REASONING_PLUS_KEY],
+  ["phi4", PHI_REASONING_PLUS_KEY],
+  ["phi-4-reasoning-plus", PHI_REASONING_PLUS_KEY],
+  [PHI_REASONING_PLUS_KEY, PHI_REASONING_PLUS_KEY],
   ["granite-4-h-tiny", "ibm/granite-4-h-tiny"],
   ["granite4h", "ibm/granite-4-h-tiny"],
   ["granite4", "ibm/granite-4-h-tiny"],

@@ -4,7 +4,7 @@
 
 ![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg-raw=true)
 
-miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio (default `microsoft/phi-4-reasoning-plus`, coding presets `ibm/granite-4-h-tiny` and `mistralai/devstral-small-2507`). The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
+miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio (default `ibm/granite-4-h-tiny`, other presets `microsoft/phi-4-reasoning-plus` and `mistralai/devstral-small-2507`). The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
 
 ## What miniPhi is
 - A **local AI agent for a project**, not a hosted chatbot: it runs on top of your own LM Studio instance and keeps all logs, prompts, and artifacts on disk under `.miniphi/` and `~/.miniphi/`.
@@ -21,7 +21,7 @@ miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Workspace capabilities (package scripts, repo scripts, `.bin` tools) and import graphs are summarized ahead of each run so the model starts with an accurate list of available operations and dependencies.
 
 ## Get started
-Install [LM Studio](https://lmstudio.ai) as developer and download model `microsoft/phi-4-reasoning-plus` (through Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left.
+Install [LM Studio](https://lmstudio.ai) as developer and download model `ibm/granite-4-h-tiny` (through Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left. Phi-4 Reasoning+ remains available as an alternate general-purpose model if you prefer it for larger-context runs.
 
 Clone miniPhi repo:
 > $ `git clone https://github.com/cekkr/miniphi.git --recurive-submodules`
@@ -85,7 +85,7 @@ This project is in a alpha stage of development, and technically it's able to ex
 - **Samples.** `samples/recompose/hello-flow` remains the canonical recomposition benchmark, while `samples/get-started` introduces a workspace-onboarding scenario with curated prompts for environment detection, README drafting, feature tweaks, and verification commands.
 - **Batch benchmark logger.** `./run-log-benchmarks.sh` executes `npm run sample:besh-journal`, all recompose directions, and `npm run benchmark`, storing stdout, git status snapshots, and copies of new artifacts under `current-benchmarks/<timestamp>/`. Set `RECOMPOSE_MODE=live` or `RECOMPOSE_DIRECTIONS=code-to-markdown,...` to customize which combinations run.
 
-miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume the `microsoft/phi-4-reasoning-plus` model is already downloaded in LM Studio, but you can switch to `ibm/granite-4-h-tiny` or `mistralai/devstral-small-2507` with `--model` or `defaults.model`.
+miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume the `ibm/granite-4-h-tiny` model is already downloaded in LM Studio; you can switch to `microsoft/phi-4-reasoning-plus` or `mistralai/devstral-small-2507` with `--model` or `defaults.model`.
 
 ## Architecture snapshot
 1. **LMStudioManager** (src/libs/lmstudio-api.js) performs JIT model loading and surfaces the `/api/v0` REST primitives (list models, chat/completion probes, embeddings, runtime stats).
@@ -99,7 +99,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 ### Requirements
 - Node.js 20.x or newer (ESM + top-level `await` support)
 - Python 3.9+ on PATH (std lib only; used by `log_summarizer.py`)
-- LM Studio desktop app with the `microsoft/phi-4-reasoning-plus` model downloaded (coding presets `ibm/granite-4-h-tiny` and `mistralai/devstral-small-2507` are supported via --model)
+- LM Studio desktop app with the `ibm/granite-4-h-tiny` model downloaded (general-purpose `microsoft/phi-4-reasoning-plus` and coding-focused `mistralai/devstral-small-2507` are supported via --model)
 - git (optional but enables `.miniphi` history annotations)
 
 ### Install and prepare

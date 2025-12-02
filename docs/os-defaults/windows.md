@@ -9,12 +9,12 @@ These defaults capture the environment assumed by the Windows helper scripts and
 | Node.js | 18 LTS | Required for ES modules + top-level `await`. |
 | Python | `py` launcher resolving to Python 3.9+ | Used by `log_summarizer.py`. |
 
-## LM Studio / Phi-4
+## LM Studio / Default model
 | Item | Value |
 | --- | --- |
 | REST endpoint | `http://127.0.0.1:1234` |
-| Default model | `microsoft/phi-4-reasoning-plus` |
-| Context length | 4096 tokens (changing this requires a model reload in LM Studio) |
+| Default model | `ibm/granite-4-h-tiny` |
+| Context length | 16384 tokens (changing this requires a model reload in LM Studio) |
 | GPU preference | `auto` (MiniPhi lets LM Studio decide; override via `--gpu`). |
 
 ## MiniPhi CLI Defaults

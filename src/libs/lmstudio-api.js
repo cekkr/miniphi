@@ -1,14 +1,14 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { DEFAULT_MODEL_KEY } from "./model-presets.js";
 
+const DEFAULT_CONTEXT_LENGTH = 16384;
 const DEFAULT_LOAD_CONFIG = {
-  contextLength: 8192,
+  contextLength: DEFAULT_CONTEXT_LENGTH,
   gpu: "auto",
   ttl: 300,
 };
 const DEFAULT_LMSTUDIO_HTTP_BASE_URL = "http://127.0.0.1:1234";
 const DEFAULT_LMSTUDIO_WS_BASE_URL = "ws://127.0.0.1:1234";
-const DEFAULT_CONTEXT_LENGTH = 4096;
 const DEFAULT_REST_TIMEOUT_MS = 30000;
 
 function trimTrailingSlash(url) {

@@ -3,7 +3,7 @@ import { Readable } from "stream";
 import { randomUUID } from "crypto";
 import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
-import { DEFAULT_MODEL_KEY } from "./model-presets.js";
+import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 
 const DEFAULT_SYSTEM_PROMPT = [
   "You are MiniPhi, a local workspace agent.",
@@ -41,12 +41,12 @@ export class Phi4Handler {
   }
 
   /**
-   * Loads the configured model with the requested configuration (defaults to 32k context).
+   * Loads the configured model with the requested configuration (defaults to the global context baseline).
    * @param {import("@lmstudio/sdk").LLMLoadModelConfig} [config]
    */
   async load(config = undefined) {
     this.model = await this.manager.getModel(this.modelKey, {
-      contextLength: 32768,
+      contextLength: DEFAULT_CONTEXT_LENGTH,
       ...(config ?? {}),
     });
   }
