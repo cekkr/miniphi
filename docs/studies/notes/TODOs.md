@@ -32,3 +32,5 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-02T15:21:36.677Z (run): Smoke test default Granite model
 
 - Forgotten requirement for 2025-12-02T15:46:16.966Z (analyze-file): Audit the besh shell and capture a prompt journal
+
+- Forgotten requirement for 2025-12-02T16:13:58.371Z (analyze-file): Audit the besh shell and capture a prompt journal

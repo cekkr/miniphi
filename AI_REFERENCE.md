@@ -196,6 +196,8 @@ These are the currently "fixed reference points" of miniphi project:
 - Gate navigator command proposals/execution through the capability inventory (dry-run `--help`/file probes) so samples like `besh` stop suggesting `npm run lint` or missing Python helpers.
 - Wire dropped-chunk metadata from `promptAdjustments` into prompt journals and truncation resume flows so omitted slices automatically become follow-up tasks instead of silent context loss.
 - Add a VRAM-aware monitor for Windows hosts to replace the “VRAM usage could not be determined on this host” placeholder in prompt journals and executions.
+- Harden navigator helper execution on Windows: add an integration test that replays a saved helper via `python` from a nested cwd and log the resolved path when the interpreter rejects it so the lingering `C:\\Sources\\GitHub\\miniphi\\samples\\besh\\\"C:\\Sources\\GitHub\\miniphi\\.miniphi\\helpers\\...py\"` error can be eliminated.
+- When Phi still returns non-JSON after chunk drops, retry with the slim log-analysis baseline (schema by id, no inline fences) before falling back; if retries fail, automatically schedule `--resume-truncation <id>` runs per dropped chunk instead of emitting a single coarse fallback summary.
 
 ## Project-wide Immediate Next Steps
 1. **JSON-only prompt channels.** Enforce `response_format=json_object` for navigator/decomposer/truncation prompts, strip `<think>`/code fences/preambles when parsing, and add tests so command-learning and truncation flows reject prose.
