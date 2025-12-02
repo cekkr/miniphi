@@ -21,6 +21,8 @@ export default class CliExecutor {
    *   maxBuffer?: number,
    *   encoding?: BufferEncoding,
    *   env?: NodeJS.ProcessEnv,
+   *   stdin?: string | Buffer | null,
+   *   maxSilenceMs?: number | null,
    *   onStdout?: (chunk: string) => void,
    *   onStderr?: (chunk: string) => void,
    *   onProgress?: (info: { type: "stdout" | "stderr", data: string, lineCount?: number, bytesRead: number }) => void,
@@ -34,6 +36,8 @@ export default class CliExecutor {
       maxBuffer = 10 * 1024 * 1024,
       encoding = "utf-8",
       env = process.env,
+      stdin = null,
+      maxSilenceMs = null,
       onStdout = undefined,
       onStderr = undefined,
       onProgress = undefined,
@@ -55,14 +59,25 @@ export default class CliExecutor {
       let lineCount = 0;
       let completed = false;
 
+      const startedAt = Date.now();
+      let killedForSilence = false;
+      const silenceLimit =
+        Number.isFinite(maxSilenceMs) && maxSilenceMs > 0 ? Number(maxSilenceMs) : null;
+      let lastActivity = Date.now();
+
       const finalize = (error, code) => {
         if (completed) return;
         completed = true;
         clearTimeout(timeoutHandle);
+        if (silenceTimer) {
+          clearInterval(silenceTimer);
+        }
         if (error) {
           if (typeof error === "object" && error) {
             error.stdout = captureOutput ? stdout : "";
             error.stderr = captureOutput ? stderr : "";
+            error.silenceExceeded = killedForSilence;
+            error.durationMs = Date.now() - startedAt;
           }
           reject(error);
           return;
@@ -73,6 +88,9 @@ export default class CliExecutor {
           stdout: captureOutput ? stdout : "",
           stderr: captureOutput ? stderr : "",
           lineCount,
+          silenceExceeded: killedForSilence,
+          durationMs: Date.now() - startedAt,
+          stdinBytes: typeof stdin === "string" || Buffer.isBuffer(stdin) ? Buffer.byteLength(stdin) : 0,
         };
         if (code === 0) {
           resolve(result);
@@ -84,6 +102,8 @@ export default class CliExecutor {
           failure.stdout = captureOutput ? stdout : "";
           failure.stderr = captureOutput ? stderr : "";
           failure.command = command;
+          failure.silenceExceeded = killedForSilence;
+          failure.durationMs = Date.now() - startedAt;
           reject(failure);
         }
       };
@@ -96,8 +116,31 @@ export default class CliExecutor {
             }, timeout)
           : null;
 
+      const silenceTimer =
+        silenceLimit !== null
+          ? setInterval(() => {
+              const idleFor = Date.now() - lastActivity;
+              if (idleFor >= silenceLimit) {
+                killedForSilence = true;
+                child.kill(this.isWindows ? undefined : "SIGTERM");
+                finalize(new Error(`Command terminated after ${idleFor}ms of silence.`));
+              }
+            }, Math.min(1000, silenceLimit))
+          : null;
+
+      if (stdin !== null && stdin !== undefined && child.stdin) {
+        try {
+          child.stdin.write(stdin);
+        } catch {
+          // ignore stdin write failures to avoid masking the primary error
+        } finally {
+          child.stdin.end();
+        }
+      }
+
       child.stdout?.on("data", (data) => {
         const text = data.toString(encoding);
+        lastActivity = Date.now();
         stdoutBytes += data.length;
 
         if (captureOutput) {
@@ -116,6 +159,7 @@ export default class CliExecutor {
 
       child.stderr?.on("data", (data) => {
         const text = data.toString(encoding);
+        lastActivity = Date.now();
         stderrBytes += data.length;
 
         if (captureOutput) {

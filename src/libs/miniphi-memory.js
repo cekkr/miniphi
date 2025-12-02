@@ -32,6 +32,7 @@ export default class MiniPhiMemory {
     this.promptTemplatesDir = path.join(this.promptExchangesDir, "templates");
     this.helpersDir = path.join(this.baseDir, "helpers");
     this.fixedReferencesDir = path.join(this.promptExchangesDir, "fixed-references");
+    this.workspaceHintsFile = path.join(this.indicesDir, "workspace-hints.json");
 
     this.promptsFile = path.join(this.baseDir, "prompts.json");
     this.knowledgeFile = path.join(this.baseDir, "knowledge.json");
@@ -97,6 +98,7 @@ export default class MiniPhiMemory {
     await this._ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
     await this._ensureFile(this.promptDecompositionIndexFile, { entries: [] });
     await this._ensureFile(this.helperScriptsIndexFile, { entries: [] });
+    await this._ensureFile(this.workspaceHintsFile, { entries: [] });
     await this._ensureFile(this.promptStepJournalIndexFile, { entries: [] });
     await this._ensureFile(this.promptTemplatesIndexFile, { entries: [] });
     await this._ensureFile(this.commandLibraryFile, { entries: [] });
@@ -115,6 +117,7 @@ export default class MiniPhiMemory {
         { name: "benchmarks", file: this._relative(this.benchmarkHistoryFile) },
         { name: "prompt-decompositions", file: this._relative(this.promptDecompositionIndexFile) },
         { name: "helpers", file: this._relative(this.helperScriptsIndexFile) },
+        { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
         { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
         { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
       ],
@@ -509,6 +512,21 @@ export default class MiniPhiMemory {
     await this.prepare();
     const timestamp = new Date().toISOString();
     const data = await this._readJSON(this.commandLibraryFile, { entries: [] });
+    if (payload.validationStatus === "invalid") {
+      const retireSet = new Set(
+        payload.commands
+          .map((idea) => idea?.command?.toString().trim().toLowerCase())
+          .filter(Boolean),
+      );
+      if (retireSet.size > 0) {
+        data.entries = data.entries.filter(
+          (entry) => !retireSet.has(entry.command?.toLowerCase() ?? ""),
+        );
+        await this._writeJSON(this.commandLibraryFile, data);
+        await this._updateRootIndex();
+      }
+      return [];
+    }
     const existingKeySet = new Set(
       data.entries.map((entry) => entry.command?.trim().toLowerCase()).filter(Boolean),
     );
@@ -539,6 +557,9 @@ export default class MiniPhiMemory {
         task: payload.task ?? null,
         source: idea?.source ?? payload.source ?? "analysis",
         createdAt: timestamp,
+        schemaId: idea?.schemaId ?? payload.schemaId ?? null,
+        contextBudget: payload.contextBudget ?? null,
+        status: payload.validationStatus ?? "ok",
       };
       additions.push(entry);
     }
@@ -549,6 +570,43 @@ export default class MiniPhiMemory {
     await this._writeJSON(this.commandLibraryFile, data);
     await this._updateRootIndex();
     return additions;
+  }
+
+  async saveWorkspaceHint(entry) {
+    if (!entry) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const root = entry.root ? path.resolve(entry.root) : this.startDir;
+    const index = await this._readJSON(this.workspaceHintsFile, { entries: [] });
+    const filtered = index.entries.filter((item) => path.resolve(item.root ?? "") !== root);
+    const normalized = {
+      id: entry.id ?? this._slugify(root),
+      root,
+      summary: entry.summary ?? null,
+      classification: entry.classification ?? null,
+      hintBlock: entry.hintBlock ?? null,
+      manifestPreview: Array.isArray(entry.manifestPreview) ? entry.manifestPreview.slice(0, 12) : [],
+      navigationSummary: entry.navigationSummary ?? null,
+      navigationBlock: entry.navigationBlock ?? null,
+      updatedAt: timestamp,
+    };
+    index.entries = [normalized, ...filtered].slice(0, 50);
+    await this._writeJSON(this.workspaceHintsFile, index);
+    await this._updateRootIndex();
+    return normalized;
+  }
+
+  async loadWorkspaceHint(rootDir = undefined) {
+    await this.prepare();
+    const root = rootDir ? path.resolve(rootDir) : this.startDir;
+    const index = await this._readJSON(this.workspaceHintsFile, { entries: [] });
+    if (!Array.isArray(index.entries) || index.entries.length === 0) {
+      return null;
+    }
+    const found = index.entries.find((item) => path.resolve(item.root ?? "") === root);
+    return found ?? index.entries[0] ?? null;
   }
 
   async loadCommandLibrary(limit = 20) {
@@ -847,6 +905,7 @@ export default class MiniPhiMemory {
       { name: "command-library", file: this._relative(this.commandLibraryFile) },
       { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
       { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
+      { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
     ];
     await this._writeJSON(this.rootIndexFile, root);
   }
@@ -939,6 +998,10 @@ export default class MiniPhiMemory {
       stdout: stdoutPath ? this._relative(stdoutPath) : null,
       stderr: stderrPath ? this._relative(stderrPath) : null,
       summary: run.summary ?? null,
+      durationMs: run.durationMs ?? null,
+      timeoutMs: run.timeoutMs ?? null,
+      silenceTimeoutMs: run.silenceTimeoutMs ?? null,
+      stdin: run.stdin ?? null,
     };
     entry.lastRun = runRecord;
     const previous = Array.isArray(entry.runs) ? entry.runs : [];
@@ -1008,6 +1071,18 @@ export default class MiniPhiMemory {
   }
 
   _condenseBenchmarkSummary(summary) {
+    if (summary?.kind === "general-purpose") {
+      return {
+        analyzedAt: summary.analyzedAt ?? new Date().toISOString(),
+        directory: summary.directory ?? "",
+        totalRuns: summary.command ? 1 : 0,
+        warningRuns: summary.command?.silenceExceeded ? 1 : 0,
+        mismatchRuns: 0,
+        kind: summary.kind,
+        task: summary.task ?? null,
+        templates: Array.isArray(summary.templates) ? summary.templates.length : 0,
+      };
+    }
     const directions = {};
     Object.entries(summary.directions ?? {}).forEach(([direction, details]) => {
       const phases = {};

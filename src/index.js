@@ -1134,8 +1134,10 @@ async function main() {
           restClient,
           cliExecutor: cli,
           memory: memoryInstance ?? null,
+          globalMemory,
           logger: verbose ? (message) => console.warn(message) : null,
           adapterRegistry: schemaAdapterRegistry,
+          helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
         })
       : null;
   const runNavigatorFollowUps = async ({
@@ -1803,6 +1805,7 @@ const describeWorkspace = (dir, options = undefined) =>
             workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
             workspaceSummary: workspaceContext?.summary ?? null,
             workspaceHint: workspaceContext?.hintBlock ?? null,
+            workspaceDirectives: workspaceContext?.planDirectives ?? null,
             workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
             workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
             taskPlanId: planResult?.planId ?? null,
@@ -2098,6 +2101,7 @@ const describeWorkspace = (dir, options = undefined) =>
             workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
             workspaceSummary: workspaceContext?.summary ?? null,
             workspaceHint: workspaceContext?.hintBlock ?? null,
+            workspaceDirectives: workspaceContext?.planDirectives ?? null,
             workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
             workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
             taskPlanId: planResult?.planId ?? null,
@@ -2214,12 +2218,25 @@ const describeWorkspace = (dir, options = undefined) =>
       if (archive?.id && result?.analysis) {
         const learnedCommands = extractRecommendedCommandsFromAnalysis(result.analysis);
         if (learnedCommands.length) {
+          const validationStatus = result?.schemaValid === false ? "invalid" : "ok";
           await stateManager.recordCommandIdeas({
             executionId: archive.id,
             task,
             mode: command,
             commands: learnedCommands,
             source: "analysis",
+            schemaId: result?.schemaId ?? null,
+            contextBudget: contextLength,
+            validationStatus,
+          });
+          await globalMemory.recordCommandIdeas?.({
+            commands: learnedCommands,
+            source: "analysis",
+            task,
+            mode: command,
+            schemaId: result?.schemaId ?? null,
+            contextBudget: contextLength,
+            validationStatus,
           });
           if (options.verbose) {
             console.log(
@@ -2577,6 +2594,15 @@ async function handleBenchmark({
     return;
   }
 
+  if (mode === "general" || mode === "general-purpose" || mode === "generalpurpose") {
+    await runGeneralPurposeBenchmark({
+      options,
+      verbose,
+      schemaRegistry,
+    });
+    return;
+  }
+
   if (mode === "plan") {
     const action = (positionals[1] ?? options.action ?? "scaffold").toLowerCase();
     if (action !== "scaffold") {
@@ -2666,6 +2692,139 @@ async function handleBenchmark({
   }
   const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
   console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
+}
+
+async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) {
+  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const task =
+    (typeof options.task === "string" && options.task.trim()) ||
+    (typeof options.objective === "string" && options.objective.trim()) ||
+    "General-purpose benchmark";
+  const command = options.cmd ?? options.command ?? null;
+  const silenceTimeout = parseNumericSetting(options["silence-timeout"], "--silence-timeout") ?? 15000;
+  const timeoutMs = parseNumericSetting(options.timeout, "--timeout") ?? 60000;
+  const stateManager = new MiniPhiMemory(cwd);
+  await stateManager.prepare();
+  const workspaceProfiler = new WorkspaceProfiler();
+  const capabilityInventory = new CapabilityInventory();
+  const workspaceContext = await generateWorkspaceSnapshot({
+    rootDir: cwd,
+    workspaceProfiler,
+    capabilityInventory,
+    verbose,
+    navigator: null,
+    objective: task,
+    executeHelper: false,
+    memory: stateManager,
+  });
+
+  const builder = new PromptTemplateBaselineBuilder({ schemaRegistry });
+  const datasetSummary =
+    workspaceContext?.summary ??
+    `Workspace ${path.basename(cwd) || cwd} contains mixed artifacts; optimize prompts for this context.`;
+  const templatePayloads = [
+    builder.build({
+      baseline: "truncation",
+      task: `${task} (chunking)`,
+      datasetSummary,
+      workspaceContext,
+    }),
+    builder.build({
+      baseline: "analysis",
+      task: `${task} (analysis)`,
+      datasetSummary,
+      workspaceContext,
+    }),
+  ];
+  const savedTemplates = [];
+  for (const payload of templatePayloads) {
+    const saved = await stateManager.savePromptTemplateBaseline({
+      ...payload,
+      label: `general-purpose ${payload.metadata?.baseline ?? payload.baseline ?? "prompt"}`,
+      cwd,
+    });
+    savedTemplates.push(saved);
+    if (verbose) {
+      const rel = path.relative(process.cwd(), saved.path) || saved.path;
+      console.log(`[MiniPhi][Benchmark] Saved prompt template to ${rel}`);
+    }
+  }
+
+  let commandDetails = null;
+  if (command) {
+    const cli = new CliExecutor();
+    const logDir = path.join(stateManager.historyDir, "benchmarks");
+    await fs.promises.mkdir(logDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const slug = command.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 48) || "command";
+    const stdoutPath = path.join(logDir, `${timestamp}-${slug}-stdout.log`);
+    const stderrPath = path.join(logDir, `${timestamp}-${slug}-stderr.log`);
+    if (verbose) {
+      console.log(`[MiniPhi][Benchmark] Running general-purpose command: ${command}`);
+    }
+    let execResult;
+    try {
+      execResult = await cli.executeCommand(command, {
+        cwd,
+        timeout: timeoutMs,
+        maxSilenceMs: silenceTimeout,
+        captureOutput: true,
+        onStdout: (text) => process.stdout.write(text),
+        onStderr: (text) => process.stderr.write(text),
+      });
+    } catch (error) {
+      execResult = {
+        code: typeof error.code === "number" ? error.code : -1,
+        stdout: error.stdout ?? "",
+        stderr: error.stderr ?? (error instanceof Error ? error.message : String(error)),
+        silenceExceeded: error.silenceExceeded ?? false,
+        durationMs: error.durationMs ?? null,
+      };
+      if (verbose) {
+        console.warn(`[MiniPhi][Benchmark] Command execution failed: ${execResult.stderr}`);
+      }
+    }
+    await fs.promises.writeFile(stdoutPath, execResult.stdout ?? "", "utf8");
+    await fs.promises.writeFile(stderrPath, execResult.stderr ?? "", "utf8");
+    commandDetails = {
+      command,
+      exitCode: execResult.code ?? execResult.exitCode ?? 0,
+      stdoutPath,
+      stderrPath,
+      silenceExceeded: Boolean(execResult.silenceExceeded),
+      durationMs: execResult.durationMs ?? null,
+    };
+    if (verbose) {
+      console.log(
+        `[MiniPhi][Benchmark] Command finished with exit ${commandDetails.exitCode}${
+          commandDetails.silenceExceeded ? " (terminated for silence)" : ""
+        }`,
+      );
+    }
+  }
+
+  const summaryDir = path.join(stateManager.historyDir, "benchmarks");
+  await fs.promises.mkdir(summaryDir, { recursive: true });
+  const summaryPath = path.join(
+    summaryDir,
+    `${new Date().toISOString().replace(/[:.]/g, "-")}-general-benchmark.json`,
+  );
+  const summary = {
+    kind: "general-purpose",
+    analyzedAt: new Date().toISOString(),
+    directory: cwd,
+    task,
+    workspaceType: workspaceContext?.classification?.label ?? null,
+    workspaceSummary: workspaceContext?.summary ?? null,
+    templates: savedTemplates.map((entry) => entry?.path ?? null).filter(Boolean),
+    command: commandDetails,
+  };
+  await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
+  await stateManager.recordBenchmarkSummary(summary, { summaryPath, type: "general-purpose" });
+  if (verbose) {
+    const rel = path.relative(process.cwd(), summaryPath) || summaryPath;
+    console.log(`[MiniPhi][Benchmark] General-purpose benchmark summary saved to ${rel}`);
+  }
 }
 
 async function createRecomposeHarness({
@@ -2877,6 +3036,28 @@ async function generateWorkspaceSnapshot({
   const hintBlock = buildWorkspaceHintBlock(manifestResult.files, rootDir, readmeSnippet, {
     limit: 8,
   });
+  const planDirectives = profile?.directives ?? null;
+  let cachedHint = null;
+  if (memory?.loadWorkspaceHint) {
+    try {
+      cachedHint = await memory.loadWorkspaceHint(rootDir);
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Workspace hint cache read failed: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+  const mergedHintBlock = [
+    hintBlock,
+    planDirectives ? `Workspace directives: ${planDirectives}` : null,
+    cachedHint?.hintBlock && cachedHint.hintBlock !== hintBlock ? cachedHint.hintBlock : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   let capabilities = null;
   try {
@@ -2893,9 +3074,11 @@ async function generateWorkspaceSnapshot({
     ...profile,
     manifestPreview: manifestResult.manifest,
     readmeSnippet,
-    hintBlock: hintBlock || null,
+    hintBlock: mergedHintBlock || null,
+    planDirectives,
     capabilitySummary: capabilities?.summary ?? null,
     capabilityDetails: capabilities?.details ?? null,
+    cachedHints: cachedHint,
   };
 
   let indexSummary = null;
@@ -2939,6 +3122,28 @@ async function generateWorkspaceSnapshot({
       if (verbose) {
         console.warn(
           `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
+
+  if (memory?.saveWorkspaceHint) {
+    try {
+      await memory.saveWorkspaceHint({
+        root: rootDir,
+        summary: workspaceSnapshot.summary ?? null,
+        classification: workspaceSnapshot.classification ?? null,
+        hintBlock: workspaceSnapshot.hintBlock ?? null,
+        manifestPreview: workspaceSnapshot.manifestPreview ?? null,
+        navigationSummary: navigationHints?.summary ?? null,
+        navigationBlock: navigationHints?.block ?? null,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to persist workspace hint cache: ${
+            error instanceof Error ? error.message : error
+          }`,
         );
       }
     }

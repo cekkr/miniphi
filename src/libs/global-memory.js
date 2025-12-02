@@ -16,6 +16,9 @@ export default class GlobalMiniPhiMemory {
     this.promptsDir = path.join(this.baseDir, "prompts");
     this.metricsDir = path.join(this.baseDir, "metrics");
     this.preferencesDir = path.join(this.baseDir, "preferences");
+    this.helpersDir = path.join(this.baseDir, "helpers");
+    this.commandLibraryFile = path.join(this.helpersDir, "command-library.json");
+    this.helperIndexFile = path.join(this.helpersDir, "index.json");
     this.promptDbPath = path.join(this.promptsDir, "miniphi-prompts.db");
     this.systemProfileFile = path.join(this.configDir, "system-profile.json");
     this.commandPolicyFile = path.join(this.preferencesDir, "command-policy.json");
@@ -31,6 +34,11 @@ export default class GlobalMiniPhiMemory {
       fs.promises.mkdir(this.promptsDir, { recursive: true }),
       fs.promises.mkdir(this.metricsDir, { recursive: true }),
       fs.promises.mkdir(this.preferencesDir, { recursive: true }),
+      fs.promises.mkdir(this.helpersDir, { recursive: true }),
+    ]);
+    await Promise.all([
+      this._ensureFile(this.commandLibraryFile, { entries: [] }),
+      this._ensureFile(this.helperIndexFile, { entries: [] }),
     ]);
     await this._writeSystemProfile();
     this.prepared = true;
@@ -53,6 +61,84 @@ export default class GlobalMiniPhiMemory {
       versions: process.versions,
     };
     await fs.promises.writeFile(this.systemProfileFile, JSON.stringify(profile, null, 2), "utf8");
+  }
+
+  async recordHelperSnapshot(payload) {
+    if (!payload?.sourcePath) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = nowIso();
+    const slug = this._slugify(payload.name ?? path.basename(payload.sourcePath, path.extname(payload.sourcePath)));
+    const ext = path.extname(payload.sourcePath) || ".txt";
+    const fileName = `${timestamp.replace(/[:.]/g, "-")}-${slug}${ext}`;
+    const destination = path.join(this.helpersDir, fileName);
+    await fs.promises.copyFile(payload.sourcePath, destination);
+    const index = await this._readJSON(this.helperIndexFile, { entries: [] });
+    const entry = {
+      id: payload.id ?? `${slug}-${timestamp}`,
+      name: payload.name ?? slug,
+      description: payload.description ?? null,
+      workspaceType: payload.workspaceType ?? null,
+      storedAt: timestamp,
+      path: this._relative(destination),
+      source: payload.source ?? "project",
+      originalPath: this._relative(payload.sourcePath),
+    };
+    const filtered = index.entries.filter((item) => item.id !== entry.id);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    await this._writeJSON(this.helperIndexFile, index);
+    return entry;
+  }
+
+  async recordCommandIdeas(payload) {
+    if (!payload || !Array.isArray(payload.commands) || payload.commands.length === 0) {
+      return [];
+    }
+    await this.prepare();
+    const timestamp = nowIso();
+    const data = await this._readJSON(this.commandLibraryFile, { entries: [] });
+    if (payload.validationStatus === "invalid") {
+      const retireSet = new Set(
+        payload.commands
+          .map((idea) => idea?.command?.toString().trim().toLowerCase())
+          .filter(Boolean),
+      );
+      if (retireSet.size > 0) {
+        data.entries = data.entries.filter(
+          (entry) => !retireSet.has(entry.command?.toLowerCase() ?? ""),
+        );
+        await this._writeJSON(this.commandLibraryFile, data);
+      }
+      return [];
+    }
+    const existing = new Set(
+      data.entries.map((entry) => entry.command?.trim().toLowerCase()).filter(Boolean),
+    );
+    const additions = [];
+    for (const idea of payload.commands) {
+      const cmd = typeof idea?.command === "string" ? idea.command.trim() : "";
+      if (!cmd || existing.has(cmd.toLowerCase())) {
+        continue;
+      }
+      existing.add(cmd.toLowerCase());
+      additions.push({
+        id: idea.id ?? this._slugify(cmd),
+        command: cmd,
+        description: typeof idea?.description === "string" ? idea.description.trim() : null,
+        schemaId: idea.schemaId ?? payload.schemaId ?? null,
+        contextBudget: payload.contextBudget ?? null,
+        source: idea.source ?? payload.source ?? "analysis",
+        createdAt: timestamp,
+        status: payload.validationStatus ?? "ok",
+      });
+    }
+    if (!additions.length) {
+      return [];
+    }
+    data.entries = [...additions, ...data.entries].slice(0, 300);
+    await this._writeJSON(this.commandLibraryFile, data);
+    return additions;
   }
 
   async loadCommandPolicy() {
@@ -82,5 +168,46 @@ export default class GlobalMiniPhiMemory {
       "utf8",
     );
     return payload;
+  }
+
+  async _ensureFile(filePath, defaultContent) {
+    try {
+      await fs.promises.access(filePath, fs.constants.F_OK);
+    } catch {
+      await fs.promises.writeFile(filePath, JSON.stringify(defaultContent, null, 2), "utf8");
+      return;
+    }
+    try {
+      await fs.promises.readFile(filePath, "utf8");
+    } catch {
+      await fs.promises.writeFile(filePath, JSON.stringify(defaultContent, null, 2), "utf8");
+    }
+  }
+
+  async _readJSON(filePath, fallback = null) {
+    try {
+      const raw = await fs.promises.readFile(filePath, "utf8");
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
+
+  async _writeJSON(filePath, data) {
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+  }
+
+  _relative(target) {
+    return path.isAbsolute(target) ? path.relative(this.baseDir, target) || target : target;
+  }
+
+  _slugify(text) {
+    return (text ?? "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64) || "entry";
   }
 }

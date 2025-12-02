@@ -3,6 +3,7 @@ import { extractJsonBlock } from "./core-utils.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
+const HELPER_SILENCE_TIMEOUT_MS = 12000;
 const OUTPUT_PREVIEW_LIMIT = 420;
 
 const NAVIGATION_JSON_SCHEMA = {
@@ -38,9 +39,11 @@ const NAVIGATION_JSON_SCHEMA = {
         name: { type: "string" },
         description: { type: "string" },
         code: { type: "string" },
+        stdin: { type: ["string", "null"] },
+        notes: { type: ["string", "null"] },
       },
     },
-    notes: { type: "string" },
+    notes: { type: ["string", "null"] },
   },
   required: ["actions"],
 };
@@ -73,7 +76,8 @@ const NAVIGATION_SCHEMA = [
   '    "language": "node|python",',
   '    "name": "friendly title",',
   '    "description": "why the helper is needed",',
-  '    "code": "fully executable source code"',
+  '    "code": "fully executable source code",',
+  '    "stdin": "optional input to send via stdin"',
   "  },",
   '  "notes": "optional supporting context"',
   "}",
@@ -84,7 +88,7 @@ const SYSTEM_PROMPT = [
   "Given workspace stats, file manifests, and existing tool inventories, explain how to traverse the repo.",
   "Return JSON that matches the provided schema exactly; omit prose outside the JSON response.",
   "When additional telemetry is required (e.g., enumerating files, parsing manifests), emit a minimal helper script.",
-  "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies.",
+  "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies. If stdin is required, include a compact sample payload under helper_script.stdin.",
 ].join(" ");
 
 function clampText(text, limit = OUTPUT_PREVIEW_LIMIT) {
@@ -103,9 +107,12 @@ export default class ApiNavigator {
     this.restClient = options?.restClient ?? null;
     this.cli = options?.cliExecutor ?? null;
     this.memory = options?.memory ?? null;
+    this.globalMemory = options?.globalMemory ?? null;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
     this.temperature = options?.invocationTemperature ?? DEFAULT_TEMPERATURE;
     this.helperTimeout = options?.helperTimeout ?? HELPER_TIMEOUT_MS;
+    this.helperSilenceTimeout =
+      options?.helperSilenceTimeout ?? options?.helperSilenceTimeoutMs ?? HELPER_SILENCE_TIMEOUT_MS;
     this.adapterRegistry = options?.adapterRegistry ?? null;
     this.disabled = false;
   }
@@ -315,7 +322,12 @@ export default class ApiNavigator {
       return null;
     }
     let runRecord = null;
-    const execution = await this._executeHelper(record.path, definition.language, payload.cwd);
+    const execution = await this._executeHelper(
+      record.path,
+      definition.language,
+      payload.cwd,
+      definition.stdin ?? null,
+    );
     if (execution) {
       const summary = this._summarizeHelperOutput(execution.stdout, execution.stderr);
       runRecord = await this.memory.recordHelperScriptRun({
@@ -325,7 +337,27 @@ export default class ApiNavigator {
         stdout: execution.stdout,
         stderr: execution.stderr,
         summary,
+        durationMs: execution.durationMs ?? null,
+        timeoutMs: this.helperTimeout,
+        silenceTimeoutMs: this.helperSilenceTimeout,
+        stdin: definition.stdin ?? null,
       });
+    }
+    if (this.globalMemory) {
+      try {
+        await this.globalMemory.recordHelperSnapshot({
+          id: record.entry.id,
+          name: record.entry.name,
+          description: record.entry.description ?? null,
+          workspaceType: payload.workspace?.classification?.label ?? null,
+          sourcePath: record.path,
+          source: "api-navigator",
+        });
+      } catch (error) {
+        this._log(
+          `[ApiNavigator] Failed to mirror helper globally: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
     return {
       id: record.entry.id,
@@ -338,7 +370,7 @@ export default class ApiNavigator {
     };
   }
 
-  async _executeHelper(scriptPath, language, cwd) {
+  async _executeHelper(scriptPath, language, cwd, stdin = null) {
     if (!this.cli) {
       return null;
     }
@@ -351,9 +383,12 @@ export default class ApiNavigator {
     const runner = normalizedLang === "python" ? "python" : "node";
     const command = `${runner} "${absolutePath}"`;
     try {
+      const startedAt = Date.now();
       const result = await this.cli.executeCommand(command, {
         cwd: cwd ?? path.dirname(absolutePath),
         timeout: this.helperTimeout,
+        maxSilenceMs: this.helperSilenceTimeout,
+        stdin,
         captureOutput: true,
       });
       return {
@@ -361,6 +396,8 @@ export default class ApiNavigator {
         exitCode: result.code ?? 0,
         stdout: result.stdout ?? "",
         stderr: result.stderr ?? "",
+        durationMs: result.durationMs ?? Date.now() - startedAt,
+        silenceExceeded: Boolean(result.silenceExceeded),
       };
     } catch (error) {
       return {
@@ -368,6 +405,8 @@ export default class ApiNavigator {
         exitCode: typeof error.code === "number" ? error.code : -1,
         stdout: error.stdout ?? "",
         stderr: error.stderr ?? (error instanceof Error ? error.message : String(error)),
+        durationMs: error?.durationMs ?? null,
+        silenceExceeded: Boolean(error?.silenceExceeded),
       };
     }
   }

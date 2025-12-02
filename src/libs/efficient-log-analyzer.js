@@ -14,6 +14,8 @@ export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   '    { "description": "actionable fix", "files": ["path/to/file.js"], "commands": ["npm test"], "owner": "team" }',
   "  ],",
   '  "next_steps": ["follow-up diagnostic or verification step"],',
+  '  "needs_more_context": false,',
+  '  "missing_snippets": ["list the minimal snippets/files you need next"],',
   '  "truncation_strategy": {',
   '    "should_split": true,',
   '    "chunking_plan": [',
@@ -582,7 +584,9 @@ export default class EfficientLogAnalyzer {
         "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
         "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
         "If information is unavailable, set the field to null instead of fabricating a value.",
+        "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
         "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
+        "Keep the response terse and within the schema—avoid extra prose or redundant fields.",
         "Respond with raw JSON only—no code fences, no markdown, no <think> blocks, and no prose outside the JSON object.",
       ],
       data: compressedContent,
@@ -767,6 +771,7 @@ export default class EfficientLogAnalyzer {
         workspaceType:
           workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
         workspaceHint: workspaceContext?.hintBlock ?? null,
+        workspaceDirectives: workspaceContext?.planDirectives ?? workspaceContext?.directives ?? null,
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
@@ -822,6 +827,24 @@ export default class EfficientLogAnalyzer {
       );
     }
     const detailReductions = Math.max(0, startingDetail - detailLevel);
+    const budgetNote = this._formatBudgetNote({
+      promptBudget,
+      tokens,
+      droppedChunks,
+      detailReductions,
+    });
+    if (budgetNote) {
+      const withNote = `${prompt}\n\n[Budget] ${budgetNote}`;
+      const notedEstimate = this._estimateTokens(withNote);
+      if (notedEstimate > promptBudget) {
+        const truncated = this._truncateToBudget(withNote, promptBudget);
+        prompt = truncated.prompt;
+        tokens = truncated.tokens;
+      } else {
+        prompt = withNote;
+        tokens = notedEstimate;
+      }
+    }
     return {
       prompt,
       body: composed?.text ?? "",
@@ -876,6 +899,20 @@ export default class EfficientLogAnalyzer {
     return JSON.stringify(parsed, null, 2);
   }
 
+  _formatBudgetNote({ promptBudget, tokens, droppedChunks, detailReductions }) {
+    const parts = [];
+    if (detailReductions > 0) {
+      parts.push(`Reduced summary detail by ${detailReductions} level(s).`);
+    }
+    if (droppedChunks > 0) {
+      parts.push(`Dropped ${droppedChunks} chunk(s) to fit context.`);
+    }
+    if (tokens > promptBudget) {
+      parts.push(`Final prompt still near/over budget (${tokens}/${promptBudget} est. tokens).`);
+    }
+    return parts.join(" ");
+  }
+
   _formatContextSupplement(extraContext) {
     if (!extraContext) {
       return "";
@@ -895,6 +932,9 @@ export default class EfficientLogAnalyzer {
         .map((entry) => `- ${entry.path} (${entry.bytes} bytes)`)
         .join("\n");
       lines.push(`File manifest sample:\n${manifest}`);
+    }
+    if (extraContext.workspaceDirectives) {
+      lines.push(`Workspace directives: ${extraContext.workspaceDirectives}`);
     }
     if (extraContext.readmeSnippet) {
       lines.push(`README excerpt:\n${extraContext.readmeSnippet}`);

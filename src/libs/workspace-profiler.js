@@ -171,6 +171,7 @@ export default class WorkspaceProfiler {
 
     const classification = this._classify(stats);
     const summary = this._formatSummary(root, stats, highlights, classification);
+    const directives = this._formatDirectives(classification);
     let connections = null;
     if (this.includeConnections && stats.codeFiles > 0 && this.connectionAnalyzer) {
       try {
@@ -189,6 +190,7 @@ export default class WorkspaceProfiler {
       highlights,
       classification,
       summary,
+      directives,
       connections,
       connectionSummary: connections?.summary ?? null,
       connectionGraphic: connections?.graph ?? null,
@@ -276,5 +278,14 @@ export default class WorkspaceProfiler {
       lines.push(`- Suggested focus: ${classification.actions.join("; ")}`);
     }
     return lines.join("\n");
+  }
+
+  _formatDirectives(classification) {
+    const actions = Array.isArray(classification?.actions) ? classification.actions : [];
+    const label = classification?.label ?? classification?.domain ?? "workspace";
+    if (!actions.length) {
+      return `${label}: operate conservatively; clarify goals before changing files.`;
+    }
+    return `${label}: ${actions.join("; ")}`;
   }
 }
