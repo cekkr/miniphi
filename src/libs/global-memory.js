@@ -17,6 +17,7 @@ export default class GlobalMiniPhiMemory {
     this.metricsDir = path.join(this.baseDir, "metrics");
     this.preferencesDir = path.join(this.baseDir, "preferences");
     this.helpersDir = path.join(this.baseDir, "helpers");
+    this.helperVersionsDir = path.join(this.helpersDir, "versions");
     this.commandLibraryFile = path.join(this.helpersDir, "command-library.json");
     this.helperIndexFile = path.join(this.helpersDir, "index.json");
     this.promptDbPath = path.join(this.promptsDir, "miniphi-prompts.db");
@@ -35,6 +36,7 @@ export default class GlobalMiniPhiMemory {
       fs.promises.mkdir(this.metricsDir, { recursive: true }),
       fs.promises.mkdir(this.preferencesDir, { recursive: true }),
       fs.promises.mkdir(this.helpersDir, { recursive: true }),
+      fs.promises.mkdir(this.helperVersionsDir, { recursive: true }),
     ]);
     await Promise.all([
       this._ensureFile(this.commandLibraryFile, { entries: [] }),
@@ -71,18 +73,61 @@ export default class GlobalMiniPhiMemory {
     const timestamp = nowIso();
     const slug = this._slugify(payload.name ?? path.basename(payload.sourcePath, path.extname(payload.sourcePath)));
     const ext = path.extname(payload.sourcePath) || ".txt";
-    const fileName = `${timestamp.replace(/[:.]/g, "-")}-${slug}${ext}`;
-    const destination = path.join(this.helpersDir, fileName);
-    await fs.promises.copyFile(payload.sourcePath, destination);
     const index = await this._readJSON(this.helperIndexFile, { entries: [] });
-    const entry = {
-      id: payload.id ?? `${slug}-${timestamp}`,
-      name: payload.name ?? slug,
-      description: payload.description ?? null,
-      workspaceType: payload.workspaceType ?? null,
-      storedAt: timestamp,
+    const existing =
+      (payload.id && index.entries.find((item) => item.id === payload.id)) ||
+      index.entries.find((item) => item.name === (payload.name ?? slug)) ||
+      null;
+    const helperId = existing?.id ?? payload.id ?? slug;
+    const version = (existing?.version ?? 0) + 1;
+    const versionDir = path.join(this.helperVersionsDir, helperId);
+    await fs.promises.mkdir(versionDir, { recursive: true });
+    const versionLabel = `v${String(version).padStart(4, "0")}`;
+    const fileName = `${versionLabel}-${slug}${ext}`;
+    const destination = path.join(versionDir, fileName);
+    await fs.promises.copyFile(payload.sourcePath, destination);
+
+    let rollbackPath = existing?.rollbackPath ?? null;
+    if (existing?.path) {
+      const previousAbsolute = path.isAbsolute(existing.path)
+        ? existing.path
+        : path.join(this.baseDir, existing.path);
+      try {
+        const prevExists = await fs.promises
+          .access(previousAbsolute, fs.constants.F_OK)
+          .then(() => true)
+          .catch(() => false);
+        if (prevExists) {
+          const rollbackName = `${versionLabel}-rollback-${path.basename(previousAbsolute)}`;
+          const rollbackTarget = path.join(versionDir, rollbackName);
+          await fs.promises.copyFile(previousAbsolute, rollbackTarget);
+          rollbackPath = this._relative(rollbackTarget);
+        }
+      } catch {
+        // ignore rollback copy failures
+      }
+    }
+
+    const history = Array.isArray(existing?.history) ? existing.history.slice(0, 9) : [];
+    history.unshift({
+      version,
       path: this._relative(destination),
-      source: payload.source ?? "project",
+      storedAt: timestamp,
+    });
+
+    const entry = {
+      id: helperId,
+      name: payload.name ?? slug,
+      description: payload.description ?? existing?.description ?? null,
+      workspaceType: payload.workspaceType ?? existing?.workspaceType ?? null,
+      storedAt: existing?.storedAt ?? timestamp,
+      updatedAt: timestamp,
+      path: this._relative(destination),
+      previousPath: existing?.path ?? null,
+      rollbackPath,
+      version,
+      history: history.slice(0, 12),
+      source: payload.source ?? existing?.source ?? "project",
       originalPath: this._relative(payload.sourcePath),
     };
     const filtered = index.entries.filter((item) => item.id !== entry.id);

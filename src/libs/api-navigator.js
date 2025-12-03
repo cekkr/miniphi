@@ -317,6 +317,7 @@ export default class ApiNavigator {
       objective: payload.objective ?? null,
       workspaceType: payload.workspace?.classification?.label ?? null,
       notes: definition.notes ?? null,
+      stdin: definition.stdin ?? null,
     });
     if (!record) {
       return null;
@@ -329,7 +330,10 @@ export default class ApiNavigator {
       definition.stdin ?? null,
     );
     if (execution) {
-      const summary = this._summarizeHelperOutput(execution.stdout, execution.stderr);
+      const summaryBase = this._summarizeHelperOutput(execution.stdout, execution.stderr);
+      const summary = execution.silenceExceeded
+        ? [summaryBase, "terminated after silence timeout"].filter(Boolean).join(" | ")
+        : summaryBase;
       runRecord = await this.memory.recordHelperScriptRun({
         id: record.entry.id,
         command: execution.command,
@@ -341,7 +345,13 @@ export default class ApiNavigator {
         timeoutMs: this.helperTimeout,
         silenceTimeoutMs: this.helperSilenceTimeout,
         stdin: definition.stdin ?? null,
+        silenceExceeded: execution.silenceExceeded,
       });
+      if (execution.silenceExceeded) {
+        this._log(
+          `[ApiNavigator] Helper execution for ${record.entry.name} stopped after silence timeout; review stdout/stderr before reuse.`,
+        );
+      }
     }
     if (this.globalMemory) {
       try {
@@ -352,6 +362,7 @@ export default class ApiNavigator {
           workspaceType: payload.workspace?.classification?.label ?? null,
           sourcePath: record.path,
           source: "api-navigator",
+          version: record.entry.version ?? null,
         });
       } catch (error) {
         this._log(
@@ -366,6 +377,8 @@ export default class ApiNavigator {
       description: record.entry.description ?? null,
       path: record.entry.path,
       absolutePath: record.path,
+      version: record.entry.version ?? null,
+      stdin: record.entry.stdinExample ?? definition.stdin ?? null,
       run: runRecord,
     };
   }

@@ -69,12 +69,19 @@ export default class PromptSchemaRegistry {
    * @param {string} id
    * @returns {string | null}
    */
-  buildInstructionBlock(id) {
+  buildInstructionBlock(id, options = undefined) {
     const schema = this.getSchema(id);
     if (!schema) {
       return null;
     }
-    return ["```json", schema.text, "```"].join("\n");
+    const compact = options?.compact ?? false;
+    const maxLength = Number.isFinite(options?.maxLength) && options.maxLength > 0 ? options.maxLength : null;
+    const content = compact ? JSON.stringify(schema.definition) : schema.text;
+    const trimmed =
+      maxLength && content.length > maxLength
+        ? `${content.slice(0, maxLength)}…`
+        : content;
+    return ["```json", trimmed, "```"].join("\n");
   }
 
   /**

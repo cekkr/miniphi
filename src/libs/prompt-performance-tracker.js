@@ -697,7 +697,10 @@ export default class PromptPerformanceTracker {
 
   _buildSchemaInstructions(schemaId, fallbackSchema) {
     if (this.schemaRegistry && schemaId) {
-      const block = this.schemaRegistry.buildInstructionBlock(schemaId);
+      const block = this.schemaRegistry.buildInstructionBlock(schemaId, {
+        compact: true,
+        maxLength: 1200,
+      });
       if (block) {
         return block;
       }

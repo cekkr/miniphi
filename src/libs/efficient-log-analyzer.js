@@ -157,6 +157,7 @@ export default class EfficientLogAnalyzer {
         workspaceSummary: workspaceContext?.summary ?? null,
         workspaceType: workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
         workspaceHint: workspaceContext?.hintBlock ?? null,
+        workspaceDirectives: workspaceContext?.planDirectives ?? workspaceContext?.directives ?? null,
         manifestPreview: workspaceContext?.manifestPreview ?? null,
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
@@ -171,6 +172,7 @@ export default class EfficientLogAnalyzer {
         fixedReferences: workspaceContext?.fixedReferences ?? null,
         indexSummaries: workspaceContext?.indexSummary ?? null,
         benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
+        commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
       },
     );
 
@@ -670,7 +672,10 @@ export default class EfficientLogAnalyzer {
 
   _buildSchemaInstructions() {
     if (this.schemaRegistry && this.schemaId) {
-      const block = this.schemaRegistry.buildInstructionBlock(this.schemaId);
+      const block = this.schemaRegistry.buildInstructionBlock(this.schemaId, {
+        compact: true,
+        maxLength: 1800,
+      });
       if (block) {
         return block;
       }
@@ -784,6 +789,7 @@ export default class EfficientLogAnalyzer {
         helperScript: workspaceContext?.helperScript ?? null,
         navigationSummary: workspaceContext?.navigationSummary ?? null,
         navigationBlock: workspaceContext?.navigationBlock ?? null,
+        commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
       };
       prompt = this.generateSmartPrompt(
         task,
@@ -975,6 +981,9 @@ export default class EfficientLogAnalyzer {
     if (extraContext.helperScript) {
       const helper = extraContext.helperScript;
       const helperParts = [];
+      if (helper.version) {
+        helperParts.push(`v${helper.version}`);
+      }
       if (helper.description) {
         helperParts.push(helper.description);
       }
@@ -983,6 +992,9 @@ export default class EfficientLogAnalyzer {
       }
       if (helper.path) {
         helperParts.push(`saved at ${helper.path}`);
+      }
+      if (helper.stdin) {
+        helperParts.push(`stdin available: ${this._truncateForLog(helper.stdin, 160)}`);
       }
       if (helperParts.length) {
         lines.push(`Helper script (${helper.language ?? "node"}): ${helperParts.join(" | ")}`);

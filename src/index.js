@@ -1021,6 +1021,7 @@ async function main() {
       schemaRegistry,
       systemPrompt: resolvedSystemPrompt,
       modelKey: modelSelection.modelKey,
+      restClient,
     });
     return;
   }
@@ -2472,6 +2473,7 @@ async function handleRecompose({
   schemaRegistry,
   systemPrompt,
   modelKey,
+  restClient,
 }) {
   const sessionLabel =
     typeof options.label === "string"
@@ -2599,6 +2601,8 @@ async function handleBenchmark({
       options,
       verbose,
       schemaRegistry,
+      restClient,
+      configData,
     });
     return;
   }
@@ -2694,7 +2698,13 @@ async function handleBenchmark({
   console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
 }
 
-async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) {
+async function runGeneralPurposeBenchmark({
+  options,
+  verbose,
+  schemaRegistry,
+  restClient = null,
+  configData = undefined,
+}) {
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
   const task =
     (typeof options.task === "string" && options.task.trim()) ||
@@ -2705,18 +2715,53 @@ async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) 
   const timeoutMs = parseNumericSetting(options.timeout, "--timeout") ?? 60000;
   const stateManager = new MiniPhiMemory(cwd);
   await stateManager.prepare();
+  const cli = new CliExecutor();
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
+  const navigator =
+    restClient &&
+    new ApiNavigator({
+      restClient,
+      cliExecutor: cli,
+      memory: stateManager,
+      globalMemory,
+      logger: verbose ? (message) => console.warn(message) : null,
+      adapterRegistry: schemaAdapterRegistry,
+      helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
+    });
   const workspaceContext = await generateWorkspaceSnapshot({
     rootDir: cwd,
     workspaceProfiler,
     capabilityInventory,
     verbose,
-    navigator: null,
+    navigator: navigator ?? null,
     objective: task,
-    executeHelper: false,
+    executeHelper: true,
     memory: stateManager,
   });
+
+  let decompositionPlan = null;
+  if (restClient) {
+    const decomposer = new PromptDecomposer({
+      restClient,
+      logger: verbose ? (message) => console.warn(message) : null,
+    });
+    try {
+      decompositionPlan = await decomposer.decompose({
+        objective: `${task} (plan)`,
+        command: command ?? null,
+        workspace: workspaceContext,
+        storage: stateManager,
+        metadata: { mode: "benchmark", scope: "general-purpose" },
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi][Benchmark] Prompt decomposer skipped: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
 
   const builder = new PromptTemplateBaselineBuilder({ schemaRegistry });
   const datasetSummary =
@@ -2752,7 +2797,6 @@ async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) 
 
   let commandDetails = null;
   if (command) {
-    const cli = new CliExecutor();
     const logDir = path.join(stateManager.historyDir, "benchmarks");
     await fs.promises.mkdir(logDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -2801,6 +2845,11 @@ async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) 
         }`,
       );
     }
+    if (commandDetails.silenceExceeded) {
+      console.warn(
+        "[MiniPhi][Benchmark] Command output stalled; review stdout/stderr logs before trusting the run.",
+      );
+    }
   }
 
   const summaryDir = path.join(stateManager.historyDir, "benchmarks");
@@ -2818,6 +2867,30 @@ async function runGeneralPurposeBenchmark({ options, verbose, schemaRegistry }) 
     workspaceSummary: workspaceContext?.summary ?? null,
     templates: savedTemplates.map((entry) => entry?.path ?? null).filter(Boolean),
     command: commandDetails,
+    navigation: workspaceContext?.navigationSummary ?? null,
+    helperScript: workspaceContext?.helperScript
+      ? {
+          id: workspaceContext.helperScript.id ?? null,
+          name: workspaceContext.helperScript.name ?? null,
+          path: workspaceContext.helperScript.path ?? null,
+          version: workspaceContext.helperScript.version ?? null,
+          stdin: workspaceContext.helperScript.stdin ?? null,
+          run: workspaceContext.helperScript.run
+            ? {
+                exitCode: workspaceContext.helperScript.run.exitCode ?? null,
+                summary: workspaceContext.helperScript.run.summary ?? null,
+                silenceExceeded: workspaceContext.helperScript.run.silenceExceeded ?? null,
+              }
+            : null,
+        }
+      : null,
+    decompositionPlan: decompositionPlan
+      ? {
+          id: decompositionPlan.planId ?? null,
+          summary: decompositionPlan.summary ?? null,
+          outline: decompositionPlan.outline ?? null,
+        }
+      : null,
   };
   await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
   await stateManager.recordBenchmarkSummary(summary, { summaryPath, type: "general-purpose" });
@@ -3055,6 +3128,9 @@ async function generateWorkspaceSnapshot({
     hintBlock,
     planDirectives ? `Workspace directives: ${planDirectives}` : null,
     cachedHint?.hintBlock && cachedHint.hintBlock !== hintBlock ? cachedHint.hintBlock : null,
+    cachedHint?.directives && cachedHint.directives !== planDirectives
+      ? `Cached directives: ${cachedHint.directives}`
+      : null,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -3134,6 +3210,7 @@ async function generateWorkspaceSnapshot({
         summary: workspaceSnapshot.summary ?? null,
         classification: workspaceSnapshot.classification ?? null,
         hintBlock: workspaceSnapshot.hintBlock ?? null,
+        directives: workspaceSnapshot.planDirectives ?? null,
         manifestPreview: workspaceSnapshot.manifestPreview ?? null,
         navigationSummary: navigationHints?.summary ?? null,
         navigationBlock: navigationHints?.block ?? null,

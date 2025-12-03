@@ -31,6 +31,7 @@ export default class MiniPhiMemory {
     this.promptStepJournalDir = path.join(this.promptExchangesDir, "stepwise");
     this.promptTemplatesDir = path.join(this.promptExchangesDir, "templates");
     this.helpersDir = path.join(this.baseDir, "helpers");
+    this.helperVersionsDir = path.join(this.helpersDir, "versions");
     this.fixedReferencesDir = path.join(this.promptExchangesDir, "fixed-references");
     this.workspaceHintsFile = path.join(this.indicesDir, "workspace-hints.json");
 
@@ -82,6 +83,7 @@ export default class MiniPhiMemory {
     await fs.promises.mkdir(this.promptStepJournalDir, { recursive: true });
     await fs.promises.mkdir(this.promptTemplatesDir, { recursive: true });
     await fs.promises.mkdir(this.helpersDir, { recursive: true });
+    await fs.promises.mkdir(this.helperVersionsDir, { recursive: true });
     await fs.promises.mkdir(this.fixedReferencesDir, { recursive: true });
 
     await this._ensureFile(this.promptsFile, { history: [] });
@@ -587,6 +589,7 @@ export default class MiniPhiMemory {
       summary: entry.summary ?? null,
       classification: entry.classification ?? null,
       hintBlock: entry.hintBlock ?? null,
+      directives: entry.directives ?? null,
       manifestPreview: Array.isArray(entry.manifestPreview) ? entry.manifestPreview.slice(0, 12) : [],
       navigationSummary: entry.navigationSummary ?? null,
       navigationBlock: entry.navigationBlock ?? null,
@@ -948,21 +951,72 @@ export default class MiniPhiMemory {
     const language = this._normalizeHelperLanguage(script.language);
     const slug = this._slugify(script.name ?? `helper-${language}`);
     const ext = language === "python" ? ".py" : ".js";
-    const fileName = `${timestamp.replace(/[:.]/g, "-")}-${slug}${ext}`;
-    const helperPath = path.join(this.helpersDir, fileName);
+    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
+    const existing =
+      (script.id && index.entries.find((item) => item.id === script.id)) ||
+      index.entries.find(
+        (item) =>
+          (item.name === slug || item.name === script.name) &&
+          this._normalizeHelperLanguage(item.language) === language,
+      ) ||
+      null;
+    const helperId = existing?.id ?? script.id ?? `${slug}-${language}`;
+    const version = (existing?.version ?? 0) + 1;
+    const versionDir = path.join(this.helperVersionsDir, helperId);
+    await fs.promises.mkdir(versionDir, { recursive: true });
+    const versionLabel = `v${String(version).padStart(4, "0")}`;
+    const fileName = `${versionLabel}-${slug}${ext}`;
+    const helperPath = path.join(versionDir, fileName);
     await fs.promises.writeFile(helperPath, (script.code ?? "").replace(/\r\n/g, "\n"), "utf8");
-    const entry = {
-      id: script.id ?? randomUUID(),
-      name: script.name ?? slug,
-      description: script.description ?? null,
-      language,
-      createdAt: timestamp,
-      source: script.source ?? null,
-      objective: script.objective ?? null,
-      workspaceType: script.workspaceType ?? null,
+
+    let rollbackPath = existing?.rollbackPath ?? null;
+    if (existing?.path) {
+      const previousAbsolute = path.isAbsolute(existing.path)
+        ? existing.path
+        : path.join(this.baseDir, existing.path);
+      try {
+        const prevExists = await fs.promises
+          .access(previousAbsolute, fs.constants.F_OK)
+          .then(() => true)
+          .catch(() => false);
+        if (prevExists) {
+          const rollbackName = `${versionLabel}-rollback-${path.basename(previousAbsolute)}`;
+          const rollbackTarget = path.join(versionDir, rollbackName);
+          await fs.promises.copyFile(previousAbsolute, rollbackTarget);
+          rollbackPath = this._relative(rollbackTarget);
+        }
+      } catch {
+        // ignore rollback copy failures
+      }
+    }
+
+    const history = Array.isArray(existing?.history) ? existing.history.slice(0, 11) : [];
+    history.unshift({
+      version,
       path: this._relative(helperPath),
-      notes: script.notes ?? null,
-      runs: [],
+      savedAt: timestamp,
+      codeHash: this._hashText(script.code ?? ""),
+    });
+
+    const entry = {
+      id: helperId,
+      name: script.name ?? existing?.name ?? slug,
+      description: script.description ?? existing?.description ?? null,
+      language,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+      version,
+      source: script.source ?? existing?.source ?? null,
+      objective: script.objective ?? existing?.objective ?? null,
+      workspaceType: script.workspaceType ?? existing?.workspaceType ?? null,
+      path: this._relative(helperPath),
+      previousPath: existing?.path ?? null,
+      rollbackPath,
+      history: history.slice(0, 12),
+      notes: script.notes ?? existing?.notes ?? null,
+      runs: Array.isArray(existing?.runs) ? existing.runs : [],
+      lastRun: existing?.lastRun ?? null,
+      stdinExample: script.stdin ?? existing?.stdinExample ?? null,
     };
     await this._updateHelperScriptsIndex(entry);
     return { entry, path: helperPath };
@@ -1002,10 +1056,13 @@ export default class MiniPhiMemory {
       timeoutMs: run.timeoutMs ?? null,
       silenceTimeoutMs: run.silenceTimeoutMs ?? null,
       stdin: run.stdin ?? null,
+      silenceExceeded: Boolean(run.silenceExceeded),
+      version: entry.version ?? null,
     };
     entry.lastRun = runRecord;
     const previous = Array.isArray(entry.runs) ? entry.runs : [];
     entry.runs = [runRecord, ...previous].slice(0, 5);
+    entry.updatedAt = timestamp;
     index.entries[entryIndex] = entry;
     index.updatedAt = new Date().toISOString();
     await this._writeJSON(this.helperScriptsIndexFile, index);

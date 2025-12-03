@@ -39,7 +39,8 @@ export default class PromptTemplateBaselineBuilder {
   _buildTruncationTemplate(payload) {
     const schemaId = "log-analysis";
     const schemaBlock = formatSchemaBlock(
-      this.schemaRegistry?.buildInstructionBlock?.(schemaId) ?? null,
+      this.schemaRegistry?.buildInstructionBlock?.(schemaId, { compact: true, maxLength: 1400 }) ??
+        null,
     );
     const task = (payload.task ?? DEFAULT_TRUNCATION_TASK).trim();
     const datasetSummary = (payload.datasetSummary ?? "Oversized output captured from the current workspace.").trim();
@@ -84,7 +85,8 @@ export default class PromptTemplateBaselineBuilder {
   _buildLogAnalysisTemplate(payload) {
     const schemaId = (payload.schemaId ?? "log-analysis").toString().trim() || "log-analysis";
     const schemaBlock = formatSchemaBlock(
-      this.schemaRegistry?.buildInstructionBlock?.(schemaId) ?? null,
+      this.schemaRegistry?.buildInstructionBlock?.(schemaId, { compact: true, maxLength: 1400 }) ??
+        null,
     );
     const task = (payload.task ?? DEFAULT_ANALYSIS_TASK).trim();
     const datasetSummary = (

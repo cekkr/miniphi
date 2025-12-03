@@ -219,8 +219,11 @@ export default class PromptDecomposer {
       command: payload.command ?? null,
       workspace: {
         classification: payload.workspace?.classification ?? null,
+        domain: payload.workspace?.classification?.domain ?? null,
         summary: payload.workspace?.summary ?? null,
         hint: payload.workspace?.hintBlock ?? null,
+        directives: payload.workspace?.planDirectives ?? payload.workspace?.directives ?? null,
+        cached_hint: payload.workspace?.cachedHints?.hintBlock ?? null,
         manifestSample: (payload.workspace?.manifestPreview ?? []).slice(0, 8),
       },
       limits: {
