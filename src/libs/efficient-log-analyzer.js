@@ -267,14 +267,29 @@ export default class EfficientLogAnalyzer {
       if (sanitized) {
         analysis = sanitized;
       } else {
-        usedFallback = true;
-        const reason = "Phi response did not contain valid JSON";
-        console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
-        this._logDev(devLog, `${reason}; emitting fallback JSON.`);
-        analysis = this._buildFallbackAnalysis(task, reason, {
-          datasetHint: `${lines.length} lines captured from ${command}`,
-          rerunCommand: command,
+        const salvage = await this._handleInvalidJsonAnalysis({
+          analysis,
+          devLog,
+          schemaId: traceOptions?.schemaId ?? this.schemaId,
+          task,
+          command,
+          linesAnalyzed: lines.length,
+          compression,
+          traceOptions,
         });
+        if (salvage?.analysis) {
+          analysis = salvage.analysis;
+          usedFallback = salvage.usedFallback ?? false;
+        } else {
+          usedFallback = true;
+          const reason = "Phi response did not contain valid JSON";
+          console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
+          this._logDev(devLog, `${reason}; emitting fallback JSON.`);
+          analysis = this._buildFallbackAnalysis(task, reason, {
+            datasetHint: `${lines.length} lines captured from ${command}`,
+            rerunCommand: command,
+          });
+        }
       }
     }
 
@@ -472,14 +487,31 @@ export default class EfficientLogAnalyzer {
       if (sanitized) {
         analysis = sanitized;
       } else {
-        usedFallback = true;
-        const reason = "Phi response did not contain valid JSON";
-        console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
-        this._logDev(devLog, `${reason}; emitting fallback JSON.`);
-        analysis = this._buildFallbackAnalysis(task, reason, {
-          datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
-          rerunCommand: filePath,
+        const salvage = await this._handleInvalidJsonAnalysis({
+          analysis,
+          devLog,
+          schemaId: traceOptions?.schemaId ?? this.schemaId,
+          task,
+          command: filePath,
+          linesAnalyzed: linesUsed,
+          compression: {
+            content: prompt, // prompt already includes chunk summaries; reuse the body to avoid recompute.
+          },
+          traceOptions,
         });
+        if (salvage?.analysis) {
+          analysis = salvage.analysis;
+          usedFallback = salvage.usedFallback ?? false;
+        } else {
+          usedFallback = true;
+          const reason = "Phi response did not contain valid JSON";
+          console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
+          this._logDev(devLog, `${reason}; emitting fallback JSON.`);
+          analysis = this._buildFallbackAnalysis(task, reason, {
+            datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
+            rerunCommand: filePath,
+          });
+        }
       }
     }
     const invocationFinishedAt = Date.now();
@@ -894,6 +926,146 @@ export default class EfficientLogAnalyzer {
     return { prompt: truncated, tokens: this._estimateTokens(truncated) };
   }
 
+  async _handleInvalidJsonAnalysis(payload) {
+    const {
+      analysis,
+      devLog,
+      schemaId,
+      task,
+      command,
+      linesAnalyzed,
+      compression,
+      traceOptions,
+    } = payload ?? {};
+    if (!analysis) {
+      return null;
+    }
+    const artifactPath = await this._writeRawResponseArtifact(
+      analysis,
+      devLog,
+      `${this._safeLabel(command ?? task ?? "analysis") || "analysis"}-raw-response`,
+    );
+    if (artifactPath) {
+      this._logDev(devLog, `Saved raw Phi response to ${artifactPath}`);
+    }
+    const repaired = this._attemptJsonRepair(analysis);
+    if (repaired) {
+      const repairedText = JSON.stringify(repaired, null, 2);
+      console.warn("[MiniPhi] Phi response failed validation; used salvaged JSON payload.");
+      this._logDev(devLog, "Applied JSON repair heuristic to salvage Phi response.");
+      return { analysis: repairedText, usedFallback: false };
+    }
+    const retry = await this._retrySchemaOnlyPrompt({
+      schemaId,
+      task,
+      command,
+      compression,
+      traceOptions,
+      devLog,
+    });
+    if (retry) {
+      console.warn("[MiniPhi] Phi response failed validation; schema-only retry succeeded.");
+      this._logDev(devLog, "Schema-only retry produced valid JSON response.");
+      return { analysis: retry, usedFallback: false };
+    }
+    this._logDev(devLog, "JSON salvage and schema-only retry failed; falling back.");
+    return null;
+  }
+
+  _attemptJsonRepair(rawText) {
+    if (!rawText || typeof rawText !== "string") {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(rawText);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      // continue to heuristics
+    }
+    const firstBrace = rawText.indexOf("{");
+    const lastBrace = rawText.lastIndexOf("}");
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      return null;
+    }
+    const candidate = rawText.slice(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async _retrySchemaOnlyPrompt({ schemaId, task, command, compression, traceOptions, devLog }) {
+    if (!this.phi4) {
+      return null;
+    }
+    const schemaBlock =
+      this.schemaRegistry?.buildInstructionBlock(schemaId ?? this.schemaId, {
+        compact: true,
+        maxLength: 1800,
+      }) ?? [`\`\`\`json`, LOG_ANALYSIS_FALLBACK_SCHEMA, "```"].join("\n");
+    const datasetSummary = this._clampContextForSchemaRetry(compression?.content ?? "");
+    const retryPrompt = [
+      "Re-run the analysis and return STRICT JSON that matches the schema below.",
+      "Do not include explanations, greetings, or code fences around the JSON.",
+      task ? `Task: ${task}` : null,
+      command ? `Origin: ${command}` : null,
+      "Schema:",
+      schemaBlock,
+      datasetSummary ? "Context excerpt:" : null,
+      datasetSummary || null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const priorHistory =
+      typeof this.phi4.getHistory === "function" ? this.phi4.getHistory() : null;
+    let retryResponse = "";
+    try {
+      if (typeof this.phi4.setHistory === "function") {
+        // isolate retry to avoid contaminating the main chat history with previous attempts
+        this.phi4.setHistory(priorHistory ? [priorHistory[0]] : null);
+      }
+      await this.phi4.chatStream(
+        retryPrompt,
+        (token) => {
+          retryResponse += token;
+        },
+        undefined,
+        (err) => {
+          this._logDev(devLog, `Schema-only retry error: ${err}`);
+          const message = err instanceof Error ? err.message : String(err);
+          throw new Error(message);
+        },
+        {
+          ...(traceOptions ?? {}),
+          label: "analysis-schema-retry",
+          schemaId: schemaId ?? this.schemaId,
+        },
+      );
+    } catch {
+      return null;
+    } finally {
+      if (priorHistory && typeof this.phi4.setHistory === "function") {
+        this.phi4.setHistory(priorHistory);
+      }
+    }
+    const sanitized = this._sanitizeJsonResponse(retryResponse);
+    return sanitized ?? null;
+  }
+
+  _clampContextForSchemaRetry(contextText, maxLength = 4000) {
+    if (!contextText || typeof contextText !== "string") {
+      return "";
+    }
+    const normalized = contextText.trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, maxLength)}\n[context trimmed for schema retry]`;
+  }
+
   _sanitizeJsonResponse(text) {
     if (!text) {
       return null;
@@ -1226,6 +1398,25 @@ export default class EfficientLogAnalyzer {
       return null;
     }
     return { filePath };
+  }
+
+  async _writeRawResponseArtifact(text, devLogHandle, label) {
+    const targetDir = devLogHandle?.filePath
+      ? path.dirname(devLogHandle.filePath)
+      : this.devLogDir;
+    if (!targetDir) {
+      return null;
+    }
+    const safeName = this._safeLabel(label) || "analysis";
+    const fileName = `${safeName}-${Date.now()}.txt`;
+    const fullPath = path.join(targetDir, fileName);
+    try {
+      await fs.promises.mkdir(targetDir, { recursive: true });
+      await fs.promises.writeFile(fullPath, text, "utf8");
+      return fullPath;
+    } catch {
+      return null;
+    }
   }
 
   _logDev(handle, message) {

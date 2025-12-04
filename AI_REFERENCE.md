@@ -188,7 +188,11 @@ These are the currently "fixed reference points" of miniphi project:
 - Enforce minimal-token prompting by default: keep schema blocks slim, include `needs_more_context`/`missing_snippets` style fields so the model can request only essential additions, and drive chunked prompts automatically when the context budget is exceeded.
 
 ### Runtime hardening backlog
-- Mirror the “external LM Studio disables ResourceMonitor” guard inside `benchmark/run-tests.js` so benchmark suites stop emitting false RAM/VRAM warnings when the APIs run over the network, and pipe those warnings back into the CLI summary for parity.
+- Add a LM Studio protocol gate for prompt journals: when the SDK reports `channelSend for unknown channel` or other transport warnings, record the server/SDK versions, fall back between REST/WS (or disable streaming), and stop the run quickly if compatibility is broken.
+- When log-analysis schema validation fails on non-JSON output (for example Granite returning `Expected ',' or '}'`), capture the raw text, attempt structured salvage, then retry with a slim schema-only prompt; mark the journal with the salvage status instead of only emitting a fallback summary.
+- If a truncation plan lands before a failure, auto-offer or auto-run `--resume-truncation <id>` on the next chunk (including helper commands and chunk ids) so besh journal reruns do not repeat the same monolithic prompt.
+- Add a Windows-safe VRAM probe (DirectX/WMI or `nvidia-smi` fallback) so prompt journals stop printing `VRAM usage could not be determined` on hosts like the besh regression box.
+- Mirror the "external LM Studio disables ResourceMonitor" guard inside `benchmark/run-tests.js` so benchmark suites stop emitting false RAM/VRAM warnings when the APIs run over the network, and pipe those warnings back into the CLI summary for parity.
 - Harden `EfficientLogAnalyzer` with a watchdog + deterministic fallback JSON so `npm run sample:besh-journal` can emit partial-but-valid schema output instead of stalling at the 28.8-minute limit; rerun the sample afterward to refresh `.miniphi/prompt-exchanges`.
 - Feed `PromptDecomposer` and navigator plans directly into multi-pass analyzer runs (one Phi call per chunk) so large files can be split/merged automatically instead of relying on a single monolithic prompt.
 - Extend automated coverage beyond the new helper tests by introducing mocked LM Studio interactions (e.g., fixture-driven `Phi4Handler` responses) so prompt builders, schema adapters, and navigator flows have regression protection.
@@ -203,7 +207,6 @@ These are the currently "fixed reference points" of miniphi project:
 ### Deferred follow-ups (Dec 2, 2025)
 - Gate navigator command proposals/execution through the capability inventory (dry-run `--help`/file probes) so samples like `besh` stop suggesting `npm run lint` or missing Python helpers.
 - Wire dropped-chunk metadata from `promptAdjustments` into prompt journals and truncation resume flows so omitted slices automatically become follow-up tasks instead of silent context loss.
-- Add a VRAM-aware monitor for Windows hosts to replace the “VRAM usage could not be determined on this host” placeholder in prompt journals and executions.
 - Harden navigator helper execution on Windows: add an integration test that replays a saved helper via `python` from a nested cwd and log the resolved path when the interpreter rejects it so the lingering `C:\\Sources\\GitHub\\miniphi\\samples\\besh\\\"C:\\Sources\\GitHub\\miniphi\\.miniphi\\helpers\\...py\"` error can be eliminated.
 - When Phi still returns non-JSON after chunk drops, retry with the slim log-analysis baseline (schema by id, no inline fences) before falling back; if retries fail, automatically schedule `--resume-truncation <id>` runs per dropped chunk instead of emitting a single coarse fallback summary.
 

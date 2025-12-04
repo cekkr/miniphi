@@ -38,6 +38,10 @@ export class Phi4Handler {
     this.performanceTracker = options?.performanceTracker ?? null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.noTokenTimeoutMs = options?.noTokenTimeoutMs ?? null;
+    this.protocolGate = {
+      wsDisabled: false,
+      lastWarning: null,
+    };
   }
 
   /**
@@ -416,6 +420,33 @@ export class Phi4Handler {
           currentPrompt = basePrompt;
           continue;
         }
+        const protocolWarning = this._isProtocolWarning(message);
+        if (protocolWarning) {
+          const metadata = {
+            ...this._buildProtocolMetadata(),
+            transport: useRestTransport ? "rest" : "ws",
+          };
+          this.protocolGate.wsDisabled = true;
+          this.protocolGate.lastWarning = message;
+          this._recordPromptEvent(traceContext, requestSnapshot, {
+            eventType: "protocol-warning",
+            severity: "error",
+            message: protocolWarning,
+            metadata,
+          });
+          if (!useRestTransport && this.restClient) {
+            attempt += 1;
+            currentPrompt = basePrompt;
+            this.preferRestTransport = true;
+            continue;
+          }
+          const details = metadata.sdkVersion
+            ? ` (SDK ${metadata.sdkVersion}${
+                metadata.restBaseUrl ? `, REST ${metadata.restBaseUrl}` : ""
+              })`
+            : "";
+          throw new Error(`LM Studio protocol warning${details}: ${protocolWarning}`);
+        }
         const schemaRetryAllowed =
           schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
         if (schemaRetryAllowed) {
@@ -508,9 +539,39 @@ export class Phi4Handler {
     );
   }
 
+  _isProtocolWarning(message) {
+    if (!message || typeof message !== "string") {
+      return null;
+    }
+    const normalized = message.toLowerCase();
+    if (normalized.includes("channel") && normalized.includes("unknown") && normalized.includes("send")) {
+      return message;
+    }
+    if (normalized.includes("communication warning")) {
+      return message;
+    }
+    if (normalized.includes("protocol") && normalized.includes("incompatible")) {
+      return message;
+    }
+    return null;
+  }
+
+  _buildProtocolMetadata() {
+    return {
+      sdkVersion:
+        typeof this.manager?.getSdkVersion === "function" ? this.manager.getSdkVersion() : null,
+      restBaseUrl: this.restClient?.baseUrl ?? null,
+      apiVersion: this.restClient?.apiVersion ?? null,
+      model: this.modelKey ?? null,
+    };
+  }
+
   _shouldUseRest(traceContext = undefined) {
     if (!this.restClient) {
       return false;
+    }
+    if (this.protocolGate?.wsDisabled) {
+      return true;
     }
     if (process.env.MINIPHI_FORCE_REST === "1") {
       return true;

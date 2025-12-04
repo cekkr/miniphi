@@ -366,6 +366,10 @@ export default class ResourceMonitor {
     if (os.platform() !== "win32") {
       return null;
     }
+    const usageSamples = await this._queryWindowsAdapterUsage();
+    const usageMap = new Map(
+      usageSamples.map((entry) => [this._normalizeAdapterKey(entry.name), entry]),
+    );
     const stdout = await this._safeExec("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
@@ -388,11 +392,19 @@ export default class ResourceMonitor {
         if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
           return null;
         }
+        const totalMB = Number((totalBytes / (1024 * 1024)).toFixed(2));
+        const usage = usageMap.get(this._normalizeAdapterKey(adapter.Name ?? adapter.name ?? ""));
+        const usedMB =
+          usage && Number.isFinite(usage.usedMB) ? Number(usage.usedMB.toFixed(2)) : null;
+        const percent =
+          usedMB !== null && Number.isFinite(totalMB) && totalMB > 0
+            ? Number(((usedMB / totalMB) * 100).toFixed(2))
+            : usage?.percent ?? null;
         return {
           name: adapter.Name ?? "GPU",
-          totalMB: Number((totalBytes / (1024 * 1024)).toFixed(2)),
-          usedMB: null,
-          percent: null,
+          totalMB,
+          usedMB,
+          percent,
         };
       })
       .filter(Boolean);
@@ -402,11 +414,16 @@ export default class ResourceMonitor {
     }
 
     const totalMB = adapters.reduce((acc, gpu) => acc + gpu.totalMB, 0);
+    const usedMB = adapters.reduce(
+      (acc, gpu) => acc + (Number.isFinite(gpu.usedMB) ? gpu.usedMB : 0),
+      0,
+    );
     return {
       adapters,
       totalMB,
-      usedMB: null,
-      percent: null,
+      usedMB: usedMB > 0 ? Number(usedMB.toFixed(2)) : null,
+      percent:
+        usedMB > 0 && totalMB > 0 ? Number(((usedMB / totalMB) * 100).toFixed(2)) : null,
       strategy: "win32-cim",
     };
   }
@@ -466,6 +483,56 @@ export default class ResourceMonitor {
     }
     const unit = match[2].toUpperCase();
     return unit === "GB" ? value * 1024 : value;
+  }
+
+  async _queryWindowsAdapterUsage() {
+    if (os.platform() !== "win32") {
+      return [];
+    }
+    const stdout = await this._safeExec("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$usage = Get-Counter '\\\\GPU Adapter Memory(*)\\\\Dedicated Usage' -ErrorAction SilentlyContinue; $limit = Get-Counter '\\\\GPU Adapter Memory(*)\\\\Dedicated Limit' -ErrorAction SilentlyContinue; $limitMap = @{}; if ($limit) { $limit.CounterSamples | ForEach-Object { $limitMap[$_.InstanceName] = $_.CookedValue } } $results = @(); if ($usage) { foreach ($sample in $usage.CounterSamples) { $limitVal = $limitMap[$sample.InstanceName]; $results += [pscustomobject]@{ Name = $sample.InstanceName; DedicatedUsageBytes = $sample.CookedValue; DedicatedLimitBytes = $limitVal } } } $results | ConvertTo-Json -Compress",
+    ]);
+    if (!stdout) {
+      return [];
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(stdout);
+    } catch {
+      return [];
+    }
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries
+      .map((entry) => {
+        const usedBytes = Number(entry.DedicatedUsageBytes ?? entry.dedicatedUsageBytes ?? 0);
+        const limitBytes = Number(entry.DedicatedLimitBytes ?? entry.dedicatedLimitBytes ?? 0);
+        const usedMB = Number.isFinite(usedBytes)
+          ? Number((usedBytes / (1024 * 1024)).toFixed(2))
+          : null;
+        const limitMB =
+          Number.isFinite(limitBytes) && limitBytes > 0
+            ? Number((limitBytes / (1024 * 1024)).toFixed(2))
+            : null;
+        const percent =
+          limitMB && usedMB !== null ? Number(((usedMB / limitMB) * 100).toFixed(2)) : null;
+        return {
+          name: entry.Name ?? entry.InstanceName ?? "GPU",
+          usedMB,
+          limitMB,
+          percent,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  _normalizeAdapterKey(name) {
+    if (!name || typeof name !== "string") {
+      return "";
+    }
+    return name.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
   }
 
   async _safeExec(command, args, options = undefined) {
