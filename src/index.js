@@ -2793,6 +2793,13 @@ async function handleRecompose({
       ? options["recompose-mode"].toLowerCase()
       : configData.recompose?.mode?.toLowerCase() ?? "offline";
   const recomposeMode = rawMode === "live" ? "live" : "offline";
+  const workspaceOverviewTimeoutMs =
+    resolveDurationMs({
+      secondsValue: options["workspace-overview-timeout"],
+      secondsLabel: "--workspace-overview-timeout",
+      millisValue: options["workspace-overview-timeout-ms"],
+      millisLabel: "--workspace-overview-timeout-ms",
+    }) ?? null;
   const harness = await createRecomposeHarness({
     configData,
     promptDefaults,
@@ -2806,6 +2813,7 @@ async function handleRecompose({
     recomposeMode,
     systemPrompt,
     modelKey,
+    workspaceOverviewTimeoutMs,
   });
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
   const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
@@ -2948,6 +2956,13 @@ async function handleBenchmark({
   const planBenchmarkRoot = plan ? resolvePlanPath(plan, plan.data.benchmarkRoot ?? plan.data.outputDir) : null;
   const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? planSample ?? null;
   const benchmarkRoot = options["benchmark-root"] ?? planBenchmarkRoot ?? undefined;
+  const benchmarkWorkspaceOverviewTimeout =
+    resolveDurationMs({
+      secondsValue: options["workspace-overview-timeout"],
+      secondsLabel: "--workspace-overview-timeout",
+      millisValue: options["workspace-overview-timeout-ms"],
+      millisLabel: "--workspace-overview-timeout-ms",
+    }) ?? null;
   const harness = await createRecomposeHarness({
     configData,
     promptDefaults,
@@ -2961,6 +2976,7 @@ async function handleBenchmark({
     recomposeMode: "live",
     systemPrompt,
     modelKey,
+    workspaceOverviewTimeoutMs: benchmarkWorkspaceOverviewTimeout,
   });
   const runner = new RecomposeBenchmarkRunner({
     sampleDir: sampleArg,
@@ -3391,6 +3407,7 @@ async function createRecomposeHarness({
   recomposeMode = "live",
   systemPrompt = undefined,
   modelKey = undefined,
+  workspaceOverviewTimeoutMs = undefined,
 }) {
   let phi4 = null;
   let manager = null;
@@ -3451,6 +3468,7 @@ async function createRecomposeHarness({
     verboseLogging: verbose,
     memory,
     useLivePrompts: recomposeMode === "live",
+    workspaceOverviewTimeoutMs,
   });
   const cleanup = async () => {
     if (phi4) {
@@ -4164,6 +4182,8 @@ Options:
   --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)
   --assume-yes                 Auto-approve prompts when the policy is ask/session
   --command-danger <level>     Danger classification for --cmd (low | mid | high; default: mid)
+  --workspace-overview-timeout <s>   Workspace overview prompt timeout (seconds; default 120s for recompose)
+  --workspace-overview-timeout-ms <ms>  Workspace overview prompt timeout (milliseconds override)
   (workspace mode also accepts free-form positional text: npx miniphi "Draft release notes".)
 
 Prompt template baselines:

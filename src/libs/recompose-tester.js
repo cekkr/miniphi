@@ -57,6 +57,8 @@ const WORKSPACE_RETRY_PATTERNS = [/no workspace provided/i, /workspace context m
 const MAX_OVERVIEW_CHAR_BUDGET = 8000;
 const MAX_OVERVIEW_SUMMARY_LINES = 4;
 const OVERVIEW_COMMENT_PREFIX = /^(?:\/\/+|\/\*+|\*+|#+|--)/;
+const DEFAULT_OVERVIEW_TIMEOUT_MS = 120000;
+const DEFAULT_OVERVIEW_PROGRESSIVE = [1, 0.65, 0.35];
 
 export default class RecomposeTester {
   constructor(options = {}) {
@@ -80,6 +82,19 @@ export default class RecomposeTester {
     this.sessionDir = null;
     this.sessionLabel = null;
     this.promptLogPath = null;
+    const timeoutCandidate = Number(options.workspaceOverviewTimeoutMs);
+    this.workspaceOverviewTimeoutMs =
+      Number.isFinite(timeoutCandidate) && timeoutCandidate > 0
+        ? timeoutCandidate
+        : DEFAULT_OVERVIEW_TIMEOUT_MS;
+    const progression =
+      Array.isArray(options.workspaceOverviewProgression) &&
+      options.workspaceOverviewProgression.length
+        ? options.workspaceOverviewProgression
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0)
+        : DEFAULT_OVERVIEW_PROGRESSIVE;
+    this.workspaceOverviewProgression = progression.length ? progression : DEFAULT_OVERVIEW_PROGRESSIVE;
   }
 
   async run(options = {}) {
@@ -549,40 +564,66 @@ export default class RecomposeTester {
     if (this.workspaceContext?.kind === "code" && this.workspaceContext.sourceDir === sourceDir) {
       return this.workspaceContext.summary;
     }
-    const glimpses = await this._collectGlimpses(sourceDir, files);
+    const glimpsesInfo = await this._collectGlimpses(sourceDir, files);
+    const glimpses = this._renderGlimpsesText(glimpsesInfo);
     const workspaceHints = buildWorkspaceHintBlock(
       files,
       sourceDir,
       this.sampleMetadata?.readmeSnippet,
       { limit: 12 },
     );
-    const promptParts = [
+    const overviewIntro = [
       "Survey the workspace and narrate the protagonist's goals.",
       "Produce sections for Architecture Rhythm, Supporting Cast, and Risk Notes.",
       "Avoid listing file names explicitly; rely on behaviors and interactions.",
-      `Glimpses:\n${glimpses}`,
-      workspaceHints ? `Workspace hints:\n${workspaceHints}` : null,
-      formatMetadataSummary(this.sampleMetadata),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    let summaryText = this._sanitizeNarrative(await this._promptPhi(promptParts, { label: "recompose:workspace-overview" }));
-    if (this._needsWorkspaceRetry(summaryText)) {
-      const retryPrompt = [
-        promptParts,
-        buildWorkspaceHintBlock(files, sourceDir, this.sampleMetadata?.readmeSnippet),
-      ]
-        .filter(Boolean)
-        .join("\n\n");
+    ].join("\n\n");
+    const metadataSummary = formatMetadataSummary(this.sampleMetadata);
+    const attempts = this._buildWorkspaceOverviewAttempts(glimpsesInfo);
+    let summaryText = "";
+    for (const attempt of attempts) {
+      const prompt = this._composeWorkspaceOverviewPrompt({
+        intro: overviewIntro,
+        glimpsesText: attempt.glimpsesText,
+        workspaceHints,
+        metadataSummary,
+      });
       summaryText = this._sanitizeNarrative(
-        await this._promptPhi(retryPrompt, { label: "recompose:workspace-overview-retry" }),
+        await this._promptPhi(prompt, {
+          label: attempt.label,
+          timeoutMs: this.workspaceOverviewTimeoutMs,
+        }),
       );
+      if (this._needsWorkspaceRetry(summaryText)) {
+        const retryPrompt = this._composeWorkspaceOverviewPrompt({
+          intro: overviewIntro,
+          glimpsesText: attempt.glimpsesText,
+          workspaceHints,
+          metadataSummary,
+          hintLabel: "Workspace hints (retry)",
+        });
+        summaryText = this._sanitizeNarrative(
+          await this._promptPhi(retryPrompt, {
+            label: `${attempt.label}-retry`,
+            timeoutMs: this.workspaceOverviewTimeoutMs,
+          }),
+        );
+      }
+      if (summaryText?.trim()) {
+        break;
+      }
     }
+    let fallbackUsed = false;
     const summary = this._structureNarrative(
       summaryText,
       "workspace",
-      () => this._fallbackWorkspaceSummaryFromCode(files.length, glimpses),
+      () => {
+        fallbackUsed = true;
+        return this._fallbackWorkspaceSummaryFromCode(files.length, glimpses);
+      },
     );
+    if (fallbackUsed) {
+      this._warnWorkspaceOverviewFallback(attempts.length);
+    }
     this.workspaceContext = { kind: "code", summary, sourceDir, metadata: this.sampleMetadata };
     await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
@@ -654,13 +695,76 @@ export default class RecomposeTester {
       budget -= blockLength;
     }
     const omitted = files.length - included;
-    if (omitted > 0) {
-      glimpses.push(`(+${omitted} additional files omitted for brevity)`);
+    const metaNote =
+      omitted > 0 ? `(+${omitted} additional files omitted for brevity)` : null;
+    const contentBlocks = glimpses.length ? glimpses : ["Workspace scan produced no narrative glimpses."];
+    return {
+      contentBlocks,
+      metaNote,
+      totalFiles: files.length,
+    };
+  }
+
+  _renderGlimpsesText(glimpseInfo, limit = null) {
+    if (!glimpseInfo) {
+      return "Workspace scan produced no narrative glimpses.";
     }
-    if (!glimpses.length) {
-      glimpses.push("Workspace scan produced no narrative glimpses.");
+    const blocks = Array.isArray(glimpseInfo.contentBlocks)
+      ? glimpseInfo.contentBlocks.slice()
+      : ["Workspace scan produced no narrative glimpses."];
+    const total = Math.max(blocks.length, 1);
+    const resolvedLimit =
+      limit === null || limit === undefined ? total : Math.min(Math.max(Math.round(limit), 1), total);
+    const selected = blocks.slice(0, resolvedLimit);
+    const remaining = total - resolvedLimit;
+    if (remaining > 0) {
+      selected.push(`(+${remaining} additional files omitted after trimming the overview context)`);
+    } else if (glimpseInfo.metaNote) {
+      selected.push(glimpseInfo.metaNote);
     }
-    return glimpses.join("\n\n");
+    return selected.join("\n\n");
+  }
+
+  _buildWorkspaceOverviewAttempts(glimpseInfo) {
+    const progression = this.workspaceOverviewProgression ?? DEFAULT_OVERVIEW_PROGRESSIVE;
+    const totalBlocks = Math.max(glimpseInfo?.contentBlocks?.length ?? 0, 1);
+    const attempts = [];
+    const seenLimits = new Set();
+    progression.forEach((fraction, index) => {
+      const normalized = Math.min(Math.max(Number(fraction) || 0, 0.05), 1);
+      const limit = Math.max(1, Math.round(totalBlocks * normalized));
+      if (seenLimits.has(limit)) {
+        return;
+      }
+      seenLimits.add(limit);
+      attempts.push({
+        label: index === 0 ? "recompose:workspace-overview" : `recompose:workspace-overview-trim-${limit}`,
+        glimpsesText: this._renderGlimpsesText(glimpseInfo, limit),
+      });
+    });
+    if (!attempts.length) {
+      attempts.push({
+        label: "recompose:workspace-overview",
+        glimpsesText: this._renderGlimpsesText(glimpseInfo),
+      });
+    }
+    return attempts;
+  }
+
+  _composeWorkspaceOverviewPrompt({
+    intro,
+    glimpsesText,
+    workspaceHints,
+    metadataSummary,
+    hintLabel = "Workspace hints",
+  }) {
+    const parts = [
+      intro,
+      `Glimpses:\n${glimpsesText}`,
+      workspaceHints ? `${hintLabel}:\n${workspaceHints}` : null,
+      metadataSummary,
+    ];
+    return parts.filter(Boolean).join("\n\n");
   }
 
   async _readSnippet(filePath) {
@@ -796,6 +900,17 @@ export default class RecomposeTester {
     return null;
   }
 
+  _warnWorkspaceOverviewFallback(attemptCount) {
+    const logLabel = this.promptLogPath ? this._relativeToCwd(this.promptLogPath) : null;
+    const attempts = Number(attemptCount) || 1;
+    const suffix = logLabel ? ` (see ${logLabel})` : "";
+    console.warn(
+      `[MiniPhi][Recompose] Workspace overview prompt failed after ${attempts} attempt${
+        attempts === 1 ? "" : "s"
+      }; saved a fallback summary built from file glimpses${suffix}. Re-run with --workspace-overview-timeout to grant Phi more time if needed.`,
+    );
+  }
+
   _normalizeWhitespace(text) {
     return (text ?? "").replace(/\s+/g, " ").trim();
   }
@@ -857,6 +972,18 @@ export default class RecomposeTester {
       });
       return "";
     }
+    const overrideTimeout = Number(traceOptions?.timeoutMs);
+    let restorePromptTimeout = null;
+    const shouldOverrideTimeout =
+      this.phi4 &&
+      typeof this.phi4.setPromptTimeout === "function" &&
+      Number.isFinite(overrideTimeout) &&
+      overrideTimeout > 0;
+    if (shouldOverrideTimeout) {
+      restorePromptTimeout =
+        typeof this.phi4.promptTimeoutMs === "number" ? this.phi4.promptTimeoutMs : null;
+      this.phi4.setPromptTimeout(overrideTimeout);
+    }
     try {
       response = await this.phi4.chatStream(prompt, undefined, undefined, undefined, {
         scope: "sub",
@@ -887,6 +1014,9 @@ export default class RecomposeTester {
         metadata: traceOptions?.metadata ?? null,
         durationMs: Date.now() - started,
       });
+      if (shouldOverrideTimeout && restorePromptTimeout !== null) {
+        this.phi4.setPromptTimeout(restorePromptTimeout);
+      }
     }
   }
 
