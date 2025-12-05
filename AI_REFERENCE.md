@@ -77,6 +77,8 @@ These are the currently "fixed reference points" of miniphi project:
 - `samples/besh/bsh.c` is the intentionally giant “besh” shell file for recursive summarization and chirurgic editing drills. It is ideal for validating the new stepwise journaling pipeline.
 - `npm run sample:besh-journal` runs `analyze-file` on `samples/besh/bsh.c` with `--prompt-journal besh-regression --prompt-journal-status paused`; it outputs a paused ledger under `.miniphi/prompt-exchanges/stepwise/besh-regression/` so another AI (or you) can sign off on the captured steps before resuming.
 - To continue the regression after reviewing or modifying the repo, rerun the command with the same journal id (and optionally the same `--prompt-id`) but set `--prompt-journal-status completed` so the ledger shows exactly when the session resumed and closed.
+- When you need long-haul signal, run the command in a retry loop so it keeps collecting transcripts until the model returns valid JSON. A simple pattern is `until npm run sample:besh-journal -- --prompt-journal-status active --verbose; do date; sleep 60; done`, which leaves a timestamped stream plus stacked `.miniphi/prompt-exchanges` entries for every attempt.
+- Apply the same approach to the full suite via `until RECOMPOSE_MODE=live ./run-log-benchmarks.sh; do sleep 120; done`; each pass drops a fresh `current-benchmarks/<timestamp>/` directory, so label or archive the folders before the next retry to preserve the evolution of the logs.
 
 ## High-Priority Fundamentals
 1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.
