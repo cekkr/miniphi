@@ -679,6 +679,95 @@ export default class MiniPhiMemory {
     return data.entries.slice(0, maxEntries);
   }
 
+  async loadHelperScripts(options = undefined) {
+    await this.prepare();
+    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
+    if (!Array.isArray(index.entries) || index.entries.length === 0) {
+      return [];
+    }
+    const limit =
+      Number.isFinite(Number(options?.limit)) && Number(options?.limit) > 0
+        ? Number(options.limit)
+        : 12;
+    const workspaceFilter =
+      typeof options?.workspaceType === "string" && options.workspaceType.trim().length
+        ? options.workspaceType.trim().toLowerCase()
+        : null;
+    const sourceFilter =
+      typeof options?.source === "string" && options.source.trim().length
+        ? options.source.trim().toLowerCase()
+        : null;
+    const search =
+      typeof options?.search === "string" && options.search.trim().length
+        ? options.search.trim().toLowerCase()
+        : null;
+    const entries = index.entries
+      .filter((entry) => {
+        if (!entry) {
+          return false;
+        }
+        if (workspaceFilter) {
+          const label = entry.workspaceType?.toLowerCase() ?? "";
+          if (!label.includes(workspaceFilter)) {
+            return false;
+          }
+        }
+        if (sourceFilter) {
+          const label = entry.source?.toLowerCase() ?? "";
+          if (!label.includes(sourceFilter)) {
+            return false;
+          }
+        }
+        if (search && !this._matchesHelperSearch(entry, search)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const left = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+        const right = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+        return left - right;
+      })
+      .slice(0, limit)
+      .map((entry) => ({
+        ...entry,
+        absolutePath: this._resolveHelperAbsolute(entry.path ?? null),
+      }));
+    return entries;
+  }
+
+  async loadHelperScript(identifier, options = undefined) {
+    if (!identifier) {
+      return null;
+    }
+    await this.prepare();
+    const normalized =
+      typeof identifier === "string" ? identifier.trim().toLowerCase() : String(identifier);
+    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
+    if (!Array.isArray(index.entries) || index.entries.length === 0) {
+      return null;
+    }
+    const entry =
+      index.entries.find(
+        (item) =>
+          item?.id === identifier ||
+          item?.id === normalized ||
+          (typeof item?.name === "string" && item.name.toLowerCase() === normalized),
+      ) ?? null;
+    if (!entry) {
+      return null;
+    }
+    const selection = this._selectHelperVersion(entry, options?.version);
+    const resolvedPath = selection?.path ?? entry.path ?? null;
+    const absolutePath = this._resolveHelperAbsolute(resolvedPath);
+    return {
+      entry,
+      path: absolutePath,
+      version: selection?.version ?? entry.version ?? null,
+      relativePath: resolvedPath,
+    };
+  }
+
   async loadTruncationPlan(executionId) {
     if (!executionId) {
       return null;
@@ -767,6 +856,54 @@ export default class MiniPhiMemory {
 
   _relative(target) {
     return path.relative(this.baseDir, target).replace(/\\/g, "/");
+  }
+
+  _resolveHelperAbsolute(target) {
+    if (!target) {
+      return null;
+    }
+    return path.isAbsolute(target) ? target : path.join(this.baseDir, target);
+  }
+
+  _matchesHelperSearch(entry, needle) {
+    if (!entry) {
+      return false;
+    }
+    const haystack = [
+      entry.name,
+      entry.description,
+      entry.notes,
+      entry.language,
+      entry.source,
+      entry.workspaceType,
+    ]
+      .concat(
+        Array.isArray(entry.tags) ? entry.tags : [],
+        Array.isArray(entry.history) ? entry.history.map((record) => record.path) : [],
+      )
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(needle);
+  }
+
+  _selectHelperVersion(entry, requestedVersion) {
+    if (!entry) {
+      return { version: entry?.version ?? null, path: entry?.path ?? null };
+    }
+    const numericVersion = Number(requestedVersion);
+    if (!Number.isFinite(numericVersion)) {
+      return { version: entry.version ?? null, path: entry.path ?? null };
+    }
+    if (entry.version === numericVersion && entry.path) {
+      return { version: entry.version, path: entry.path };
+    }
+    const history = Array.isArray(entry.history) ? entry.history : [];
+    const match = history.find((record) => record.version === numericVersion);
+    if (match?.path) {
+      return { version: numericVersion, path: match.path };
+    }
+    return { version: entry.version ?? null, path: entry.path ?? null };
   }
 
   _chunkContent(content) {

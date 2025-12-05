@@ -1,0 +1,13 @@
+{
+  "label": "samples-bash general-purpose baseline (2025-12-05)",
+  "description": "Average resource stats from samples-bash-explain and samples-bash-recursive-prompts logs recorded on 2025-12-05.",
+  "logSources": [
+    "benchmark/logs/samples-bash/2025-12-05T17-35-59-666Z.log",
+    "benchmark/logs/samples-bash/2025-12-05T17-35-59-796Z.log"
+  ],
+  "resourceStats": {
+    "memory": { "avg": 11.66 },
+    "cpu": { "avg": 9.98 }
+  },
+  "notes": "Used to compare general-purpose benchmark runs against the Bash sample baseline (~11% CPU/memory)."
+}

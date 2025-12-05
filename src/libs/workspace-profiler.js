@@ -46,6 +46,28 @@ const DOC_EXTENSIONS = new Set([
   ".rtf",
 ]);
 
+const DATA_EXTENSIONS = new Set([
+  ".csv",
+  ".tsv",
+  ".json",
+  ".ndjson",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".ini",
+  ".xml",
+  ".db",
+  ".sqlite",
+  ".sql",
+  ".parquet",
+  ".feather",
+  ".arrow",
+  ".xls",
+  ".xlsx",
+  ".sav",
+  ".sas7bdat",
+]);
+
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   ".idea",
@@ -93,6 +115,7 @@ export default class WorkspaceProfiler {
       directories: 0,
       codeFiles: 0,
       docFiles: 0,
+      dataFiles: 0,
       otherFiles: 0,
       chapterLikeFiles: [],
     };
@@ -100,6 +123,7 @@ export default class WorkspaceProfiler {
       directories: [],
       codeFiles: [],
       docFiles: [],
+      dataFiles: [],
       otherFiles: [],
       chapters: [],
     };
@@ -150,6 +174,11 @@ export default class WorkspaceProfiler {
             if (highlights.chapters.length < this.sampleLimit) {
               highlights.chapters.push(relative);
             }
+          }
+        } else if (DATA_EXTENSIONS.has(ext)) {
+          stats.dataFiles += 1;
+          if (highlights.dataFiles.length < this.sampleLimit) {
+            highlights.dataFiles.push(relative);
           }
         } else if (CODE_EXTENSIONS.has(ext)) {
           stats.codeFiles += 1;
@@ -209,6 +238,7 @@ export default class WorkspaceProfiler {
     const totalFiles = Math.max(1, stats.files);
     const docRatio = stats.docFiles / totalFiles;
     const codeRatio = stats.codeFiles / totalFiles;
+    const dataRatio = stats.dataFiles / totalFiles;
     const hasChapters = stats.chapterLikeFiles.length >= 2;
 
     if (docRatio >= 0.55 && stats.docFiles >= 5) {
@@ -228,6 +258,19 @@ export default class WorkspaceProfiler {
         label,
         note: hasChapters ? "Multiple markdown files contain chapter-related naming." : "Markdown/text files dominate.",
         actions,
+      };
+    }
+
+    if (dataRatio >= 0.5 && stats.dataFiles >= 4) {
+      return {
+        domain: "data",
+        label: "Data-centric workspace",
+        note: "Structured data files (CSV/JSON/parquet/etc.) dominate the repository.",
+        actions: [
+          "Propose chunk-friendly helpers for slicing/aggregating datasets instead of editing code blindly",
+          "Respect large-file immutability; create derived data or summaries under tmp/output folders",
+          "Prefer decomposer prompts tailored to dataset exploration (schemas, sampling, summarization)",
+        ],
       };
     }
 
@@ -258,12 +301,15 @@ export default class WorkspaceProfiler {
     const lines = [
       `- Root: ${root}`,
       `- Workspace type: ${classification.label}`,
-      `- File makeup: ${stats.docFiles} docs, ${stats.codeFiles} code, ${stats.otherFiles} other (scanned ${stats.files} files, ${stats.directories} directories)`,
+      `- File makeup: ${stats.docFiles} docs, ${stats.codeFiles} code, ${stats.dataFiles} data, ${stats.otherFiles} other (scanned ${stats.files} files, ${stats.directories} directories)`,
     ];
     if (highlights.chapters.length) {
       lines.push(`- Chapter-like docs: ${highlights.chapters.join(", ")}`);
     } else if (highlights.docFiles.length) {
       lines.push(`- Example docs: ${highlights.docFiles.join(", ")}`);
+    }
+    if (highlights.dataFiles.length) {
+      lines.push(`- Example datasets: ${highlights.dataFiles.join(", ")}`);
     }
     if (highlights.codeFiles.length) {
       lines.push(`- Example code: ${highlights.codeFiles.join(", ")}`);

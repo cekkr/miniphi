@@ -67,6 +67,7 @@ const COMMANDS = new Set([
   "workspace",
   "prompt-template",
   "command-library",
+  "helpers",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -74,6 +75,12 @@ const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
 const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+const GENERAL_BENCHMARK_BASELINE_PATH = path.join(
+  PROJECT_ROOT,
+  "benchmark",
+  "baselines",
+  "general-purpose-baseline.json",
+);
 const globalMemory = new GlobalMiniPhiMemory();
 const schemaAdapterRegistry = new SchemaAdapterRegistry();
 const PROMPT_SCORING_SYSTEM_PROMPT = [
@@ -1076,6 +1083,11 @@ async function main() {
     return;
   }
 
+  if (command === "helpers") {
+    await handleHelpersCommand({ options, verbose });
+    return;
+  }
+
   // "recompose" command is ONLY for development testing purposes, like "benchmark". 
   if (command === "recompose") { 
     await handleRecompose({
@@ -1107,6 +1119,9 @@ async function main() {
       schemaRegistry,
       systemPrompt: resolvedSystemPrompt,
       modelKey: modelSelection.modelKey,
+      restClient,
+      resourceConfig,
+      resourceMonitorForcedDisabled,
     });
     return;
   }
@@ -2536,6 +2551,223 @@ async function handleCommandLibrary({ options, verbose }) {
   }
 }
 
+async function handleHelpersCommand({ options, verbose }) {
+  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const memory = new MiniPhiMemory(cwd);
+  await memory.prepare();
+  const limit =
+    parseNumericSetting(options.limit, "--limit") ??
+    parseNumericSetting(options.count, "--count") ??
+    12;
+  const workspaceType =
+    typeof options["workspace-type"] === "string" && options["workspace-type"].trim().length
+      ? options["workspace-type"].trim()
+      : null;
+  const sourceFilter =
+    typeof options.source === "string" && options.source.trim().length
+      ? options.source.trim()
+      : null;
+  const search =
+    typeof options.search === "string" && options.search.trim().length
+      ? options.search.trim()
+      : null;
+  let helpers = [];
+  try {
+    helpers = await memory.loadHelperScripts({
+      limit,
+      workspaceType,
+      source: sourceFilter,
+      search,
+    });
+  } catch (error) {
+    console.warn(
+      `[MiniPhi][Helpers] Unable to load helper index: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+  const runTargetRaw =
+    typeof options.run === "string" && options.run.trim()
+      ? options.run.trim()
+      : typeof options.id === "string" && options.id.trim()
+        ? options.id.trim()
+        : null;
+  const helperVersion = parseNumericSetting(options.version, "--version");
+  const helperTimeout =
+    parseNumericSetting(options["helper-timeout"], "--helper-timeout") ?? 60000;
+  const helperSilence =
+    parseNumericSetting(options["helper-silence-timeout"], "--helper-silence-timeout") ?? 15000;
+  const helperCwd = options["helper-cwd"]
+    ? path.resolve(options["helper-cwd"])
+    : cwd;
+  const stdinLiteral =
+    typeof options.stdin === "string" && options.stdin.length ? options.stdin : null;
+  const stdinFilePath =
+    typeof options["stdin-file"] === "string" && options["stdin-file"].trim()
+      ? path.resolve(options["stdin-file"].trim())
+      : null;
+  let stdinFromFile = null;
+  if (stdinFilePath) {
+    try {
+      stdinFromFile = await fs.promises.readFile(stdinFilePath, "utf8");
+    } catch (error) {
+      throw new Error(
+        `Unable to read --stdin-file ${stdinFilePath}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+  const stdinPayload =
+    [stdinFromFile, stdinLiteral].filter((value) => typeof value === "string" && value.length).join("\n") ||
+    null;
+
+  if (options.json) {
+    console.log(JSON.stringify(helpers, null, 2));
+  } else if (helpers.length) {
+    console.log(
+      `[MiniPhi][Helpers] Showing ${helpers.length} helper${
+        helpers.length === 1 ? "" : "s"
+      } (cwd: ${cwd})`,
+    );
+    helpers.forEach((helper, idx) => {
+      const versionLabel =
+        helper.version !== undefined && helper.version !== null ? `v${String(helper.version).padStart(4, "0")}` : "v?";
+      console.log(`\n${idx + 1}. ${helper.name ?? helper.id} [${versionLabel}] (${helper.id})`);
+      const metaParts = [`lang: ${helper.language ?? "node"}`];
+      if (helper.source) metaParts.push(`source: ${helper.source}`);
+      if (helper.workspaceType) metaParts.push(`workspace: ${helper.workspaceType}`);
+      if (helper.updatedAt) metaParts.push(`updated: ${helper.updatedAt}`);
+      console.log(`   ${metaParts.join(" | ")}`);
+      if (helper.description) {
+        console.log(`   ${helper.description}`);
+      }
+      if (helper.lastRun?.summary) {
+        console.log(`   last run: ${helper.lastRun.summary}`);
+      }
+      if (helper.absolutePath && verbose) {
+        const rel = path.relative(process.cwd(), helper.absolutePath) || helper.absolutePath;
+        console.log(`   path: ${rel}`);
+      }
+    });
+  } else {
+    console.log("[MiniPhi][Helpers] No helpers recorded for this workspace yet.");
+    if (verbose) {
+      console.log(
+        `[MiniPhi][Helpers] Index stored at ${path.relative(process.cwd(), memory.helperScriptsIndexFile) || memory.helperScriptsIndexFile}`,
+      );
+    }
+  }
+
+  if (!runTargetRaw) {
+    return;
+  }
+
+  const helperRecord = await memory.loadHelperScript(runTargetRaw, { version: helperVersion });
+  if (!helperRecord) {
+    throw new Error(`Helper "${runTargetRaw}" not found in ${cwd}.`);
+  }
+  if (!helperRecord.path) {
+    throw new Error(
+      `Helper "${helperRecord.entry.name ?? helperRecord.entry.id}" does not have a saved file path.`,
+    );
+  }
+  const runner = helperRecord.entry.language === "python" ? "python" : "node";
+  const command = `${runner} "${helperRecord.path}"`;
+  if (verbose) {
+    console.log(
+      `[MiniPhi][Helpers] Running ${helperRecord.entry.name ?? helperRecord.entry.id} (${command})`,
+    );
+  }
+  const cli = new CliExecutor();
+  let execution;
+  const startedAt = Date.now();
+  try {
+    const result = await cli.executeCommand(command, {
+      cwd: helperCwd,
+      timeout: helperTimeout,
+      maxSilenceMs: helperSilence,
+      stdin: stdinPayload,
+      captureOutput: true,
+      onStdout: (text) => process.stdout.write(text),
+      onStderr: (text) => process.stderr.write(text),
+    });
+    execution = {
+      command,
+      exitCode: result.code ?? 0,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      durationMs: result.durationMs ?? Date.now() - startedAt,
+      silenceExceeded: Boolean(result.silenceExceeded),
+    };
+  } catch (error) {
+    execution = {
+      command,
+      exitCode: typeof error.code === "number" ? error.code : -1,
+      stdout: error.stdout ?? "",
+      stderr: error.stderr ?? (error instanceof Error ? error.message : String(error)),
+      durationMs: error.durationMs ?? Date.now() - startedAt,
+      silenceExceeded: Boolean(error.silenceExceeded),
+    };
+  }
+  const summary = summarizeHelperOutput(execution.stdout, execution.stderr);
+  const runRecord = await memory.recordHelperScriptRun({
+    id: helperRecord.entry.id,
+    command: execution.command,
+    exitCode: execution.exitCode,
+    stdout: execution.stdout,
+    stderr: execution.stderr,
+    summary,
+    durationMs: execution.durationMs,
+    timeoutMs: helperTimeout,
+    silenceTimeoutMs: helperSilence,
+    stdin: stdinPayload,
+    silenceExceeded: execution.silenceExceeded,
+  });
+  const stdoutAbs =
+    runRecord?.stdout && verbose ? path.resolve(memory.baseDir, runRecord.stdout) : null;
+  const stderrAbs =
+    runRecord?.stderr && verbose ? path.resolve(memory.baseDir, runRecord.stderr) : null;
+  const relStdout =
+    stdoutAbs && (path.relative(process.cwd(), stdoutAbs) || stdoutAbs).replace(/\\/g, "/");
+  const relStderr =
+    stderrAbs && (path.relative(process.cwd(), stderrAbs) || stderrAbs).replace(/\\/g, "/");
+  console.log(
+    `[MiniPhi][Helpers] ${helperRecord.entry.name ?? helperRecord.entry.id} exited with ${
+      execution.exitCode
+    }${execution.silenceExceeded ? " (terminated for silence)" : ""} in ${
+      execution.durationMs ?? Date.now() - startedAt
+    } ms`,
+  );
+  if (summary) {
+    console.log(`[MiniPhi][Helpers] summary: ${summary}`);
+  }
+  if (relStdout) {
+    console.log(`[MiniPhi][Helpers] stdout log: ${relStdout}`);
+  }
+  if (relStderr) {
+    console.log(`[MiniPhi][Helpers] stderr log: ${relStderr}`);
+  }
+}
+
+function summarizeHelperOutput(stdout, stderr) {
+  const parts = [];
+  if (stdout && stdout.trim()) {
+    parts.push(`stdout ${truncateHelperSnippet(stdout)}`);
+  }
+  if (stderr && stderr.trim()) {
+    parts.push(`stderr ${truncateHelperSnippet(stderr)}`);
+  }
+  return parts.length ? parts.join(" | ") : null;
+}
+
+function truncateHelperSnippet(text, limit = 220) {
+  const normalized = (text ?? "").toString().replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, limit)}…`;
+}
+
 async function handleRecompose({
   options,
   positionals,
@@ -2654,6 +2886,9 @@ async function handleBenchmark({
   schemaRegistry,
   systemPrompt,
   modelKey,
+  restClient = null,
+  resourceConfig = undefined,
+  resourceMonitorForcedDisabled = false,
 }) {
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
   if (mode === "analyze") {
@@ -2678,6 +2913,8 @@ async function handleBenchmark({
       schemaRegistry,
       restClient,
       configData,
+      resourceConfig,
+      resourceMonitorForcedDisabled,
     });
     return;
   }
@@ -2779,6 +3016,8 @@ async function runGeneralPurposeBenchmark({
   schemaRegistry,
   restClient = null,
   configData = undefined,
+  resourceConfig = undefined,
+  resourceMonitorForcedDisabled = false,
 }) {
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
   const task =
@@ -2790,6 +3029,26 @@ async function runGeneralPurposeBenchmark({
   const timeoutMs = parseNumericSetting(options.timeout, "--timeout") ?? 60000;
   const stateManager = new MiniPhiMemory(cwd);
   await stateManager.prepare();
+  let benchmarkMonitor = null;
+  let benchmarkMonitorResult = null;
+  if (!resourceMonitorForcedDisabled) {
+    const monitorHistoryFile = path.join(stateManager.historyDir, "benchmark-resource-usage.json");
+    benchmarkMonitor = new ResourceMonitor({
+      ...(resourceConfig ?? {}),
+      historyFile: monitorHistoryFile,
+      label: `benchmark:general:${path.basename(cwd) || "workspace"}`,
+    });
+    try {
+      await benchmarkMonitor.start(`benchmark:${path.basename(cwd) || cwd}`);
+    } catch (error) {
+      benchmarkMonitor = null;
+      if (verbose) {
+        console.warn(
+          `[MiniPhi][Benchmark] Resource monitor unavailable for general-purpose benchmark: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
   const cli = new CliExecutor();
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
@@ -2940,12 +3199,54 @@ async function runGeneralPurposeBenchmark({
     }
   }
 
+  if (benchmarkMonitor) {
+    try {
+      benchmarkMonitorResult = await benchmarkMonitor.stop();
+      if (benchmarkMonitorResult?.persisted?.path && verbose) {
+        const relMonitor =
+          path.relative(process.cwd(), benchmarkMonitorResult.persisted.path) ||
+          benchmarkMonitorResult.persisted.path;
+        console.log(`[MiniPhi][Benchmark] Resource stats appended to ${relMonitor}`);
+      }
+      if (benchmarkMonitorResult?.summary?.warnings?.length) {
+        for (const warning of benchmarkMonitorResult.summary.warnings) {
+          console.warn(`[MiniPhi][Resources] ${warning}`);
+        }
+      }
+    } catch (error) {
+      console.warn(
+        `[MiniPhi][Benchmark] Unable to finalize resource monitor: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
   const summaryDir = path.join(stateManager.historyDir, "benchmarks");
   await fs.promises.mkdir(summaryDir, { recursive: true });
   const summaryPath = path.join(
     summaryDir,
     `${new Date().toISOString().replace(/[:.]/g, "-")}-general-benchmark.json`,
   );
+  const resourceStats = benchmarkMonitorResult?.summary?.stats ?? null;
+  let resourceBaseline = null;
+  let resourceBaselineDiff = null;
+  try {
+    resourceBaseline = await loadGeneralBenchmarkBaseline();
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi][Benchmark] Unable to load general-purpose baseline: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+  if (resourceStats && resourceBaseline?.resourceStats) {
+    resourceBaselineDiff = computeResourceBaselineDiff(resourceStats, resourceBaseline.resourceStats);
+  }
+  if (resourceBaselineDiff) {
+    const diffSummary = formatResourceBaselineDiff(resourceBaselineDiff);
+    if (diffSummary) {
+      console.log(`[MiniPhi][Benchmark] Resource delta vs baseline: ${diffSummary}`);
+    }
+  }
   const summary = {
     kind: "general-purpose",
     analyzedAt: new Date().toISOString(),
@@ -2979,6 +3280,13 @@ async function runGeneralPurposeBenchmark({
           outline: decompositionPlan.outline ?? null,
         }
       : null,
+    resourceStats,
+    resourceWarnings: benchmarkMonitorResult?.summary?.warnings ?? [],
+    resourceLogPath: benchmarkMonitorResult?.persisted?.path ?? null,
+    resourceBaseline: resourceBaseline?.resourceStats ?? null,
+    resourceBaselineLabel: resourceBaseline?.label ?? null,
+    resourceBaselineSources: resourceBaseline?.logSources ?? resourceBaseline?.sources ?? null,
+    resourceBaselineDiff,
   };
   await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
   await stateManager.recordBenchmarkSummary(summary, { summaryPath, type: "general-purpose" });
@@ -2986,6 +3294,86 @@ async function runGeneralPurposeBenchmark({
     const rel = path.relative(process.cwd(), summaryPath) || summaryPath;
     console.log(`[MiniPhi][Benchmark] General-purpose benchmark summary saved to ${rel}`);
   }
+}
+
+async function loadGeneralBenchmarkBaseline() {
+  try {
+    const payload = await fs.promises.readFile(GENERAL_BENCHMARK_BASELINE_PATH, "utf8");
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const resourceStats = normalizeBaselineStats(parsed.resourceStats ?? parsed.stats ?? null);
+    return {
+      ...parsed,
+      resourceStats,
+    };
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function normalizeBaselineStats(stats) {
+  if (!stats || typeof stats !== "object") {
+    return null;
+  }
+  const normalized = {};
+  for (const metric of ["memory", "cpu", "vram"]) {
+    const entry = stats[metric];
+    if (!entry) {
+      continue;
+    }
+    const avg = Number(entry.avg ?? entry.average ?? entry.mean);
+    if (!Number.isFinite(avg)) {
+      continue;
+    }
+    normalized[metric] = {
+      avg: Number(avg.toFixed(2)),
+    };
+  }
+  return normalized;
+}
+
+function computeResourceBaselineDiff(current, baseline) {
+  if (!current || !baseline) {
+    return null;
+  }
+  const diff = {};
+  for (const metric of ["memory", "cpu", "vram"]) {
+    const currentAvg = Number(current[metric]?.avg ?? current[metric]?.average ?? current[metric]?.mean);
+    const baselineAvg = Number(baseline[metric]?.avg ?? baseline[metric]?.average ?? baseline[metric]?.mean);
+    if (!Number.isFinite(currentAvg) || !Number.isFinite(baselineAvg)) {
+      continue;
+    }
+    diff[metric] = {
+      currentAvg: Number(currentAvg.toFixed(2)),
+      baselineAvg: Number(baselineAvg.toFixed(2)),
+      delta: Number((currentAvg - baselineAvg).toFixed(2)),
+    };
+  }
+  return Object.keys(diff).length ? diff : null;
+}
+
+function formatResourceBaselineDiff(diff) {
+  if (!diff) {
+    return "";
+  }
+  const parts = [];
+  for (const metric of ["memory", "cpu", "vram"]) {
+    const entry = diff[metric];
+    if (!entry) {
+      continue;
+    }
+    const delta = entry.delta;
+    const deltaLabel = delta > 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+    parts.push(
+      `${metric} Δ ${deltaLabel} (current ${entry.currentAvg.toFixed(2)} vs baseline ${entry.baselineAvg.toFixed(2)})`,
+    );
+  }
+  return parts.join(" | ");
 }
 
 async function createRecomposeHarness({
@@ -3735,6 +4123,7 @@ Usage:
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js history-notes --label "post benchmark"
   node src/index.js command-library --limit 10
+  node src/index.js helpers --limit 6
   node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
@@ -3796,6 +4185,20 @@ Command library:
   --tag <text>                 Filter commands by tag name
   --json                       Output JSON instead of human-readable text
   --cwd <path>                 Override which workspace library to inspect (default: cwd)
+
+Helper scripts:
+  --limit <n>                  Number of helpers to display (default: 12)
+  --search <text>              Filter helpers by substring match
+  --workspace-type <text>      Filter helpers by detected workspace classification
+  --source <text>              Filter helpers by origin (api-navigator, manual, etc.)
+  --json                       Output JSON instead of human-readable text
+  --run <id>                   Execute a helper by id (accepts helper name or slug)
+  --version <n>                Pin a historical helper version while running
+  --stdin <text>               Provide stdin content when re-running the helper
+  --stdin-file <path>          Read stdin content from a file
+  --helper-timeout <ms>        Kill helper execution after N milliseconds (default: 60000)
+  --helper-silence-timeout <ms>  Abort helper execution when no output is seen for N milliseconds (default: 15000)
+  --helper-cwd <path>          Override the working directory when re-running helpers
 
 Web research:
   --query <text>               Query string (can be repeated or passed as positional)
