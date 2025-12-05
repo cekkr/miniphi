@@ -64,14 +64,7 @@ const PLAN_JSON_SCHEMA = {
   },
 };
 
-const PLAN_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "prompt_decomposition",
-    strict: true,
-    schema: PLAN_JSON_SCHEMA,
-  },
-};
+const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
 
 export default class PromptDecomposer {
   constructor(options = undefined) {
@@ -133,7 +126,7 @@ export default class PromptDecomposer {
           messages,
           temperature: this.temperature,
           max_tokens: -1,
-          response_format: PLAN_RESPONSE_FORMAT,
+          response_format: JSON_ONLY_RESPONSE_FORMAT,
         }),
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";

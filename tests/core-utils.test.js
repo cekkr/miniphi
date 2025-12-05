@@ -11,6 +11,7 @@ import {
   isLocalLmStudioBaseUrl,
   extractContextRequestsFromAnalysis,
   extractJsonBlock,
+  extractTruncationPlanFromAnalysis,
 } from "../src/libs/core-utils.js";
 
 test("normalizeDangerLevel clamps unknown values to mid", () => {
@@ -154,4 +155,40 @@ test("extractJsonBlock tolerates fences, think blocks, and trailing prose", () =
 
 test("extractJsonBlock returns null when no JSON is present", () => {
   assert.equal(extractJsonBlock("Just a note without objects."), null);
+});
+
+test("extractTruncationPlanFromAnalysis returns null when prose is provided", () => {
+  assert.equal(
+    extractTruncationPlanFromAnalysis("Still thinking about how to chunk those logs..."),
+    null,
+  );
+});
+
+test("extractTruncationPlanFromAnalysis normalizes chunk metadata", () => {
+  const analysis = JSON.stringify({
+    task: "Audit logs",
+    truncation_strategy: {
+      should_split: true,
+      chunking_plan: [
+        {
+          id: "chunk-a",
+          goal: "Inspect parser regressions",
+          priority: 2,
+          lines: [100, 250],
+          helper_commands: ["python scripts/split.py --chunk A"],
+        },
+      ],
+      carryover_fields: ["chunk", "line_hint", "symptom"],
+      history_schema: "chunk,line_window,summary,helpers",
+    },
+    next_steps: ["Rerun analyzer on chunk A"],
+  });
+  const result = extractTruncationPlanFromAnalysis(analysis);
+  assert.ok(result);
+  assert.equal(result.plan.shouldSplit, true);
+  assert.equal(result.plan.chunkingPlan.length, 1);
+  assert.equal(result.plan.chunkingPlan[0].startLine, 100);
+  assert.equal(result.plan.chunkingPlan[0].endLine, 250);
+  assert.equal(result.plan.chunkingPlan[0].helperCommands[0], "python scripts/split.py --chunk A");
+  assert.deepEqual(result.nextSteps, ["Rerun analyzer on chunk A"]);
 });

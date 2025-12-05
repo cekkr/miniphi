@@ -48,14 +48,7 @@ const NAVIGATION_JSON_SCHEMA = {
   required: ["actions"],
 };
 
-const NAVIGATION_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "navigation_plan",
-    strict: true,
-    schema: NAVIGATION_JSON_SCHEMA,
-  },
-};
+const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
 
 const NAVIGATION_SCHEMA = [
   "{",
@@ -214,7 +207,6 @@ export default class ApiNavigator {
     const manifest = Array.isArray(payload.workspace?.manifestPreview)
       ? payload.workspace.manifestPreview.slice(0, 12)
       : [];
-    const responseFormat = NAVIGATION_RESPONSE_FORMAT;
     const body = {
       objective: payload.objective ?? null,
       cwd: payload.cwd ?? process.cwd(),
@@ -244,7 +236,7 @@ export default class ApiNavigator {
         messages,
         temperature: this.temperature,
         max_tokens: -1,
-        response_format: responseFormat,
+        response_format: JSON_ONLY_RESPONSE_FORMAT,
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);
@@ -308,11 +300,16 @@ export default class ApiNavigator {
     if (!definition?.code) {
       return null;
     }
+    const helperCode = this._sanitizeHelperCode(definition.code);
+    if (!helperCode) {
+      this._log("[ApiNavigator] Helper script contained no runnable code; skipping execution.");
+      return null;
+    }
     const record = await this.memory.recordHelperScript({
       name: definition.name ?? "api-navigator-helper",
       description: definition.description ?? null,
       language: definition.language ?? "node",
-      code: definition.code,
+      code: helperCode,
       source: "api-navigator",
       objective: payload.objective ?? null,
       workspaceType: payload.workspace?.classification?.label ?? null,
@@ -429,6 +426,20 @@ export default class ApiNavigator {
       return "";
     }
     return candidate.trim().replace(/^['"]+|['"]+$/g, "");
+  }
+
+  _sanitizeHelperCode(code) {
+    if (typeof code !== "string") {
+      return "";
+    }
+    let cleaned = code.trim();
+    if (!cleaned) {
+      return "";
+    }
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
+    }
+    return cleaned;
   }
 
   _summarizeHelperOutput(stdout, stderr) {

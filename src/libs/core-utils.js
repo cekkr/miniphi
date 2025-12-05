@@ -493,6 +493,48 @@ function stripJsonLikeFences(payload = "") {
   return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
 }
 
+function stripResponsePreamble(text = "") {
+  if (!text) {
+    return "";
+  }
+  const firstJsonIndex = text.search(/[{[]/);
+  if (firstJsonIndex <= 0) {
+    return text;
+  }
+  const prefix = text.slice(0, firstJsonIndex);
+  const trimmed = prefix.trim();
+  if (!trimmed) {
+    return text.slice(firstJsonIndex);
+  }
+  const keyword = trimmed.split(/[\s:]+/)[0]?.toLowerCase() ?? "";
+  const hasNewline = /[\r\n]/.test(prefix);
+  const endsWithColon = trimmed.endsWith(":");
+  const shortPreamble = trimmed.length <= 12;
+  const knownPreamble =
+    keyword.length > 0 &&
+    [
+      "assistant",
+      "sure",
+      "here",
+      "note",
+      "plan",
+      "json",
+      "response",
+      "understood",
+      "ok",
+      "okay",
+      "alright",
+      "analysis",
+      "summary",
+      "thanks",
+      "btw",
+    ].includes(keyword);
+  if (hasNewline || endsWithColon || shortPreamble || knownPreamble) {
+    return text.slice(firstJsonIndex);
+  }
+  return text;
+}
+
 function sliceLikelyJsonPayload(text, openChar, closeChar) {
   if (!text || typeof text !== "string") {
     return null;
@@ -511,17 +553,32 @@ export function extractJsonBlock(text) {
   }
   const cleaned = stripThinkBlocks(stripJsonLikeFences(text));
   const trimmed = cleaned.trim();
-  const candidates = [];
+  const sources = [];
+  const preambleStripped = stripResponsePreamble(trimmed);
+  if (preambleStripped && preambleStripped !== trimmed) {
+    sources.push(preambleStripped);
+  }
   if (trimmed) {
-    candidates.push(trimmed);
+    sources.push(trimmed);
   }
-  const objectCandidate = sliceLikelyJsonPayload(trimmed, "{", "}");
-  if (objectCandidate) {
-    candidates.push(objectCandidate);
-  }
-  const arrayCandidate = sliceLikelyJsonPayload(trimmed, "[", "]");
-  if (arrayCandidate) {
-    candidates.push(arrayCandidate);
+  const candidates = [];
+  const seen = new Set();
+  for (const source of sources) {
+    if (!source || seen.has(source)) {
+      continue;
+    }
+    seen.add(source);
+    candidates.push(source);
+    const objectCandidate = sliceLikelyJsonPayload(source, "{", "}");
+    if (objectCandidate && !seen.has(objectCandidate)) {
+      seen.add(objectCandidate);
+      candidates.push(objectCandidate);
+    }
+    const arrayCandidate = sliceLikelyJsonPayload(source, "[", "]");
+    if (arrayCandidate && !seen.has(arrayCandidate)) {
+      seen.add(arrayCandidate);
+      candidates.push(arrayCandidate);
+    }
   }
   for (const candidate of candidates) {
     if (!candidate) {

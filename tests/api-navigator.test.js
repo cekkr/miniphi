@@ -30,3 +30,15 @@ test("ApiNavigator executes helpers after stripping surrounding quotes from path
     fs.rmSync(helperPath, { force: true });
   }
 });
+
+test("ApiNavigator rejects prose-only navigation responses", () => {
+  const navigator = new ApiNavigator();
+  const parsed = navigator._parsePlan("Sure, let me think about the repo first...");
+  assert.strictEqual(parsed, null);
+});
+
+test("ApiNavigator sanitizes helper code wrapped in fences", () => {
+  const navigator = new ApiNavigator();
+  const cleaned = navigator._sanitizeHelperCode("```python\nprint('hello')\n```");
+  assert.strictEqual(cleaned, "print('hello')");
+});

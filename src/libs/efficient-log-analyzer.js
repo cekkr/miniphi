@@ -28,6 +28,8 @@ export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "}",
 ].join("\n");
 
+const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
+
 /**
  * Coordinates CLI execution, compression, and Phi-4 reasoning for arbitrarily large outputs.
  */
@@ -198,6 +200,7 @@ export default class EfficientLogAnalyzer {
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
+      responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
     };
     const stopHeartbeat = !streamOutput
       ? this._startHeartbeat("Still waiting for Phi response...", devLog)
@@ -419,6 +422,7 @@ export default class EfficientLogAnalyzer {
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
+      responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
     };
     if (droppedChunks > 0) {
       this._logDev(devLog, `Prompt omitted ${droppedChunks} chunk(s) to fit the context budget.`);
@@ -1045,6 +1049,7 @@ export default class EfficientLogAnalyzer {
           ...(traceOptions ?? {}),
           label: "analysis-schema-retry",
           schemaId: schemaId ?? this.schemaId,
+          responseFormat: traceOptions?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
         },
       );
     } catch {

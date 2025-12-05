@@ -154,6 +154,7 @@ export class Phi4Handler {
 
       const traceContext = this._buildTraceContext(traceOptions);
       const schemaDetails = this._resolveSchema(traceContext);
+      const requestedResponseFormat = traceContext.responseFormat ?? null;
       const startedAt = Date.now();
       const capturedThoughts = [];
       let requestSnapshot = null;
@@ -243,7 +244,7 @@ export class Phi4Handler {
         requestSnapshot = this._buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         if (useRestTransport) {
           result = await this._withPromptTimeout(
-            async () => this._invokeRestCompletion(),
+            async () => this._invokeRestCompletion(requestedResponseFormat),
             () => {},
           );
           rawFragmentCount = result ? 1 : 0;
@@ -594,7 +595,7 @@ export class Phi4Handler {
       }));
   }
 
-  async _invokeRestCompletion() {
+  async _invokeRestCompletion(responseFormat = null) {
     if (!this.restClient) {
       throw new Error(`LM Studio REST client is not configured for model ${this.modelKey}.`);
     }
@@ -603,6 +604,7 @@ export class Phi4Handler {
       messages,
       stream: false,
       max_tokens: -1,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
     });
     const choice = response?.choices?.[0];
     const text =
@@ -728,6 +730,8 @@ export class Phi4Handler {
       typeof options?.schemaId === "string" && options.schemaId.trim()
         ? options.schemaId.trim().toLowerCase()
         : null;
+    const responseFormat =
+      options && typeof options.responseFormat === "object" ? options.responseFormat : null;
     return {
       scope,
       label: options?.label ?? null,
@@ -735,6 +739,7 @@ export class Phi4Handler {
       mainPromptId: options?.mainPromptId ?? null,
       subPromptId,
       schemaId,
+      responseFormat,
     };
   }
 
@@ -752,6 +757,7 @@ export class Phi4Handler {
       promptText: prompt,
       schemaId: schemaDetails?.id ?? traceContext.schemaId ?? null,
       schemaPath: schemaDetails?.filePath ?? null,
+      responseFormat: traceContext.responseFormat ?? null,
       messages,
       createdAt: new Date().toISOString(),
     };
