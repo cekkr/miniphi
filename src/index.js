@@ -46,6 +46,9 @@ import {
   normalizeDangerLevel,
   mergeFixedReferences,
   buildPlanOperations,
+  buildPlanSegments,
+  formatPlanSegmentsBlock,
+  formatPlanRecommendationsBlock,
   buildNavigationOperations,
   normalizePlanDirections,
   buildResourceConfig,
@@ -610,10 +613,21 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
   }
   const operations = buildPlanOperations(context.planResult.plan);
   const commandLine = context.command ? `\nCommand: ${context.command}` : "";
+  const responseSegments = [];
+  if (context.planResult.segmentBlock) {
+    responseSegments.push(context.planResult.segmentBlock);
+  }
+  if (context.planResult.outline) {
+    responseSegments.push(context.planResult.outline);
+  }
+  const responsePayload =
+    responseSegments.length > 0
+      ? responseSegments.join("\n\n")
+      : JSON.stringify(context.planResult.plan, null, 2);
   await journal.appendStep(sessionId, {
     label: context.label ?? "prompt-plan",
     prompt: `Objective: ${context.objective ?? "workspace task"}${commandLine}`.trim(),
-    response: context.planResult.outline ?? JSON.stringify(context.planResult.plan, null, 2),
+    response: responsePayload,
     status: "plan",
     operations,
     metadata: {
@@ -622,6 +636,7 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       mode: context.mode ?? null,
       branch: context.planResult.branch ?? null,
       source: context.planSource ?? null,
+      recommendedTools: context.planResult.recommendedTools ?? [],
     },
     workspaceSummary: context.workspaceSummary ?? null,
   });
@@ -688,13 +703,75 @@ function normalizePlanRecord(planRecord, branch = null) {
   }
   const planId = planRecord.id ?? planPayload.plan_id ?? null;
   const outline = planRecord.outline ?? renderPlanOutline(planPayload.steps);
-  return {
+  const normalized = {
     planId,
     summary: planRecord.summary ?? planPayload.summary ?? null,
     plan: planPayload,
     outline,
     branch: branch || null,
+    segments: Array.isArray(planRecord.segments) ? planRecord.segments : null,
+    segmentBlock: planRecord.segmentBlock ?? null,
+    recommendedTools: Array.isArray(planRecord.recommendedTools) ? planRecord.recommendedTools : null,
+    recommendationsBlock: planRecord.recommendationsBlock ?? null,
   };
+  return enrichPlanResult(normalized);
+}
+
+function enrichPlanResult(planResult) {
+  if (!planResult || !planResult.plan) {
+    return planResult;
+  }
+  if (!Array.isArray(planResult.segments) || planResult.segments.length === 0) {
+    planResult.segments = buildPlanSegments(planResult.plan);
+  }
+  if (!planResult.segmentBlock) {
+    planResult.segmentBlock =
+      formatPlanSegmentsBlock(planResult.segments, { limit: 16 }) ?? null;
+  }
+  if (!Array.isArray(planResult.recommendedTools)) {
+    planResult.recommendedTools = Array.isArray(planResult.plan.recommended_tools)
+      ? planResult.plan.recommended_tools
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0)
+      : [];
+  }
+  if (!planResult.recommendationsBlock) {
+    planResult.recommendationsBlock =
+      formatPlanRecommendationsBlock(planResult.recommendedTools) ?? null;
+  }
+  return planResult;
+}
+
+function applyPlanResultToWorkspace(workspaceContext, planResult, planBranch = null, planSource = null) {
+  if (!planResult) {
+    return workspaceContext;
+  }
+  const enriched = enrichPlanResult(planResult);
+  return {
+    ...(workspaceContext ?? {}),
+    taskPlanSummary: enriched.summary ?? null,
+    taskPlanId: enriched.planId ?? null,
+    taskPlanOutline: enriched.outline ?? null,
+    taskPlanBranch: enriched.branch ?? planBranch ?? null,
+    taskPlanSource: planSource ?? null,
+    taskPlanSegments: enriched.segments ?? null,
+    taskPlanSegmentsBlock: enriched.segmentBlock ?? null,
+    taskPlanRecommendations: enriched.recommendedTools ?? [],
+    taskPlanRecommendationsBlock: enriched.recommendationsBlock ?? null,
+  };
+}
+
+function logPlanContext(planResult, label = "[MiniPhi][Plan]") {
+  if (!planResult) {
+    return;
+  }
+  const enriched = enrichPlanResult(planResult);
+  if (enriched.segmentBlock) {
+    console.log(`${label} Segments:\n${enriched.segmentBlock}`);
+  }
+  if (enriched.recommendationsBlock) {
+    console.log(`${label} ${enriched.recommendationsBlock}`);
+  }
 }
 
 function parsePlanBranchOption(value) {
@@ -1676,14 +1753,13 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       if (planResult) {
-        workspaceContext = {
-          ...(workspaceContext ?? {}),
-          taskPlanSummary: planResult.summary ?? null,
-          taskPlanId: planResult.planId ?? null,
-          taskPlanOutline: planResult.outline ?? null,
-          taskPlanBranch: planResult.branch ?? planBranch ?? null,
-          taskPlanSource: planSource ?? null,
-        };
+        workspaceContext = applyPlanResultToWorkspace(
+          workspaceContext,
+          planResult,
+          planBranch,
+          planSource,
+        );
+        logPlanContext(planResult, "[MiniPhi][Plan]");
       }
       if (promptJournal) {
         await recordPlanStepInJournal(promptJournal, promptJournalId, {
@@ -1844,20 +1920,19 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       if (planResult) {
-        workspaceContext = {
-          ...(workspaceContext ?? {}),
-          taskPlanSummary: planResult.summary ?? null,
-          taskPlanId: planResult.planId ?? null,
-          taskPlanOutline: planResult.outline ?? null,
-          taskPlanBranch: planResult.branch ?? planBranch ?? null,
-          taskPlanSource: planSource ?? null,
-        };
+        workspaceContext = applyPlanResultToWorkspace(
+          workspaceContext,
+          planResult,
+          planBranch,
+          planSource,
+        );
         if (planResult.outline && verbose) {
           const outlineLines = planResult.outline.split(/\r?\n/);
           const preview = outlineLines.slice(0, 10).join("\n");
           const suffix = outlineLines.length > 10 ? "\n..." : "";
           console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
         }
+        logPlanContext(planResult, "[MiniPhi][Plan:run]");
       }
       if (promptJournal) {
         await recordPlanStepInJournal(promptJournal, promptJournalId, {
@@ -2141,20 +2216,19 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       if (planResult) {
-        workspaceContext = {
-          ...(workspaceContext ?? {}),
-          taskPlanSummary: planResult.summary ?? null,
-          taskPlanId: planResult.planId ?? null,
-          taskPlanOutline: planResult.outline ?? null,
-          taskPlanBranch: planResult.branch ?? planBranch ?? null,
-          taskPlanSource: planSource ?? null,
-        };
+        workspaceContext = applyPlanResultToWorkspace(
+          workspaceContext,
+          planResult,
+          planBranch,
+          planSource,
+        );
         if (planResult.outline && verbose) {
           const outlineLines = planResult.outline.split(/\r?\n/);
           const preview = outlineLines.slice(0, 10).join("\n");
           const suffix = outlineLines.length > 10 ? "\n..." : "";
           console.log(`[MiniPhi] Prompt plan (${planResult.planId}):\n${preview}${suffix}`);
         }
+        logPlanContext(planResult, "[MiniPhi][Plan:analyze]");
       }
       if (promptJournal) {
         await recordPlanStepInJournal(promptJournal, promptJournalId, {

@@ -4,6 +4,9 @@ import {
   normalizeDangerLevel,
   mergeFixedReferences,
   buildPlanOperations,
+  buildPlanSegments,
+  formatPlanSegmentsBlock,
+  formatPlanRecommendationsBlock,
   buildNavigationOperations,
   normalizePlanDirections,
   buildResourceConfig,
@@ -49,6 +52,49 @@ test("buildPlanOperations flattens nested steps respecting limit", () => {
   assert.equal(operations.length, 2);
   assert.equal(operations[0].status, "requires-subprompt");
   assert.equal(operations[1].summary, "Child");
+});
+
+test("buildPlanSegments captures depth, recommendations, and descriptions", () => {
+  const plan = {
+    steps: [
+      {
+        id: "1",
+        title: "Root",
+        description: "Root description",
+        requires_subprompt: true,
+        recommendation: "use analyzer",
+        children: [
+          { id: "1.1", title: "Leaf", description: "Leaf desc", requires_subprompt: false },
+        ],
+      },
+    ],
+  };
+  const segments = buildPlanSegments(plan, { limit: 4 });
+  assert.equal(segments.length, 2);
+  assert.equal(segments[0].depth, 0);
+  assert.equal(segments[0].recommendation, "use analyzer");
+  assert.equal(segments[1].depth, 1);
+  assert.equal(segments[1].title, "Leaf");
+});
+
+test("formatPlanSegmentsBlock renders indented bullets with flags", () => {
+  const block = formatPlanSegmentsBlock([
+    { id: "1", title: "Root", depth: 0, requiresSubprompt: true },
+    { id: "1.1", title: "Child", depth: 1, description: "Do stuff", recommendation: "npm test" },
+  ]);
+  assert.match(block, /- 1\. Root \(sub-prompt\)/);
+  assert.match(block, /  - 1\.1\. Child \(npm test\)/);
+  assert.match(block, /Do stuff/);
+});
+
+test("formatPlanRecommendationsBlock lists helpers with truncation notice", () => {
+  const block = formatPlanRecommendationsBlock(
+    ["npm test", "node scripts/audit", "python helper.py"],
+    { limit: 2 },
+  );
+  assert.match(block, /Recommended helpers:/);
+  assert.match(block, /- npm test/);
+  assert.match(block, /\(\+1 more recommended tools\/scripts\)/);
 });
 
 test("buildNavigationOperations prefers explicit actions then focus commands", () => {

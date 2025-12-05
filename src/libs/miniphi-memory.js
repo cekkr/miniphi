@@ -328,14 +328,18 @@ export default class MiniPhiMemory {
     await this.prepare();
     const planId = payload.planId ?? payload.plan?.plan_id ?? randomUUID();
     const timestamp = new Date().toISOString();
-    const record = {
-      id: planId,
-      createdAt: timestamp,
-      summary: payload.summary ?? payload.plan?.summary ?? null,
-      outline: payload.outline ?? null,
-      metadata: payload.metadata ?? null,
-      plan: payload.plan,
-    };
+  const record = {
+    id: planId,
+    createdAt: timestamp,
+    summary: payload.summary ?? payload.plan?.summary ?? null,
+    outline: payload.outline ?? null,
+    segments: Array.isArray(payload.segments) ? payload.segments : null,
+    segmentBlock: payload.segmentBlock ?? null,
+    recommendedTools: Array.isArray(payload.recommendedTools) ? payload.recommendedTools : null,
+    recommendationsBlock: payload.recommendationsBlock ?? null,
+    metadata: payload.metadata ?? null,
+    plan: payload.plan,
+  };
     const filePath = path.join(this.promptDecompositionsDir, `${planId}.json`);
     await this._writeJSON(filePath, record);
     await this._updatePromptDecompositionIndex({
@@ -344,6 +348,7 @@ export default class MiniPhiMemory {
       summary: record.summary,
       file: this._relative(filePath),
       outline: record.outline ?? null,
+      segmentBlock: record.segmentBlock ?? null,
       metadata: record.metadata ?? null,
     });
     return { id: planId, path: filePath };

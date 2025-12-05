@@ -54,6 +54,101 @@ export function buildPlanOperations(plan, limit = 8) {
   return flattened;
 }
 
+export function buildPlanSegments(plan, options = undefined) {
+  if (!plan || !Array.isArray(plan.steps)) {
+    return [];
+  }
+  const limit = Math.max(1, Number(options?.limit) || 24);
+  const segments = [];
+  const visit = (steps, depth = 0) => {
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return;
+    }
+    for (const step of steps) {
+      if (!step || typeof step !== "object") {
+        continue;
+      }
+      if (segments.length >= limit) {
+        return;
+      }
+      const id = typeof step.id === "string" ? step.id : String(segments.length + 1);
+      const title = typeof step.title === "string" ? step.title : "Untitled step";
+      const description =
+        typeof step.description === "string" && step.description.trim().length > 0
+          ? step.description.trim()
+          : null;
+      const recommendation =
+        typeof step.recommendation === "string" && step.recommendation.trim().length > 0
+          ? step.recommendation.trim()
+          : null;
+      segments.push({
+        id,
+        title,
+        description,
+        depth,
+        requiresSubprompt: Boolean(step.requires_subprompt),
+        recommendation,
+      });
+      if (Array.isArray(step.children) && step.children.length > 0) {
+        visit(step.children, depth + 1);
+      }
+    }
+  };
+  visit(plan.steps, 0);
+  return segments;
+}
+
+export function formatPlanSegmentsBlock(segments, options = undefined) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return null;
+  }
+  const limit = Math.max(1, Number(options?.limit) || 12);
+  const lines = [];
+  const total = Math.min(limit, segments.length);
+  for (let index = 0; index < total; index += 1) {
+    const segment = segments[index];
+    if (!segment) {
+      continue;
+    }
+    const indent = "  ".repeat(Math.max(0, Number(segment.depth) || 0));
+    const idLabel = segment.id ? `${segment.id}. ` : "";
+    const flags = [];
+    if (segment.requiresSubprompt) {
+      flags.push("sub-prompt");
+    }
+    if (segment.recommendation) {
+      flags.push(segment.recommendation);
+    }
+    const suffix = flags.length ? ` (${flags.join(" | ")})` : "";
+    lines.push(`${indent}- ${idLabel}${segment.title ?? "Untitled"}${suffix}`);
+    if (segment.description) {
+      lines.push(`${indent}  ${segment.description}`);
+    }
+  }
+  if (segments.length > limit) {
+    lines.push(`(+${segments.length - limit} more steps)`);
+  }
+  return lines.join("\n");
+}
+
+export function formatPlanRecommendationsBlock(recommendedTools, options = undefined) {
+  if (!Array.isArray(recommendedTools) || recommendedTools.length === 0) {
+    return null;
+  }
+  const limit = Math.max(1, Number(options?.limit) || 6);
+  const normalized = recommendedTools
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+  if (!normalized.length) {
+    return null;
+  }
+  const lines = normalized.slice(0, limit).map((tool) => `- ${tool}`);
+  if (normalized.length > limit) {
+    lines.push(`(+${normalized.length - limit} more recommended tools/scripts)`);
+  }
+  return `Recommended helpers:\n${lines.join("\n")}`;
+}
+
 export function buildNavigationOperations(hints, limit = 6) {
   if (!hints) {
     return [];

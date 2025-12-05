@@ -33,6 +33,8 @@ These are the currently "fixed reference points" of miniphi project:
 - Config profiles support named presets selected via `--profile`/`MINIPHI_PROFILE`, and prompt decompositions persist per `--prompt-id` so runs can reuse or branch (`--plan-branch`) the cached plans instead of re-prompting every session.
 - Model prompts now fall back from REST to WS transport automatically after a REST failure, preserving chat history while avoiding repeated REST stalls.
 - Navigator, decomposer, and log-analysis/truncation prompts now force `response_format=json_object` on LM Studio REST calls, strip `<think>`/markdown preambles before parsing, and refuse to run helper scripts unless valid JSON is captured, so command learning and truncation strategies stay deterministic.
+- Prompt decompositions capture structured "plan segments" plus JSON-first recommendations: saved plans now include depth-aware bullet lists, CLI prints the segment block + recommended helpers for every run/workspace/analyze invocation, and those blocks are threaded back into analyzer prompts so downstream JSON responses inherit the same segmentation context.
+- Fallback summaries emitted by the log analyzer now print the active schema id, captured line count, chunk totals, and compression ratio (plus the originating command/file) directly in the CLI and dev logs so operators do not need to dig into `.miniphi` artifacts to understand why Phi was replaced by the deterministic JSON.
 
 ## Priority order (P0 ⇒ P2)
 1. **P0 – JSON-only Phi contracts.** Force structured responses for navigator/decomposer/truncation prompts (`response_format=json_object`), strip `<think>`/preambles/fences before parsing, and fail fast on prose so helper commands stay machine-usable.

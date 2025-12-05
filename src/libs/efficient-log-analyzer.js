@@ -164,6 +164,8 @@ export default class EfficientLogAnalyzer {
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
         taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+        taskPlanSegmentsBlock: workspaceContext?.taskPlanSegmentsBlock ?? null,
+        taskPlanRecommendationsBlock: workspaceContext?.taskPlanRecommendationsBlock ?? null,
         capabilitySummary: workspaceContext?.capabilitySummary ?? null,
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
@@ -202,6 +204,14 @@ export default class EfficientLogAnalyzer {
       schemaId: promptContext?.schemaId ?? this.schemaId,
       responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
     };
+    const fallbackDiagnostics = () =>
+      this._formatFallbackDiagnostics({
+        schemaId: traceOptions.schemaId ?? null,
+        lines: lines.length,
+        tokens: compression.tokens,
+        chunkCount: null,
+        datasetLabel: command,
+      });
     const stopHeartbeat = !streamOutput
       ? this._startHeartbeat("Still waiting for Phi response...", devLog)
       : () => {};
@@ -237,8 +247,14 @@ export default class EfficientLogAnalyzer {
     } catch (error) {
       usedFallback = true;
       const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
-      this._logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      const diag = fallbackDiagnostics();
+      console.warn(
+        `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+      );
+      this._logDev(
+        devLog,
+        `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+      );
       analysis = this._buildFallbackAnalysis(task, reason, {
         datasetHint: `${lines.length} lines captured from ${command}`,
         rerunCommand: command,
@@ -255,7 +271,10 @@ export default class EfficientLogAnalyzer {
       }
     } else {
       if (usedFallback) {
-        console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
+        const diag = fallbackDiagnostics();
+        console.log(
+          `[MiniPhi] Phi response unavailable; emitted fallback summary.${diag ? ` ${diag}` : ""}`,
+        );
       } else {
         console.log("[MiniPhi] Phi response received.");
       }
@@ -264,6 +283,12 @@ export default class EfficientLogAnalyzer {
           origin: `Command "${command}"`,
         });
       }
+    }
+    if (streamOutput && usedFallback) {
+      const diag = fallbackDiagnostics();
+      console.log(
+        `[MiniPhi] Phi response unavailable; emitted fallback summary.${diag ? ` ${diag}` : ""}`,
+      );
     }
 
     if (!usedFallback) {
@@ -280,6 +305,7 @@ export default class EfficientLogAnalyzer {
           linesAnalyzed: lines.length,
           compression,
           traceOptions,
+          fallbackDiagnosticsFn: fallbackDiagnostics,
         });
         if (salvage?.analysis) {
           analysis = salvage.analysis;
@@ -287,8 +313,14 @@ export default class EfficientLogAnalyzer {
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
-          console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
-          this._logDev(devLog, `${reason}; emitting fallback JSON.`);
+          const diag = fallbackDiagnostics();
+          console.warn(
+            `[MiniPhi] ${reason}; emitting fallback summary.${diag ? ` ${diag}` : ""}`,
+          );
+          this._logDev(
+            devLog,
+            `${reason}; emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+          );
           analysis = this._buildFallbackAnalysis(task, reason, {
             datasetHint: `${lines.length} lines captured from ${command}`,
             rerunCommand: command,
@@ -424,6 +456,14 @@ export default class EfficientLogAnalyzer {
       schemaId: promptContext?.schemaId ?? this.schemaId,
       responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
     };
+    const fallbackDiagnostics = () =>
+      this._formatFallbackDiagnostics({
+        schemaId: traceOptions.schemaId ?? null,
+        lines: linesUsed,
+        tokens: tokensUsed,
+        chunkCount: chunkSummaries.length,
+        datasetLabel: filePath,
+      });
     if (droppedChunks > 0) {
       this._logDev(devLog, `Prompt omitted ${droppedChunks} chunk(s) to fit the context budget.`);
     }
@@ -459,8 +499,14 @@ export default class EfficientLogAnalyzer {
     } catch (error) {
       usedFallback = true;
       const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.`);
-      this._logDev(devLog, `Phi failure (${reason}); emitting fallback JSON.`);
+      const diag = fallbackDiagnostics();
+      console.warn(
+        `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+      );
+      this._logDev(
+        devLog,
+        `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+      );
       analysis = this._buildFallbackAnalysis(task, reason, {
         datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
         rerunCommand: filePath,
@@ -477,7 +523,10 @@ export default class EfficientLogAnalyzer {
       }
     } else {
       if (usedFallback) {
-        console.log("[MiniPhi] Phi response unavailable; emitted fallback summary.");
+        const diag = fallbackDiagnostics();
+        console.log(
+          `[MiniPhi] Phi response unavailable; emitted fallback summary.${diag ? ` ${diag}` : ""}`,
+        );
       } else {
         console.log("[MiniPhi] Phi response received.");
       }
@@ -486,6 +535,12 @@ export default class EfficientLogAnalyzer {
           origin: `Log file ${path.basename(filePath)}`,
         });
       }
+    }
+    if (streamOutput && usedFallback) {
+      const diag = fallbackDiagnostics();
+      console.log(
+        `[MiniPhi] Phi response unavailable; emitted fallback summary.${diag ? ` ${diag}` : ""}`,
+      );
     }
     if (!usedFallback) {
       const sanitized = this._sanitizeJsonResponse(analysis);
@@ -760,6 +815,55 @@ export default class EfficientLogAnalyzer {
     return `${ratio.toFixed(1)}x`;
   }
 
+  _formatFallbackDiagnostics(details = undefined) {
+    if (!details || typeof details !== "object") {
+      return "";
+    }
+    const parts = [];
+    const schemaId =
+      typeof details.schemaId === "string" && details.schemaId.trim()
+        ? details.schemaId.trim()
+        : null;
+    if (schemaId) {
+      parts.push(`schema=${schemaId}`);
+    }
+    if (Number.isFinite(details.lines) && details.lines >= 0) {
+      parts.push(`lines=${details.lines}`);
+    }
+    if (Number.isFinite(details.chunkCount)) {
+      parts.push(`chunks=${details.chunkCount}`);
+    }
+    if (Number.isFinite(details.tokens) && details.tokens > 0) {
+      if (Number.isFinite(details.lines) && details.lines > 0) {
+        parts.push(`compression=${this._formatCompression(details.lines, details.tokens)}`);
+      } else {
+        parts.push(`tokens≈${details.tokens}`);
+      }
+    }
+    const datasetLabel = this._formatDatasetLabel(details.datasetLabel);
+    if (datasetLabel) {
+      parts.push(`dataset=${datasetLabel}`);
+    }
+    if (!parts.length) {
+      return "";
+    }
+    return `Details: ${parts.join(" | ")}`;
+  }
+
+  _formatDatasetLabel(label) {
+    if (!label && label !== 0) {
+      return null;
+    }
+    const normalized = label.toString().trim();
+    if (!normalized) {
+      return null;
+    }
+    if (normalized.length <= 80) {
+      return `"${normalized}"`;
+    }
+    return `"${normalized.slice(0, 77)}..."`;
+  }
+
   async _resolvePromptBudget() {
     if (!this.phi4 || typeof this.phi4.getContextWindow !== "function") {
       return 4096;
@@ -820,6 +924,8 @@ export default class EfficientLogAnalyzer {
         readmeSnippet: workspaceContext?.readmeSnippet ?? null,
         taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
         taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+        taskPlanSegmentsBlock: workspaceContext?.taskPlanSegmentsBlock ?? null,
+        taskPlanRecommendationsBlock: workspaceContext?.taskPlanRecommendationsBlock ?? null,
         capabilitySummary: workspaceContext?.capabilitySummary ?? null,
         connectionSummary:
           workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
@@ -943,6 +1049,7 @@ export default class EfficientLogAnalyzer {
       linesAnalyzed,
       compression,
       traceOptions,
+      fallbackDiagnosticsFn,
     } = payload ?? {};
     if (!analysis) {
       return null;
@@ -1133,6 +1240,12 @@ export default class EfficientLogAnalyzer {
       const preview = outlineLines.slice(0, 12).join("\n");
       const suffix = outlineLines.length > 12 ? "\n..." : "";
       lines.push(`Task plan outline:\n${preview}${suffix}`);
+    }
+    if (extraContext.taskPlanSegmentsBlock) {
+      lines.push(`Task plan segments:\n${extraContext.taskPlanSegmentsBlock}`);
+    }
+    if (extraContext.taskPlanRecommendationsBlock) {
+      lines.push(extraContext.taskPlanRecommendationsBlock);
     }
     if (extraContext.connectionSummary) {
       lines.push(`File connection hints:\n${extraContext.connectionSummary}`);

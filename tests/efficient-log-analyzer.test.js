@@ -23,3 +23,19 @@ test("EfficientLogAnalyzer rejects non-object JSON responses", () => {
   const sanitized = analyzer._sanitizeJsonResponse('[1,2,3]');
   assert.strictEqual(sanitized, null);
 });
+
+test("EfficientLogAnalyzer formats fallback diagnostics with schema, chunks, and compression", () => {
+  const analyzer = new EfficientLogAnalyzer(stubPhi, stubCli, stubSummarizer);
+  const details = analyzer._formatFallbackDiagnostics({
+    schemaId: "log-analysis",
+    lines: 800,
+    tokens: 320,
+    chunkCount: 3,
+    datasetLabel: "npm test",
+  });
+  assert.match(details, /schema=log-analysis/);
+  assert.match(details, /lines=800/);
+  assert.match(details, /chunks=3/);
+  assert.match(details, /compression=/);
+  assert.match(details, /dataset="npm test"/);
+});

@@ -1,5 +1,10 @@
 import { randomUUID } from "crypto";
-import { extractJsonBlock } from "./core-utils.js";
+import {
+  extractJsonBlock,
+  buildPlanSegments,
+  formatPlanSegmentsBlock,
+  formatPlanRecommendationsBlock,
+} from "./core-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
 
 const DEFAULT_MAX_DEPTH = 3;
@@ -190,6 +195,10 @@ export default class PromptDecomposer {
         planId: normalizedPlan.planId,
         summary: normalizedPlan.summary,
         outline: normalizedPlan.outline ?? null,
+        segments: normalizedPlan.segments ?? null,
+        segmentBlock: normalizedPlan.segmentBlock ?? null,
+        recommendedTools: normalizedPlan.recommendedTools ?? null,
+        recommendationsBlock: normalizedPlan.recommendationsBlock ?? null,
         metadata: {
           objective: payload.objective,
           command: payload.command ?? null,
@@ -289,6 +298,14 @@ export default class PromptDecomposer {
     const planId = parsed.plan_id || `plan-${randomUUID()}`;
     const summary = parsed.summary ?? null;
 
+    const segments = buildPlanSegments(parsed, { limit: 36 });
+    const segmentBlock = formatPlanSegmentsBlock(segments, { limit: 14 });
+    const recommendedTools = Array.isArray(parsed.recommended_tools)
+      ? parsed.recommended_tools
+          .map((tool) => (typeof tool === "string" ? tool.trim() : ""))
+          .filter((tool) => tool.length > 0)
+      : [];
+    const recommendationsBlock = formatPlanRecommendationsBlock(recommendedTools);
     const normalized = {
       planId,
       summary,
@@ -303,6 +320,10 @@ export default class PromptDecomposer {
       },
       outline: this._formatOutline(validation.steps),
       branch: payload.planBranch ?? null,
+      segments,
+      segmentBlock,
+      recommendedTools,
+      recommendationsBlock,
     };
     return normalized;
   }
