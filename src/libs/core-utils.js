@@ -442,6 +442,31 @@ export function extractContextRequestsFromAnalysis(analysisText) {
   return normalized;
 }
 
+export function extractMissingSnippetsFromAnalysis(analysisText) {
+  const parsed = extractJsonBlock(analysisText);
+  const rawSnippets = parsed?.missing_snippets ?? parsed?.missingSnippets;
+  if (!Array.isArray(rawSnippets) || rawSnippets.length === 0) {
+    return [];
+  }
+  return rawSnippets
+    .map((entry) => (typeof entry === "string" ? entry.trim() : null))
+    .filter((entry) => entry && entry.length > 0);
+}
+
+export function extractNeedsMoreContextFlag(analysisText) {
+  const parsed = extractJsonBlock(analysisText);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  if (typeof parsed.needs_more_context === "boolean") {
+    return parsed.needs_more_context;
+  }
+  if (typeof parsed.needsMoreContext === "boolean") {
+    return parsed.needsMoreContext;
+  }
+  return null;
+}
+
 function stripThinkBlocks(text = "") {
   if (!text) {
     return "";

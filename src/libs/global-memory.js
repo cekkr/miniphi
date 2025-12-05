@@ -14,12 +14,14 @@ export default class GlobalMiniPhiMemory {
     this.baseDir = path.join(homeDir, DEFAULT_DIR_NAME);
     this.configDir = path.join(this.baseDir, "config");
     this.promptsDir = path.join(this.baseDir, "prompts");
+    this.promptTemplatesDir = path.join(this.promptsDir, "templates");
     this.metricsDir = path.join(this.baseDir, "metrics");
     this.preferencesDir = path.join(this.baseDir, "preferences");
     this.helpersDir = path.join(this.baseDir, "helpers");
     this.helperVersionsDir = path.join(this.helpersDir, "versions");
     this.commandLibraryFile = path.join(this.helpersDir, "command-library.json");
     this.helperIndexFile = path.join(this.helpersDir, "index.json");
+    this.promptTemplateIndexFile = path.join(this.promptTemplatesDir, "index.json");
     this.promptDbPath = path.join(this.promptsDir, "miniphi-prompts.db");
     this.systemProfileFile = path.join(this.configDir, "system-profile.json");
     this.commandPolicyFile = path.join(this.preferencesDir, "command-policy.json");
@@ -33,6 +35,7 @@ export default class GlobalMiniPhiMemory {
     await Promise.all([
       fs.promises.mkdir(this.configDir, { recursive: true }),
       fs.promises.mkdir(this.promptsDir, { recursive: true }),
+      fs.promises.mkdir(this.promptTemplatesDir, { recursive: true }),
       fs.promises.mkdir(this.metricsDir, { recursive: true }),
       fs.promises.mkdir(this.preferencesDir, { recursive: true }),
       fs.promises.mkdir(this.helpersDir, { recursive: true }),
@@ -41,6 +44,7 @@ export default class GlobalMiniPhiMemory {
     await Promise.all([
       this._ensureFile(this.commandLibraryFile, { entries: [] }),
       this._ensureFile(this.helperIndexFile, { entries: [] }),
+      this._ensureFile(this.promptTemplateIndexFile, { entries: [] }),
     ]);
     await this._writeSystemProfile();
     this.prepared = true;
@@ -134,6 +138,105 @@ export default class GlobalMiniPhiMemory {
     index.entries = [entry, ...filtered].slice(0, 200);
     await this._writeJSON(this.helperIndexFile, index);
     return entry;
+  }
+
+  async recordPromptTemplateBaseline(payload) {
+    if (!payload?.sourcePath) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = nowIso();
+    const normalizedId =
+      payload.id ??
+      this._slugify(payload.label ?? path.basename(payload.sourcePath, path.extname(payload.sourcePath)));
+    const index = await this._readJSON(this.promptTemplateIndexFile, { entries: [] });
+    const existing = index.entries.find((entry) => entry.id === normalizedId) ?? null;
+    const version = (existing?.version ?? 0) + 1;
+    const versionDir = path.join(this.promptTemplatesDir, normalizedId);
+    await fs.promises.mkdir(versionDir, { recursive: true });
+    const versionLabel = `v${String(version).padStart(4, "0")}`;
+    const fileName = `${versionLabel}-${normalizedId}.json`;
+    const destination = path.join(versionDir, fileName);
+    await fs.promises.copyFile(payload.sourcePath, destination);
+    const entry = {
+      id: normalizedId,
+      label: payload.label ?? existing?.label ?? normalizedId,
+      schemaId: payload.schemaId ?? existing?.schemaId ?? null,
+      baseline: payload.baseline ?? existing?.baseline ?? null,
+      objective: payload.objective ?? existing?.objective ?? null,
+      workspaceType: payload.workspaceType ?? existing?.workspaceType ?? null,
+      path: this._relative(destination),
+      version,
+      source: payload.source ?? existing?.source ?? "project",
+      updatedAt: timestamp,
+    };
+    const filtered = index.entries.filter((item) => item.id !== normalizedId);
+    index.entries = [entry, ...filtered].slice(0, 200);
+    await this._writeJSON(this.promptTemplateIndexFile, index);
+    return entry;
+  }
+
+  async loadPromptTemplates(options = undefined) {
+    await this.prepare();
+    const index = await this._readJSON(this.promptTemplateIndexFile, { entries: [] });
+    if (!Array.isArray(index.entries) || index.entries.length === 0) {
+      return [];
+    }
+    const limitRaw = Number(options?.limit ?? 4);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 4;
+    const schemaFilter =
+      typeof options?.schemaId === "string" && options.schemaId.trim().length > 0
+        ? options.schemaId.trim().toLowerCase()
+        : null;
+    const workspaceFilter =
+      typeof options?.workspaceType === "string" && options.workspaceType.trim().length > 0
+        ? options.workspaceType.trim().toLowerCase()
+        : null;
+    const results = [];
+    for (const entry of index.entries) {
+      if (schemaFilter) {
+        const entrySchema = typeof entry.schemaId === "string" ? entry.schemaId.toLowerCase() : "";
+        if (entrySchema !== schemaFilter) {
+          continue;
+        }
+      }
+      if (workspaceFilter) {
+        const entryWorkspace =
+          typeof entry.workspaceType === "string" ? entry.workspaceType.toLowerCase() : "";
+        if (entryWorkspace && entryWorkspace !== workspaceFilter) {
+          continue;
+        }
+      }
+      const absolutePath = path.isAbsolute(entry.path)
+        ? entry.path
+        : path.join(this.baseDir, entry.path);
+      let templateData;
+      try {
+        templateData = await this._readJSON(absolutePath, null);
+      } catch {
+        continue;
+      }
+      if (!templateData || typeof templateData !== "object" || !templateData.prompt) {
+        continue;
+      }
+      results.push({
+        id: entry.id,
+        label: entry.label ?? templateData.label ?? entry.id,
+        schemaId: entry.schemaId ?? templateData.schemaId ?? null,
+        baseline: entry.baseline ?? templateData.baseline ?? null,
+        task: templateData.task ?? entry.objective ?? null,
+        prompt: templateData.prompt,
+        metadata: templateData.metadata ?? null,
+        createdAt: templateData.createdAt ?? entry.updatedAt ?? null,
+        path: absolutePath,
+        source: entry.source ?? "global",
+        workspaceType: entry.workspaceType ?? null,
+      });
+      if (results.length >= limit) {
+        break;
+      }
+    }
+    return results;
   }
 
   async recordCommandIdeas(payload) {

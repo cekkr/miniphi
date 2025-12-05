@@ -38,3 +38,7 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-04T14:50:00.221Z (analyze-file): Audit the besh shell and capture a prompt journal
 
 - Forgotten requirement for 2025-12-04T14:58:39.156Z (analyze-file): Audit the besh shell and capture a prompt journal
+
+- Forgotten requirement for 2025-12-05T17:02:32.397Z (analyze-file): Audit the besh shell and capture a prompt journal
+
+- Forgotten requirement for 2025-12-05T17:03:34.420Z (analyze-file): Audit the besh shell and capture a prompt journal

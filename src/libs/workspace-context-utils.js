@@ -142,4 +142,36 @@ export function buildWorkspaceHintBlock(files, baseDir, readmeSnippet = null, op
   return blocks.join("\n\n");
 }
 
+export function buildPromptTemplateBlock(templates, options = undefined) {
+  if (!Array.isArray(templates) || templates.length === 0) {
+    return "";
+  }
+  const limit = Math.max(1, options?.limit ?? 4);
+  const selected = templates.slice(0, limit);
+  const lines = ["Prompt templates available for reuse:"];
+  selected.forEach((template) => {
+    const parts = [`- ${template.label ?? template.id ?? "prompt"}`];
+    if (template.schemaId) {
+      parts.push(`schema=${template.schemaId}`);
+    }
+    if (template.baseline) {
+      parts.push(`baseline=${template.baseline}`);
+    }
+    if (template.workspaceType) {
+      parts.push(`workspace=${template.workspaceType}`);
+    }
+    if (template.source) {
+      parts.push(`source=${template.source}`);
+    }
+    if (template.createdAt) {
+      parts.push(`saved ${template.createdAt}`);
+    }
+    lines.push(parts.join(" | "));
+  });
+  if (templates.length > selected.length) {
+    lines.push(`- ... ${templates.length - selected.length} more template${templates.length - selected.length === 1 ? "" : "s"}`);
+  }
+  return lines.join("\n");
+}
+
 export { DEFAULT_IGNORED_DIRS };

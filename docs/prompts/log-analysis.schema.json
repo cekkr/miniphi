@@ -75,6 +75,19 @@
         "type": "string"
       }
     },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "Set to true when the captured dataset is insufficient to finish the analysis.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "List the minimal snippets/files/commands required before proceeding.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
     "truncation_strategy": {
       "type": ["object", "null"],
       "description": "Plan for splitting oversized inputs and preserving must-have context across prompts. Use null when not needed.",

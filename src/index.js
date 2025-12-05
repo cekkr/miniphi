@@ -40,6 +40,7 @@ import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
   readReadmeSnippet,
+  buildPromptTemplateBlock,
 } from "./libs/workspace-context-utils.js";
 import {
   normalizeDangerLevel,
@@ -52,6 +53,8 @@ import {
   isLocalLmStudioBaseUrl,
   extractRecommendedCommandsFromAnalysis,
   extractContextRequestsFromAnalysis,
+  extractMissingSnippetsFromAnalysis,
+  extractNeedsMoreContextFlag,
 } from "./libs/core-utils.js";
 
 const COMMANDS = new Set([
@@ -229,6 +232,26 @@ function displayContextRequests(contextRequests) {
   });
 }
 
+function displayMissingSnippets(snippets) {
+  if (!Array.isArray(snippets) || snippets.length === 0) {
+    return;
+  }
+  console.log("\n[MiniPhi] Minimal snippets/files requested before proceeding:");
+  snippets.forEach((snippet, index) => {
+    console.log(`  ${index + 1}. ${snippet}`);
+  });
+}
+
+function announceNeedsMoreContext(flag, hasSnippets) {
+  if (!flag) {
+    return;
+  }
+  const suffix = hasSnippets ? "" : " Provide the missing snippets or rerun with a narrower dataset.";
+  console.warn(
+    `\n[MiniPhi] Phi flagged that the captured data is incomplete.${suffix}`,
+  );
+}
+
 function attachContextRequestsToResult(result) {
   if (!result || typeof result !== "object") {
     return;
@@ -237,6 +260,16 @@ function attachContextRequestsToResult(result) {
   result.contextRequests = requests;
   if (requests.length) {
     displayContextRequests(requests);
+  }
+  const missingSnippets = extractMissingSnippetsFromAnalysis(result.analysis ?? "");
+  if (missingSnippets.length) {
+    result.missingSnippets = missingSnippets;
+    displayMissingSnippets(missingSnippets);
+  }
+  const needsMoreContext = extractNeedsMoreContextFlag(result.analysis ?? "");
+  if (typeof needsMoreContext === "boolean") {
+    result.needsMoreContext = needsMoreContext;
+    announceNeedsMoreContext(needsMoreContext, missingSnippets.length > 0);
   }
 }
 
@@ -312,6 +345,42 @@ async function recordLmStudioStatusSnapshot(restClient, memory, options = undefi
       );
     }
     return null;
+  }
+}
+
+async function mirrorPromptTemplateToGlobal(
+  savedTemplate,
+  templateDetails,
+  workspaceContext,
+  options = undefined,
+) {
+  if (
+    !savedTemplate?.path ||
+    !globalMemory?.recordPromptTemplateBaseline ||
+    typeof globalMemory.recordPromptTemplateBaseline !== "function"
+  ) {
+    return;
+  }
+  try {
+    await globalMemory.recordPromptTemplateBaseline({
+      id: savedTemplate.id,
+      label: templateDetails?.label ?? savedTemplate.id ?? null,
+      schemaId: templateDetails?.schemaId ?? null,
+      baseline: templateDetails?.baseline ?? templateDetails?.metadata?.baseline ?? null,
+      objective: templateDetails?.task ?? null,
+      workspaceType:
+        workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
+      sourcePath: savedTemplate.path,
+      source: options?.source ?? "cli",
+    });
+  } catch (error) {
+    if (options?.verbose) {
+      console.warn(
+        `[MiniPhi] Unable to mirror prompt template globally: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 }
 
@@ -1427,6 +1496,7 @@ const describeWorkspace = (dir, options = undefined) =>
     objective: options?.objective ?? null,
     executeHelper: options?.executeHelper ?? true,
     memory: options?.memory ?? null,
+    globalMemory: options?.globalMemory ?? globalMemory,
     indexLimit: options?.indexLimit,
     benchmarkLimit: options?.benchmarkLimit,
   });
@@ -1624,6 +1694,11 @@ const describeWorkspace = (dir, options = undefined) =>
       }
       if (workspaceContext?.navigationBlock) {
         console.log(`[MiniPhi][Workspace] navigation:\n${workspaceContext.navigationBlock}`);
+      }
+      if (workspaceContext?.promptTemplateBlock) {
+        console.log(
+          `[MiniPhi][Workspace] prompt templates:\n${workspaceContext.promptTemplateBlock}`,
+        );
       }
       if (planResult?.outline) {
         console.log(`[MiniPhi][Workspace] plan (${planResult.planId}):\n${planResult.outline}`);
@@ -2738,6 +2813,7 @@ async function runGeneralPurposeBenchmark({
     objective: task,
     executeHelper: true,
     memory: stateManager,
+    globalMemory,
   });
 
   let decompositionPlan = null;
@@ -2783,9 +2859,10 @@ async function runGeneralPurposeBenchmark({
   ];
   const savedTemplates = [];
   for (const payload of templatePayloads) {
+    const templateLabel = `general-purpose ${payload.metadata?.baseline ?? payload.baseline ?? "prompt"}`;
     const saved = await stateManager.savePromptTemplateBaseline({
       ...payload,
-      label: `general-purpose ${payload.metadata?.baseline ?? payload.baseline ?? "prompt"}`,
+      label: templateLabel,
       cwd,
     });
     savedTemplates.push(saved);
@@ -2793,6 +2870,17 @@ async function runGeneralPurposeBenchmark({
       const rel = path.relative(process.cwd(), saved.path) || saved.path;
       console.log(`[MiniPhi][Benchmark] Saved prompt template to ${rel}`);
     }
+    await mirrorPromptTemplateToGlobal(
+      saved,
+      {
+        label: templateLabel,
+        schemaId: payload.schemaId ?? null,
+        baseline: payload.metadata?.baseline ?? payload.baseline ?? null,
+        task: payload.task ?? null,
+      },
+      workspaceContext,
+      { verbose, source: "general-benchmark" },
+    );
   }
 
   let commandDetails = null;
@@ -3076,6 +3164,7 @@ async function generateWorkspaceSnapshot({
   objective = null,
   executeHelper = true,
   memory = null,
+  globalMemory = null,
   indexLimit = 6,
   benchmarkLimit = 3,
 }) {
@@ -3156,6 +3245,83 @@ async function generateWorkspaceSnapshot({
     capabilityDetails: capabilities?.details ?? null,
     cachedHints: cachedHint,
   };
+
+  const promptTemplates = [];
+  const templateKeys = new Set();
+  const registerTemplates = (entries, sourceLabel) => {
+    if (!Array.isArray(entries)) {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry) {
+        continue;
+      }
+      const keyBase = entry.id ?? entry.path ?? entry.label ?? entry.schemaId ?? sourceLabel;
+      const key = `${keyBase}::${entry.source ?? sourceLabel}`;
+      if (templateKeys.has(key)) {
+        continue;
+      }
+      templateKeys.add(key);
+      const previewSource = typeof entry.prompt === "string" ? entry.prompt : null;
+      const preview =
+        previewSource && previewSource.length > 320
+          ? `${previewSource.slice(0, 320)}…`
+          : previewSource;
+      promptTemplates.push({
+        id: entry.id ?? keyBase,
+        label: entry.label ?? entry.schemaId ?? keyBase,
+        schemaId: entry.schemaId ?? null,
+        baseline: entry.baseline ?? null,
+        task: entry.task ?? null,
+        createdAt: entry.createdAt ?? null,
+        workspaceType: entry.workspaceType ?? profile?.classification?.label ?? null,
+        path: entry.path ?? null,
+        source: entry.source ?? sourceLabel,
+        preview,
+      });
+      if (promptTemplates.length >= 8) {
+        break;
+      }
+    }
+  };
+  if (memory?.loadPromptTemplates) {
+    try {
+      const localTemplates = await memory.loadPromptTemplates({
+        cwd: rootDir,
+        limit: 5,
+      });
+      registerTemplates(localTemplates, "local");
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load local prompt templates: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+  if (globalMemory?.loadPromptTemplates) {
+    try {
+      const globalTemplates = await globalMemory.loadPromptTemplates({
+        workspaceType: profile?.classification?.label ?? profile?.classification?.domain ?? null,
+        limit: 4,
+      });
+      registerTemplates(globalTemplates, "global");
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load global prompt templates: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+  const promptTemplateBlock =
+    promptTemplates.length > 0 ? buildPromptTemplateBlock(promptTemplates) : null;
+  workspaceSnapshot.promptTemplates = promptTemplates;
+  workspaceSnapshot.promptTemplateBlock = promptTemplateBlock;
 
   let indexSummary = null;
   let benchmarkHistory = null;
@@ -3267,6 +3433,8 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
     typeof options.notes === "string" && options.notes.trim().length ? options.notes.trim() : null;
   const skipWorkspace = Boolean(options["no-workspace"]);
 
+  const stateManager = new MiniPhiMemory(cwd);
+  await stateManager.prepare();
   let workspaceContext = null;
   if (!skipWorkspace) {
     const workspaceProfiler = new WorkspaceProfiler();
@@ -3279,6 +3447,8 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
       navigator: null,
       objective: task,
       executeHelper: false,
+      memory: stateManager,
+      globalMemory,
     });
   }
 
@@ -3304,8 +3474,6 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
     return;
   }
 
-  const stateManager = new MiniPhiMemory(cwd);
-  await stateManager.prepare();
   const labelCandidate = typeof options.label === "string" ? options.label.trim() : "";
   const label = labelCandidate || `${baseline}-baseline`;
   const saved = await stateManager.savePromptTemplateBaseline({
@@ -3320,6 +3488,17 @@ async function handlePromptTemplateCommand({ options, verbose, schemaRegistry })
   const savedRel = path.relative(process.cwd(), saved.path);
   console.log(
     `[MiniPhi] Prompt template baseline ${saved.id} stored at ${savedRel || saved.path}`,
+  );
+  await mirrorPromptTemplateToGlobal(
+    saved,
+    {
+      label,
+      schemaId: template.schemaId ?? null,
+      baseline: template.metadata?.baseline ?? baseline,
+      task: template.task ?? task,
+    },
+    workspaceContext,
+    { verbose, source: "prompt-template-cli" },
   );
 
   const outputPath =

@@ -173,6 +173,7 @@ export default class EfficientLogAnalyzer {
         indexSummaries: workspaceContext?.indexSummary ?? null,
         benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
         commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
+        promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
       },
     );
 
@@ -691,6 +692,8 @@ export default class EfficientLogAnalyzer {
         },
       ],
       next_steps: [nextStep],
+      needs_more_context: Boolean(datasetHint),
+      missing_snippets: datasetHint ? [datasetHint] : [],
       truncation_strategy: {
         should_split: shouldSplit,
         chunking_plan: chunkingPlan,
@@ -1174,6 +1177,9 @@ export default class EfficientLogAnalyzer {
     }
     if (extraContext.commandLibraryBlock) {
       lines.push(extraContext.commandLibraryBlock);
+    }
+    if (extraContext.promptTemplateBlock) {
+      lines.push(extraContext.promptTemplateBlock);
     }
     if (
       extraContext.indexSummaries?.entries &&

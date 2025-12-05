@@ -432,6 +432,63 @@ export default class MiniPhiMemory {
     }));
   }
 
+  async loadPromptTemplates(options = undefined) {
+    await this.prepare();
+    const index = await this._readJSON(this.promptTemplatesIndexFile, { entries: [] });
+    if (!Array.isArray(index.entries) || index.entries.length === 0) {
+      return [];
+    }
+    const limitRaw = Number(options?.limit ?? 4);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 4;
+    const schemaFilter =
+      typeof options?.schemaId === "string" && options.schemaId.trim().length > 0
+        ? options.schemaId.trim().toLowerCase()
+        : null;
+    const cwdFilter = options?.cwd ? path.resolve(options.cwd) : null;
+    const results = [];
+    for (const entry of index.entries) {
+      if (schemaFilter) {
+        const entrySchema = typeof entry.schemaId === "string" ? entry.schemaId.toLowerCase() : "";
+        if (entrySchema !== schemaFilter) {
+          continue;
+        }
+      }
+      const templatePath = path.isAbsolute(entry.file)
+        ? entry.file
+        : path.join(this.baseDir, entry.file);
+      let templateData;
+      try {
+        templateData = await this._readJSON(templatePath, null);
+      } catch {
+        continue;
+      }
+      if (!templateData || typeof templateData !== "object" || !templateData.prompt) {
+        continue;
+      }
+      const resolvedCwd = templateData.cwd ? path.resolve(templateData.cwd) : null;
+      if (cwdFilter && resolvedCwd && resolvedCwd !== cwdFilter) {
+        continue;
+      }
+      results.push({
+        id: templateData.id ?? entry.id,
+        label: entry.label ?? templateData.label ?? entry.id,
+        schemaId: entry.schemaId ?? templateData.schemaId ?? null,
+        baseline: entry.baseline ?? templateData.baseline ?? null,
+        task: templateData.task ?? entry.task ?? null,
+        prompt: templateData.prompt,
+        metadata: templateData.metadata ?? null,
+        createdAt: templateData.createdAt ?? null,
+        cwd: resolvedCwd,
+        path: templatePath,
+        source: "local",
+      });
+      if (results.length >= limit) {
+        break;
+      }
+    }
+    return results;
+  }
+
   async savePromptTemplateBaseline(payload) {
     if (!payload?.prompt) {
       throw new Error("savePromptTemplateBaseline requires a prompt payload.");
