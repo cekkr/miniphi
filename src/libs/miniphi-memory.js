@@ -57,6 +57,7 @@ export default class MiniPhiMemory {
     this.commandLibraryFile = path.join(this.helpersDir, "command-library.json");
     this.promptStepJournalIndexFile = path.join(this.promptStepJournalDir, "index.json");
     this.promptTemplatesIndexFile = path.join(this.promptTemplatesDir, "index.json");
+    this.fallbackCacheFile = path.join(this.indicesDir, "fallback-cache.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -104,6 +105,7 @@ export default class MiniPhiMemory {
     await this._ensureFile(this.promptStepJournalIndexFile, { entries: [] });
     await this._ensureFile(this.promptTemplatesIndexFile, { entries: [] });
     await this._ensureFile(this.commandLibraryFile, { entries: [] });
+    await this._ensureFile(this.fallbackCacheFile, { entries: [] });
     await this._ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -122,6 +124,7 @@ export default class MiniPhiMemory {
         { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
         { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
         { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
+        { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
       ],
     });
 
@@ -1108,6 +1111,7 @@ export default class MiniPhiMemory {
       { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
       { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
       { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
+      { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
     ];
     await this._writeJSON(this.rootIndexFile, root);
   }
@@ -1479,6 +1483,81 @@ export default class MiniPhiMemory {
 
   _hashText(text) {
     return createHash("sha1").update(text ?? "", "utf8").digest("hex");
+  }
+
+  _buildFallbackKey(datasetHash, promptJournalId = null) {
+    const journal =
+      typeof promptJournalId === "string" && promptJournalId.trim().length
+        ? promptJournalId.trim().toLowerCase()
+        : "none";
+    return `${datasetHash || "unknown"}::${journal}`;
+  }
+
+  async loadFallbackSummary(criteria) {
+    if (!criteria?.datasetHash) {
+      return null;
+    }
+    await this.prepare();
+    const key = this._buildFallbackKey(criteria.datasetHash, criteria.promptJournalId);
+    const cache = await this._readJSON(this.fallbackCacheFile, { entries: [] });
+    if (!Array.isArray(cache.entries) || cache.entries.length === 0) {
+      return null;
+    }
+    const index = cache.entries.findIndex((entry) => entry?.key === key);
+    if (index === -1) {
+      return null;
+    }
+    const timestamp = new Date().toISOString();
+    const entry = {
+      ...cache.entries[index],
+      hits: (cache.entries[index]?.hits ?? 0) + 1,
+      lastUsedAt: timestamp,
+    };
+    cache.entries[index] = entry;
+    cache.updatedAt = timestamp;
+    await this._writeJSON(this.fallbackCacheFile, cache);
+    await this._updateRootIndex();
+    return entry;
+  }
+
+  async saveFallbackSummary(payload) {
+    if (!payload?.datasetHash || !payload.analysis) {
+      return null;
+    }
+    await this.prepare();
+    const key = this._buildFallbackKey(payload.datasetHash, payload.promptJournalId);
+    const timestamp = new Date().toISOString();
+    const cache = await this._readJSON(this.fallbackCacheFile, { entries: [] });
+    const existingEntries = Array.isArray(cache.entries) ? cache.entries : [];
+    const filtered = existingEntries.filter((entry) => entry?.key !== key);
+    const existing = existingEntries.find((entry) => entry?.key === key);
+    const record = {
+      id: existing?.id ?? randomUUID(),
+      key,
+      datasetHash: payload.datasetHash,
+      promptJournalId: payload.promptJournalId ?? null,
+      promptId: payload.promptId ?? null,
+      promptLabel: payload.promptLabel ?? null,
+      mode: payload.mode ?? null,
+      command: payload.command ?? null,
+      filePath: payload.filePath ?? null,
+      task: payload.task ?? null,
+      analysis: payload.analysis,
+      truncationPlan: payload.truncationPlan ?? null,
+      workspaceSummary: payload.workspaceSummary ?? null,
+      reason: payload.reason ?? null,
+      linesAnalyzed: payload.linesAnalyzed ?? null,
+      compressedTokens: payload.compressedTokens ?? null,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+      lastUsedAt: existing?.lastUsedAt ?? null,
+      hits: existing?.hits ?? 0,
+    };
+    cache.entries = [record, ...filtered].slice(0, 50);
+    cache.updatedAt = timestamp;
+    await this._writeJSON(this.fallbackCacheFile, cache);
+    await this._updateRootIndex();
+    return record;
   }
 
   _slugify(text) {

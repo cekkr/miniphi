@@ -1992,6 +1992,13 @@ const describeWorkspace = (dir, options = undefined) =>
         authorizationContext: {
           reason: "Primary --cmd execution",
         },
+        fallbackCache: stateManager,
+        fallbackCacheContext: {
+          promptJournalId,
+          mode: "run",
+          command: cmd,
+          cwd,
+        },
       });
       attachContextRequestsToResult(result);
       if (promptJournal && result) {
@@ -2289,6 +2296,12 @@ const describeWorkspace = (dir, options = undefined) =>
                 }
               : null,
           },
+        },
+        fallbackCache: stateManager,
+        fallbackCacheContext: {
+          promptJournalId,
+          mode: "analyze-file",
+          filePath,
         },
       });
       attachContextRequestsToResult(result);

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
 import { extractJsonBlock, extractTruncationPlanFromAnalysis } from "./core-utils.js";
 
@@ -66,6 +67,8 @@ export default class EfficientLogAnalyzer {
       commandDanger = "mid",
       commandSource = "user",
       authorizationContext = undefined,
+      fallbackCache = null,
+      fallbackCacheContext = undefined,
     } = options ?? {};
 
     const devLog = this._startDevLog(`command-${this._safeLabel(command)}`, {
@@ -181,24 +184,51 @@ export default class EfficientLogAnalyzer {
       },
     );
 
-    if (verbose) {
-      console.log(`\n[MiniPhi] Dispatching analysis to Phi-4 (~${compression.tokens} tokens)\n`);
-    }
-    if (!streamOutput) {
-      console.log("[MiniPhi] Awaiting Phi response (stream output disabled)...");
-    }
-    this._logDev(
-      devLog,
-      `Prompt (${compression.tokens} tokens):\n${this._truncateForLog(prompt)}`,
-    );
-
-    let analysis = "";
-    let usedFallback = false;
-    this._applyPromptTimeout(sessionDeadline, {
+    const datasetHash = this._hashDatasetSignature({
+      label: command,
+      content: compression.content,
       lineCount: lines.length,
-      tokens: compression.tokens,
-      source: "command",
     });
+    const fallbackContext = fallbackCacheContext ?? {};
+    const promptJournalId =
+      fallbackContext.promptJournalId ??
+      promptContext?.promptJournalId ??
+      null;
+    const cachedFallback =
+      datasetHash && fallbackCache?.loadFallbackSummary
+        ? await this._lookupCachedFallback(
+            fallbackCache,
+            { datasetHash, promptJournalId },
+            devLog,
+          )
+        : null;
+
+    if (!cachedFallback) {
+      if (verbose) {
+        console.log(`\n[MiniPhi] Dispatching analysis to Phi-4 (~${compression.tokens} tokens)\n`);
+      }
+      if (!streamOutput) {
+        console.log("[MiniPhi] Awaiting Phi response (stream output disabled)...");
+      }
+      this._logDev(
+        devLog,
+        `Prompt (${compression.tokens} tokens):\n${this._truncateForLog(prompt)}`,
+      );
+    } else {
+      const hashPreview = datasetHash ? datasetHash.slice(0, 12) : "unknown";
+      this._logDev(
+        devLog,
+        `Skipping Phi dispatch; fallback cache hit for dataset ${hashPreview}.`,
+      );
+      console.warn(
+        "[MiniPhi] Dataset matches a previous fallback run; reusing cached analysis instead of contacting Phi.",
+      );
+    }
+
+    let analysis = cachedFallback?.analysis ?? "";
+    let usedFallback = Boolean(cachedFallback);
+    let fallbackReason = cachedFallback?.reason ?? null;
+    const reusedFallback = Boolean(cachedFallback);
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
@@ -212,55 +242,64 @@ export default class EfficientLogAnalyzer {
         chunkCount: null,
         datasetLabel: command,
       });
-    const stopHeartbeat = !streamOutput
-      ? this._startHeartbeat("Still waiting for Phi response...", devLog)
-      : () => {};
-    if (verbose) {
-      this._emitVerbosePromptPreview(prompt, compression.tokens, {
-        schemaId: traceOptions.schemaId,
-        origin: `Command "${command}"`,
-        lines: lines.length,
+    let stopHeartbeat = () => {};
+    if (!cachedFallback) {
+      this._applyPromptTimeout(sessionDeadline, {
+        lineCount: lines.length,
+        tokens: compression.tokens,
+        source: "command",
       });
-    }
-    try {
-      await this.phi4.chatStream(
-        prompt,
-        (token) => {
-          analysis += token;
-          if (streamOutput) {
-            process.stdout.write(token);
-          }
-        },
-        (thought) => {
-          if (verbose) {
-            console.log("\n[Reasoning Block]\n");
-            console.log(thought);
-            console.log("\n[Solution Stream]");
-          }
-        },
-        (err) => {
-          this._logDev(devLog, `Phi error: ${err}`);
-          throw new Error(`Phi-4 inference error: ${err}`);
-        },
-        traceOptions,
-      );
-    } catch (error) {
-      usedFallback = true;
-      const reason = error instanceof Error ? error.message : String(error);
-      const diag = fallbackDiagnostics();
-      console.warn(
-        `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
-      );
-      this._logDev(
-        devLog,
-        `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
-      );
-      analysis = this._buildFallbackAnalysis(task, reason, {
-        datasetHint: `${lines.length} lines captured from ${command}`,
-        rerunCommand: command,
-      });
-    } finally {
-      stopHeartbeat();
+      stopHeartbeat = !streamOutput
+        ? this._startHeartbeat("Still waiting for Phi response...", devLog)
+        : () => {};
+      if (verbose) {
+        this._emitVerbosePromptPreview(prompt, compression.tokens, {
+          schemaId: traceOptions.schemaId,
+          origin: `Command "${command}"`,
+          lines: lines.length,
+        });
+      }
+      try {
+        await this.phi4.chatStream(
+          prompt,
+          (token) => {
+            analysis += token;
+            if (streamOutput) {
+              process.stdout.write(token);
+            }
+          },
+          (thought) => {
+            if (verbose) {
+              console.log("\n[Reasoning Block]\n");
+              console.log(thought);
+              console.log("\n[Solution Stream]");
+            }
+          },
+          (err) => {
+            this._logDev(devLog, `Phi error: ${err}`);
+            throw new Error(`Phi-4 inference error: ${err}`);
+          },
+          traceOptions,
+        );
+      } catch (error) {
+        usedFallback = true;
+        const reason = error instanceof Error ? error.message : String(error);
+        fallbackReason = reason;
+        const diag = fallbackDiagnostics();
+        console.warn(
+          `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+        );
+        this._logDev(
+          devLog,
+          `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+        );
+        analysis = this._buildFallbackAnalysis(task, reason, {
+          datasetHint: `${lines.length} lines captured from ${command}`,
+          rerunCommand: command,
+        });
+      } finally {
+        stopHeartbeat();
+      }
     }
 
     if (streamOutput) {
@@ -310,9 +349,13 @@ export default class EfficientLogAnalyzer {
         if (salvage?.analysis) {
           analysis = salvage.analysis;
           usedFallback = salvage.usedFallback ?? false;
+          if (usedFallback && !fallbackReason) {
+            fallbackReason = "JSON salvage fallback";
+          }
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
+          fallbackReason = reason;
           const diag = fallbackDiagnostics();
           console.warn(
             `[MiniPhi] ${reason}; emitting fallback summary.${diag ? ` ${diag}` : ""}`,
@@ -334,7 +377,7 @@ export default class EfficientLogAnalyzer {
       devLog,
       `Phi response captured (${invocationFinishedAt - invocationStartedAt} ms):\n${this._truncateForLog(analysis)}`,
     );
-    const truncationPlan = extractTruncationPlanFromAnalysis(analysis);
+    let truncationPlan = extractTruncationPlanFromAnalysis(analysis);
     if (truncationPlan) {
       truncationPlan.source = usedFallback ? "fallback" : "phi";
       if (truncationPlan.plan?.chunkingPlan?.length) {
@@ -348,6 +391,33 @@ export default class EfficientLogAnalyzer {
           `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
         );
       }
+    }
+    if (
+      usedFallback &&
+      !reusedFallback &&
+      datasetHash &&
+      fallbackCache?.saveFallbackSummary
+    ) {
+      await this._recordFallbackSummary(
+        fallbackCache,
+        {
+          datasetHash,
+          promptJournalId,
+          promptId: traceOptions?.mainPromptId ?? null,
+          promptLabel: traceOptions?.label ?? null,
+          mode: fallbackContext?.mode ?? traceOptions?.metadata?.mode ?? null,
+          command,
+          filePath: fallbackContext?.filePath ?? null,
+          task,
+          analysis,
+          truncationPlan,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          reason: fallbackReason ?? "Phi fallback",
+          linesAnalyzed: lines.length,
+          compressedTokens: compression.tokens,
+        },
+        devLog,
+      );
     }
     return {
       command,
@@ -374,6 +444,8 @@ export default class EfficientLogAnalyzer {
       workspaceContext = undefined,
       verbose = false,
       lineRange = undefined,
+      fallbackCache = null,
+      fallbackCacheContext = undefined,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
     const devLog = this._startDevLog(`file-${this._safeLabel(path.basename(filePath))}`, {
@@ -441,16 +513,31 @@ export default class EfficientLogAnalyzer {
     });
     const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
       adjustment;
+    const datasetHash = this._hashDatasetSignature({
+      label: filePath,
+      content: body,
+      lineCount: linesUsed,
+    });
+    const fallbackContext = fallbackCacheContext ?? {};
+    const promptJournalId =
+      fallbackContext.promptJournalId ??
+      promptContext?.promptJournalId ??
+      null;
+    const cachedFallback =
+      datasetHash && fallbackCache?.loadFallbackSummary
+        ? await this._lookupCachedFallback(
+            fallbackCache,
+            { datasetHash, promptJournalId },
+            devLog,
+          )
+        : null;
 
     const invocationStartedAt = Date.now();
 
-    let analysis = "";
-    let usedFallback = false;
-    this._applyPromptTimeout(sessionDeadline, {
-      lineCount: linesUsed,
-      tokens: tokensUsed,
-      source: "file",
-    });
+    let analysis = cachedFallback?.analysis ?? "";
+    let usedFallback = Boolean(cachedFallback);
+    let fallbackReason = cachedFallback?.reason ?? null;
+    const reusedFallback = Boolean(cachedFallback);
     const traceOptions = {
       ...(promptContext ?? {}),
       schemaId: promptContext?.schemaId ?? this.schemaId,
@@ -470,22 +557,69 @@ export default class EfficientLogAnalyzer {
     if (detailReductions > 0) {
       this._logDev(devLog, `Summary detail reduced by ${detailReductions} level(s) for budgeting.`);
     }
-    const stopHeartbeat = !streamOutput
-      ? this._startHeartbeat("Still waiting for Phi response...", devLog)
-      : () => {};
-    if (verbose) {
-      this._emitVerbosePromptPreview(prompt, tokensUsed, {
-        schemaId: traceOptions.schemaId,
-        origin: `Log file ${path.basename(filePath)}`,
-        lines: linesUsed,
+    let stopHeartbeat = () => {};
+    if (!cachedFallback) {
+      this._applyPromptTimeout(sessionDeadline, {
+        lineCount: linesUsed,
+        tokens: tokensUsed,
+        source: "file",
       });
+      stopHeartbeat = !streamOutput
+        ? this._startHeartbeat("Still waiting for Phi response...", devLog)
+        : () => {};
+      if (verbose) {
+        this._emitVerbosePromptPreview(prompt, tokensUsed, {
+          schemaId: traceOptions.schemaId,
+          origin: `Log file ${path.basename(filePath)}`,
+          lines: linesUsed,
+        });
+      }
+      try {
+        await this.phi4.chatStream(
+          prompt,
+          (token) => {
+            analysis += token;
+            if (streamOutput) {
+              process.stdout.write(token);
+            }
+          },
+          undefined,
+          (err) => {
+            this._logDev(devLog, `Phi error: ${err}`);
+            throw new Error(`Phi-4 inference error: ${err}`);
+          },
+          traceOptions,
+        );
+      } catch (error) {
+        usedFallback = true;
+        const reason = error instanceof Error ? error.message : String(error);
+        fallbackReason = reason;
+        const diag = fallbackDiagnostics();
+        console.warn(
+          `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+        );
+        this._logDev(
+          devLog,
+          `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+        );
+        analysis = this._buildFallbackAnalysis(task, reason, {
+          datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
+          rerunCommand: filePath,
+        });
+      } finally {
+        stopHeartbeat();
+      }
+    } else {
+      const hashPreview = datasetHash ? datasetHash.slice(0, 12) : "unknown";
+      this._logDev(
+        devLog,
+        `Skipping Phi dispatch; fallback cache hit for dataset ${hashPreview}.`,
+      );
+      console.warn(
+        "[MiniPhi] Dataset matches a previous fallback run; reusing cached analysis instead of contacting Phi.",
+      );
     }
-    try {
-      await this.phi4.chatStream(
-        prompt,
-        (token) => {
-          analysis += token;
-          if (streamOutput) {
+    if (streamOutput) {
             process.stdout.write(token);
           }
         },
@@ -562,9 +696,13 @@ export default class EfficientLogAnalyzer {
         if (salvage?.analysis) {
           analysis = salvage.analysis;
           usedFallback = salvage.usedFallback ?? false;
+          if (usedFallback && !fallbackReason) {
+            fallbackReason = "JSON salvage fallback";
+          }
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
+          fallbackReason = reason;
           console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
           this._logDev(devLog, `${reason}; emitting fallback JSON.`);
           analysis = this._buildFallbackAnalysis(task, reason, {
@@ -581,7 +719,7 @@ export default class EfficientLogAnalyzer {
         analysis,
       )}`,
     );
-    const truncationPlan = extractTruncationPlanFromAnalysis(analysis);
+    let truncationPlan = extractTruncationPlanFromAnalysis(analysis);
     if (truncationPlan) {
       truncationPlan.source = usedFallback ? "fallback" : "phi";
       if (truncationPlan.plan?.chunkingPlan?.length) {
@@ -595,6 +733,33 @@ export default class EfficientLogAnalyzer {
           `Captured truncation strategy with ${chunkPhrase} (source=${truncationPlan.source}).`,
         );
       }
+    }
+    if (
+      usedFallback &&
+      !reusedFallback &&
+      datasetHash &&
+      fallbackCache?.saveFallbackSummary
+    ) {
+      await this._recordFallbackSummary(
+        fallbackCache,
+        {
+          datasetHash,
+          promptJournalId,
+          promptId: traceOptions?.mainPromptId ?? null,
+          promptLabel: traceOptions?.label ?? null,
+          mode: fallbackContext?.mode ?? traceOptions?.metadata?.mode ?? null,
+          command: filePath,
+          filePath,
+          task,
+          analysis,
+          truncationPlan,
+          workspaceSummary: workspaceContext?.summary ?? null,
+          reason: fallbackReason ?? "Phi fallback",
+          linesAnalyzed: linesUsed,
+          compressedTokens: tokensUsed,
+        },
+        devLog,
+      );
     }
     const promptAdjustments = {
       droppedChunks: droppedChunks ?? 0,
@@ -1430,6 +1595,45 @@ export default class EfficientLogAnalyzer {
   _applyPromptTimeout(sessionDeadline, promptHints = undefined) {
     const timeout = this._computePromptTimeout(sessionDeadline, promptHints);
     this.phi4.setPromptTimeout(timeout);
+  }
+
+  _hashDatasetSignature(details = undefined) {
+    const label = typeof details?.label === "string" ? details.label : "dataset";
+    const lines = Number.isFinite(details?.lineCount) ? details.lineCount : 0;
+    const content =
+      typeof details?.content === "string"
+        ? details.content
+        : JSON.stringify(details?.content ?? "");
+    return createHash("sha1").update(`${label}::${lines}::${content}`, "utf8").digest("hex");
+  }
+
+  async _lookupCachedFallback(cache, query, devLog) {
+    if (!cache || typeof cache.loadFallbackSummary !== "function" || !query?.datasetHash) {
+      return null;
+    }
+    try {
+      return await cache.loadFallbackSummary(query);
+    } catch (error) {
+      this._logDev(
+        devLog,
+        `[FallbackCache] lookup failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
+  }
+
+  async _recordFallbackSummary(cache, payload, devLog) {
+    if (!cache || typeof cache.saveFallbackSummary !== "function") {
+      return;
+    }
+    try {
+      await cache.saveFallbackSummary(payload);
+    } catch (error) {
+      this._logDev(
+        devLog,
+        `[FallbackCache] save failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
   }
 
   _computePromptTimeout(sessionDeadline, promptHints = undefined) {
