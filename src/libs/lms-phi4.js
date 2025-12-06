@@ -13,6 +13,14 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Always explain your reasoning, keep instructions actionable, and operate directly on the artifacts referenced in the prompt.",
 ].join(" ");
 
+export class LMStudioProtocolError extends Error {
+  constructor(message, metadata = undefined) {
+    super(message || "LM Studio protocol warning");
+    this.name = "LMStudioProtocolError";
+    this.metadata = metadata ?? null;
+  }
+}
+
 /**
  * Layer 2 handler that encapsulates LM Studio chat behavior (system prompt, history management,
  * <think> parsing and streaming support). Relies on LMStudioManager for the actual model handles.
@@ -423,12 +431,14 @@ export class Phi4Handler {
         }
         const protocolWarning = this._isProtocolWarning(message);
         if (protocolWarning) {
-          const metadata = {
-            ...this._buildProtocolMetadata(),
+          const metadata = await this._collectProtocolSnapshot({
             transport: useRestTransport ? "rest" : "ws",
-          };
+            warning: protocolWarning,
+            rawMessage: message,
+          });
           this.protocolGate.wsDisabled = true;
-          this.protocolGate.lastWarning = message;
+          this.protocolGate.lastWarning = protocolWarning;
+          this.protocolGate.lastSnapshot = metadata;
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "protocol-warning",
             severity: "error",
@@ -441,12 +451,10 @@ export class Phi4Handler {
             this.preferRestTransport = true;
             continue;
           }
-          const details = metadata.sdkVersion
-            ? ` (SDK ${metadata.sdkVersion}${
-                metadata.restBaseUrl ? `, REST ${metadata.restBaseUrl}` : ""
-              })`
-            : "";
-          throw new Error(`LM Studio protocol warning${details}: ${protocolWarning}`);
+          throw new LMStudioProtocolError(
+            this._formatProtocolErrorMessage(protocolWarning, metadata),
+            metadata,
+          );
         }
         const schemaRetryAllowed =
           schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
@@ -565,6 +573,64 @@ export class Phi4Handler {
       apiVersion: this.restClient?.apiVersion ?? null,
       model: this.modelKey ?? null,
     };
+  }
+
+  async _collectProtocolSnapshot(additional = undefined) {
+    const metadata = {
+      ...this._buildProtocolMetadata(),
+      ...(additional ?? {}),
+    };
+    metadata.wsDisabled = this.protocolGate?.wsDisabled ?? false;
+    metadata.preferRestTransport = this.preferRestTransport ?? false;
+    if (this.restClient) {
+      try {
+        const status = await this.restClient.getStatus();
+        metadata.restStatus = status ?? null;
+        metadata.serverVersion = this._extractServerVersion(status);
+        metadata.restStatusOk =
+          typeof status?.ok === "boolean"
+            ? status.ok
+            : typeof status?.status?.ok === "boolean"
+              ? status.status.ok
+              : null;
+      } catch (error) {
+        metadata.restStatusError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return metadata;
+  }
+
+  _extractServerVersion(statusPayload) {
+    if (!statusPayload || typeof statusPayload !== "object") {
+      return null;
+    }
+    const candidates = [
+      statusPayload?.status?.lmstudio?.version,
+      statusPayload?.status?.lmstudio_version,
+      statusPayload?.lmstudio?.version,
+      statusPayload?.lmstudio_version,
+      statusPayload?.status?.version,
+      statusPayload?.version,
+    ];
+    return candidates.find((value) => typeof value === "string" && value.trim().length > 0) ?? null;
+  }
+
+  _formatProtocolErrorMessage(protocolWarning, metadata = undefined) {
+    const summaryParts = [];
+    if (metadata?.sdkVersion) {
+      summaryParts.push(`SDK ${metadata.sdkVersion}`);
+    }
+    if (metadata?.serverVersion) {
+      summaryParts.push(`Server ${metadata.serverVersion}`);
+    }
+    if (metadata?.restBaseUrl) {
+      summaryParts.push(metadata.restBaseUrl);
+    }
+    if (metadata?.transport) {
+      summaryParts.push(`transport=${metadata.transport}`);
+    }
+    const suffix = summaryParts.length ? ` (${summaryParts.join(" | ")})` : "";
+    return `LM Studio protocol warning${suffix}: ${protocolWarning}`;
   }
 
   _shouldUseRest(traceContext = undefined) {
@@ -920,3 +986,4 @@ export class Phi4Handler {
 }
 
 export default Phi4Handler;
+export { LMStudioProtocolError };

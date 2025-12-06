@@ -11,7 +11,7 @@ import LMStudioManager, {
   normalizeLmStudioWsUrl,
 } from "./libs/lmstudio-api.js";
 import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
-import Phi4Handler from "./libs/lms-phi4.js";
+import Phi4Handler, { LMStudioProtocolError } from "./libs/lms-phi4.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
@@ -800,6 +800,89 @@ async function recordAnalysisStepInJournal(journal, sessionId, payload = undefin
   });
 }
 
+function isLmStudioProtocolError(error) {
+  if (!error) {
+    return false;
+  }
+  return error instanceof LMStudioProtocolError || error?.name === "LMStudioProtocolError";
+}
+
+function extractLmStudioProtocolMetadata(error) {
+  if (error instanceof LMStudioProtocolError && error.metadata) {
+    return error.metadata;
+  }
+  if (error && typeof error.metadata === "object") {
+    return error.metadata;
+  }
+  return null;
+}
+
+function formatLmStudioProtocolSummary(metadata) {
+  if (!metadata) {
+    return "";
+  }
+  const parts = [];
+  if (metadata.transport) {
+    parts.push(`transport=${metadata.transport}`);
+  }
+  if (metadata.sdkVersion) {
+    parts.push(`sdk=${metadata.sdkVersion}`);
+  }
+  if (metadata.serverVersion) {
+    parts.push(`server=${metadata.serverVersion}`);
+  }
+  if (metadata.restBaseUrl) {
+    parts.push(metadata.restBaseUrl);
+  }
+  return parts.join(" | ");
+}
+
+async function handleLmStudioProtocolFailure({
+  error,
+  mode = "runtime",
+  promptJournal = null,
+  promptJournalId = null,
+  context = undefined,
+}) {
+  if (!isLmStudioProtocolError(error)) {
+    return;
+  }
+  const metadata = extractLmStudioProtocolMetadata(error);
+  const summary = formatLmStudioProtocolSummary(metadata);
+  const prefix = summary
+    ? `[MiniPhi] LM Studio compatibility issue (${summary})`
+    : "[MiniPhi] LM Studio compatibility issue";
+  console.error(`${prefix}: ${error.message}`);
+
+  if (promptJournal && promptJournalId) {
+    await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+      label: "LM Studio compatibility failure",
+      prompt: null,
+      response: null,
+      status: "error",
+      operations: [
+        {
+          type: "lmstudio-protocol",
+          status: "failed",
+          summary: error.message,
+          metadata,
+        },
+      ],
+      metadata: {
+        mode,
+        warning: error.message,
+        lmStudio: metadata ?? null,
+      },
+      workspaceSummary: context?.workspaceSummary ?? null,
+    });
+    await promptJournal.setStatus(promptJournalId, "paused", {
+      reason: "lmstudio-protocol-warning",
+      warning: error.message,
+      metadata,
+    });
+  }
+}
+
 schemaAdapterRegistry.registerAdapter({
   type: "api-navigator",
   version: "navigation-plan@v1",
@@ -1434,6 +1517,8 @@ async function main() {
               mode: "navigator-follow-up",
               parent: baseMetadata?.parentCommand ?? null,
               navigationReason: entry.reason ?? null,
+              salvage: followUpResult?.analysisDiagnostics?.salvage ?? null,
+              fallbackReason: followUpResult?.analysisDiagnostics?.fallbackReason ?? null,
             },
             workspaceSummary: workspaceContext?.summary ?? null,
             startedAt: followUpResult.startedAt ?? null,
@@ -1441,6 +1526,16 @@ async function main() {
           });
         }
       } catch (error) {
+        if (isLmStudioProtocolError(error)) {
+          await handleLmStudioProtocolFailure({
+            error,
+            mode: "navigator-follow-up",
+            promptJournal,
+            promptJournalId,
+            context: { workspaceSummary: workspaceContext?.summary ?? null },
+          });
+          throw error;
+        }
         followUps.push({
           command: entry.command,
           danger: entry.danger,
@@ -1952,54 +2047,67 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       await initializeResourceMonitor(`run:${cmd}`);
-      result = await analyzer.analyzeCommandOutput(cmd, task, {
-        summaryLevels,
-        verbose,
-        streamOutput,
-        cwd,
-        timeout,
-        sessionDeadline,
-        workspaceContext,
-        promptContext: {
-          scope: "main",
-          label: task,
-          mainPromptId: promptGroupId,
-          metadata: {
+      try {
+        result = await analyzer.analyzeCommandOutput(cmd, task, {
+          summaryLevels,
+          verbose,
+          streamOutput,
+          cwd,
+          timeout,
+          sessionDeadline,
+          workspaceContext,
+          promptContext: {
+            scope: "main",
+            label: task,
+            mainPromptId: promptGroupId,
+            metadata: {
+              mode: "run",
+              command: cmd,
+              cwd,
+              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+              workspaceSummary: workspaceContext?.summary ?? null,
+              workspaceHint: workspaceContext?.hintBlock ?? null,
+              workspaceDirectives: workspaceContext?.planDirectives ?? null,
+              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+              taskPlanId: planResult?.planId ?? null,
+              taskPlanOutline: planResult?.outline ?? null,
+              taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+              taskPlanSource: workspaceContext?.taskPlanSource ?? null,
+              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+              capabilities: workspaceContext?.capabilityDetails ?? null,
+              navigationSummary: workspaceContext?.navigationSummary ?? null,
+              navigationBlock: workspaceContext?.navigationBlock ?? null,
+              helperScript: workspaceContext?.helperScript ?? null,
+            },
+          },
+          commandDanger: userCommandDanger,
+          commandSource: "user",
+          authorizationContext: {
+            reason: "Primary --cmd execution",
+          },
+          fallbackCache: stateManager,
+          fallbackCacheContext: {
+            promptJournalId,
             mode: "run",
             command: cmd,
             cwd,
-            workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
-            workspaceSummary: workspaceContext?.summary ?? null,
-            workspaceHint: workspaceContext?.hintBlock ?? null,
-            workspaceDirectives: workspaceContext?.planDirectives ?? null,
-            workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
-            workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
-            taskPlanId: planResult?.planId ?? null,
-            taskPlanOutline: planResult?.outline ?? null,
-            taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
-            taskPlanSource: workspaceContext?.taskPlanSource ?? null,
-            workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
-            workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
-            capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-            capabilities: workspaceContext?.capabilityDetails ?? null,
-            navigationSummary: workspaceContext?.navigationSummary ?? null,
-            navigationBlock: workspaceContext?.navigationBlock ?? null,
-            helperScript: workspaceContext?.helperScript ?? null,
           },
-        },
-        commandDanger: userCommandDanger,
-        commandSource: "user",
-        authorizationContext: {
-          reason: "Primary --cmd execution",
-        },
-        fallbackCache: stateManager,
-        fallbackCacheContext: {
-          promptJournalId,
-          mode: "run",
-          command: cmd,
-          cwd,
-        },
-      });
+        });
+      } catch (error) {
+        if (isLmStudioProtocolError(error)) {
+          await handleLmStudioProtocolFailure({
+            error,
+            mode: "run",
+            promptJournal,
+            promptJournalId,
+            context: { workspaceSummary: workspaceContext?.summary ?? null },
+          });
+        }
+        throw error;
+      }
       attachContextRequestsToResult(result);
       if (promptJournal && result) {
         await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
@@ -2021,6 +2129,8 @@ const describeWorkspace = (dir, options = undefined) =>
             mode: "run",
             linesAnalyzed: result.linesAnalyzed ?? null,
             compressedTokens: result.compressedTokens ?? null,
+            salvage: result?.analysisDiagnostics?.salvage ?? null,
+            fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
           },
           workspaceSummary: workspaceContext?.summary ?? null,
           startedAt: result.startedAt ?? null,
@@ -2255,55 +2365,68 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
-      result = await analyzer.analyzeLogFile(filePath, task, {
-        summaryLevels,
-        streamOutput,
-        maxLinesPerChunk: chunkSize,
-        sessionDeadline,
-        workspaceContext,
-        lineRange: truncationLineRange ?? null,
-        promptContext: {
-          scope: "main",
-          label: task,
-          mainPromptId: promptGroupId,
-          metadata: {
+      try {
+        result = await analyzer.analyzeLogFile(filePath, task, {
+          summaryLevels,
+          streamOutput,
+          maxLinesPerChunk: chunkSize,
+          sessionDeadline,
+          workspaceContext,
+          lineRange: truncationLineRange ?? null,
+          promptContext: {
+            scope: "main",
+            label: task,
+            mainPromptId: promptGroupId,
+            metadata: {
+              mode: "analyze-file",
+              filePath,
+              cwd: analyzeCwd,
+              workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
+              workspaceSummary: workspaceContext?.summary ?? null,
+              workspaceHint: workspaceContext?.hintBlock ?? null,
+              workspaceDirectives: workspaceContext?.planDirectives ?? null,
+              workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
+              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+              taskPlanId: planResult?.planId ?? null,
+              taskPlanOutline: planResult?.outline ?? null,
+              taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+              taskPlanSource: workspaceContext?.taskPlanSource ?? null,
+              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
+              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
+              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+              capabilities: workspaceContext?.capabilityDetails ?? null,
+              navigationSummary: workspaceContext?.navigationSummary ?? null,
+              navigationBlock: workspaceContext?.navigationBlock ?? null,
+              helperScript: workspaceContext?.helperScript ?? null,
+              truncationResume: truncationResume
+                ? {
+                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                    chunkGoal:
+                      selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
+                    lineRange: truncationLineRange ?? null,
+                  }
+                : null,
+            },
+          },
+          fallbackCache: stateManager,
+          fallbackCacheContext: {
+            promptJournalId,
             mode: "analyze-file",
             filePath,
-            cwd: analyzeCwd,
-            workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
-            workspaceSummary: workspaceContext?.summary ?? null,
-            workspaceHint: workspaceContext?.hintBlock ?? null,
-            workspaceDirectives: workspaceContext?.planDirectives ?? null,
-            workspaceManifest: (workspaceContext?.manifestPreview ?? []).slice(0, 5).map((entry) => entry.path),
-            workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
-            taskPlanId: planResult?.planId ?? null,
-            taskPlanOutline: planResult?.outline ?? null,
-            taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
-            taskPlanSource: workspaceContext?.taskPlanSource ?? null,
-            workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
-            workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
-            capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-            capabilities: workspaceContext?.capabilityDetails ?? null,
-            navigationSummary: workspaceContext?.navigationSummary ?? null,
-            navigationBlock: workspaceContext?.navigationBlock ?? null,
-            helperScript: workspaceContext?.helperScript ?? null,
-            truncationResume: truncationResume
-              ? {
-                  executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
-                  chunkGoal:
-                    selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
-                  lineRange: truncationLineRange ?? null,
-                }
-              : null,
           },
-        },
-        fallbackCache: stateManager,
-        fallbackCacheContext: {
-          promptJournalId,
-          mode: "analyze-file",
-          filePath,
-        },
-      });
+        });
+      } catch (error) {
+        if (isLmStudioProtocolError(error)) {
+          await handleLmStudioProtocolFailure({
+            error,
+            mode: "analyze-file",
+            promptJournal,
+            promptJournalId,
+            context: { workspaceSummary: workspaceContext?.summary ?? null },
+          });
+        }
+        throw error;
+      }
       attachContextRequestsToResult(result);
       if (promptJournal && result) {
         await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
@@ -2331,6 +2454,8 @@ const describeWorkspace = (dir, options = undefined) =>
                   lineRange: truncationLineRange ?? null,
                 }
               : null,
+            salvage: result?.analysisDiagnostics?.salvage ?? null,
+            fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
           },
           workspaceSummary: workspaceContext?.summary ?? null,
           startedAt: result.startedAt ?? null,

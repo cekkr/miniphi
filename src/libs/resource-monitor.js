@@ -198,6 +198,14 @@ export default class ResourceMonitor {
   _collectWarnings() {
     const warnings = [];
     const stats = this._computeStats();
+    let lastVramSample = null;
+    for (let idx = this.samples.length - 1; idx >= 0; idx -= 1) {
+      const sample = this.samples[idx];
+      if (sample?.vram) {
+        lastVramSample = sample.vram;
+        break;
+      }
+    }
 
     if (stats.memory.max !== null && stats.memory.max >= this.thresholds.memory) {
       warnings.push(
@@ -210,7 +218,11 @@ export default class ResourceMonitor {
     }
 
     if (stats.vram.max === null) {
-      warnings.push("VRAM usage could not be determined on this host.");
+      if (lastVramSample?.strategy === "dxdiag") {
+        warnings.push("VRAM capacity detected via dxdiag but live usage counters were unavailable.");
+      } else {
+        warnings.push("VRAM usage could not be determined on this host.");
+      }
     } else if (stats.vram.max >= this.thresholds.vram) {
       warnings.push(`VRAM usage peaked at ${stats.vram.max}% (limit ${this.thresholds.vram}%).`);
     }
@@ -297,6 +309,7 @@ export default class ResourceMonitor {
     const strategies = [
       () => this._queryNvidiaSmi(),
       () => this._queryWindowsAdapters(),
+      () => this._queryWindowsDxDiag(),
       () => this._queryMacSystemProfiler(),
     ];
 
@@ -377,7 +390,7 @@ export default class ResourceMonitor {
       "Get-CimInstance -ClassName Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json",
     ]);
     if (!stdout) {
-      return null;
+      return this._buildUsageOnlyVramSnapshot(usageSamples);
     }
     let parsed = null;
     try {
@@ -410,6 +423,10 @@ export default class ResourceMonitor {
       .filter(Boolean);
 
     if (adapters.length === 0) {
+      const usageFallback = this._buildUsageOnlyVramSnapshot(usageSamples);
+      if (usageFallback) {
+        return usageFallback;
+      }
       return null;
     }
 
@@ -426,6 +443,65 @@ export default class ResourceMonitor {
         usedMB > 0 && totalMB > 0 ? Number(((usedMB / totalMB) * 100).toFixed(2)) : null,
       strategy: "win32-cim",
     };
+  }
+
+  async _queryWindowsDxDiag() {
+    if (os.platform() !== "win32") {
+      return null;
+    }
+    let tempDir;
+    try {
+      tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "miniphi-dxdiag-"));
+    } catch {
+      tempDir = null;
+    }
+    if (!tempDir) {
+      return null;
+    }
+    const outputFile = path.join(tempDir, "dxdiag.txt");
+    try {
+      const ran = await this._safeExec("dxdiag.exe", ["/t", outputFile], {
+        timeout: 15000,
+        windowsHide: true,
+      });
+      if (ran === null) {
+        return null;
+      }
+      let raw = null;
+      try {
+        const buffer = await fs.promises.readFile(outputFile);
+        raw = buffer.toString("utf16le");
+      } catch {
+        try {
+          raw = await fs.promises.readFile(outputFile, "utf8");
+        } catch {
+          raw = null;
+        }
+      }
+      if (!raw) {
+        return null;
+      }
+      const adapters = this._parseDxDiagAdapters(raw);
+      if (!adapters.length) {
+        return null;
+      }
+      const totalMB = adapters.reduce((acc, gpu) => acc + gpu.totalMB, 0);
+      return {
+        adapters,
+        totalMB,
+        usedMB: null,
+        percent: null,
+        strategy: "dxdiag",
+      };
+    } catch {
+      return null;
+    } finally {
+      try {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
   }
 
   async _queryMacSystemProfiler() {
@@ -526,6 +602,114 @@ export default class ResourceMonitor {
         };
       })
       .filter(Boolean);
+  }
+
+  _buildUsageOnlyVramSnapshot(samples) {
+    if (!Array.isArray(samples) || samples.length === 0) {
+      return null;
+    }
+    const adapters = samples
+      .map((entry, idx) => {
+        if (!Number.isFinite(entry.limitMB) || entry.limitMB <= 0) {
+          return null;
+        }
+        const totalMB = Number(entry.limitMB.toFixed(2));
+        const usedMB =
+          typeof entry.usedMB === "number" ? Number(entry.usedMB.toFixed(2)) : null;
+        const percent =
+          typeof entry.percent === "number"
+            ? Number(entry.percent.toFixed(2))
+            : usedMB !== null
+              ? Number(((usedMB / totalMB) * 100).toFixed(2))
+              : null;
+        return {
+          name: entry.name ?? `GPU ${idx}`,
+          totalMB,
+          usedMB,
+          percent,
+        };
+      })
+      .filter(Boolean);
+    if (adapters.length === 0) {
+      return null;
+    }
+    const totalMB = adapters.reduce((acc, gpu) => acc + gpu.totalMB, 0);
+    const usedMB = adapters.reduce(
+      (acc, gpu) => acc + (typeof gpu.usedMB === "number" ? gpu.usedMB : 0),
+      0,
+    );
+    return {
+      adapters,
+      totalMB,
+      usedMB: Number(usedMB.toFixed(2)),
+      percent: totalMB > 0 ? Number(((usedMB / totalMB) * 100).toFixed(2)) : null,
+      strategy: "win32-counters",
+    };
+  }
+
+  _parseDxDiagAdapters(raw) {
+    if (!raw || typeof raw !== "string") {
+      return [];
+    }
+    const adapters = [];
+    let current = null;
+    const flush = () => {
+      if (!current || !current.name) {
+        return;
+      }
+      const totalMB = current.dedicatedMB ?? current.displayMB ?? null;
+      if (!Number.isFinite(totalMB) || totalMB <= 0) {
+        return;
+      }
+      adapters.push({
+        name: current.name,
+        totalMB: Number(totalMB.toFixed(2)),
+        usedMB: null,
+        percent: null,
+      });
+    };
+    const lines = raw.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+      if (/^card name:/i.test(line)) {
+        flush();
+        current = { name: line.split(":")[1]?.trim() || "GPU" };
+        continue;
+      }
+      if (!current) {
+        continue;
+      }
+      if (/^display memory:/i.test(line)) {
+        current.displayMB = this._extractMegabytesFromLine(line);
+        continue;
+      }
+      if (/^dedicated memory:/i.test(line)) {
+        current.dedicatedMB = this._extractMegabytesFromLine(line);
+        continue;
+      }
+      if (/^shared memory:/i.test(line)) {
+        current.sharedMB = this._extractMegabytesFromLine(line);
+        continue;
+      }
+    }
+    flush();
+    return adapters;
+  }
+
+  _extractMegabytesFromLine(line) {
+    const match = line.match(/([\d.,]+)\s*(MB|GB)/i);
+    if (!match) {
+      return null;
+    }
+    const value = Number(match[1].replace(/,/g, ""));
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    const unit = match[2].toUpperCase();
+    return unit === "GB" ? value * 1024 : value;
   }
 
   _normalizeAdapterKey(name) {

@@ -228,6 +228,10 @@ export default class EfficientLogAnalyzer {
     let analysis = cachedFallback?.analysis ?? "";
     let usedFallback = Boolean(cachedFallback);
     let fallbackReason = cachedFallback?.reason ?? null;
+    const analysisDiagnostics = {
+      salvage: null,
+      fallbackReason,
+    };
     const reusedFallback = Boolean(cachedFallback);
     const traceOptions = {
       ...(promptContext ?? {}),
@@ -282,9 +286,13 @@ export default class EfficientLogAnalyzer {
           traceOptions,
         );
       } catch (error) {
+        if (error instanceof LMStudioProtocolError) {
+          throw error;
+        }
         usedFallback = true;
         const reason = error instanceof Error ? error.message : String(error);
         fallbackReason = reason;
+        analysisDiagnostics.fallbackReason = fallbackReason;
         const diag = fallbackDiagnostics();
         console.warn(
           `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
@@ -346,16 +354,21 @@ export default class EfficientLogAnalyzer {
           traceOptions,
           fallbackDiagnosticsFn: fallbackDiagnostics,
         });
+        if (salvage?.salvageReport) {
+          analysisDiagnostics.salvage = salvage.salvageReport;
+        }
         if (salvage?.analysis) {
           analysis = salvage.analysis;
           usedFallback = salvage.usedFallback ?? false;
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
+            analysisDiagnostics.fallbackReason = fallbackReason;
           }
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
           fallbackReason = reason;
+          analysisDiagnostics.fallbackReason = fallbackReason;
           const diag = fallbackDiagnostics();
           console.warn(
             `[MiniPhi] ${reason}; emitting fallback summary.${diag ? ` ${diag}` : ""}`,
@@ -432,6 +445,7 @@ export default class EfficientLogAnalyzer {
       startedAt: invocationStartedAt,
       finishedAt: invocationFinishedAt,
       truncationPlan,
+      analysisDiagnostics,
     };
   }
 
@@ -591,6 +605,9 @@ export default class EfficientLogAnalyzer {
           traceOptions,
         );
       } catch (error) {
+        if (error instanceof LMStudioProtocolError) {
+          throw error;
+        }
         usedFallback = true;
         const reason = error instanceof Error ? error.message : String(error);
         fallbackReason = reason;
@@ -619,36 +636,6 @@ export default class EfficientLogAnalyzer {
         "[MiniPhi] Dataset matches a previous fallback run; reusing cached analysis instead of contacting Phi.",
       );
     }
-    if (streamOutput) {
-            process.stdout.write(token);
-          }
-        },
-        undefined,
-        (err) => {
-          this._logDev(devLog, `Phi error: ${err}`);
-          throw new Error(`Phi-4 inference error: ${err}`);
-        },
-        traceOptions,
-      );
-    } catch (error) {
-      usedFallback = true;
-      const reason = error instanceof Error ? error.message : String(error);
-      const diag = fallbackDiagnostics();
-      console.warn(
-        `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
-      );
-      this._logDev(
-        devLog,
-        `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
-      );
-      analysis = this._buildFallbackAnalysis(task, reason, {
-        datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
-        rerunCommand: filePath,
-      });
-    } finally {
-      stopHeartbeat();
-    }
-
     if (streamOutput) {
       if (usedFallback) {
         process.stdout.write(`${analysis}\n`);
@@ -693,16 +680,21 @@ export default class EfficientLogAnalyzer {
           },
           traceOptions,
         });
+        if (salvage?.salvageReport) {
+          analysisDiagnostics.salvage = salvage.salvageReport;
+        }
         if (salvage?.analysis) {
           analysis = salvage.analysis;
           usedFallback = salvage.usedFallback ?? false;
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
+            analysisDiagnostics.fallbackReason = fallbackReason;
           }
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
           fallbackReason = reason;
+          analysisDiagnostics.fallbackReason = fallbackReason;
           console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
           this._logDev(devLog, `${reason}; emitting fallback JSON.`);
           analysis = this._buildFallbackAnalysis(task, reason, {
@@ -781,6 +773,7 @@ export default class EfficientLogAnalyzer {
       truncationPlan,
       lineRange: lineRange ?? null,
       promptAdjustments,
+      analysisDiagnostics,
     };
   }
 
@@ -1227,12 +1220,20 @@ export default class EfficientLogAnalyzer {
     if (artifactPath) {
       this._logDev(devLog, `Saved raw Phi response to ${artifactPath}`);
     }
+    const salvageReport = {
+      strategy: "raw-capture",
+      rawArtifactPath: artifactPath ?? null,
+      note: null,
+      linesAnalyzed: linesAnalyzed ?? null,
+    };
     const repaired = this._attemptJsonRepair(analysis);
     if (repaired) {
       const repairedText = JSON.stringify(repaired, null, 2);
       console.warn("[MiniPhi] Phi response failed validation; used salvaged JSON payload.");
       this._logDev(devLog, "Applied JSON repair heuristic to salvage Phi response.");
-      return { analysis: repairedText, usedFallback: false };
+      salvageReport.strategy = "json-repair";
+      salvageReport.note = "Applied JSON repair heuristic to salvage Phi response.";
+      return { analysis: repairedText, usedFallback: false, salvageReport };
     }
     const retry = await this._retrySchemaOnlyPrompt({
       schemaId,
@@ -1245,10 +1246,14 @@ export default class EfficientLogAnalyzer {
     if (retry) {
       console.warn("[MiniPhi] Phi response failed validation; schema-only retry succeeded.");
       this._logDev(devLog, "Schema-only retry produced valid JSON response.");
-      return { analysis: retry, usedFallback: false };
+      salvageReport.strategy = "schema-retry";
+      salvageReport.note = "Schema-only retry produced valid JSON.";
+      return { analysis: retry, usedFallback: false, salvageReport };
     }
     this._logDev(devLog, "JSON salvage and schema-only retry failed; falling back.");
-    return null;
+    salvageReport.strategy = "schema-retry-failed";
+    salvageReport.note = "JSON salvage and schema-only retry failed.";
+    return { analysis: null, usedFallback: false, salvageReport };
   }
 
   _attemptJsonRepair(rawText) {
@@ -1324,7 +1329,10 @@ export default class EfficientLogAnalyzer {
           responseFormat: traceOptions?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
         },
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof LMStudioProtocolError) {
+        throw error;
+      }
       return null;
     } finally {
       if (priorHistory && typeof this.phi4.setHistory === "function") {
