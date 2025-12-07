@@ -108,6 +108,7 @@ export default class ApiNavigator {
       options?.helperSilenceTimeout ?? options?.helperSilenceTimeoutMs ?? HELPER_SILENCE_TIMEOUT_MS;
     this.adapterRegistry = options?.adapterRegistry ?? null;
     this.disabled = false;
+    this.disableNotice = null;
   }
 
   setMemory(memory) {
@@ -263,7 +264,7 @@ export default class ApiNavigator {
       }
       this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
       if (this._shouldDisable(message)) {
-        this.disabled = true;
+        this._disableNavigator(message);
         this._log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
       }
       return null;
@@ -275,6 +276,42 @@ export default class ApiNavigator {
       return false;
     }
     return /timed out/i.test(message) || /ECONNREFUSED|ENOTFOUND/i.test(message);
+  }
+
+  _disableNavigator(message) {
+    this.disabled = true;
+    this.disableNotice = {
+      feature: "api-navigator",
+      reason: this._classifyDisableReason(message),
+      message,
+      timestamp: new Date().toISOString(),
+      emitted: false,
+    };
+  }
+
+  consumeDisableNotice() {
+    if (!this.disableNotice || this.disableNotice.emitted) {
+      return null;
+    }
+    this.disableNotice.emitted = true;
+    return this.disableNotice;
+  }
+
+  _classifyDisableReason(message) {
+    if (!message) {
+      return "REST failure";
+    }
+    const normalized = message.toLowerCase();
+    if (normalized.includes("timeout") || normalized.includes("timed out")) {
+      return "timeout";
+    }
+    if (normalized.includes("econnrefused") || normalized.includes("enotfound")) {
+      return "connection error";
+    }
+    if (normalized.includes("network")) {
+      return "network error";
+    }
+    return "REST failure";
   }
 
   _parsePlan(raw) {

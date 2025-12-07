@@ -790,6 +790,38 @@ export default class MiniPhiMemory {
     }
   }
 
+  async loadTruncationProgress(executionId) {
+    if (!executionId) {
+      return null;
+    }
+    await this.prepare();
+    const safeId = this._sanitizeId(executionId);
+    const progressFile = path.join(this.executionsDir, safeId, "truncation-progress.json");
+    try {
+      return await this._readJSON(progressFile, null);
+    } catch {
+      return null;
+    }
+  }
+
+  async saveTruncationProgress(executionId, progress) {
+    if (!executionId || !progress) {
+      return null;
+    }
+    await this.prepare();
+    const safeId = this._sanitizeId(executionId);
+    const executionDir = path.join(this.executionsDir, safeId);
+    await fs.promises.mkdir(executionDir, { recursive: true });
+    const progressFile = path.join(executionDir, "truncation-progress.json");
+    const payload = {
+      executionId,
+      ...progress,
+      updatedAt: new Date().toISOString(),
+    };
+    await this._writeJSON(progressFile, payload);
+    return { path: progressFile, relative: this._relative(progressFile) };
+  }
+
   _findExistingMiniPhi(startDir) {
     let current = startDir;
     const { root } = path.parse(current);

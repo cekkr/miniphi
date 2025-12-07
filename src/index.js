@@ -462,12 +462,12 @@ function describeTruncationChunk(chunk) {
   return parts.join(" | ");
 }
 
-function selectTruncationChunk(planRecord, selector = null) {
+function sortTruncationChunks(planRecord) {
   const chunks = planRecord?.plan?.chunkingPlan;
   if (!Array.isArray(chunks) || chunks.length === 0) {
-    return null;
+    return [];
   }
-  const sorted = [...chunks].sort((a, b) => {
+  return [...chunks].sort((a, b) => {
     const pa = Number.isFinite(a.priority) ? a.priority : Number.isFinite(a.index) ? a.index + 1 : Infinity;
     const pb = Number.isFinite(b.priority) ? b.priority : Number.isFinite(b.index) ? b.index + 1 : Infinity;
     if (pa === pb) {
@@ -475,6 +475,14 @@ function selectTruncationChunk(planRecord, selector = null) {
     }
     return pa - pb;
   });
+}
+
+function selectTruncationChunk(planRecord, selector = null) {
+  const chunks = planRecord?.plan?.chunkingPlan;
+  if (!Array.isArray(chunks) || chunks.length === 0) {
+    return null;
+  }
+  const sorted = sortTruncationChunks(planRecord);
   const defaultChunk = sorted[0];
   if (!selector) {
     return defaultChunk;
@@ -514,6 +522,101 @@ function buildLineRangeFromChunk(chunk) {
     return { startLine, endLine };
   }
   return null;
+}
+
+function buildTruncationChunkKey(chunk) {
+  if (!chunk) {
+    return null;
+  }
+  if (chunk.id && typeof chunk.id === "string") {
+    return chunk.id;
+  }
+  const goal = chunk.goal ?? chunk.label ?? null;
+  const range =
+    Number.isFinite(chunk.startLine) || Number.isFinite(chunk.endLine)
+      ? `${Number.isFinite(chunk.startLine) ? chunk.startLine : "?"}-${Number.isFinite(chunk.endLine) ? chunk.endLine : "?"}`
+      : null;
+  const normalizedGoal = goal ? goal.toString().trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-") : null;
+  return [normalizedGoal ?? "chunk", range].filter(Boolean).join("@");
+}
+
+function ensureTruncationProgressEntry(progress, chunkKey, chunk) {
+  if (!progress || !chunkKey) {
+    return null;
+  }
+  if (!progress.chunks || typeof progress.chunks !== "object") {
+    progress.chunks = {};
+  }
+  if (!progress.chunks[chunkKey]) {
+    progress.chunks[chunkKey] = {
+      key: chunkKey,
+      label: chunk?.goal ?? chunk?.label ?? chunk?.id ?? chunkKey,
+      range:
+        Number.isFinite(chunk?.startLine) || Number.isFinite(chunk?.endLine)
+          ? {
+              startLine: Number.isFinite(chunk?.startLine) ? chunk.startLine : null,
+              endLine: Number.isFinite(chunk?.endLine) ? chunk.endLine : null,
+            }
+          : null,
+      helpers: [],
+      completedAt: null,
+      lastHelperAt: null,
+      lastRunAt: null,
+    };
+  }
+  return progress.chunks[chunkKey];
+}
+
+function isTruncationChunkCompleted(progress, chunkKey) {
+  if (!progress || !chunkKey || !progress.chunks) {
+    return false;
+  }
+  return Boolean(progress.chunks[chunkKey]?.completedAt);
+}
+
+function findNextIncompleteChunk(planRecord, progress, skipKey = null) {
+  const ordered = sortTruncationChunks(planRecord);
+  for (const chunk of ordered) {
+    const key = buildTruncationChunkKey(chunk);
+    if (skipKey && key === skipKey) {
+      continue;
+    }
+    if (!key || !isTruncationChunkCompleted(progress, key)) {
+      return chunk;
+    }
+  }
+  return null;
+}
+
+function computeTruncationProgress(planRecord, progress) {
+  const ordered = sortTruncationChunks(planRecord);
+  if (!ordered.length) {
+    return { total: 0, completed: 0 };
+  }
+  let completed = 0;
+  for (const chunk of ordered) {
+    const key = buildTruncationChunkKey(chunk);
+    if (key && isTruncationChunkCompleted(progress, key)) {
+      completed += 1;
+    }
+  }
+  return { total: ordered.length, completed };
+}
+
+async function persistTruncationProgressSafe(memory, executionId, progress) {
+  if (!memory || !executionId || !progress) {
+    return;
+  }
+  progress.executionId = executionId;
+  try {
+    await memory.saveTruncationProgress(executionId, progress);
+  } catch (error) {
+    console.warn(
+      `[MiniPhi] Unable to save truncation progress for ${executionId}: ${
+        error instanceof Error ? error.message : error
+      }`,
+    );
+  }
 }
 
 function parseListOption(value) {
@@ -881,6 +984,17 @@ async function handleLmStudioProtocolFailure({
       metadata,
     });
   }
+}
+
+function emitFeatureDisableNotice(label, notice) {
+  if (!notice) {
+    return;
+  }
+  const reasonLabel = notice.reason ?? "REST failure";
+  const detail = notice.message ? ` (${notice.message})` : "";
+  console.warn(
+    `[MiniPhi] ${label} disabled after ${reasonLabel}${detail}. Re-run your command once LM Studio recovers or restart MiniPhi to re-enable it.`,
+  );
 }
 
 schemaAdapterRegistry.registerAdapter({
@@ -1567,6 +1681,190 @@ async function main() {
     }
     return followUps;
   };
+  const runTruncationPlanHelpers = async ({
+    planRecord,
+    chunk,
+    chunkKey,
+    cwd,
+    workspaceContext,
+    summaryLevels,
+    streamOutput,
+    timeout,
+    sessionDeadline,
+    promptGroupId,
+    promptJournal,
+    promptJournalId,
+    planExecutionId = null,
+  }) => {
+    if (!planRecord || !chunk) {
+      return [];
+    }
+    const seen = new Set();
+    const helpers = [];
+    const register = (command, scope) => {
+      if (typeof command !== "string") {
+        return;
+      }
+      const trimmed = command.trim();
+      if (!trimmed || seen.has(trimmed)) {
+        return;
+      }
+      seen.add(trimmed);
+      helpers.push({ command: trimmed, scope });
+    };
+    const planHelpers = planRecord.plan?.helperCommands ?? [];
+    planHelpers.forEach((cmd) => register(cmd, "plan"));
+    const chunkHelpers = chunk.helperCommands ?? [];
+    chunkHelpers.forEach((cmd) => register(cmd, "chunk"));
+    if (!helpers.length) {
+      return [];
+    }
+    const MAX_HELPERS = 2;
+    const results = [];
+    for (const entry of helpers.slice(0, MAX_HELPERS)) {
+      if (!isNavigatorCommandSafe(entry.command)) {
+        if (verbose) {
+          console.warn(`[MiniPhi] Truncation helper command blocked: ${entry.command}`);
+        }
+        results.push({
+          command: entry.command,
+          status: "blocked",
+          note: "blocked by policy",
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Truncation helper blocked: ${entry.command}`,
+            prompt: `Helper command suggested by truncation plan (${chunk.goal ?? chunk.label ?? chunkKey ?? "chunk"})`,
+            response: null,
+            status: "skipped",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: "mid",
+                status: "blocked",
+                summary: "Truncation helper blocked by policy",
+              },
+            ],
+            metadata: {
+              mode: "truncation-helper",
+              chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
+              planExecutionId,
+              reason: "blocked",
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
+        continue;
+      }
+      try {
+        const helperTask = `Truncation helper: ${entry.command}`;
+        const helperResult = await analyzer.analyzeCommandOutput(entry.command, helperTask, {
+          summaryLevels,
+          streamOutput,
+          cwd,
+          timeout,
+          sessionDeadline,
+          workspaceContext,
+          promptContext: {
+            scope: "sub",
+            label: helperTask,
+            mainPromptId: promptGroupId,
+            metadata: {
+              mode: "truncation-helper",
+              chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
+              planExecutionId,
+              workspaceType:
+                workspaceContext?.classification?.domain ??
+                workspaceContext?.classification?.label ??
+                null,
+            },
+          },
+          commandDanger: "mid",
+          commandSource: "truncation-plan",
+          authorizationContext: {
+            reason: `Truncation helper for ${chunk.goal ?? chunk.label ?? chunkKey ?? "chunk"}`,
+            hint: entry.scope === "chunk" ? "chunk-specific helper" : "plan helper",
+          },
+        });
+        results.push({
+          command: entry.command,
+          status: "executed",
+          linesAnalyzed: helperResult.linesAnalyzed ?? null,
+          fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: helperTask,
+            prompt: helperResult.prompt,
+            response: helperResult.analysis,
+            schemaId: helperResult.schemaId ?? null,
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: "mid",
+                status: "executed",
+                summary: `Helper command captured ${helperResult.linesAnalyzed ?? 0} lines`,
+              },
+            ],
+            metadata: {
+              mode: "truncation-helper",
+              chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
+              planExecutionId,
+              scope: entry.scope,
+              salvage: helperResult?.analysisDiagnostics?.salvage ?? null,
+              fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+            startedAt: helperResult.startedAt ?? null,
+            finishedAt: helperResult.finishedAt ?? null,
+          });
+        }
+      } catch (error) {
+        if (isLmStudioProtocolError(error)) {
+          await handleLmStudioProtocolFailure({
+            error,
+            mode: "truncation-helper",
+            promptJournal,
+            promptJournalId,
+            context: { workspaceSummary: workspaceContext?.summary ?? null },
+          });
+          throw error;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({
+          command: entry.command,
+          status: "failed",
+          note: message,
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Truncation helper failed: ${entry.command}`,
+            prompt: `Helper command suggested by truncation plan (${chunk.goal ?? chunk.label ?? chunkKey ?? "chunk"})`,
+            response: null,
+            status: "error",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: "mid",
+                status: "failed",
+                summary: message,
+              },
+            ],
+            metadata: {
+              mode: "truncation-helper",
+              chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
+              planExecutionId,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
+      }
+    }
+    return results;
+  };
   const decomposerTimeoutMs =
     resolveDurationMs({
       secondsValue: configData.prompt?.decomposer?.timeoutSeconds,
@@ -1592,6 +1890,14 @@ async function main() {
       maxActions: configData.prompt?.decomposer?.maxActions,
       timeoutMs: decomposerTimeoutMs,
     });
+  const emitDecomposerNoticeIfNeeded = () => {
+    if (promptDecomposer && typeof promptDecomposer.consumeDisableNotice === "function") {
+      const notice = promptDecomposer.consumeDisableNotice();
+      if (notice) {
+        emitFeatureDisableNotice("Prompt decomposer", notice);
+      }
+    }
+  };
   let performanceTracker = null;
   let scoringPhi = null;
 
@@ -1845,6 +2151,8 @@ const describeWorkspace = (dir, options = undefined) =>
               `[MiniPhi] Workspace decomposition failed: ${error instanceof Error ? error.message : error}`,
             );
           }
+        } finally {
+          emitDecomposerNoticeIfNeeded();
         }
       }
       if (planResult) {
@@ -2012,6 +2320,8 @@ const describeWorkspace = (dir, options = undefined) =>
               `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
             );
           }
+        } finally {
+          emitDecomposerNoticeIfNeeded();
         }
       }
       if (planResult) {
@@ -2192,6 +2502,9 @@ const describeWorkspace = (dir, options = undefined) =>
       let truncationResume = null;
       let selectedTruncationChunk = null;
       let truncationLineRange = null;
+      let truncationPlanExecutionId = null;
+      let truncationProgress = null;
+      let truncationChunkKey = null;
       if (resumeTruncationId) {
         truncationResume = await stateManager.loadTruncationPlan(resumeTruncationId);
         if (!truncationResume) {
@@ -2209,15 +2522,47 @@ const describeWorkspace = (dir, options = undefined) =>
           );
           truncationResume = null;
         } else {
+          truncationPlanExecutionId = truncationResume.executionId ?? resumeTruncationId;
+          truncationProgress =
+            (await stateManager.loadTruncationProgress(truncationPlanExecutionId)) ?? {
+              executionId: truncationPlanExecutionId,
+              chunks: {},
+            };
           selectedTruncationChunk = selectTruncationChunk(
             truncationResume,
             truncationChunkSelector,
           );
-          truncationLineRange = buildLineRangeFromChunk(selectedTruncationChunk);
-          const chunkLabel = describeTruncationChunk(selectedTruncationChunk);
-          console.log(
-            `[MiniPhi] Loaded truncation plan ${resumeTruncationId} (${truncationResume.plan.chunkingPlan.length} chunk target${truncationResume.plan.chunkingPlan.length === 1 ? "" : "s"}). Focusing ${chunkLabel}.`,
-          );
+          if (selectedTruncationChunk) {
+            truncationChunkKey = buildTruncationChunkKey(selectedTruncationChunk);
+            if (
+              !truncationChunkSelector &&
+              truncationProgress &&
+              truncationChunkKey &&
+              isTruncationChunkCompleted(truncationProgress, truncationChunkKey)
+            ) {
+              const nextChunk = findNextIncompleteChunk(
+                truncationResume,
+                truncationProgress,
+                truncationChunkKey,
+              );
+              if (nextChunk) {
+                selectedTruncationChunk = nextChunk;
+                truncationChunkKey = buildTruncationChunkKey(nextChunk);
+                console.log(
+                  `[MiniPhi] Skipping previously completed truncation chunk; focusing ${describeTruncationChunk(nextChunk)}.`,
+                );
+              } else {
+                console.log(
+                  "[MiniPhi] All truncation plan chunks are marked completed; rerunning the last chunk.",
+                );
+              }
+            }
+            truncationLineRange = buildLineRangeFromChunk(selectedTruncationChunk);
+            const chunkLabel = describeTruncationChunk(selectedTruncationChunk);
+            console.log(
+              `[MiniPhi] Loaded truncation plan ${resumeTruncationId} (${truncationResume.plan.chunkingPlan.length} chunk target${truncationResume.plan.chunkingPlan.length === 1 ? "" : "s"}). Focusing ${chunkLabel}.`,
+            );
+          }
         }
       }
       if (analyzeFixedReferences.length) {
@@ -2243,7 +2588,7 @@ const describeWorkspace = (dir, options = undefined) =>
           ...(workspaceContext ?? {}),
           truncationPlan: {
             ...truncationResume,
-            executionId: truncationResume.executionId ?? resumeTruncationId,
+            executionId: truncationPlanExecutionId ?? resumeTruncationId,
             selectedChunk: selectedTruncationChunk,
           },
         };
@@ -2330,6 +2675,8 @@ const describeWorkspace = (dir, options = undefined) =>
               `[MiniPhi] Prompt decomposition failed: ${error instanceof Error ? error.message : error}`,
             );
           }
+        } finally {
+          emitDecomposerNoticeIfNeeded();
         }
       }
       if (planResult) {
@@ -2365,6 +2712,53 @@ const describeWorkspace = (dir, options = undefined) =>
         }
       }
       await initializeResourceMonitor(`analyze:${path.basename(filePath)}`);
+      if (truncationResume && selectedTruncationChunk && truncationPlanExecutionId) {
+        const helperRuns = await runTruncationPlanHelpers({
+          planRecord: truncationResume,
+          chunk: selectedTruncationChunk,
+          chunkKey: truncationChunkKey,
+          cwd: analyzeCwd,
+          workspaceContext,
+          summaryLevels,
+          streamOutput,
+          timeout,
+          sessionDeadline,
+          promptGroupId,
+          promptJournal,
+          promptJournalId,
+          planExecutionId: truncationPlanExecutionId,
+        });
+        if (
+          helperRuns.length &&
+          truncationProgress &&
+          truncationPlanExecutionId &&
+          truncationChunkKey
+        ) {
+          const chunkEntry = ensureTruncationProgressEntry(
+            truncationProgress,
+            truncationChunkKey,
+            selectedTruncationChunk,
+          );
+          const timestamp = new Date().toISOString();
+          chunkEntry.lastHelperAt = timestamp;
+          chunkEntry.helpers = chunkEntry.helpers ?? [];
+          helperRuns.forEach((run) => {
+            chunkEntry.helpers.unshift({
+              command: run.command,
+              status: run.status,
+              note: run.note ?? run.fallbackReason ?? null,
+              recordedAt: timestamp,
+            });
+          });
+          const MAX_HISTORY = 8;
+          chunkEntry.helpers = chunkEntry.helpers.slice(0, MAX_HISTORY);
+          await persistTruncationProgressSafe(
+            stateManager,
+            truncationPlanExecutionId,
+            truncationProgress,
+          );
+        }
+      }
       try {
         result = await analyzer.analyzeLogFile(filePath, task, {
           summaryLevels,
@@ -2400,9 +2794,10 @@ const describeWorkspace = (dir, options = undefined) =>
               helperScript: workspaceContext?.helperScript ?? null,
               truncationResume: truncationResume
                 ? {
-                    executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                    executionId: truncationPlanExecutionId ?? resumeTruncationId ?? null,
                     chunkGoal:
                       selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
+                    chunkKey: truncationChunkKey ?? null,
                     lineRange: truncationLineRange ?? null,
                   }
                 : null,
@@ -2448,9 +2843,10 @@ const describeWorkspace = (dir, options = undefined) =>
             compressedTokens: result.compressedTokens ?? null,
             truncationResume: truncationResume
               ? {
-                  executionId: truncationResume.executionId ?? resumeTruncationId ?? null,
+                  executionId: truncationPlanExecutionId ?? resumeTruncationId ?? null,
                   chunkGoal:
                     selectedTruncationChunk?.goal ?? selectedTruncationChunk?.label ?? null,
+                  chunkKey: truncationChunkKey ?? null,
                   lineRange: truncationLineRange ?? null,
                 }
               : null,
@@ -2461,6 +2857,47 @@ const describeWorkspace = (dir, options = undefined) =>
           startedAt: result.startedAt ?? null,
           finishedAt: result.finishedAt ?? null,
         });
+      }
+      if (
+        truncationResume &&
+        truncationProgress &&
+        truncationPlanExecutionId &&
+        truncationChunkKey &&
+        selectedTruncationChunk
+      ) {
+        const chunkEntry = ensureTruncationProgressEntry(
+          truncationProgress,
+          truncationChunkKey,
+          selectedTruncationChunk,
+        );
+        const completionTimestamp = new Date().toISOString();
+        chunkEntry.completedAt = completionTimestamp;
+        chunkEntry.lastRunAt = completionTimestamp;
+        await persistTruncationProgressSafe(
+          stateManager,
+          truncationPlanExecutionId,
+          truncationProgress,
+        );
+        const stats = computeTruncationProgress(truncationResume, truncationProgress);
+        if (stats.total > 0) {
+          const plural = stats.total === 1 ? "" : "s";
+          console.log(
+            `[MiniPhi] Truncation plan progress: ${stats.completed}/${stats.total} chunk${plural} complete for execution ${truncationPlanExecutionId}.`,
+          );
+        }
+        const nextChunk = findNextIncompleteChunk(truncationResume, truncationProgress);
+        if (nextChunk) {
+          const nextLabel = describeTruncationChunk(nextChunk);
+          const selectorHint = nextChunk.goal ?? nextChunk.label ?? nextChunk.id ?? null;
+          const selectorSuffix = selectorHint ? ` --truncation-chunk "${selectorHint}"` : "";
+          console.log(
+            `[MiniPhi] Next chunk suggestion: ${nextLabel}. Resume with --resume-truncation ${truncationPlanExecutionId}${selectorSuffix}.`,
+          );
+        } else if (stats.total > 0) {
+          console.log(
+            `[MiniPhi] All truncation plan chunks completed for execution ${truncationPlanExecutionId}.`,
+          );
+        }
       }
       const analyzeNavigatorActions =
         (workspaceContext?.navigationHints?.actions ?? []).length > 0
@@ -3323,6 +3760,13 @@ async function runGeneralPurposeBenchmark({
           `[MiniPhi][Benchmark] Prompt decomposer skipped: ${error instanceof Error ? error.message : error}`,
         );
       }
+    } finally {
+      if (typeof decomposer.consumeDisableNotice === "function") {
+        const notice = decomposer.consumeDisableNotice();
+        if (notice) {
+          emitFeatureDisableNotice("Prompt decomposer", notice);
+        }
+      }
     }
   }
 
@@ -3981,9 +4425,15 @@ async function generateWorkspaceSnapshot({
     } catch (error) {
       if (verbose) {
         console.warn(
-          `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
-        );
+        `[MiniPhi] Navigation advisor failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    if (typeof navigator.consumeDisableNotice === "function") {
+      const notice = navigator.consumeDisableNotice();
+      if (notice) {
+        emitFeatureDisableNotice("Navigation advisor", notice);
       }
+    }
     }
   }
 

@@ -86,6 +86,7 @@ export default class PromptDecomposer {
         ? requestedTimeout
         : DEFAULT_TIMEOUT_MS;
     this.disabled = false;
+    this.disableNotice = null;
   }
 
   /**
@@ -160,7 +161,7 @@ export default class PromptDecomposer {
       }
       this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
       if (this._shouldDisable(errorMessage)) {
-        this.disabled = true;
+        this._disableDecomposer(errorMessage);
         this._log("[PromptDecomposer] Disabled after repeated failures.");
       }
     }
@@ -277,6 +278,39 @@ export default class PromptDecomposer {
       normalized.includes("timeout") ||
       normalized.includes("network")
     );
+  }
+
+  _disableDecomposer(message) {
+    this.disabled = true;
+    this.disableNotice = {
+      feature: "prompt-decomposer",
+      reason: this._classifyDisableReason(message),
+      message,
+      timestamp: new Date().toISOString(),
+      emitted: false,
+    };
+  }
+
+  consumeDisableNotice() {
+    if (!this.disableNotice || this.disableNotice.emitted) {
+      return null;
+    }
+    this.disableNotice.emitted = true;
+    return this.disableNotice;
+  }
+
+  _classifyDisableReason(message) {
+    if (!message) {
+      return "REST failure";
+    }
+    const normalized = message.toLowerCase();
+    if (normalized.includes("timeout") || normalized.includes("timed out")) {
+      return "timeout";
+    }
+    if (normalized.includes("network")) {
+      return "network error";
+    }
+    return "REST failure";
   }
 
   _parsePlan(responseText, payload) {
