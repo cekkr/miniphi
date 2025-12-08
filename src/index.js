@@ -201,8 +201,25 @@ function formatCommandLibraryBlock(entries, limit = 6) {
     if (entry.owner) {
       meta.push(`owner: ${entry.owner}`);
     }
+    const schemaLabel =
+      typeof entry.schemaId === "string" && entry.schemaId.trim().length
+        ? `schema: ${entry.schemaId.trim()}`
+        : null;
+    if (schemaLabel) {
+      meta.push(schemaLabel);
+    }
+    const ctxBudget = Number(entry.contextBudget ?? entry.contextTokens);
+    if (Number.isFinite(ctxBudget) && ctxBudget > 0) {
+      meta.push(`ctx<=${Math.round(ctxBudget)}`);
+    }
+    if (entry.workspaceType) {
+      meta.push(`workspace: ${entry.workspaceType}`);
+    }
     if (entry.source) {
       meta.push(`source: ${entry.source}`);
+    }
+    if (entry.catalog) {
+      meta.push(`library: ${entry.catalog}`);
     }
     if (meta.length) {
       parts.push(`(${meta.join(" | ")})`);
@@ -283,30 +300,85 @@ function attachContextRequestsToResult(result) {
   }
 }
 
-async function attachCommandLibraryToWorkspace(workspaceContext, memory, options = undefined) {
-  if (!memory) {
+async function attachCommandLibraryToWorkspace(
+  workspaceContext,
+  memory,
+  globalMemory,
+  options = undefined,
+) {
+  if (!memory && !globalMemory) {
     return workspaceContext;
   }
-  const limit = Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
-  let entries = [];
-  try {
-    entries = await memory.loadCommandLibrary(limit);
-  } catch (error) {
-    if (options?.verbose) {
-      console.warn(
-        `[MiniPhi] Unable to load command library: ${error instanceof Error ? error.message : error}`,
-      );
+  const limit =
+    Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
+  let localEntries = [];
+  if (memory) {
+    try {
+      localEntries = await memory.loadCommandLibrary(limit);
+    } catch (error) {
+      if (options?.verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load command library: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
+  }
+  let globalEntries = [];
+  if (globalMemory?.loadCommandLibrary) {
+    try {
+      globalEntries = await globalMemory.loadCommandLibrary(limit);
+    } catch (error) {
+      if (options?.verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load global command library: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
+  if (!localEntries.length && !globalEntries.length) {
     return workspaceContext;
   }
-  if (!entries?.length) {
+  const merged = [];
+  const seen = new Set();
+  const addEntries = (entries, origin) => {
+    if (!Array.isArray(entries)) {
+      return;
+    }
+    for (const entry of entries) {
+      const commandText = typeof entry?.command === "string" ? entry.command.trim() : "";
+      if (!commandText) {
+        continue;
+      }
+      const key = commandText.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({
+        ...entry,
+        command: commandText,
+        catalog: origin,
+      });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+  };
+  addEntries(localEntries, "project");
+  addEntries(globalEntries, "global");
+  if (!merged.length) {
     return workspaceContext;
   }
-  const block = formatCommandLibraryBlock(entries, limit);
+  const block = formatCommandLibraryBlock(merged, limit);
   return {
     ...(workspaceContext ?? {}),
-    commandLibraryEntries: entries,
+    commandLibraryEntries: merged,
     commandLibraryBlock: block,
+    commandLibrarySources: {
+      project: localEntries.length,
+      global: globalEntries.length,
+      merged: merged.length,
+    },
   };
 }
 
@@ -2073,9 +2145,15 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
-      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
-        verbose,
-      });
+      workspaceContext = await attachCommandLibraryToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -2239,9 +2317,15 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
-      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
-        verbose,
-      });
+      workspaceContext = await attachCommandLibraryToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -2580,9 +2664,15 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
-      workspaceContext = await attachCommandLibraryToWorkspace(workspaceContext, stateManager, {
-        verbose,
-      });
+      workspaceContext = await attachCommandLibraryToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
       if (truncationResume) {
         workspaceContext = {
           ...(workspaceContext ?? {}),
@@ -2959,6 +3049,10 @@ const describeWorkspace = (dir, options = undefined) =>
         const learnedCommands = extractRecommendedCommandsFromAnalysis(result.analysis);
         if (learnedCommands.length) {
           const validationStatus = result?.schemaValid === false ? "invalid" : "ok";
+          const workspaceTypeLabel =
+            workspaceContext?.classification?.label ??
+            workspaceContext?.classification?.domain ??
+            null;
           await stateManager.recordCommandIdeas({
             executionId: archive.id,
             task,
@@ -2977,6 +3071,7 @@ const describeWorkspace = (dir, options = undefined) =>
             schemaId: result?.schemaId ?? null,
             contextBudget: contextLength,
             validationStatus,
+            workspaceType: workspaceTypeLabel,
           });
           if (options.verbose) {
             console.log(

@@ -217,17 +217,27 @@ export default class PromptDecomposer {
   _buildRequestBody(payload) {
     const commandAnalysis = this._analyzeCommand(payload.command);
     const resume = this._buildResumeContext(payload);
+    const classification = payload.workspace?.classification ?? null;
+    const cachedWorkspace = this._buildCachedWorkspaceHint(payload.workspace?.cachedHints);
+    const stats = this._sanitizeWorkspaceStats(payload.workspace?.stats);
     const body = {
       objective: payload.objective,
       command: payload.command ?? null,
       workspace: {
-        classification: payload.workspace?.classification ?? null,
-        domain: payload.workspace?.classification?.domain ?? null,
+        classification,
+        domain: classification?.domain ?? null,
         summary: payload.workspace?.summary ?? null,
+        actions: Array.isArray(classification?.actions) && classification.actions.length
+          ? classification.actions
+          : null,
         hint: payload.workspace?.hintBlock ?? null,
         directives: payload.workspace?.planDirectives ?? payload.workspace?.directives ?? null,
         cached_hint: payload.workspace?.cachedHints?.hintBlock ?? null,
+        cached_context: cachedWorkspace,
         manifestSample: (payload.workspace?.manifestPreview ?? []).slice(0, 8),
+        stats,
+        capabilitySummary: payload.workspace?.capabilitySummary ?? null,
+        navigationSummary: payload.workspace?.navigationSummary ?? null,
       },
       limits: {
         maxDepth: this.maxDepth,
@@ -447,6 +457,49 @@ export default class PromptDecomposer {
       outline: this._formatOutline(planPayload?.steps ?? null, 0, [], "", 24),
       preview_steps: planPreview,
     };
+  }
+
+  _buildCachedWorkspaceHint(cached) {
+    if (!cached || typeof cached !== "object") {
+      return null;
+    }
+    const manifestSample = Array.isArray(cached.manifestPreview)
+      ? cached.manifestPreview.slice(0, 6)
+      : [];
+    const navigation =
+      cached.navigationSummary || cached.navigationBlock
+        ? {
+            summary: cached.navigationSummary ?? null,
+            block: cached.navigationBlock ?? null,
+          }
+        : null;
+    return {
+      summary: cached.summary ?? null,
+      hint: cached.hintBlock ?? null,
+      directives: cached.directives ?? null,
+      classification: cached.classification ?? null,
+      updated_at: cached.updatedAt ?? cached.savedAt ?? null,
+      manifestSample,
+      navigation,
+    };
+  }
+
+  _sanitizeWorkspaceStats(stats) {
+    if (!stats || typeof stats !== "object") {
+      return null;
+    }
+    const numericFields = ["files", "directories", "codeFiles", "docFiles", "dataFiles", "otherFiles"];
+    const cleaned = {};
+    for (const field of numericFields) {
+      const value = Number(stats[field]);
+      if (Number.isFinite(value) && value >= 0) {
+        cleaned[field] = Math.round(value);
+      }
+    }
+    if (Array.isArray(stats.chapterLikeFiles) && stats.chapterLikeFiles.length) {
+      cleaned.chapterSamples = stats.chapterLikeFiles.slice(0, 4);
+    }
+    return Object.keys(cleaned).length ? cleaned : null;
   }
 
   _analyzeCommand(command) {

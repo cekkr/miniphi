@@ -270,16 +270,28 @@ export default class GlobalMiniPhiMemory {
         continue;
       }
       existing.add(cmd.toLowerCase());
-      additions.push({
+      const entry = {
         id: idea.id ?? this._slugify(cmd),
         command: cmd,
         description: typeof idea?.description === "string" ? idea.description.trim() : null,
+        files: Array.isArray(idea?.files)
+          ? idea.files.map((file) => file?.toString().trim()).filter(Boolean).slice(0, 8)
+          : [],
+        owner: typeof idea?.owner === "string" ? idea.owner.trim() : null,
+        tags: Array.isArray(idea?.tags)
+          ? idea.tags.map((tag) => tag?.toString().trim()).filter(Boolean).slice(0, 8)
+          : [],
         schemaId: idea.schemaId ?? payload.schemaId ?? null,
         contextBudget: payload.contextBudget ?? null,
+        executionId: payload.executionId ?? null,
+        mode: payload.mode ?? null,
+        task: payload.task ?? null,
+        workspaceType: idea.workspaceType ?? payload.workspaceType ?? null,
         source: idea.source ?? payload.source ?? "analysis",
         createdAt: timestamp,
         status: payload.validationStatus ?? "ok",
-      });
+      };
+      additions.push(entry);
     }
     if (!additions.length) {
       return [];
@@ -287,6 +299,20 @@ export default class GlobalMiniPhiMemory {
     data.entries = [...additions, ...data.entries].slice(0, 300);
     await this._writeJSON(this.commandLibraryFile, data);
     return additions;
+  }
+
+  async loadCommandLibrary(limit = 20) {
+    await this.prepare();
+    const data = await this._readJSON(this.commandLibraryFile, { entries: [] });
+    if (!Array.isArray(data.entries) || data.entries.length === 0) {
+      return [];
+    }
+    const maxEntries =
+      Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.floor(Number(limit)) : 20;
+    return data.entries.slice(0, maxEntries).map((entry) => ({
+      ...entry,
+      source: entry.source ?? "global",
+    }));
   }
 
   async loadCommandPolicy() {
