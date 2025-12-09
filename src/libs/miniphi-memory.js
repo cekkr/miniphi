@@ -58,6 +58,7 @@ export default class MiniPhiMemory {
     this.promptStepJournalIndexFile = path.join(this.promptStepJournalDir, "index.json");
     this.promptTemplatesIndexFile = path.join(this.promptTemplatesDir, "index.json");
     this.fallbackCacheFile = path.join(this.indicesDir, "fallback-cache.json");
+    this.promptCompositionsFile = path.join(this.indicesDir, "prompt-compositions.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -106,6 +107,7 @@ export default class MiniPhiMemory {
     await this._ensureFile(this.promptTemplatesIndexFile, { entries: [] });
     await this._ensureFile(this.commandLibraryFile, { entries: [] });
     await this._ensureFile(this.fallbackCacheFile, { entries: [] });
+    await this._ensureFile(this.promptCompositionsFile, { entries: [] });
     await this._ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -125,6 +127,7 @@ export default class MiniPhiMemory {
         { name: "prompt-step-journals", file: this._relative(this.promptStepJournalIndexFile) },
         { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
         { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
+        { name: "prompt-compositions", file: this._relative(this.promptCompositionsFile) },
       ],
     });
 
@@ -687,6 +690,123 @@ export default class MiniPhiMemory {
     return data.entries.slice(0, maxEntries);
   }
 
+  async recordPromptComposition(payload) {
+    if (
+      !payload ||
+      (!payload.schemaId && !payload.command && !payload.task && !payload.mode)
+    ) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = new Date().toISOString();
+    const status = this._normalizeCompositionStatus(payload.status);
+    const cache = await this._readJSON(this.promptCompositionsFile, { entries: [] });
+    const entries = Array.isArray(cache.entries) ? cache.entries : [];
+    const key = this._buildCompositionKey(payload);
+
+    if (status === "invalid") {
+      cache.entries = entries.filter((entry) => entry.key !== key);
+      cache.updatedAt = timestamp;
+      await this._writeJSON(this.promptCompositionsFile, cache);
+      await this._updateRootIndex();
+      return null;
+    }
+
+    const existingIndex = entries.findIndex((entry) => entry.key === key);
+    const existing = existingIndex !== -1 ? entries[existingIndex] : null;
+    const successIncrement = status === "ok" ? 1 : 0;
+    const failureIncrement = status === "fallback" ? 1 : 0;
+    const entry = {
+      id: existing?.id ?? payload.id ?? randomUUID(),
+      key,
+      schemaId: payload.schemaId ?? existing?.schemaId ?? null,
+      mode: payload.mode ?? existing?.mode ?? null,
+      task: payload.task ?? existing?.task ?? null,
+      command: payload.command ?? existing?.command ?? null,
+      workspaceType: payload.workspaceType ?? existing?.workspaceType ?? null,
+      contextBudget: Number.isFinite(payload.contextBudget)
+        ? Number(payload.contextBudget)
+        : existing?.contextBudget ?? null,
+      promptLength: Number.isFinite(payload.promptLength)
+        ? Number(payload.promptLength)
+        : existing?.promptLength ?? null,
+      compressedTokens: Number.isFinite(payload.compressedTokens)
+        ? Number(payload.compressedTokens)
+        : existing?.compressedTokens ?? null,
+      fallbackReason: payload.fallbackReason ?? existing?.fallbackReason ?? null,
+      source: payload.source ?? existing?.source ?? "runtime",
+      executionId: payload.executionId ?? existing?.executionId ?? null,
+      promptId: payload.promptId ?? existing?.promptId ?? null,
+      planId: payload.planId ?? existing?.planId ?? null,
+      notes: payload.notes ?? existing?.notes ?? null,
+      status,
+      firstSeenAt: existing?.firstSeenAt ?? timestamp,
+      updatedAt: timestamp,
+      successCount: (existing?.successCount ?? 0) + successIncrement,
+      failureCount: (existing?.failureCount ?? 0) + failureIncrement,
+    };
+
+    const filtered = entries.filter((item) => item.key !== key);
+    cache.entries = [entry, ...filtered].slice(0, 120);
+    cache.updatedAt = timestamp;
+    await this._writeJSON(this.promptCompositionsFile, cache);
+    await this._updateRootIndex();
+    return entry;
+  }
+
+  async loadPromptCompositions(options = undefined) {
+    await this.prepare();
+    const cache = await this._readJSON(this.promptCompositionsFile, { entries: [] });
+    let entries = Array.isArray(cache.entries) ? cache.entries : [];
+    const limit =
+      Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0
+        ? Number(options.limit)
+        : 12;
+    const workspaceFilter =
+      typeof options?.workspaceType === "string" && options.workspaceType.trim().length
+        ? options.workspaceType.trim().toLowerCase()
+        : null;
+    const modeFilter =
+      typeof options?.mode === "string" && options.mode.trim().length
+        ? options.mode.trim().toLowerCase()
+        : null;
+    const includeFallback = Boolean(options?.includeFallback);
+    const includeInvalid = Boolean(options?.includeInvalid);
+
+    entries = entries.filter((entry) => {
+      if (!entry) {
+        return false;
+      }
+      if (!includeInvalid && entry.status === "invalid") {
+        return false;
+      }
+      if (!includeFallback && entry.status === "fallback") {
+        return false;
+      }
+      if (workspaceFilter) {
+        const label = (entry.workspaceType ?? "").toLowerCase();
+        if (label && label !== workspaceFilter) {
+          return false;
+        }
+      }
+      if (modeFilter) {
+        const mode = (entry.mode ?? "").toLowerCase();
+        if (mode && mode !== modeFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    entries.sort((a, b) => {
+      const aTime = Date.parse(a.updatedAt ?? a.firstSeenAt ?? 0) || 0;
+      const bTime = Date.parse(b.updatedAt ?? b.firstSeenAt ?? 0) || 0;
+      return bTime - aTime;
+    });
+
+    return entries.slice(0, limit);
+  }
+
   async loadHelperScripts(options = undefined) {
     await this.prepare();
     const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
@@ -1144,6 +1264,7 @@ export default class MiniPhiMemory {
       { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
       { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
       { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
+      { name: "prompt-compositions", file: this._relative(this.promptCompositionsFile) },
     ];
     await this._writeJSON(this.rootIndexFile, root);
   }
@@ -1515,6 +1636,36 @@ export default class MiniPhiMemory {
 
   _hashText(text) {
     return createHash("sha1").update(text ?? "", "utf8").digest("hex");
+  }
+
+  _normalizeCompositionStatus(status) {
+    if (!status && status !== 0) {
+      return "ok";
+    }
+    const normalized = status.toString().trim().toLowerCase();
+    if (normalized === "invalid" || normalized === "retire" || normalized === "remove") {
+      return "invalid";
+    }
+    if (normalized === "fallback" || normalized === "degraded") {
+      return "fallback";
+    }
+    return "ok";
+  }
+
+  _buildCompositionKey(payload) {
+    const schema = typeof payload?.schemaId === "string" ? payload.schemaId.trim().toLowerCase() : "none";
+    const mode = typeof payload?.mode === "string" ? payload.mode.trim().toLowerCase() : "unknown";
+    const commandText =
+      typeof payload?.command === "string" && payload.command.trim().length
+        ? payload.command.trim().toLowerCase()
+        : typeof payload?.task === "string" && payload.task.trim().length
+          ? payload.task.trim().toLowerCase()
+          : "objective";
+    const workspace =
+      typeof payload?.workspaceType === "string" && payload.workspaceType.trim().length
+        ? payload.workspaceType.trim().toLowerCase()
+        : "any";
+    return [schema || "none", mode || "unknown", commandText, workspace].join("::");
   }
 
   _buildFallbackKey(datasetHash, promptJournalId = null) {

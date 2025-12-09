@@ -180,6 +180,7 @@ export default class EfficientLogAnalyzer {
         indexSummaries: workspaceContext?.indexSummary ?? null,
         benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
         commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
+        compositionBlock: workspaceContext?.compositionBlock ?? null,
         promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
       },
     );
@@ -1093,6 +1094,8 @@ export default class EfficientLogAnalyzer {
         navigationSummary: workspaceContext?.navigationSummary ?? null,
         navigationBlock: workspaceContext?.navigationBlock ?? null,
         commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
+        compositionBlock: workspaceContext?.compositionBlock ?? null,
+        promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
       };
       prompt = this.generateSmartPrompt(
         task,
@@ -1468,6 +1471,9 @@ export default class EfficientLogAnalyzer {
     }
     if (extraContext.commandLibraryBlock) {
       lines.push(extraContext.commandLibraryBlock);
+    }
+    if (extraContext.compositionBlock) {
+      lines.push(extraContext.compositionBlock);
     }
     if (extraContext.promptTemplateBlock) {
       lines.push(extraContext.promptTemplateBlock);

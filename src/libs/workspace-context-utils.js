@@ -174,4 +174,47 @@ export function buildPromptTemplateBlock(templates, options = undefined) {
   return lines.join("\n");
 }
 
+export function buildPromptCompositionBlock(compositions, options = undefined) {
+  if (!Array.isArray(compositions) || compositions.length === 0) {
+    return "";
+  }
+  const limit = Math.max(1, options?.limit ?? 6);
+  const selected = compositions.slice(0, limit);
+  const lines = ["Recent prompt/command compositions:"];
+  selected.forEach((entry) => {
+    const parts = [];
+    if (entry.schemaId) {
+      parts.push(entry.schemaId);
+    }
+    if (entry.mode) {
+      parts.push(entry.mode);
+    }
+    if (entry.command) {
+      parts.push(`cmd: ${entry.command}`);
+    } else if (entry.task) {
+      parts.push(`task: ${entry.task}`);
+    }
+    if (Number.isFinite(entry.contextBudget)) {
+      parts.push(`ctx<=${Math.round(entry.contextBudget)}`);
+    }
+    if (entry.workspaceType) {
+      parts.push(`workspace: ${entry.workspaceType}`);
+    }
+    const statusLabel =
+      entry.status === "fallback"
+        ? "fallback"
+        : entry.status === "invalid"
+          ? "retired"
+          : "ok";
+    parts.push(statusLabel);
+    lines.push(`- ${parts.join(" | ")}`);
+  });
+  if (compositions.length > selected.length) {
+    lines.push(
+      `- ... ${compositions.length - selected.length} more composition${compositions.length - selected.length === 1 ? "" : "s"}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 export { DEFAULT_IGNORED_DIRS };

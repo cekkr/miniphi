@@ -41,6 +41,7 @@ import {
   collectManifestSummary,
   readReadmeSnippet,
   buildPromptTemplateBlock,
+  buildPromptCompositionBlock,
 } from "./libs/workspace-context-utils.js";
 import {
   normalizeDangerLevel,
@@ -309,6 +310,9 @@ async function attachCommandLibraryToWorkspace(
   if (!memory && !globalMemory) {
     return workspaceContext;
   }
+  if (Array.isArray(workspaceContext?.commandLibraryEntries) && workspaceContext.commandLibraryEntries.length) {
+    return workspaceContext;
+  }
   const limit =
     Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
   let localEntries = [];
@@ -380,6 +384,141 @@ async function attachCommandLibraryToWorkspace(
       merged: merged.length,
     },
   };
+}
+
+async function attachPromptCompositionsToWorkspace(
+  workspaceContext,
+  memory,
+  globalMemory,
+  options = undefined,
+) {
+  if (!memory && !globalMemory) {
+    return workspaceContext;
+  }
+  if (Array.isArray(workspaceContext?.compositionEntries) && workspaceContext.compositionEntries.length) {
+    return workspaceContext;
+  }
+  const limit =
+    Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
+  const workspaceType =
+    workspaceContext?.classification?.label ??
+    workspaceContext?.classification?.domain ??
+    null;
+  const filters = {
+    limit,
+    workspaceType,
+    includeFallback: Boolean(options?.includeFallback),
+  };
+  const dedupeKey = (entry) => {
+    if (!entry) return null;
+    if (typeof entry.key === "string") {
+      return entry.key;
+    }
+    const schema = typeof entry.schemaId === "string" ? entry.schemaId.trim().toLowerCase() : "none";
+    const mode = typeof entry.mode === "string" ? entry.mode.trim().toLowerCase() : "unknown";
+    const command =
+      typeof entry.command === "string" && entry.command.trim().length
+        ? entry.command.trim().toLowerCase()
+        : typeof entry.task === "string" && entry.task.trim().length
+          ? entry.task.trim().toLowerCase()
+          : "objective";
+    const workspaceLabel =
+      typeof entry.workspaceType === "string" && entry.workspaceType.trim().length
+        ? entry.workspaceType.trim().toLowerCase()
+        : "any";
+    return [schema, mode, command, workspaceLabel].join("::");
+  };
+  const merged = [];
+  const seen = new Set();
+  const addEntries = (entries, source) => {
+    if (!Array.isArray(entries)) {
+      return;
+    }
+    for (const entry of entries) {
+      const key = dedupeKey(entry);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({ ...entry, source });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+  };
+  let localEntries = [];
+  let globalEntries = [];
+  if (memory?.loadPromptCompositions) {
+    try {
+      localEntries = await memory.loadPromptCompositions(filters);
+    } catch (error) {
+      if (options?.verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load prompt compositions: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
+  if (globalMemory?.loadPromptCompositions) {
+    try {
+      globalEntries = await globalMemory.loadPromptCompositions(filters);
+    } catch (error) {
+      if (options?.verbose) {
+        console.warn(
+          `[MiniPhi] Unable to load global prompt compositions: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+  addEntries(localEntries, "project");
+  addEntries(globalEntries, "global");
+  if (!merged.length) {
+    return workspaceContext;
+  }
+  const block = buildPromptCompositionBlock(merged, { limit });
+  return {
+    ...(workspaceContext ?? {}),
+    compositionEntries: merged,
+    compositionBlock: block,
+    compositionSources: {
+      project: localEntries.length,
+      global: globalEntries.length,
+      merged: merged.length,
+    },
+  };
+}
+
+async function recordCompositionSnapshot(payload, memory, globalMemory, options = undefined) {
+  if (!payload) {
+    return;
+  }
+  const verbose = Boolean(options?.verbose);
+  if (memory?.recordPromptComposition) {
+    try {
+      await memory.recordPromptComposition(payload);
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to store prompt composition: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+  }
+  if (globalMemory?.recordPromptComposition) {
+    try {
+      await globalMemory.recordPromptComposition({ ...payload, source: payload.source ?? "project" });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to store global prompt composition: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
 }
 
 async function recordLmStudioStatusSnapshot(restClient, memory, options = undefined) {
@@ -2154,6 +2293,15 @@ const describeWorkspace = (dir, options = undefined) =>
           verbose,
         },
       );
+      workspaceContext = await attachPromptCompositionsToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
       if (promptJournalId) {
         promptJournal = new PromptStepJournal(stateManager.baseDir);
         await promptJournal.openSession(promptJournalId, {
@@ -2318,6 +2466,15 @@ const describeWorkspace = (dir, options = undefined) =>
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
+      workspaceContext = await attachPromptCompositionsToWorkspace(
         workspaceContext,
         stateManager,
         globalMemory,
@@ -2665,6 +2822,15 @@ const describeWorkspace = (dir, options = undefined) =>
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
+        workspaceContext,
+        stateManager,
+        globalMemory,
+        {
+          limit: 8,
+          verbose,
+        },
+      );
+      workspaceContext = await attachPromptCompositionsToWorkspace(
         workspaceContext,
         stateManager,
         globalMemory,
@@ -3043,6 +3209,39 @@ const describeWorkspace = (dir, options = undefined) =>
       if (archive?.id && result?.truncationPlan?.plan) {
         console.log(
           `[MiniPhi] Saved truncation plan for execution ${archive.id}. Resume with --resume-truncation ${archive.id} when applying the chunking strategy.`,
+        );
+      }
+      if (archive?.id && result) {
+        const workspaceTypeLabel =
+          workspaceContext?.classification?.label ??
+          workspaceContext?.classification?.domain ??
+          null;
+        const planId = workspaceContext?.taskPlanId ?? null;
+        const compositionStatus =
+          result?.schemaValid === false
+            ? "invalid"
+            : result?.analysisDiagnostics?.fallbackReason
+              ? "fallback"
+              : "ok";
+        await recordCompositionSnapshot(
+          {
+            executionId: archive.id,
+            schemaId: result?.schemaId ?? null,
+            command: archiveMetadata.command ?? null,
+            task,
+            mode: command,
+            workspaceType: workspaceTypeLabel,
+            contextBudget: contextLength,
+            compressedTokens: result?.compressedTokens ?? null,
+            promptId: promptGroupId ?? null,
+            planId,
+            fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
+            status: compositionStatus,
+            source: "analysis",
+          },
+          stateManager,
+          globalMemory,
+          { verbose: options.verbose },
         );
       }
       if (archive?.id && result?.analysis) {
@@ -4392,7 +4591,7 @@ async function generateWorkspaceSnapshot({
     }
   }
 
-  const workspaceSnapshot = {
+  let workspaceSnapshot = {
     ...profile,
     manifestPreview: manifestResult.manifest,
     readmeSnippet,
@@ -4479,6 +4678,19 @@ async function generateWorkspaceSnapshot({
     promptTemplates.length > 0 ? buildPromptTemplateBlock(promptTemplates) : null;
   workspaceSnapshot.promptTemplates = promptTemplates;
   workspaceSnapshot.promptTemplateBlock = promptTemplateBlock;
+
+  workspaceSnapshot = await attachCommandLibraryToWorkspace(
+    workspaceSnapshot,
+    memory,
+    globalMemory,
+    { limit: 8, verbose },
+  );
+  workspaceSnapshot = await attachPromptCompositionsToWorkspace(
+    workspaceSnapshot,
+    memory,
+    globalMemory,
+    { limit: 8, verbose },
+  );
 
   let indexSummary = null;
   let benchmarkHistory = null;
