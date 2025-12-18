@@ -1024,4 +1024,4 @@ export class Phi4Handler {
 }
 
 export default Phi4Handler;
-export { LMStudioProtocolError };
+// LMStudioProtocolError is already exported via `export class LMStudioProtocolError ...` above.

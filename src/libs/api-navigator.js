@@ -1,3 +1,4 @@
+import { spawn } from "child_process";
 import path from "path";
 import { extractJsonBlock } from "./core-utils.js";
 
@@ -5,6 +6,8 @@ const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
 const HELPER_SILENCE_TIMEOUT_MS = 12000;
 const OUTPUT_PREVIEW_LIMIT = 420;
+const PYTHON_RUNNER_CACHE_TTL_MS = 5 * 60 * 1000;
+const PYTHON_RUNNER_CHECK_TIMEOUT_MS = 2500;
 
 const NAVIGATION_JSON_SCHEMA = {
   type: "object",
@@ -115,6 +118,7 @@ export default class ApiNavigator {
     this.adapterRegistry = options?.adapterRegistry ?? null;
     this.disabled = false;
     this.disableNotice = null;
+    this.pythonRunnerCache = null;
   }
 
   setMemory(memory) {
@@ -433,8 +437,21 @@ export default class ApiNavigator {
     }
     const absolutePath = path.resolve(cleanedPath);
     const normalizedLang = this._normalizeLanguage(language);
-    const runner = normalizedLang === "python" ? "python" : "node";
-    const command = `${runner} "${absolutePath}"`;
+    const runner =
+      normalizedLang === "python"
+        ? await this._resolvePythonRunner()
+        : { command: "node", label: "node" };
+    if (!runner?.command) {
+      return {
+        command: "(python not found)",
+        exitCode: -1,
+        stdout: "",
+        stderr: "Unable to locate a Python interpreter (tried python3, py -3, python, py).",
+        durationMs: null,
+        silenceExceeded: false,
+      };
+    }
+    const command = `${runner.command} "${absolutePath}"`;
     try {
       const startedAt = Date.now();
       const result = await this.cli.executeCommand(command, {
@@ -462,6 +479,75 @@ export default class ApiNavigator {
         silenceExceeded: Boolean(error?.silenceExceeded),
       };
     }
+  }
+
+  async _resolvePythonRunner() {
+    const cached = this.pythonRunnerCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.runner;
+    }
+
+    const candidates =
+      process.platform === "win32"
+        ? [
+            { command: "python3", args: ["--version"], label: "python3" },
+            { command: "py", args: ["-3", "--version"], label: "py -3" },
+            { command: "python", args: ["--version"], label: "python" },
+            { command: "py", args: ["--version"], label: "py" },
+          ]
+        : [
+            { command: "python3", args: ["--version"], label: "python3" },
+            { command: "python", args: ["--version"], label: "python" },
+          ];
+
+    for (const candidate of candidates) {
+      const ok = await this._probeExecutable(candidate.command, candidate.args);
+      if (ok) {
+        const runner = {
+          command: candidate.label,
+          label: candidate.label,
+        };
+        this.pythonRunnerCache = {
+          runner,
+          expiresAt: Date.now() + PYTHON_RUNNER_CACHE_TTL_MS,
+        };
+        return runner;
+      }
+    }
+
+    this.pythonRunnerCache = {
+      runner: null,
+      expiresAt: Date.now() + PYTHON_RUNNER_CACHE_TTL_MS,
+    };
+    return null;
+  }
+
+  _probeExecutable(command, args) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, PYTHON_RUNNER_CHECK_TIMEOUT_MS);
+      const child = spawn(command, args ?? [], { stdio: "ignore" });
+      child.once("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error?.code === "ENOENT") {
+          resolve(false);
+        } else {
+          resolve(false);
+        }
+      });
+      child.once("exit", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(code === 0);
+      });
+    });
   }
 
   _normalizeHelperPath(candidate) {

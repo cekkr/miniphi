@@ -77,6 +77,7 @@ These are the currently "fixed reference points" of miniphi project:
 - `docs/models/devstrall/defaultSystemPrompt.txt` - Devstral JSON-only system prompt baseline (use when you need deterministic machine-parseable responses).
 - `docs/models/devstrall/conversationAboutJsonAutomation.json` - example conversation showing how weak system prompts can drift into prose and break automation.
 - `scripts/lmstudio-json-debug.js` - sends a prompt to LM Studio with `response_format=json_schema`, then prints the raw completion + parsed JSON (debug without running the full CLI).
+- `scripts/lmstudio-json-series.js` - runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy (pairs well with `npm run sample:lmstudio-json-series`).
 - `tests/lmstudio-json-schema.integration.test.js` - optional live LM Studio integration test (run with `MINIPHI_LMSTUDIO_INTEGRATION=1`).
 - `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
 - `docs/studies/todo/author.md` - human editing backlog.

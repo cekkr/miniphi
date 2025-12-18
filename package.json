@@ -12,7 +12,8 @@
     "lint": "node --test ./tests/**/*.test.js",
     "benchmark": "node benchmark/run-tests.js",
     "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose",
-    "sample:besh-journal": "node src/index.js analyze-file --file samples/besh/bsh.c --task \"Audit the besh shell and capture a prompt journal\" --summary-levels 4 --prompt-journal besh-regression --prompt-journal-status paused --no-stream"
+    "sample:besh-journal": "node src/index.js analyze-file --file samples/besh/bsh.c --task \"Audit the besh shell and capture a prompt journal\" --summary-levels 4 --prompt-journal besh-regression --prompt-journal-status paused --no-stream",
+    "sample:lmstudio-json-series": "node scripts/lmstudio-json-series.js --workspace samples/get-started/code"
   },
   "bin": {
     "miniphi": "src/index.js"

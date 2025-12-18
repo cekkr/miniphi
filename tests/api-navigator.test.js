@@ -19,6 +19,11 @@ test("ApiNavigator executes helpers after stripping surrounding quotes from path
   };
 
   const navigator = new ApiNavigator({ cliExecutor });
+  // Seed the runner cache so unit tests do not depend on a local Python installation.
+  navigator.pythonRunnerCache = {
+    runner: { command: "python", label: "python" },
+    expiresAt: Date.now() + 60_000,
+  };
   try {
     const result = await navigator._executeHelper(`"${helperPath}"`, "python", path.dirname(helperPath));
 

@@ -186,6 +186,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `docs/miniphi-cli-implementation.md` walks through compression heuristics, pipelines, and architectural decisions.
 - `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
 - `scripts/lmstudio-json-debug.js` is a small REST runner that prints the raw LM Studio completion + the parsed JSON object (useful for debugging system prompts / schema enforcement outside the CLI).
+- `scripts/lmstudio-json-series.js` runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy of `samples/get-started/code` (use `npm run sample:lmstudio-json-series`).
 - `tests/lmstudio-json-schema.integration.test.js` is an optional integration test for LM Studio JSON-schema enforcement; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running).
 - `docs/os-defaults/windows.md` and `docs/prompts/windows-benchmark-default.md` document the Windows helper workflow.
 - `docs/studies/todo/author.md` tracks authoring tasks that still need human review.
