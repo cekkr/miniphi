@@ -74,6 +74,10 @@ These are the currently "fixed reference points" of miniphi project:
 - `docs/NodeJS LM Studio API Integration.md` - SDK vs REST instrumentation, including the `/api/v0` behaviors mirrored in `LMStudioRestClient`.
 - `docs/miniphi-cli-implementation.md` - compression heuristics, architectural rationale, and orchestration background.
 - `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` - offline REST docs consumed by `LMStudioRestClient`.
+- `docs/models/devstrall/defaultSystemPrompt.txt` - Devstral JSON-only system prompt baseline (use when you need deterministic machine-parseable responses).
+- `docs/models/devstrall/conversationAboutJsonAutomation.json` - example conversation showing how weak system prompts can drift into prose and break automation.
+- `scripts/lmstudio-json-debug.js` - sends a prompt to LM Studio with `response_format=json_schema`, then prints the raw completion + parsed JSON (debug without running the full CLI).
+- `tests/lmstudio-json-schema.integration.test.js` - optional live LM Studio integration test (run with `MINIPHI_LMSTUDIO_INTEGRATION=1`).
 - `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
 - `docs/studies/todo/author.md` - human editing backlog.
 - `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
