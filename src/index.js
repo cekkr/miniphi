@@ -5125,7 +5125,7 @@ Options:
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override model context length (default: 16384)
-  --model <id>                 LM Studio model key or alias (phi-4, ibm/granite-4-h-tiny, mistralai/devstral-small-2507)
+  --model <id>                 LM Studio model key or alias (phi-4, ibm/granite-4-h-tiny, mistralai/devstral-small-2-2512)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
   --timeout <s>                Command timeout in seconds (default: 60)
   --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%

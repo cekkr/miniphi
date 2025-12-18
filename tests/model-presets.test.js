@@ -8,8 +8,8 @@ test("resolveModelConfig normalizes aliases and applies preset defaults when con
     contextLength: 32768,
     contextIsExplicit: false,
   });
-  assert.equal(selection.modelKey, "mistralai/devstral-small-2507");
-  assert.equal(selection.contextLength, 128000);
+  assert.equal(selection.modelKey, "mistralai/devstral-small-2-2512");
+  assert.equal(selection.contextLength, 131072);
   assert.equal(selection.clampedToPreset, false);
   assert.equal(selection.normalizedFromAlias, true);
 });

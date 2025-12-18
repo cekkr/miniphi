@@ -69,7 +69,13 @@ const PLAN_JSON_SCHEMA = {
   },
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
+const JSON_ONLY_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "prompt-plan",
+    schema: PLAN_JSON_SCHEMA,
+  },
+};
 
 export default class PromptDecomposer {
   constructor(options = undefined) {

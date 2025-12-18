@@ -29,7 +29,16 @@ export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "}",
 ].join("\n");
 
-const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
+function sanitizeResponseSchemaName(name) {
+  if (!name) {
+    return "miniphi-response";
+  }
+  const normalized = String(name)
+    .trim()
+    .replace(/[^\w-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized ? normalized.slice(0, 48) : "miniphi-response";
+}
 
 /**
  * Coordinates CLI execution, compression, and Phi-4 reasoning for arbitrarily large outputs.
@@ -234,10 +243,13 @@ export default class EfficientLogAnalyzer {
       fallbackReason,
     };
     const reusedFallback = Boolean(cachedFallback);
+    const schemaId = promptContext?.schemaId ?? this.schemaId;
+    const responseFormat =
+      promptContext?.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaId) ?? null;
     const traceOptions = {
       ...(promptContext ?? {}),
-      schemaId: promptContext?.schemaId ?? this.schemaId,
-      responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
+      schemaId,
+      responseFormat,
     };
     const fallbackDiagnostics = () =>
       this._formatFallbackDiagnostics({
@@ -553,10 +565,13 @@ export default class EfficientLogAnalyzer {
     let usedFallback = Boolean(cachedFallback);
     let fallbackReason = cachedFallback?.reason ?? null;
     const reusedFallback = Boolean(cachedFallback);
+    const schemaId = promptContext?.schemaId ?? this.schemaId;
+    const responseFormat =
+      promptContext?.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaId) ?? null;
     const traceOptions = {
       ...(promptContext ?? {}),
-      schemaId: promptContext?.schemaId ?? this.schemaId,
-      responseFormat: promptContext?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
+      schemaId,
+      responseFormat,
     };
     const fallbackDiagnostics = () =>
       this._formatFallbackDiagnostics({
@@ -1329,7 +1344,10 @@ export default class EfficientLogAnalyzer {
           ...(traceOptions ?? {}),
           label: "analysis-schema-retry",
           schemaId: schemaId ?? this.schemaId,
-          responseFormat: traceOptions?.responseFormat ?? JSON_ONLY_RESPONSE_FORMAT,
+          responseFormat:
+            traceOptions?.responseFormat ??
+            this._buildJsonSchemaResponseFormat(schemaId ?? this.schemaId) ??
+            null,
         },
       );
     } catch (error) {
@@ -1355,6 +1373,27 @@ export default class EfficientLogAnalyzer {
       return normalized;
     }
     return `${normalized.slice(0, maxLength)}\n[context trimmed for schema retry]`;
+  }
+
+  _buildJsonSchemaResponseFormat(schemaId) {
+    if (
+      !schemaId ||
+      !this.schemaRegistry ||
+      typeof this.schemaRegistry.getSchema !== "function"
+    ) {
+      return null;
+    }
+    const schema = this.schemaRegistry.getSchema(schemaId);
+    if (!schema?.definition || typeof schema.definition !== "object") {
+      return null;
+    }
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: sanitizeResponseSchemaName(schema.id ?? schemaId),
+        schema: schema.definition,
+      },
+    };
   }
 
   _sanitizeJsonResponse(text) {

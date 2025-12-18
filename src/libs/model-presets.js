@@ -2,6 +2,7 @@ export const DEFAULT_MODEL_KEY = "ibm/granite-4-h-tiny";
 
 export const DEFAULT_CONTEXT_LENGTH = 16384;
 const PHI_REASONING_PLUS_KEY = "microsoft/phi-4-reasoning-plus";
+const DEVSTRAL_SMALL_2_2512_KEY = "mistralai/devstral-small-2-2512";
 const CODING_SYSTEM_PROMPT = [
   "You are MiniPhi, a local coding agent.",
   "Prioritize precise code edits, minimal filler, and clear diffs when proposing changes.",
@@ -32,6 +33,14 @@ export const MODEL_PRESETS = {
     maxContextLength: 131072,
     systemPrompt: CODING_SYSTEM_PROMPT,
   },
+  [DEVSTRAL_SMALL_2_2512_KEY]: {
+    key: DEVSTRAL_SMALL_2_2512_KEY,
+    label: "Devstral Small 2 2512",
+    purpose: "coding",
+    defaultContextLength: 131072,
+    maxContextLength: 393216,
+    systemPrompt: CODING_SYSTEM_PROMPT,
+  },
 };
 
 const MODEL_ALIASES = new Map([
@@ -43,8 +52,12 @@ const MODEL_ALIASES = new Map([
   ["granite-4-h-tiny", "ibm/granite-4-h-tiny"],
   ["granite4h", "ibm/granite-4-h-tiny"],
   ["granite4", "ibm/granite-4-h-tiny"],
-  ["devstral", "mistralai/devstral-small-2507"],
-  ["devstral-small", "mistralai/devstral-small-2507"],
+  ["devstral", DEVSTRAL_SMALL_2_2512_KEY],
+  ["devstral-small", DEVSTRAL_SMALL_2_2512_KEY],
+  ["devstral-2507", "mistralai/devstral-small-2507"],
+  ["devstral-2-2512", DEVSTRAL_SMALL_2_2512_KEY],
+  ["devstral2", DEVSTRAL_SMALL_2_2512_KEY],
+  ["mistral/devstral-small-2-2512", DEVSTRAL_SMALL_2_2512_KEY],
   ["mistral/devstral-small-2507", "mistralai/devstral-small-2507"],
 ]);
 

@@ -48,7 +48,13 @@ const NAVIGATION_JSON_SCHEMA = {
   required: ["actions"],
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = { type: "json_object" };
+const JSON_ONLY_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "navigation-plan",
+    schema: NAVIGATION_JSON_SCHEMA,
+  },
+};
 
 const NAVIGATION_SCHEMA = [
   "{",

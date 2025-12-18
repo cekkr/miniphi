@@ -13,6 +13,17 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Always explain your reasoning, keep instructions actionable, and operate directly on the artifacts referenced in the prompt.",
 ].join(" ");
 
+function sanitizeResponseSchemaName(name) {
+  if (!name) {
+    return "miniphi-response";
+  }
+  const normalized = String(name)
+    .trim()
+    .replace(/[^\w-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized ? normalized.slice(0, 48) : "miniphi-response";
+}
+
 export class LMStudioProtocolError extends Error {
   constructor(message, metadata = undefined) {
     super(message || "LM Studio protocol warning");
@@ -162,7 +173,11 @@ export class Phi4Handler {
 
       const traceContext = this._buildTraceContext(traceOptions);
       const schemaDetails = this._resolveSchema(traceContext);
-      const requestedResponseFormat = traceContext.responseFormat ?? null;
+      const requestedResponseFormat =
+        traceContext.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaDetails) ?? null;
+      if (!traceContext.responseFormat && requestedResponseFormat) {
+        traceContext.responseFormat = requestedResponseFormat;
+      }
       const startedAt = Date.now();
       const capturedThoughts = [];
       let requestSnapshot = null;
@@ -644,7 +659,17 @@ export class Phi4Handler {
       return true;
     }
     if (typeof traceContext?.transport === "string") {
-      return traceContext.transport === "rest";
+      const normalized = traceContext.transport.toLowerCase();
+      if (normalized === "ws") {
+        return false;
+      }
+      if (normalized === "rest") {
+        return true;
+      }
+    }
+    const responseType = traceContext?.responseFormat?.type;
+    if (typeof responseType === "string" && responseType.toLowerCase() === "json_schema") {
+      return true;
     }
     return this.preferRestTransport;
   }
@@ -918,6 +943,19 @@ export class Phi4Handler {
       base.schemaValidation = responseSnapshot.schemaValidation;
     }
     return Object.keys(base).length > 0 ? base : null;
+  }
+
+  _buildJsonSchemaResponseFormat(schemaDetails) {
+    if (!schemaDetails?.definition || typeof schemaDetails.definition !== "object") {
+      return null;
+    }
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: sanitizeResponseSchemaName(schemaDetails.id ?? "miniphi-response"),
+        schema: schemaDetails.definition,
+      },
+    };
   }
 
   _resolveSchema(traceContext) {
