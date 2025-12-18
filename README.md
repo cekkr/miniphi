@@ -2,7 +2,7 @@
 
 > Local, LM Studio-based (and Phi-4-powered) project assistant for your repositories. It runs as a CLI "local AI agent" that understands your workspace, compresses logs and context, and then asks a locally loaded model to plan, analyze, or draft changes on top of that snapshot.
 
-![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg-raw=true)
+![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg?raw=true)
 
 miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio (default `ibm/granite-4-h-tiny`, other presets `microsoft/phi-4-reasoning-plus` and `mistralai/devstral-small-2-2512`). The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
 
