@@ -1552,6 +1552,7 @@ async function main() {
   const schemaRegistry = new PromptSchemaRegistry({
     schemaDir: path.join(PROJECT_ROOT, "docs", "prompts"),
   });
+  let restClient = null;
 
   if (command === "web-research") {
     await handleWebResearch({ options, positionals, verbose });
@@ -1679,7 +1680,7 @@ async function main() {
     }
     return !navigatorBlocklist.some((regex) => regex.test(trimmed));
   };
-  let restClient = null;
+  restClient = null;
   let lmStudioCompatibility = { ok: true, preferRest: !isLmStudioLocal };
   let preferRestTransport = !isLmStudioLocal;
   try {
@@ -5125,8 +5126,8 @@ Options:
   --profile <name>             Named config profile to apply from config.json
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
-  --context-length <tokens>    Override model context length (default: 16384)
-  --model <id>                 LM Studio model key or alias (phi-4, ibm/granite-4-h-tiny, mistralai/devstral-small-2-2512)
+  --context-length <tokens>    Override model context length (default: model preset)
+  --model <id>                 LM Studio model key or alias (mistralai/devstral-small-2-2512, ibm/granite-4-h-tiny, phi-4)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
   --timeout <s>                Command timeout in seconds (default: 60)
   --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%

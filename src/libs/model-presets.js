@@ -1,8 +1,7 @@
-export const DEFAULT_MODEL_KEY = "ibm/granite-4-h-tiny";
-
 export const DEFAULT_CONTEXT_LENGTH = 16384;
 const PHI_REASONING_PLUS_KEY = "microsoft/phi-4-reasoning-plus";
 const DEVSTRAL_SMALL_2_2512_KEY = "mistralai/devstral-small-2-2512";
+export const DEFAULT_MODEL_KEY = DEVSTRAL_SMALL_2_2512_KEY;
 const CODING_SYSTEM_PROMPT = [
   "You are MiniPhi, a local coding agent.",
   "Prioritize precise code edits, minimal filler, and clear diffs when proposing changes.",

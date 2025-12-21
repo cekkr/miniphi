@@ -14,7 +14,7 @@
   },
   "defaults": {
     "task": "Provide a precise technical analysis of the captured output.",
-    "model": "ibm/granite-4-h-tiny",
+    "model": "mistralai/devstral-small-2-2512",
     "contextLength": 16384,
     "gpu": "auto",
     "timeoutSeconds": 3600,

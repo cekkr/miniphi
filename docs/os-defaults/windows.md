@@ -13,8 +13,8 @@ These defaults capture the environment assumed by the Windows helper scripts and
 | Item | Value |
 | --- | --- |
 | REST endpoint | `http://127.0.0.1:1234` |
-| Default model | `ibm/granite-4-h-tiny` |
-| Context length | 16384 tokens (changing this requires a model reload in LM Studio) |
+| Default model | `mistralai/devstral-small-2-2512` (or `mistralai/devstral-small-2507`) |
+| Context length | Model preset default (131072 tokens for Devstral; changing this requires a model reload in LM Studio) |
 | GPU preference | `auto` (MiniPhi lets LM Studio decide; override via `--gpu`). |
 
 ## MiniPhi CLI Defaults

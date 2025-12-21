@@ -1,10 +1,10 @@
 # miniPhi
 
-> Local, LM Studio-based (and Phi-4-powered) project assistant for your repositories. It runs as a CLI "local AI agent" that understands your workspace, compresses logs and context, and then asks a locally loaded model to plan, analyze, or draft changes on top of that snapshot.
+> Local, LM Studio-based project assistant for your repositories. It runs as a CLI "local AI agent" that understands your workspace, compresses logs and context, and then asks a locally loaded model to plan, analyze, or draft changes on top of that snapshot.
 
 ![miniPhi](https://github.com/cekkr/miniphi/blob/main/md-assets/miniphi-logo.jpg?raw=true)
 
-miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio (default `ibm/granite-4-h-tiny`, other presets `microsoft/phi-4-reasoning-plus` and `mistralai/devstral-small-2-2512`). The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
+miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into small reasoning-ready chunks and hands them to LM Studio (default `mistralai/devstral-small-2-2512` or `mistralai/devstral-small-2507`, other presets `ibm/granite-4-h-tiny` and `microsoft/phi-4-reasoning-plus`). The CLI streams the model's `<think>` reasoning, publishes structured summaries, snapshots everything under `.miniphi/`, and keeps a receipt so the next investigation can pick up where you left off.
 
 ## What miniPhi is
 - A **local AI agent for a project**, not a hosted chatbot: it runs on top of your own LM Studio instance and keeps all logs, prompts, and artifacts on disk under `.miniphi/` and `~/.miniphi/`.
@@ -28,7 +28,7 @@ miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Schema evolution is versioned (`schema_version` or `schema_uri`) and normalized through adapters before downstream use.
 
 ## Get started
-Install [LM Studio](https://lmstudio.ai) as developer and download model `ibm/granite-4-h-tiny` (through Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left. Phi-4 Reasoning+ remains available as an alternate general-purpose model if you prefer it for larger-context runs.
+Install [LM Studio](https://lmstudio.ai) as developer and download model `mistralai/devstral-small-2-2512` (or `mistralai/devstral-small-2507`, through the Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left. Granite and Phi-4 Reasoning+ remain available as alternate models if you prefer different size or context defaults.
 
 Clone miniPhi repo:
 > $ `git clone https://github.com/cekkr/miniphi.git --recurive-submodules`
@@ -96,7 +96,7 @@ This project is in a alpha stage of development, and technically it's able to ex
 - **Samples.** `samples/recompose/hello-flow` remains the canonical recomposition benchmark, while `samples/get-started` introduces a workspace-onboarding scenario with curated prompts for environment detection, README drafting, feature tweaks, and verification commands.
 - **Batch benchmark logger.** `./run-log-benchmarks.sh` executes `npm run sample:besh-journal`, all recompose directions, and `npm run benchmark`, storing stdout, git status snapshots, and copies of new artifacts under `current-benchmarks/<timestamp>/`. Set `RECOMPOSE_MODE=live` or `RECOMPOSE_DIRECTIONS=code-to-markdown,...` to customize which combinations run, and wrap the script in `until RECOMPOSE_MODE=live ./run-log-benchmarks.sh; do sleep 120; done` to keep gathering timestamped dossiers until all phases complete cleanly.
 
-miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume the `ibm/granite-4-h-tiny` model is already downloaded in LM Studio; you can switch to `microsoft/phi-4-reasoning-plus` or `mistralai/devstral-small-2-2512` (or `mistralai/devstral-small-2507`) with `--model` or `defaults.model`.
+miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be reachable at `http://127.0.0.1:1234`. The defaults assume `mistralai/devstral-small-2-2512` (or `mistralai/devstral-small-2507`) is already downloaded in LM Studio; you can switch to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` with `--model` or `defaults.model`.
 
 ## Architecture snapshot
 1. **LMStudioManager** (src/libs/lmstudio-api.js) performs JIT model loading and surfaces the `/api/v0` REST primitives (list models, chat/completion probes, embeddings, runtime stats).
@@ -110,7 +110,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 ### Requirements
 - Node.js 20.x or newer (ESM + top-level `await` support)
 - Python 3.9+ on PATH (std lib only; used by `log_summarizer.py`)
-- LM Studio desktop app with the `ibm/granite-4-h-tiny` model downloaded (general-purpose `microsoft/phi-4-reasoning-plus` and coding-focused `mistralai/devstral-small-2-2512` / `mistralai/devstral-small-2507` are supported via --model)
+- LM Studio desktop app with `mistralai/devstral-small-2-2512` (or `mistralai/devstral-small-2507`) downloaded (`ibm/granite-4-h-tiny` and `microsoft/phi-4-reasoning-plus` are supported via --model)
 - git (optional but enables `.miniphi` history annotations)
 
 ### Install and prepare
@@ -123,7 +123,7 @@ cp config.example.json config.json
 1. Launch LM Studio and start the local server (default `http://127.0.0.1:1234`).
 2. (Optional) Tailor `config.json` to set the model endpoint, prompt defaults, GPU mode, or resource monitor thresholds.
 
-Use `--model <id>` (or set `defaults.model`) to switch from the default Phi-4 to coding presets like `ibm/granite-4-h-tiny` (16k ctx) or `mistralai/devstral-small-2-2512` (131k default ctx/393k max); MiniPhi clamps the context length to each preset unless you override it.
+Use `--model <id>` (or set `defaults.model`) to switch from the default Devstral to `ibm/granite-4-h-tiny` (16k ctx) or `microsoft/phi-4-reasoning-plus` (32k default ctx/131k max); MiniPhi clamps the context length to each preset unless you override it.
 
 ### First run
 ```bash
