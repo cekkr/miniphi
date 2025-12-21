@@ -215,6 +215,7 @@ These are the currently "fixed reference points" of miniphi project:
 - Reuse the diff-summary repair loop as a generic post-edit guard for any LLM-written file.
 - Enforce the needs_more_context/missing_snippets handshake with auto-context gathering across all prompt flows.
 - Preserve exports and module style as a shared validation step for any code edits.
+- Keep the workspace-overview prompt assembly helpers centralized in `src/libs/recompose-utils.js` so future recompose/workspace flows reuse the shared builders.
 - Standardize per-file prompt logs and artifacts under `.miniphi/` beyond recompose/benchmark.
 
 ### High-priority general-purpose focus

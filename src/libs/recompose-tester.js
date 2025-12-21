@@ -4,9 +4,12 @@ import { createHash } from "crypto";
 import YAML from "yaml";
 import { extractJsonBlock } from "./core-utils.js";
 import {
+  buildWorkspaceOverviewAttempts,
   codeContainsIdentifier,
+  composeWorkspaceOverviewPrompt,
   detectExportStyle,
   extractClasses,
+  extractCommentNarrative,
   extractExports,
   extractImports,
   hasDefaultExport,
@@ -15,16 +18,20 @@ import {
   normalizeSnippetLabel,
   normalizeWhitespace,
   parseMarkdown,
+  prioritizeOverviewFiles,
   relativeToCwd,
+  renderGlimpsesText,
   safeSessionName,
   sanitizeNarrative,
   sanitizeExportName,
   slugify,
   structureNarrative,
+  summarizeCodeLine,
   summarizeDiff,
   summarizeList,
   truncateBlock,
   truncateLine,
+  warnWorkspaceOverviewFallback,
 } from "./recompose-utils.js";
 import {
   buildWorkspaceHintBlock,
@@ -80,7 +87,6 @@ const PRIORITY_REPAIR_TARGETS = [
 const WORKSPACE_RETRY_PATTERNS = [/no workspace provided/i, /workspace context missing/i];
 const MAX_OVERVIEW_CHAR_BUDGET = 8000;
 const MAX_OVERVIEW_SUMMARY_LINES = 4;
-const OVERVIEW_COMMENT_PREFIX = /^(?:\/\/+|\/\*+|\*+|#+|--)/;
 const DEFAULT_OVERVIEW_TIMEOUT_MS = 120000;
 const DEFAULT_OVERVIEW_PROGRESSIVE = [1, 0.65, 0.35];
 const RECOMPOSE_SCHEMA_IDS = {
@@ -644,7 +650,7 @@ export default class RecomposeTester {
       return this.workspaceContext.summary;
     }
     const glimpsesInfo = await this._collectGlimpses(sourceDir, files);
-    const glimpses = this._renderGlimpsesText(glimpsesInfo);
+    const glimpses = renderGlimpsesText(glimpsesInfo);
     const workspaceHints = buildWorkspaceHintBlock(
       files,
       sourceDir,
@@ -661,10 +667,12 @@ export default class RecomposeTester {
       'Populate "summary" with the narrative overview using markdown headings for Architecture Rhythm, Supporting Cast, and Risk Notes.',
       'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the overview cannot be completed.',
     ]);
-    const attempts = this._buildWorkspaceOverviewAttempts(glimpsesInfo);
+    const attempts = buildWorkspaceOverviewAttempts(glimpsesInfo, {
+      progression: this.workspaceOverviewProgression ?? DEFAULT_OVERVIEW_PROGRESSIVE,
+    });
     let summaryText = "";
     for (const attempt of attempts) {
-      const prompt = this._composeWorkspaceOverviewPrompt({
+      const prompt = composeWorkspaceOverviewPrompt({
         schemaInstructions,
         intro: overviewIntro,
         glimpsesText: attempt.glimpsesText,
@@ -679,7 +687,7 @@ export default class RecomposeTester {
       summaryText = sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
       const needsRetry = this._needsMoreContext(payload) || this._needsWorkspaceRetry(summaryText);
       if (needsRetry) {
-        const retryPrompt = this._composeWorkspaceOverviewPrompt({
+        const retryPrompt = composeWorkspaceOverviewPrompt({
           schemaInstructions,
           intro: overviewIntro,
           glimpsesText: attempt.glimpsesText,
@@ -713,7 +721,10 @@ export default class RecomposeTester {
       },
     );
     if (fallbackUsed) {
-      this._warnWorkspaceOverviewFallback(attempts.length);
+      warnWorkspaceOverviewFallback({
+        promptLogPath: this.promptLogPath,
+        attemptCount: attempts.length,
+      });
     }
     this.workspaceContext = { kind: "code", summary, sourceDir, metadata: this.sampleMetadata };
     await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
@@ -776,7 +787,7 @@ export default class RecomposeTester {
     if (!Array.isArray(files) || files.length === 0) {
       return "Workspace scan produced no narrative glimpses.";
     }
-    const prioritized = this._prioritizeOverviewFiles(files);
+    const prioritized = prioritizeOverviewFiles(files, PRIORITY_REPAIR_TARGETS);
     const glimpses = [];
     let included = 0;
     let budget = MAX_OVERVIEW_CHAR_BUDGET;
@@ -808,106 +819,9 @@ export default class RecomposeTester {
     };
   }
 
-  _renderGlimpsesText(glimpseInfo, limit = null) {
-    if (!glimpseInfo) {
-      return "Workspace scan produced no narrative glimpses.";
-    }
-    const blocks = Array.isArray(glimpseInfo.contentBlocks)
-      ? glimpseInfo.contentBlocks.slice()
-      : ["Workspace scan produced no narrative glimpses."];
-    const total = Math.max(blocks.length, 1);
-    const resolvedLimit =
-      limit === null || limit === undefined ? total : Math.min(Math.max(Math.round(limit), 1), total);
-    const selected = blocks.slice(0, resolvedLimit);
-    const remaining = total - resolvedLimit;
-    if (remaining > 0) {
-      selected.push(`(+${remaining} additional files omitted after trimming the overview context)`);
-    } else if (glimpseInfo.metaNote) {
-      selected.push(glimpseInfo.metaNote);
-    }
-    return selected.join("\n\n");
-  }
-
-  _buildWorkspaceOverviewAttempts(glimpseInfo) {
-    const progression = this.workspaceOverviewProgression ?? DEFAULT_OVERVIEW_PROGRESSIVE;
-    const totalBlocks = Math.max(glimpseInfo?.contentBlocks?.length ?? 0, 1);
-    const attempts = [];
-    const seenLimits = new Set();
-    progression.forEach((fraction, index) => {
-      const normalized = Math.min(Math.max(Number(fraction) || 0, 0.05), 1);
-      const limit = Math.max(1, Math.round(totalBlocks * normalized));
-      if (seenLimits.has(limit)) {
-        return;
-      }
-      seenLimits.add(limit);
-      attempts.push({
-        label: index === 0 ? "recompose:workspace-overview" : `recompose:workspace-overview-trim-${limit}`,
-        glimpsesText: this._renderGlimpsesText(glimpseInfo, limit),
-      });
-    });
-    if (!attempts.length) {
-      attempts.push({
-        label: "recompose:workspace-overview",
-        glimpsesText: this._renderGlimpsesText(glimpseInfo),
-      });
-    }
-    return attempts;
-  }
-
-  _composeWorkspaceOverviewPrompt({
-    schemaInstructions,
-    intro,
-    glimpsesText,
-    workspaceHints,
-    metadataSummary,
-    hintLabel = "Workspace hints",
-  }) {
-    const parts = [
-      schemaInstructions,
-      intro,
-      `Glimpses:\n${glimpsesText}`,
-      workspaceHints ? `${hintLabel}:\n${workspaceHints}` : null,
-      metadataSummary,
-    ];
-    return parts.filter(Boolean).join("\n\n");
-  }
-
   async _readSnippet(filePath) {
     const content = await fs.promises.readFile(filePath, "utf8");
     return content.replace(/\r\n/g, "\n").slice(0, MAX_SNIPPET_CHARS);
-  }
-
-  _prioritizeOverviewFiles(files) {
-    return [...(files ?? [])]
-      .map((relative) => ({
-        relative,
-        score: this._overviewPriorityScore(relative),
-      }))
-      .sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative))
-      .map((entry) => entry.relative);
-  }
-
-  _overviewPriorityScore(relativePath) {
-    const normalized = (relativePath ?? "").toLowerCase();
-    let score = 200 - normalized.length;
-    if (normalized.includes("readme")) {
-      score += 400;
-    }
-    for (const target of PRIORITY_REPAIR_TARGETS) {
-      if (normalized.includes(target)) {
-        score += 250;
-      }
-    }
-    if (normalized.includes("/flows/")) {
-      score += 120;
-    }
-    if (normalized.includes("/shared/")) {
-      score += 90;
-    }
-    if (normalized.endsWith(".md")) {
-      score += 40;
-    }
-    return score;
   }
 
   async _summarizeFileForOverview(baseDir, relativePath) {
@@ -935,12 +849,12 @@ export default class RecomposeTester {
       if (!trimmed) {
         continue;
       }
-      const comment = this._extractCommentNarrative(trimmed);
+      const comment = extractCommentNarrative(trimmed);
       if (comment) {
         summary.push(comment);
         continue;
       }
-      const codeLine = this._summarizeCodeLine(trimmed);
+      const codeLine = summarizeCodeLine(trimmed);
       if (codeLine) {
         summary.push(codeLine);
       }
@@ -957,64 +871,6 @@ export default class RecomposeTester {
     return summary.map((line) => `- ${line}`).join("\n");
   }
 
-  _extractCommentNarrative(line) {
-    if (!line || !OVERVIEW_COMMENT_PREFIX.test(line)) {
-      return null;
-    }
-    return line
-      .replace(/^\/\*+/, "")
-      .replace(/\*+\/$/, "")
-      .replace(/^(?:\/\/+|#+|--|\*+)\s*/, "")
-      .trim();
-  }
-
-  _summarizeCodeLine(line) {
-    if (!line) {
-      return null;
-    }
-    const fn = line.match(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/);
-    if (fn) {
-      return `Defines function ${fn[1]}().`;
-    }
-    const arrow = line.match(/^(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>/);
-    if (arrow) {
-      return `Introduces helper ${arrow[1]} via arrow function.`;
-    }
-    const classMatch = line.match(/^(?:export\s+)?class\s+([A-Za-z0-9_$]+)/);
-    if (classMatch) {
-      return `Declares class ${classMatch[1]}.`;
-    }
-    const importMatch = line.match(/^import\s+(?:.+)\s+from\s+["'](.+)["']/);
-    if (importMatch) {
-      return `Imports module ${importMatch[1]}.`;
-    }
-    const requireMatch = line.match(/^const\s+([A-Za-z0-9_$]+)\s*=\s*require\(["'](.+)["']\)/);
-    if (requireMatch) {
-      return `Requires module ${requireMatch[2]} as ${requireMatch[1]}.`;
-    }
-    const exportConst = line.match(/^export\s+(?:const|let|var)\s+([A-Za-z0-9_$]+)/);
-    if (exportConst) {
-      return `Exports constant ${exportConst[1]}.`;
-    }
-    if (/return\s+[{[]/.test(line)) {
-      return "Returns a structured object.";
-    }
-    if (/logger\./i.test(line)) {
-      return "Emits structured telemetry.";
-    }
-    return null;
-  }
-
-  _warnWorkspaceOverviewFallback(attemptCount) {
-    const logLabel = this.promptLogPath ? relativeToCwd(this.promptLogPath) : null;
-    const attempts = Number(attemptCount) || 1;
-    const suffix = logLabel ? ` (see ${logLabel})` : "";
-    console.warn(
-      `[MiniPhi][Recompose] Workspace overview prompt failed after ${attempts} attempt${
-        attempts === 1 ? "" : "s"
-      }; saved a fallback summary built from file glimpses${suffix}. Re-run with --workspace-overview-timeout to grant Phi more time if needed.`,
-    );
-  }
 
   async _captureBaselineSignatures(codeDir) {
     if (!codeDir) {

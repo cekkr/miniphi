@@ -128,6 +128,10 @@ export function parseMarkdown(raw) {
   return { metadata, body: body.trim() };
 }
 
+const DEFAULT_GLIMPSE_FALLBACK = "Workspace scan produced no narrative glimpses.";
+const DEFAULT_COMMENT_PREFIX = /^(?:\/\/+|\/\*+|\*+|#+|--)/;
+const DEFAULT_WORKSPACE_OVERVIEW_PROGRESSION = [1, 0.65, 0.35];
+
 export function normalizeWhitespace(text) {
   return (text ?? "").replace(/\s+/g, " ").trim();
 }
@@ -295,4 +299,162 @@ export function summarizeDiff(baseline, candidate) {
     output.push(`+ [${i + 1}] ${truncateLine(right)}`);
   }
   return output.length ? output.join("\n") : null;
+}
+
+export function renderGlimpsesText(glimpseInfo, limit = null) {
+  if (!glimpseInfo) {
+    return DEFAULT_GLIMPSE_FALLBACK;
+  }
+  const blocks = Array.isArray(glimpseInfo.contentBlocks)
+    ? glimpseInfo.contentBlocks.slice()
+    : [DEFAULT_GLIMPSE_FALLBACK];
+  const total = Math.max(blocks.length, 1);
+  const resolvedLimit =
+    limit === null || limit === undefined ? total : Math.min(Math.max(Math.round(limit), 1), total);
+  const selected = blocks.slice(0, resolvedLimit);
+  const remaining = total - resolvedLimit;
+  if (remaining > 0) {
+    selected.push(`(+${remaining} additional files omitted after trimming the overview context)`);
+  } else if (glimpseInfo.metaNote) {
+    selected.push(glimpseInfo.metaNote);
+  }
+  return selected.join("\n\n");
+}
+
+export function buildWorkspaceOverviewAttempts(glimpseInfo, options = undefined) {
+  const progression = Array.isArray(options?.progression) && options.progression.length
+    ? options.progression
+    : DEFAULT_WORKSPACE_OVERVIEW_PROGRESSION;
+  const totalBlocks = Math.max(glimpseInfo?.contentBlocks?.length ?? 0, 1);
+  const attempts = [];
+  const seenLimits = new Set();
+  progression.forEach((fraction, index) => {
+    const normalized = Math.min(Math.max(Number(fraction) || 0, 0.05), 1);
+    const limit = Math.max(1, Math.round(totalBlocks * normalized));
+    if (seenLimits.has(limit)) {
+      return;
+    }
+    seenLimits.add(limit);
+    attempts.push({
+      label: index === 0 ? "recompose:workspace-overview" : `recompose:workspace-overview-trim-${limit}`,
+      glimpsesText: renderGlimpsesText(glimpseInfo, limit),
+    });
+  });
+  if (!attempts.length) {
+    attempts.push({
+      label: "recompose:workspace-overview",
+      glimpsesText: renderGlimpsesText(glimpseInfo),
+    });
+  }
+  return attempts;
+}
+
+export function composeWorkspaceOverviewPrompt({
+  schemaInstructions,
+  intro,
+  glimpsesText,
+  workspaceHints,
+  metadataSummary,
+  hintLabel = "Workspace hints",
+}) {
+  const parts = [
+    schemaInstructions,
+    intro,
+    `Glimpses:\n${glimpsesText}`,
+    workspaceHints ? `${hintLabel}:\n${workspaceHints}` : null,
+    metadataSummary,
+  ];
+  return parts.filter(Boolean).join("\n\n");
+}
+
+export function overviewPriorityScore(relativePath, priorityTargets = []) {
+  const normalized = (relativePath ?? "").toLowerCase();
+  let score = 200 - normalized.length;
+  if (normalized.includes("readme")) {
+    score += 400;
+  }
+  for (const target of priorityTargets) {
+    if (normalized.includes(target)) {
+      score += 250;
+    }
+  }
+  if (normalized.includes("/flows/")) {
+    score += 120;
+  }
+  if (normalized.includes("/shared/")) {
+    score += 90;
+  }
+  if (normalized.endsWith(".md")) {
+    score += 40;
+  }
+  return score;
+}
+
+export function prioritizeOverviewFiles(files, priorityTargets = []) {
+  return [...(files ?? [])]
+    .map((relative) => ({
+      relative,
+      score: overviewPriorityScore(relative, priorityTargets),
+    }))
+    .sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative))
+    .map((entry) => entry.relative);
+}
+
+export function extractCommentNarrative(line, commentPrefix = DEFAULT_COMMENT_PREFIX) {
+  if (!line || !(commentPrefix ?? DEFAULT_COMMENT_PREFIX).test(line)) {
+    return null;
+  }
+  return line
+    .replace(/^\/\*+/, "")
+    .replace(/\*+\/$/, "")
+    .replace(/^(?:\/\/+|#+|--|\*+)\s*/, "")
+    .trim();
+}
+
+export function summarizeCodeLine(line) {
+  if (!line) {
+    return null;
+  }
+  const fn = line.match(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/);
+  if (fn) {
+    return `Defines function ${fn[1]}().`;
+  }
+  const arrow = line.match(/^(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>/);
+  if (arrow) {
+    return `Introduces helper ${arrow[1]} via arrow function.`;
+  }
+  const classMatch = line.match(/^(?:export\s+)?class\s+([A-Za-z0-9_$]+)/);
+  if (classMatch) {
+    return `Declares class ${classMatch[1]}.`;
+  }
+  const importMatch = line.match(/^import\s+(?:.+)\s+from\s+["'](.+)["']/);
+  if (importMatch) {
+    return `Imports module ${importMatch[1]}.`;
+  }
+  const requireMatch = line.match(/^const\s+([A-Za-z0-9_$]+)\s*=\s*require\(["'](.+)["']\)/);
+  if (requireMatch) {
+    return `Requires module ${requireMatch[2]} as ${requireMatch[1]}.`;
+  }
+  const exportConst = line.match(/^export\s+(?:const|let|var)\s+([A-Za-z0-9_$]+)/);
+  if (exportConst) {
+    return `Exports constant ${exportConst[1]}.`;
+  }
+  if (/return\s+[{[]/.test(line)) {
+    return "Returns a structured object.";
+  }
+  if (/logger\./i.test(line)) {
+    return "Emits structured telemetry.";
+  }
+  return null;
+}
+
+export function warnWorkspaceOverviewFallback({ promptLogPath, attemptCount } = {}) {
+  const logLabel = promptLogPath ? relativeToCwd(promptLogPath) : null;
+  const attempts = Number(attemptCount) || 1;
+  const suffix = logLabel ? ` (see ${logLabel})` : "";
+  console.warn(
+    `[MiniPhi][Recompose] Workspace overview prompt failed after ${attempts} attempt${
+      attempts === 1 ? "" : "s"
+    }; saved a fallback summary built from file glimpses${suffix}. Re-run with --workspace-overview-timeout to grant Phi more time if needed.`,
+  );
 }
