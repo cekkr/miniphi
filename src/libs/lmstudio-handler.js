@@ -179,6 +179,9 @@ export class LMStudioHandler {
         traceContext.responseFormat = requestedResponseFormat;
       }
       const startedAt = Date.now();
+      const slowStartThresholdMs = this._resolveSlowStartThreshold();
+      let firstTokenAt = null;
+      let slowStartEmitted = false;
       const capturedThoughts = [];
       let requestSnapshot = null;
       let result = "";
@@ -190,6 +193,39 @@ export class LMStudioHandler {
       let rawFragmentCount = 0;
       let solutionTokenCount = 0;
       const useRestTransport = this._shouldUseRest(traceContext);
+      const maybeRecordSlowStart = (tokenTime, transport) => {
+        if (slowStartEmitted) {
+          return;
+        }
+        if (!Number.isFinite(slowStartThresholdMs) || slowStartThresholdMs <= 0) {
+          return;
+        }
+        const delayMs = tokenTime - startedAt;
+        if (delayMs < slowStartThresholdMs) {
+          return;
+        }
+        slowStartEmitted = true;
+        const seconds = Math.round(delayMs / 1000);
+        const thresholdSeconds = Math.round(slowStartThresholdMs / 1000);
+        this._recordPromptEvent(traceContext, requestSnapshot, {
+          eventType: "slow-start",
+          severity: "warn",
+          message: `First token delayed ${seconds}s (threshold ${thresholdSeconds}s).`,
+          metadata: {
+            timeToFirstTokenMs: delayMs,
+            thresholdMs: slowStartThresholdMs,
+            transport,
+            schemaId: traceContext.schemaId ?? requestSnapshot?.schemaId ?? null,
+          },
+        });
+      };
+      const markFirstToken = (transport) => {
+        if (firstTokenAt) {
+          return;
+        }
+        firstTokenAt = Date.now();
+        maybeRecordSlowStart(firstTokenAt, transport);
+      };
       const cancelPrediction = (message) => {
         if (solutionStreamHandle && typeof solutionStreamHandle.destroy === "function") {
           try {
@@ -272,6 +308,7 @@ export class LMStudioHandler {
           );
           rawFragmentCount = result ? 1 : 0;
           solutionTokenCount = this._approximateTokens(result);
+          markFirstToken("rest");
           if (onToken && result) {
             onToken(result);
           }
@@ -289,6 +326,7 @@ export class LMStudioHandler {
           readable.on("data", () => {
             rawFragmentCount += 1;
             resetHeartbeat();
+            markFirstToken("ws");
           });
           const solutionStream = readable.pipe(parser);
           solutionStreamHandle = solutionStream;
@@ -359,6 +397,7 @@ export class LMStudioHandler {
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
+          timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
           stream: {
             rawFragments: rawFragmentCount,
             solutionTokens: solutionTokenCount,
@@ -503,6 +542,7 @@ export class LMStudioHandler {
             reasoning: capturedThoughts,
             startedAt,
             finishedAt,
+            timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
             stream: {
               rawFragments: rawFragmentCount,
               solutionTokens: solutionTokenCount,
@@ -950,6 +990,18 @@ export class LMStudioHandler {
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptPerformanceTracker");
     }
+  }
+
+  _resolveSlowStartThreshold() {
+    const candidates = [];
+    if (Number.isFinite(this.noTokenTimeoutMs) && this.noTokenTimeoutMs > 0) {
+      candidates.push(Math.round(this.noTokenTimeoutMs * 0.1));
+    }
+    if (Number.isFinite(this.promptTimeoutMs) && this.promptTimeoutMs > 0) {
+      candidates.push(Math.round(this.promptTimeoutMs * 0.25));
+    }
+    const base = candidates.length ? Math.min(...candidates) : 30000;
+    return Math.max(5000, Math.min(base, 60000));
   }
 
   _composeRecorderMetadata(traceContext, responseSnapshot) {
