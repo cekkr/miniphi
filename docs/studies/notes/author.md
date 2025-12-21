@@ -123,3 +123,9 @@ Execute the benchmark step-by-step to improve initial prompt templates, testing 
 Run the test commands BY YOURSELF, to evaluate and implement edits in real time and more over because were mostly created for AI test use. Read the run outputs in real time to avoid infinity-loops or lack-of-exit issue.
 
 Make tests about "context length overflow" splitting: given the max tokens in context allowed by LM Studio API, learn how to split the current task in sub task, taking advantage of model itself to learn how to split the task in two or multiple tasks and re-merging the result in the most efficient way.
+
+# Next test:
+Next steps (optional, to exercise the new recompose JSON chain end‑to‑end):
+
+node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --recompose-mode live --verbose
+benchmark-plan.yaml --clean --verbose
