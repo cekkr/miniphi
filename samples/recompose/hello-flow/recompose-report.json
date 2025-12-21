@@ -7,7 +7,7 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 32870,
+      "durationMs": 62332,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
@@ -17,156 +17,82 @@
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 875,
+      "durationMs": 882052,
       "processed": 9,
-      "converted": 0,
-      "skipped": 9,
+      "converted": 9,
+      "skipped": 0,
       "outputDir": "samples/recompose/hello-flow/reconstructed",
-      "warnings": [
-        {
-          "path": "README.md.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/pipeline.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/steps/normalize.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/steps/validate.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/greeter.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/index.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/math.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/shared/logger.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/shared/persistence/memory-store.js.md",
-          "reason": "Phi-4 response did not include code after retry."
-        }
-      ]
+      "warnings": []
     },
     {
       "phase": "repair",
       "attempted": 9,
-      "repaired": 0,
-      "skipped": [
-        {
-          "path": "README.md",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/steps/validate.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/greeter.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/math.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/shared/logger.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/shared/persistence/memory-store.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/pipeline.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/flows/steps/normalize.js",
-          "reason": "Phi-4 response did not include code after retry."
-        },
-        {
-          "path": "src/index.js",
-          "reason": "Phi-4 response did not include code after retry."
-        }
-      ],
+      "repaired": 9,
+      "skipped": [],
       "initialMismatches": 9,
       "initialMissing": 0,
-      "durationMs": 623
+      "durationMs": 345324
     },
     {
       "phase": "comparison",
-      "durationMs": 10,
+      "durationMs": 11,
       "matches": 0,
       "mismatches": [
         {
           "path": "README.md",
           "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
-          "candidateHash": "d096bfe0108abed3c16909c20949e52a1c088d499b9cdbb53be9ef2b86b58e15"
+          "candidateHash": "d2e460f7e89c7593aff72c4fb36aae7ddfe3c7d12ffa8db4d2c7cf3b6e071cd7"
         },
         {
           "path": "src/flows/pipeline.js",
           "baselineHash": "88863b2c0a2e020ecee096053b7879039e80b2c32e3cdd907f6a1e706acceb09",
-          "candidateHash": "fc1e1946bd35eedc90142e92d8ad2b5e0393e5f0ca35855e1c699d4544c0067b"
+          "candidateHash": "3b6bbc1a329b3d2762a75d058d3c0040e5214d7a797f05cc915ea143bce1638c"
         },
         {
           "path": "src/flows/steps/normalize.js",
           "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
-          "candidateHash": "432bef7342f189f9b7623c55571fc67e4eeaca7bbcbc0dcc62dcd85918f20a66"
+          "candidateHash": "c0567c4afa2efc61d0c01649138b11880caf62755c3f94d90c2b92e7491e8671"
         },
         {
           "path": "src/flows/steps/validate.js",
           "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
-          "candidateHash": "3db3c6ff597e22869a3409961fc3ce8799557e2ea6a923ca11ed80210b09de73"
+          "candidateHash": "074903c71f94a30c63cd4b93b0b6e96f17f8f43ea43fb8eaf6fe34186c32c30a"
         },
         {
           "path": "src/greeter.js",
           "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
-          "candidateHash": "97cf3effa849fdf8d54b99e719e8063598e8fc858514fc89e48b7f10f957c192"
+          "candidateHash": "d2a563009d4fef36234fbf80f39050b6acfe6475a07a457027a4c16135187e8e"
         },
         {
           "path": "src/index.js",
           "baselineHash": "0d71eb707442c7bd5064d6ed2a18e79c600ab65216f59e1f756f0ce7f5d0acd8",
-          "candidateHash": "b5683eca7daea379539897f0fdebd58f7fe1f7a9f5c9b93cd9ae0180ef4be6c8"
+          "candidateHash": "45ee756deebbcd93861b8dc9e98559c89d19c5523960fab58b7cf29901585ef9"
         },
         {
           "path": "src/math.js",
           "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
-          "candidateHash": "24b97361e2d6e9f797035143e6591241d8f076071519690910638a237c391576"
+          "candidateHash": "daa42aa77e4e952caf4dd9c5ec721295c1bb0ac65cd3e63db1df23a20c1a6e4b"
         },
         {
           "path": "src/shared/logger.js",
           "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
-          "candidateHash": "072791a20cce427fd7abda3cf235fea053e9b88e8b5b59b6252580019b298b8e"
+          "candidateHash": "19173f248fd8524abd3bf7fad305adfb5b7b5e088eeaf0852ef158ea3b433935"
         },
         {
           "path": "src/shared/persistence/memory-store.js",
           "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
-          "candidateHash": "ebd446e56670adb6dd66274e27edb267d16efc3360400cb1d07ba3dbcf2e144d"
+          "candidateHash": "fb17b6a3b0063164ea2c41237f8f35ff09bc4ee19a81e92bbd8daa74a169a897"
         }
       ],
       "missing": [],
       "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-12-21T15-41-27-853Z-recompose",
-  "promptLog": ".miniphi/recompose/2025-12-21T15-41-27-853Z-recompose/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-12-21T16-08-30-750Z-recompose",
+  "promptLog": ".miniphi/recompose/2025-12-21T16-08-30-750Z-recompose/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
+    "summary": "## Overview\n# Architecture Rhythm\n- Modular design with layered imports: greeter, math, and flows.\n- Pipeline orchestrates steps (normalize, validate) via logger and memory-store.\n- Telemetry emission at each step for observability.\n\n## Flow\n# Supporting Cast\n- greeter.js: greeting/farewell utilities.\n- math.js: average/trend calculations.\n- logger.js: structured logging with helper write.\n- memory-store.js: in-memory persistence layer.\n\n## Signals\n# Risk Notes\n- Missing telemetry schema or validation rules.\n- No error handling for math operations (e.g., empty arrays).",
     "sourceDir": "samples/recompose/hello-flow/code",
     "metadata": {
       "sampleDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow",
@@ -218,6 +144,6 @@
     }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-12-21T15:42:02.282Z",
+  "generatedAt": "2025-12-21T16:30:00.522Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }

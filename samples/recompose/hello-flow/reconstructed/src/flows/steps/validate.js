@@ -1,5 +1,27 @@
-// Offline stub generated for src/flows/steps/validate.js
-// Narrative excerpt: ## Purpose The file src/flows/steps/validate.js operates as a javascript module with roughly 41 lines. It focuses on orchestration and light data shaping. ## Key Elements - Dependencies: internal-only
-export default function src_flows_steps_validate_jsStub() {
-  throw new Error("Offline stub executed for src/flows/steps/validate.js");
+export function validateStep(data, telemetry) {
+  // Sanitize input
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid data provided');
+  }
+
+  const { name } = data;
+  if (!name || typeof name !== 'string') {
+    throw new Error('Name must be a non-empty string');
+  }
+
+  // Coordinate helper utilities
+  console.log(`Processing validation for: ${name}`);
+
+  // Handle edge cases (insufficient samples, missing state)
+  if (!telemetry || !Array.isArray(telemetry)) {
+    throw new Error('Telemetry must be an array');
+  }
+
+  return {
+    validatedData: data,
+    telemetryEvents: telemetry.map(event => ({
+      ...event,
+      timestamp: Date.now()
+    }))
+  };
 }

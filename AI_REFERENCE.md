@@ -202,8 +202,21 @@ These are the currently "fixed reference points" of miniphi project:
 ### Recompose prompt watchdogs
 - `recompose:workspace-overview` timed out twice at the 2-minute Phi-4 budget while converting `samples/recompose/hello-flow` (`.miniphi/recompose/2025-11-20T06-27-04-083Z-recompose/prompts.log`), so add a dedicated prompt timeout knob plus progressive summarization that feeds trimmed glimpses before retrying.
 - When the overview prompt fails, subsequent code/description conversions abort silently; capture the partial overview result and surface it in the CLI output with a retry recommendation instead of only logging to `.miniphi/recompose/<timestamp>/prompts.log`.
+- Live recompose roundtrip (2025-12-21) still yielded 0/9 matches; treat this as a tracked regression until fixed and rerun.
+- When codegen returns `needs_more_context`, stop writing output, collect the requested snippets (narratives/plans), and re-prompt before saving files.
+- Block JSON-as-code fallback in recompose codegen; only accept code when `payload.code` is a non-empty string.
+- Upgrade signature validation to detect `export default` and enforce export style even when the candidate output omits it.
+- Auto-inject dependency narratives/plans when codegen asks for missing helpers (e.g., greet/computeStats/logger).
+- Add per-file compare gates and diff-summary retries while the context is still fresh.
 
 ## General next steps
+### Recompose promotion
+- Promote the narrative -> plan -> codegen pipeline as a generic file-rebuild tool for run/workspace prompts.
+- Reuse the diff-summary repair loop as a generic post-edit guard for any LLM-written file.
+- Enforce the needs_more_context/missing_snippets handshake with auto-context gathering across all prompt flows.
+- Preserve exports and module style as a shared validation step for any code edits.
+- Standardize per-file prompt logs and artifacts under `.miniphi/` beyond recompose/benchmark.
+
 ### High-priority general-purpose focus
 - Treat non-code workspaces (books, docs, data) as first-class: detect repo shape, frame decomposer/plan prompts around that context, and cache the workspace hints so follow-up runs default to the right editing behaviors.
 - Make general-purpose helper reuse safe: version helpers under project and global `.miniphi/helpers/`, keep rollback copies, monitor stdout/exit timing to kill potential infinite loops, and allow optional stdin injection when replaying helpers.

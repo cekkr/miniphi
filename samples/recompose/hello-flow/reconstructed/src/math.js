@@ -1,8 +1,14 @@
-// Offline stub generated for src/math.js
-// Narrative excerpt: ## Purpose The file src/math.js operates as a javascript module with roughly 20 lines. Exposes 2 exported symbols (average, describeTrend). ## Key Elements - Dependencies: internal-only helpers. - Pub
-export function average() {
-  throw new Error("Offline stub executed for src/math.js");
-}
-export function describeTrend() {
-  throw new Error("Offline stub executed for src/math.js");
-}
+export const average = (arr) => {
+  if (!Array.isArray(arr)) return null;
+  const nums = arr.filter(n => typeof n === 'number' && !isNaN(n));
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+};
+
+export const describeTrend = (arr) => {
+  if (!Array.isArray(arr)) return 'invalid';
+  const nums = arr.filter(n => typeof n === 'number' && !isNaN(n));
+  if (nums.length < 2) return 'insufficient data';
+  const trend = nums[nums.length - 1] - nums[0];
+  return trend > 0 ? 'upward' : trend < 0 ? 'downward' : 'stable';
+};
