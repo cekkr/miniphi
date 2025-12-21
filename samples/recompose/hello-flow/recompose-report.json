@@ -7,17 +7,17 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 35965,
+      "durationMs": 32870,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "cacheHits": 0,
+      "cacheHits": 9,
       "concurrency": 1,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 848,
+      "durationMs": 875,
       "processed": 9,
       "converted": 0,
       "skipped": 9,
@@ -105,11 +105,11 @@
       ],
       "initialMismatches": 9,
       "initialMissing": 0,
-      "durationMs": 625
+      "durationMs": 623
     },
     {
       "phase": "comparison",
-      "durationMs": 7,
+      "durationMs": 10,
       "matches": 0,
       "mismatches": [
         {
@@ -162,8 +162,8 @@
       "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-12-21T15-29-21-649Z-recompose",
-  "promptLog": ".miniphi/recompose/2025-12-21T15-29-21-649Z-recompose/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-12-21T15-41-27-853Z-recompose",
+  "promptLog": ".miniphi/recompose/2025-12-21T15-41-27-853Z-recompose/prompts.log",
   "workspaceContext": {
     "kind": "code",
     "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
@@ -218,6 +218,6 @@
     }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-12-21T15:29:59.155Z",
+  "generatedAt": "2025-12-21T15:42:02.282Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }

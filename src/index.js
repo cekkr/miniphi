@@ -11,7 +11,7 @@ import LMStudioManager, {
   normalizeLmStudioWsUrl,
 } from "./libs/lmstudio-api.js";
 import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
-import Phi4Handler, { LMStudioProtocolError } from "./libs/lms-phi4.js";
+import LMStudioHandler, { LMStudioProtocolError } from "./libs/lmstudio-handler.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
@@ -1642,7 +1642,7 @@ async function main() {
       `[MiniPhi] Prompt timeout ${promptSeconds}s | No-token timeout ${noTokenSeconds}s | LM Studio WS ${wsLabel} | REST ${restLabel}`,
     );
   }
-  const phi4 = new Phi4Handler(manager, {
+  const phi4 = new LMStudioHandler(manager, {
     systemPrompt: resolvedSystemPrompt,
     promptTimeoutMs,
     schemaRegistry,
@@ -2209,7 +2209,7 @@ const describeWorkspace = (dir, options = undefined) =>
   try {
     await phi4.load({ contextLength, gpu });
     if (performanceTracker) {
-        scoringPhi = new Phi4Handler(manager, {
+        scoringPhi = new LMStudioHandler(manager, {
           systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
           schemaRegistry,
           noTokenTimeoutMs,
@@ -4372,7 +4372,7 @@ async function createRecomposeHarness({
         millisLabel: "config.prompt.timeoutMs",
       }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
     const recomposePromptTimeout = Math.max(baseTimeoutMs, 300000);
-    phi4 = new Phi4Handler(manager, {
+    phi4 = new LMStudioHandler(manager, {
       systemPrompt: systemPrompt ?? promptDefaults.system,
       promptTimeoutMs: recomposePromptTimeout,
       schemaRegistry,

@@ -121,7 +121,7 @@ The model's characteristic \<think\>...\</think\> output is not an automatic beh
 
 This prompt begins:  
 "You are Phi, a language model trained by Microsoft to help users. Your role as an assistant involves thoroughly exploring questions through a systematic thinking process... Please structure your response into two main sections: Thought and Solution using the specified format: \<think\> Thought section \</think\> Solution section...".36  
-Failure to provide this *exact* system prompt as the *first* message in the chat history will likely result in the model failing to generate the \<think\>...\</think\> block. Therefore, this is not an optional user parameter. The Layer 2 Phi4Handler library *must* automatically prepend this system prompt to any new chat session as a non-negotiable component of using this model.
+Failure to provide this *exact* system prompt as the *first* message in the chat history will likely result in the model failing to generate the \<think\>...\</think\> block. Therefore, this is not an optional user parameter. The Layer 2 LMStudioHandler library *must* automatically prepend this system prompt to any new chat session as a non-negotiable component of using this model.
 
 ### **2.3 Managing Conversational Context and Token Limits**
 
@@ -310,7 +310,7 @@ export class LMStudioManager {
   }  
 }
 
-### **4.2 Library 2: Phi4Handler (Layer 2 \- Interaction Management)**
+### **4.2 Library 2: LMStudioHandler (Layer 2 \- Interaction Management)**
 
 This class consumes the LMStudioManager and implements all "Phi-4-Reasoning-Plus" specific logic, including prompt injection, context management, and the FSM stream parser.
 
@@ -416,7 +416,7 @@ export class Phi4StreamParser extends Transform {
   }  
 }
 
-**File: Phi4Handler.ts**
+**File: LMStudioHandler.ts**
 
 TypeScript
 
@@ -434,7 +434,7 @@ type OnErrorHandler \= (error: string) \=\> void;
  \* Implements the Layer 2 logic for interacting specifically with  
  \* "Phi 4 Reasoning Plus".  
  \*/  
-export class Phi4Handler {  
+export class LMStudioHandler {  
   private manager: LMStudioManager;  
   private model: LLM | null \= null;  
   private chatHistory: Message;  
@@ -585,13 +585,13 @@ export class Phi4Handler {
 The provided two-layer architecture fulfills all requirements of the user query.
 
 * **Layer 1 (LMStudioManager)** provides a robust, JIT-based resource manager for the LM Studio server, directly addressing the need to control model loading, ejection, and configuration parameters like contextLength.8  
-* **Layer 2 (Phi4Handler)** provides a specialized, model-aware client for "Phi-4-Reasoning-Plus." It automatically handles the mandatory system prompt 36, implements a token-aware sliding window for context management 34, and, most critically, uses a Finite-State Machine parser to separate the \<think\> block from the "solution" in a real-time stream.14
+* **Layer 2 (LMStudioHandler)** provides a specialized, model-aware client for "Phi-4-Reasoning-Plus." It automatically handles the mandatory system prompt 36, implements a token-aware sliding window for context management 34, and, most critically, uses a Finite-State Machine parser to separate the \<think\> block from the "solution" in a real-time stream.14
 
 Developers implementing this solution must remain aware of three critical failure modes:
 
 1. **Infrastructure Failure (Server-Side Parsing):** Some server backends (e.g., vLLM or llama-server) can be configured with a reasoning\_parser that *intercepts* and *strips* the \<think\> tags from the stream, moving them to a metadata field.66 This will break the client-side Phi4StreamParser. The LM Studio server configuration must be verified to ensure it is passing the raw, unmodified token stream to the client.  
 2. **Model Failure (Unclosed Tag):** The model may generate \<think\> but fail to generate a corresponding \</think\> before ending its generation.65 The provided Phi4StreamParser is designed to handle this: its \_flush method detects the unclosed THINKING state and emits the content as a \`\`, preventing the application from hanging.  
-3. **Prompting Failure (Missing System Prompt):** Failure to provide the specific "You are Phi..." system prompt 36 will result in the model *not* generating the \<think\> block. The provided Phi4Handler class mitigates this entirely by hard-coding this prompt in its constructor, ensuring it is always the first message in any new chat session.
+3. **Prompting Failure (Missing System Prompt):** Failure to provide the specific "You are Phi..." system prompt 36 will result in the model *not* generating the \<think\> block. The provided LMStudioHandler class mitigates this entirely by hard-coding this prompt in its constructor, ensuring it is always the first message in any new chat session.
 
 #### **Bibliografia**
 

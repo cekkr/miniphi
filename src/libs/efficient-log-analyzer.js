@@ -46,7 +46,9 @@ function sanitizeResponseSchemaName(name) {
 export default class EfficientLogAnalyzer {
   constructor(phi4Handler, cliExecutor, pythonSummarizer, options = undefined) {
     if (!phi4Handler || !cliExecutor || !pythonSummarizer) {
-      throw new Error("EfficientLogAnalyzer requires Phi4Handler, CliExecutor, and PythonLogSummarizer instances.");
+      throw new Error(
+        "EfficientLogAnalyzer requires LMStudioHandler, CliExecutor, and PythonLogSummarizer instances.",
+      );
     }
     this.phi4 = phi4Handler;
     this.cli = cliExecutor;

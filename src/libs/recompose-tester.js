@@ -519,7 +519,7 @@ export default class RecomposeTester {
       });
       code = this._extractCodeFromPayload(response.payload, response.raw);
       if (!code) {
-        throw new Error("Phi-4 response did not include code after retry.");
+        throw new Error(`${this._modelLabel()} response did not include code after retry.`);
       }
     }
     await this._writeSessionAsset(
@@ -686,7 +686,7 @@ export default class RecomposeTester {
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the overview cannot be completed.',
       ]),
       "The workspace contains prose-only descriptions of code files.",
-      "Summarize the project from these excerpts so Phi-4 can rebuild it.",
+      `Summarize the project from these excerpts so ${this._modelLabel()} can rebuild it.`,
       `Excerpts:\n${excerpts.join("\n\n")}`,
       formatMetadataSummary(this.sampleMetadata),
     ].join("\n\n");
@@ -1081,6 +1081,10 @@ export default class RecomposeTester {
     return null;
   }
 
+  _modelLabel() {
+    return this.phi4?.modelKey ?? "model";
+  }
+
   async _promptPhi(prompt, traceOptions = undefined) {
     const started = Date.now();
     let response = "";
@@ -1104,7 +1108,7 @@ export default class RecomposeTester {
         label: traceOptions?.label ?? this.promptLabel,
         prompt,
         response: "",
-        error: "Phi-4 bypassed (offline fallback)",
+        error: `${this._modelLabel()} bypassed (offline fallback)`,
         metadata: traceOptions?.metadata ?? null,
         durationMs: 0,
       });
@@ -1406,7 +1410,9 @@ export default class RecomposeTester {
     if (this.promptFailureBudget <= 0) {
       this.offlineFallbackActive = true;
       if (this.verboseLogging) {
-        console.warn("[MiniPhi][Recompose] Enabling offline fallback after repeated Phi-4 failures.");
+        console.warn(
+          `[MiniPhi][Recompose] Enabling offline fallback after repeated ${this._modelLabel()} failures.`,
+        );
       }
     }
   }
@@ -1803,7 +1809,7 @@ export default class RecomposeTester {
 
   _requirePhi() {
     if (!this.offlineFallbackActive && !this.phi4) {
-      throw new Error("Phi-4 handler is required for live recompose benchmarks.");
+      throw new Error("LM Studio handler is required for live recompose benchmarks.");
     }
   }
 

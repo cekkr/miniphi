@@ -86,7 +86,7 @@ Consider extending the offline summaries (both recompose + benchmark) with quick
 Changes
 
 src/libs/lmstudio-api.js (lines 160-181) now treats cached models as compatible when the existing context window is already larger than the request, so the scoring Phi instance no longer ejects the main handle by asking for a smaller context.
-src/libs/lms-phi4.js (lines 100-214) reworks chatStream into a two-attempt loop that retries once after “model not loaded / unloaded / instance reference” errors, reuses the request metadata, and attaches explicit error listeners to both the LM Studio iterator and the parser stream so “Model unloaded” events are caught instead of crashing the process. The method now reports a final failure only after the retry budget is exhausted and records schema failures exactly once.
+src/libs/lmstudio-handler.js (lines 100-214) reworks chatStream into a two-attempt loop that retries once after “model not loaded / unloaded / instance reference” errors, reuses the request metadata, and attaches explicit error listeners to both the LM Studio iterator and the parser stream so “Model unloaded” events are caught instead of crashing the process. The method now reports a final failure only after the retry budget is exhausted and records schema failures exactly once.
 src/index.js (lines 1887-1904) raises the live recompose prompt timeout to at least five minutes so Phi-4 can finish the long “file-plan” prompts without being forcibly aborted at the global 2‑minute setting.
 Benchmark Runs
 

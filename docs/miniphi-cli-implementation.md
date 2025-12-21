@@ -7,7 +7,7 @@
 ### Architecture Summary
 
 - **Layer 1 – LMStudioManager:** Handles efficient JIT model loading/unloading and resource allocation for LMStudio-supported models.
-- **Layer 2 – Phi4Handler:** Adds precise prompt management, context-history truncation, and parsing of reasoning blocks (think/solution separation) for Phi-4.
+- **Layer 2 – LMStudioHandler:** Adds precise prompt management, context-history truncation, and parsing of reasoning blocks (think/solution separation) for Phi-4.
 - **Layer 3 – MiniPhi Agent:** Orchestrates decomposition of complex goals, compresses context via multiple strategies, manages multi-turn, long-memory workflows, and consolidates knowledge for optimal token utilization.
 
 ## Core Features & Algorithms
@@ -67,7 +67,7 @@
 ## Implementation Roadmap
 
 **Phase 1: Foundation (Week 1-2)**
-- LMStudioManager and Phi4Handler core integration
+- LMStudioManager and LMStudioHandler core integration
 - Basic inference, context management, token truncation
 
 **Phase 2: Compression Engine (Week 3-4)**
@@ -105,7 +105,7 @@
 
 # MiniPhi: Detailed Implementation Guide - Compression Tools & Architecture Integration
 
-## Part 1: How lmstudio-api.js and lms-phi4.js Integrate into MiniPhi
+## Part 1: How lmstudio-api.js and lmstudio-handler.js Integrate into MiniPhi
 
 ### Three-Layer Architecture Visualization
 
@@ -120,7 +120,7 @@
 └──────────────────────┬──────────────────────────────────┘
                        │ (Uses)
 ┌──────────────────────┴──────────────────────────────────┐
-│  Layer 2: Phi4Handler (lms-phi4.js)                      │
+│  Layer 2: LMStudioHandler (lmstudio-handler.js)                      │
 │  (Phi-4 specific behavior & optimization)                │
 │  - load(config)                                          │
 │  - chatStream(prompt, onToken, onThink, onError)        │
@@ -251,9 +251,9 @@ const model3 = await manager.getModel('microsoft/Phi-4-reasoning-plus', {
 
 ---
 
-### Layer 2: Phi4Handler (lms-phi4.js) - Detailed Breakdown
+### Layer 2: LMStudioHandler (lmstudio-handler.js) - Detailed Breakdown
 
-**File:** `lms-phi4.js`
+**File:** `lmstudio-handler.js`
 
 **Purpose:** Handle Phi-4 specific features: system prompt, context truncation, stream parsing
 
@@ -467,12 +467,12 @@ Parser receives:
 
 ### Layer 3: MiniPhi Agent Integration
 
-**How it uses Layer 2 (Phi4Handler):**
+**How it uses Layer 2 (LMStudioHandler):**
 
 ```javascript
 class MiniPhiAgent {
-  constructor(phi4Handler) {
-    this.phi4 = phi4Handler;
+  constructor(LMStudioHandler) {
+    this.phi4 = LMStudioHandler;
   }
   
   async processComplexTask(goal, context, maxTokens) {
@@ -491,7 +491,7 @@ class MiniPhiAgent {
         8000  // Token budget per subtask
       );
       
-      // CALLS LAYER 2 (Phi4Handler)
+      // CALLS LAYER 2 (LMStudioHandler)
       let output = '';
       await this.phi4.chatStream(
         subtask.prompt + '\n\n' + compressed,
@@ -518,7 +518,7 @@ class MiniPhiAgent {
 }
 ```
 
-**Internally, Phi4Handler also uses Layer 1:**
+**Internally, LMStudioHandler also uses Layer 1:**
 - `chatStream()` calls `this.model` (set by `load()`)
 - `load()` calls `manager.getModel()` ← **Layer 1**
 
@@ -1030,14 +1030,14 @@ Does input exceed context window?
 
 ```javascript
 import LMStudioManager from './lmstudio-api.js';
-import Phi4Handler from './lms-phi4.js';
+import LMStudioHandler from './lmstudio-handler.js';
 import SemanticChunker from './compression/semantic-chunker.js';
 import LLMLinguaCompressor from './compression/llmlingua-compressor.js';
 
 class MiniPhiAgent {
   constructor() {
     this.manager = new LMStudioManager();
-    this.phi4 = new Phi4Handler(this.manager);
+    this.phi4 = new LMStudioHandler(this.manager);
     this.chunker = new SemanticChunker();
     this.compressor = new LLMLinguaCompressor();
     this.memory = [];
@@ -1160,7 +1160,7 @@ User Input: 150,000 tokens
            │   └─ Result: 30K tokens compressed to 25K
            │
            └─ phi4.chatStream()
-               ├─ Calls: Phi4Handler.chatStream()
+               ├─ Calls: LMStudioHandler.chatStream()
                │   ├─ Calls: manager.getModel() [Layer 1]
                │   ├─ Calls: model.respond() (streaming)
                │   ├─ Calls: Phi4StreamParser (think block parsing)
@@ -1188,7 +1188,7 @@ Average Info Retention: ~92%
 - [ ] Install LMStudio and download Phi-4
 - [ ] Set up NodeJS project
 - [ ] Test `lmstudio-api.js` model loading
-- [ ] Test `lms-phi4.js` streaming with callbacks
+- [ ] Test `lmstudio-handler.js` streaming with callbacks
 - [ ] Verify think-block parsing works
 
 ### Phase 2: Compression (Days 3-4)
@@ -1224,9 +1224,9 @@ Average Info Retention: ~92%
 
 2. **For each subtask:**
    - Context compressed using semantic + LLMLingua
-   - Phi4Handler.chatStream() called (Layer 2)
+   - LMStudioHandler.chatStream() called (Layer 2)
 
-3. **Inside Phi4Handler:**
+3. **Inside LMStudioHandler:**
    - Chat history maintained
    - LMStudioManager.getModel() called (Layer 1)
    - Response streamed and parsed for think-blocks
@@ -2162,7 +2162,7 @@ export default MiniPhiCodeAnalyzer;
 
 ```javascript
 import MiniPhiCodeAnalyzer from './miniphy-codeAnalyzer.js';
-import Phi4Handler from './lms-phi4.js';
+import LMStudioHandler from './lmstudio-handler.js';
 import LMStudioManager from './lmstudio-api.js';
 
 async function main() {
@@ -2187,7 +2187,7 @@ async function main() {
   console.log('\\n🧠 Sending to Phi-4 for analysis...\\n');
   
   const manager = new LMStudioManager();
-  const phi4 = new Phi4Handler(manager);
+  const phi4 = new LMStudioHandler(manager);
   
   try {
     await phi4.load({ contextLength: 32768 });
@@ -2257,7 +2257,7 @@ miniphi/
 ├── semanticCompressor.js     # Token compression
 ├── miniphy-codeAnalyzer.js   # Orchestration
 ├── lmstudio-api.js          # (From Part 1)
-├── lms-phi4.js              # (From Part 1)
+├── lmstudio-handler.js              # (From Part 1)
 └── example.js               # Usage example
 ```
 
@@ -2276,7 +2276,7 @@ SemanticCompressor (create summaries)
     ↓
 Generate Prompt (format for Phi-4)
     ↓
-Phi4Handler (stream response)
+LMStudioHandler (stream response)
     ↓
 Analysis Report
 ```
@@ -2836,8 +2836,8 @@ export default PythonLogSummarizer;
 // efficientLogAnalyzer.js
 
 class EfficientLogAnalyzer {
-  constructor(phi4Handler, cliExecutor, pythonSummarizer) {
-    this.phi4 = phi4Handler;
+  constructor(LMStudioHandler, cliExecutor, pythonSummarizer) {
+    this.phi4 = LMStudioHandler;
     this.cli = cliExecutor;
     this.summarizer = pythonSummarizer;
   }
@@ -3003,7 +3003,7 @@ export default EfficientLogAnalyzer;
 ```javascript
 // example-cli-analysis.js
 import LMStudioManager from './lmstudio-api.js';
-import Phi4Handler from './lms-phi4.js';
+import LMStudioHandler from './lmstudio-handler.js';
 import CliExecutor from './cliExecutor.js';
 import PythonLogSummarizer from './pythonLogSummarizer.js';
 import EfficientLogAnalyzer from './efficientLogAnalyzer.js';
@@ -3014,7 +3014,7 @@ async function main() {
   
   const manager = new LMStudioManager();
   const schemaRegistry = new PromptSchemaRegistry();
-  const phi4 = new Phi4Handler(manager, { schemaRegistry });
+  const phi4 = new LMStudioHandler(manager, { schemaRegistry });
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer();
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, { schemaRegistry });
@@ -3069,7 +3069,7 @@ main().catch(console.error);
 
 - `--prompt-id <id>` tells the CLI to persist Phi-4 chat history under `.miniphi/prompt-sessions/<id>.json`. Reuse the ID in future invocations (or custom scripts) to resume the same reasoning thread—ideal for step-by-step audits that span multiple commands.
 - `MiniPhiMemory` exposes `loadPromptSession` / `savePromptSession`, making it trivial for bespoke Node.js utilities to orchestrate multi-phase prompts while staying in sync with the `.miniphi` workspace.
-- `--session-timeout <s>` applies a single wall-clock budget (seconds) to the entire process. `EfficientLogAnalyzer` computes the remaining time before each `phi4.chatStream` call and forwards the value through `Phi4Handler.setPromptTimeout`, so nested prompts cannot exceed the user-supplied cap yet no default limit is imposed.
+- `--session-timeout <s>` applies a single wall-clock budget (seconds) to the entire process. `EfficientLogAnalyzer` computes the remaining time before each `phi4.chatStream` call and forwards the value through `LMStudioHandler.setPromptTimeout`, so nested prompts cannot exceed the user-supplied cap yet no default limit is imposed.
 
 ---
 

@@ -79,7 +79,7 @@ This project is in a alpha stage of development, and technically it's able to ex
 - **JSON schema enforcement.** Each prompt references a schema from `docs/prompts/*.schema.json`, validation happens before responses enter history storage, and schema IDs stay attached for deterministic replays.
 
 ## What ships today
-- **Layered LM Studio runtime.** `LMStudioManager` performs JIT model loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning while enforcing JSON schema contracts, and `EfficientLogAnalyzer` + `PythonLogSummarizer` compress live command output or saved files before the model thinks.
+- **Layered LM Studio runtime.** `LMStudioManager` performs JIT model loading and `/api/v0` diagnostics, `LMStudioHandler` streams reasoning while enforcing JSON schema contracts, and `EfficientLogAnalyzer` + `PythonLogSummarizer` compress live command output or saved files before the model thinks.
 - **CLI entrypoints + default workflow.** `node src/index.js run --cmd "npm test" --task "Analyze failures"` is the canonical loop, while `analyze-file`, `web-research`, `history-notes`, `recompose`, and `benchmark recompose|analyze|plan scaffold` cover file replay, research snapshots, `.miniphi` audits, recomposition, and benchmark sweeps.
 - **Persistent `.miniphi/` workspace.** `miniPhiMemory` snapshots each run under `executions/<id>/`, stores `prompt.json`, `analysis.json`, helper scripts, TODO queues, and mirrors every sub-prompt as JSON inside `.miniphi/prompt-exchanges/` and `.miniphi/helpers/`.
 - **Schema registry + enforcement.** `PromptSchemaRegistry` injects schema blocks from `docs/prompts/*.schema.json` into every model call (main prompts, scoring prompts, decomposers) and rejects invalid responses before they touch history storage.
@@ -100,7 +100,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 
 ## Architecture snapshot
 1. **LMStudioManager** (src/libs/lmstudio-api.js) performs JIT model loading and surfaces the `/api/v0` REST primitives (list models, chat/completion probes, embeddings, runtime stats).
-2. **Phi4Handler** (src/libs/lms-phi4.js) wraps LM Studio calls, enforces reasoning streams, wires `--session-timeout`, and declares the JSON schema that each downstream model call must respect.
+2. **LMStudioHandler** (src/libs/lmstudio-handler.js) wraps LM Studio calls, enforces reasoning streams, wires `--session-timeout`, and declares the JSON schema that each downstream model call must respect.
 3. **EfficientLogAnalyzer + PythonLogSummarizer** compress streamed stdout/stderr or files by chunk, annotate the segments, and feed the high-signal slices to the model while embedding the proper JSON schema from `docs/prompts/`.
 4. **miniPhiMemory + PromptRecorder** archive prompts, compressed context, responses, TODOs, scoring metadata, recursive prompt plans, and capability outlines under `.miniphi/` so future runs can rehydrate any exchange.
 5. **WorkspaceProfiler + FileConnectionAnalyzer + CapabilityInventory** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code/docs split, import/dependency graph, and available scripts/binaries.
@@ -202,7 +202,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `samples/bash-it/` is a fixed copy of the Bash shell source tree (with its real multi-directory layout) so you can run unit-style MiniPhi tests, recomposition exercises, or benchmarking passes against a realistic, complex workspace without needing to clone GNU Bash separately.
 
 ## Project status
-- Ready: layered LM Studio stack (`LMStudioManager`, `Phi4Handler`, `EfficientLogAnalyzer`) is production ready with reasoning streaming, JSON schema guards, and prompt scoring.
+- Ready: layered LM Studio stack (`LMStudioManager`, `LMStudioHandler`, `EfficientLogAnalyzer`) is production ready with reasoning streaming, JSON schema guards, and prompt scoring.
 - Ready: `.miniphi` memory, prompt transcripts, and research or history snapshots are stable across commands.
 - Ready: helper utilities (danger normalization, navigation planners, LM Studio endpoint detection) now have automated coverage via `npm test` (`node --test ./tests/**/*.test.js`).
 - Warning: compression heuristics and Phi prompt templates still require manual verification because integration tests depend on live LM Studio responses (use `scripts/lmstudio-json-debug.js` or `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` when validating JSON-only contracts).
