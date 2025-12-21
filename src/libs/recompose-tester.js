@@ -87,6 +87,7 @@ export default class RecomposeTester {
     this.sampleMetadata = null;
     this.baselineSignatures = new Map();
     this.fileBlueprints = new Map();
+    this.descriptionDir = null;
     this.sessionDir = null;
     this.sessionLabel = null;
     this.promptLogPath = null;
@@ -291,6 +292,7 @@ export default class RecomposeTester {
     const files = (await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs })).filter((file) =>
       file.toLowerCase().endsWith(".md"),
     );
+    this.descriptionDir = sourceDir;
     const workspaceSummary = await this._ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
     let converted = 0;
     const warnings = [];
@@ -505,6 +507,30 @@ export default class RecomposeTester {
       schemaId: RECOMPOSE_SCHEMA_IDS.codegen,
       metadata: { file: relativePath, language },
     });
+    if (this._needsMoreContext(response.payload)) {
+      const missing = this._missingSnippets(response.payload);
+      const extraContext = await this._collectMissingContext({ relativePath, missingSnippets: missing });
+      if (!extraContext) {
+        const missingNote = missing.length ? ` Missing: ${missing.join("; ")}` : "";
+        throw new Error(`Recompose codegen needs more context for ${relativePath}.${missingNote}`);
+      }
+      const contextPrompt = [
+        ...basePrompt,
+        "Additional context requested by the previous response:",
+        extraContext,
+        "Use the added context to rebuild the file. Return JSON only.",
+      ];
+      response = await this._promptJson(contextPrompt.join("\n\n"), {
+        label: "recompose:codegen-context",
+        schemaId: RECOMPOSE_SCHEMA_IDS.codegen,
+        metadata: { file: relativePath, language },
+      });
+      if (this._needsMoreContext(response.payload)) {
+        const retryMissing = this._missingSnippets(response.payload);
+        const retryNote = retryMissing.length ? ` Missing: ${retryMissing.join("; ")}` : "";
+        throw new Error(`Recompose codegen still needs more context for ${relativePath}.${retryNote}`);
+      }
+    }
     let code = this._extractCodeFromPayload(response.payload, response.raw);
     if (!code) {
       const retryPrompt = [
@@ -570,6 +596,9 @@ export default class RecomposeTester {
           `File ${relativePath} must use ${signature.exportStyle === "esm" ? "ES module exports" : "module.exports"} syntax.`,
         );
       }
+    }
+    if (signature.hasDefaultExport && !this._hasDefaultExport(code)) {
+      issues.push(`File ${relativePath} must include an export default declaration.`);
     }
     if (signature.exports?.length) {
       const missing = signature.exports.filter((name) => !this._codeContainsIdentifier(code, name));
@@ -990,7 +1019,12 @@ export default class RecomposeTester {
         const content = await fs.promises.readFile(absolute, "utf8");
         const exports = this._extractExports(content.split(/\r?\n/));
         const exportStyle = this._detectExportStyle(content);
-        this.baselineSignatures.set(relativePath.replace(/\\/g, "/"), { exports, exportStyle });
+        const hasDefaultExport = this._hasDefaultExport(content);
+        this.baselineSignatures.set(relativePath.replace(/\\/g, "/"), {
+          exports,
+          exportStyle,
+          hasDefaultExport,
+        });
       } catch {
         // ignore failures
       }
@@ -1049,6 +1083,43 @@ export default class RecomposeTester {
       .filter(Boolean);
   }
 
+  async _collectMissingContext({ relativePath, missingSnippets }) {
+    if (!Array.isArray(missingSnippets) || missingSnippets.length === 0) {
+      return null;
+    }
+    const sections = [];
+    for (const snippet of missingSnippets) {
+      const label = this._normalizeSnippetLabel(snippet);
+      if (!label) {
+        continue;
+      }
+      const block = [];
+      const blueprint = this._lookupBlueprint(label);
+      if (blueprint?.narrative) {
+        block.push(`Narrative:\n${this._truncateBlock(blueprint.narrative)}`);
+      }
+      if (blueprint?.plan) {
+        block.push(`Plan:\n${this._truncateBlock(blueprint.plan)}`);
+      }
+      if (!block.length) {
+        const description = await this._loadDescriptionSnippet(label);
+        if (description) {
+          block.push(`Narrative:\n${this._truncateBlock(description)}`);
+        }
+      }
+      if (block.length) {
+        sections.push([`### ${label}`, block.join("\n\n")].join("\n"));
+      }
+    }
+    if (!sections.length) {
+      return null;
+    }
+    return [
+      `The missing context applies to ${relativePath}.`,
+      ...sections,
+    ].join("\n\n");
+  }
+
   _warnContextRequest(label, payload) {
     if (!this._needsMoreContext(payload)) {
       return;
@@ -1070,13 +1141,6 @@ export default class RecomposeTester {
   _extractCodeFromPayload(payload, raw) {
     if (payload && typeof payload.code === "string" && payload.code.trim()) {
       return payload.code;
-    }
-    const fenced = this._extractCodeFromResponse(raw);
-    if (fenced) {
-      return fenced;
-    }
-    if (raw && !this._looksLikeJson(raw)) {
-      return String(raw);
     }
     return null;
   }
@@ -1541,12 +1605,83 @@ export default class RecomposeTester {
     return null;
   }
 
+  _hasDefaultExport(source) {
+    if (!source) {
+      return false;
+    }
+    return /export\s+default\s+/m.test(source);
+  }
+
   _codeContainsIdentifier(source, identifier) {
     if (!source || !identifier) {
       return false;
     }
     const pattern = new RegExp(`\\b${identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
     return pattern.test(source);
+  }
+
+  _normalizeSnippetLabel(label) {
+    if (!label) {
+      return "";
+    }
+    return label.toString().trim().replace(/^['"]|['"]$/g, "");
+  }
+
+  _lookupBlueprint(label) {
+    if (!label) {
+      return null;
+    }
+    const normalized = label.replace(/\\/g, "/");
+    const withoutMd = normalized.replace(/\.md$/i, "");
+    if (this.fileBlueprints.has(withoutMd)) {
+      return this.fileBlueprints.get(withoutMd);
+    }
+    if (this.fileBlueprints.has(normalized)) {
+      return this.fileBlueprints.get(normalized);
+    }
+    const needle = withoutMd.toLowerCase();
+    for (const [key, value] of this.fileBlueprints.entries()) {
+      const keyLower = key.toLowerCase();
+      if (keyLower.endsWith(needle) || path.posix.basename(keyLower) === needle) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  async _loadDescriptionSnippet(label) {
+    if (!label || !this.descriptionDir) {
+      return null;
+    }
+    const normalized = label.replace(/\\/g, "/");
+    const candidates = normalized.endsWith(".md")
+      ? [normalized]
+      : [`${normalized}.md`];
+    for (const candidate of candidates) {
+      const absolute = path.join(this.descriptionDir, ...candidate.split("/"));
+      try {
+        const raw = await fs.promises.readFile(absolute, "utf8");
+        const { body } = this._parseMarkdown(raw);
+        const trimmed = body.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      } catch {
+        // ignore missing snippets
+      }
+    }
+    return null;
+  }
+
+  _truncateBlock(text, limit = 1400) {
+    const normalized = (text ?? "").trim();
+    if (!normalized) {
+      return "";
+    }
+    if (normalized.length <= limit) {
+      return normalized;
+    }
+    return `${normalized.slice(0, limit)}...`;
   }
 
   async _isBinary(filePath) {
