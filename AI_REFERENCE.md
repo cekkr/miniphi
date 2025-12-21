@@ -3,6 +3,7 @@
 - Benchmark follow-up work must target MiniPhi's runtime (prompt orchestration, analyzers, LM Studio clients) instead of touching the benchmark scripts unless absolutely required for coverage.
 - Recompose/benchmark/test scripts are instrumentation: they select sample directories, compose the seed prompt batches, and capture logs so we can replay “as-is” MiniPhi behavior. Treat failures surfaced by these scripts as bugs in MiniPhi itself (runtime, analyzers, LM Studio adapters, samples) and only edit the scripts when they need broader prompt coverage or better logging.
 - Every LM Studio prompt (Phi-4/Granite/Devstral) must declare the exact JSON schema expected in the response (fields, types, nullability) so large workspaces stay deterministic.
+- Never accept non-JSON responses in production flows; treat prose as a failure, re-prompt with the schema, or emit deterministic fallback JSON with error metadata.
 
 # MiniPhi Reference
 
@@ -12,11 +13,17 @@ These are the currently "fixed reference points" of miniphi project:
 - Miniphi has to work with fixed and reduced context length with APIs: so it has to use recursive APIs requests to elaborate a complete task list for complete the main prompt, and then execute it in its predicted priority order
 - Miniphi has to take advantage of API's model in LM Studio itself to elaborate better prompts, ad hoc command line commands and shell/js/python scripts for current user's OS and CWD project. Given that, are essential the "basic essential prompts" where miniphi start to learn everything useful
 - Miniphi stores best general purposes commands/scripts in project and global .miniphi/ directory, so it can re-use them without recreating them. But given that not always are correct, even the first time, it's important to implement a backup system and preventing "infinity loop" in child commands/scripts execution, checking on running their stdout (giving also the ability to interact with stdin input)
-- Miniphi API's request MUST use JSON-structured prompts, writing also the excepted JSON response structure with essential fields meanings and excepted outputs/options
+- Miniphi API requests MUST be JSON-first: include `response_format=json_schema`, a schema id from `docs/prompts/*.schema.json`, and an explicit JSON-only reminder; reject any response that fails JSON parsing or schema validation.
 - If an API's prompt request is above context tokens limits, split the task in sub tasks, also with the help of model itself to know bet task splitting approach and results merging (always through new prompts, commands, scripts). Learn to "fork" same chat history into multiple direction to determine the best approaches in any case.
 - It's essential that miniphi learn OS tools and available libraries (and discover new ones), to list the pertinents available commands/tools while prompting certain kind of tasks to API's model.
 - When prompted to run "benchmarks" to evaluate next steps, benchmarks are general test cases to evaluate general miniphi efficiency and next steps are generally referred to general purposes miniphi working (study about best prompt templating, truncation, task to sub tasks, research best commands and script with model etc). Check execution stdout while running step-by-step to avoid infinite loop and testing implementations in real time.
 - It's not only important to no use more than API's tokens context limits, but also to use "less tokens as possible" for each API's prompt request, learning in base of API's model to make requests only with strictly needed informations for current task/subtask, by template adding a field in json structure for giving the possibility to model to ask for more informations/dives/particular external snippets/descriptions
+
+### JSON-first operating rules
+- Every LM Studio prompt must have a schema in `docs/prompts/` with `additionalProperties: false`, explicit required fields, and `needs_more_context` + `missing_snippets` for negotiation.
+- Prompts must embed the schema block (compact) and keep the system prompt JSON-only; responses are parsed with strict JSON extraction, and non-JSON is never treated as partial success.
+- All actions the model suggests (commands, file edits, helper scripts, next prompts) must be represented as structured arrays/objects with reasons; never infer actions from prose.
+- Schema evolution must be versioned (`schema_version` or `schema_uri`) and normalized through adapters before downstream use.
 
 ## Current Status
 - Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `Phi4Handler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.

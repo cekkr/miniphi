@@ -18,7 +18,14 @@ miniPhi squeezes CLI transcripts, benchmark dossiers, and raw text logs into sma
 - Giant logs stay useful because a Python summarizer and a JS compressor shave them down before the model starts thinking.
 - miniPhi keeps a scrapbook of every prompt, response, benchmark run, and research sweep, which means you never lose context across sessions.
 - Every prompt now declares an explicit JSON schema so responses can be replayed or diffed reliably inside large workspaces.
+- Non-JSON output is treated as a failure: MiniPhi re-prompts with the schema or emits deterministic fallback JSON for auditing.
 - Workspace capabilities (package scripts, repo scripts, `.bin` tools) and import graphs are summarized ahead of each run so the model starts with an accurate list of available operations and dependencies.
+
+## JSON-first contracts
+- Every LM Studio prompt must have a schema in `docs/prompts/` with `additionalProperties: false`, explicit required fields, and `needs_more_context` + `missing_snippets` for negotiation.
+- Prompts embed the schema block (compact) and keep the system prompt JSON-only; responses are parsed with strict JSON extraction, and non-JSON is never treated as partial success.
+- All actions the model suggests (commands, file edits, helper scripts, next prompts) are structured arrays/objects with reasons; MiniPhi does not infer actions from prose.
+- Schema evolution is versioned (`schema_version` or `schema_uri`) and normalized through adapters before downstream use.
 
 ## Get started
 Install [LM Studio](https://lmstudio.ai) as developer and download model `ibm/granite-4-h-tiny` (through Settings icon on the bottom-right corner of main window). Then start the APIs server through the Console icon on the vertical bar on the left. Phi-4 Reasoning+ remains available as an alternate general-purpose model if you prefer it for larger-context runs.
