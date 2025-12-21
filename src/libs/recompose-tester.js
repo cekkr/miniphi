@@ -4,6 +4,15 @@ import { createHash } from "crypto";
 import YAML from "yaml";
 import { extractJsonBlock } from "./core-utils.js";
 import {
+  languageFromExtension,
+  normalizeExportName,
+  parseMarkdown,
+  relativeToCwd,
+  safeSessionName,
+  sanitizeExportName,
+  slugify,
+} from "./recompose-utils.js";
+import {
   buildWorkspaceHintBlock,
   collectManifestSummary,
   formatMetadataSummary,
@@ -203,18 +212,18 @@ export default class RecomposeTester {
 
     return {
       direction,
-      sampleDir: this._relativeToCwd(sampleDir),
-      codeDir: this._relativeToCwd(codeDir),
-      descriptionsDir: this._relativeToCwd(descriptionsDir),
-      outputDir: this._relativeToCwd(outputDir),
+      sampleDir: relativeToCwd(sampleDir),
+      codeDir: relativeToCwd(codeDir),
+      descriptionsDir: relativeToCwd(descriptionsDir),
+      outputDir: relativeToCwd(outputDir),
       steps,
-      sessionDir: this._relativeToCwd(this.sessionDir),
-      promptLog: this._relativeToCwd(this.promptLogPath),
+      sessionDir: relativeToCwd(this.sessionDir),
+      promptLog: relativeToCwd(this.promptLogPath),
       workspaceContext: this.workspaceContext
         ? {
             kind: this.workspaceContext.kind,
             summary: this.workspaceContext.summary,
-            sourceDir: this._relativeToCwd(this.workspaceContext.sourceDir),
+            sourceDir: relativeToCwd(this.workspaceContext.sourceDir),
             metadata: this.sampleMetadata,
           }
         : null,
@@ -252,7 +261,7 @@ export default class RecomposeTester {
           }
         }
         if (!document) {
-          const language = this._languageFromExtension(path.extname(relativePath));
+          const language = languageFromExtension(path.extname(relativePath));
           document = await this._narrateSourceFile({
             relativePath,
             language,
@@ -283,7 +292,7 @@ export default class RecomposeTester {
       skipped,
       cacheHits,
       concurrency: workerCount,
-      descriptionsDir: this._relativeToCwd(targetDir),
+      descriptionsDir: relativeToCwd(targetDir),
     };
   }
 
@@ -300,7 +309,7 @@ export default class RecomposeTester {
     for (const relativePath of files) {
       const absolute = path.join(sourceDir, relativePath);
       const raw = await fs.promises.readFile(absolute, "utf8");
-      const { metadata, body } = this._parseMarkdown(raw);
+      const { metadata, body } = parseMarkdown(raw);
       const narrative = body.trim();
       if (!narrative) {
         warnings.push({ path: relativePath, reason: "missing narrative content" });
@@ -308,7 +317,7 @@ export default class RecomposeTester {
       }
       const targetPathRelative =
         metadata.source ?? relativePath.replace(/\.md$/i, "").replace(/\\/g, "/");
-      const language = metadata.language ?? this._languageFromExtension(path.extname(targetPathRelative));
+      const language = metadata.language ?? languageFromExtension(path.extname(targetPathRelative));
       try {
         const plan = await this._planCodeFromNarrative({
           relativePath: targetPathRelative,
@@ -340,7 +349,7 @@ export default class RecomposeTester {
       processed: files.length,
       converted,
       skipped: files.length - converted,
-      outputDir: this._relativeToCwd(targetDir),
+      outputDir: relativeToCwd(targetDir),
       warnings,
     };
   }
@@ -437,7 +446,7 @@ export default class RecomposeTester {
       "",
     ].join("\n");
     await this._writeSessionAsset(
-      path.join("files", `${this._safeSessionName(relativePath)}.md`),
+      path.join("files", `${safeSessionName(relativePath)}.md`),
       `# Narrative for ${relativePath}\n\n${structured}\n`,
     );
     return document;
@@ -468,7 +477,7 @@ export default class RecomposeTester {
       this._fallbackPlanFromNarrative(relativePath, narrative),
     );
     await this._writeSessionAsset(
-      path.join("plans", `${this._safeSessionName(relativePath)}.md`),
+      path.join("plans", `${safeSessionName(relativePath)}.md`),
       `# Plan for ${relativePath}\n\n${plan}\n`,
     );
     return plan;
@@ -549,7 +558,7 @@ export default class RecomposeTester {
       }
     }
     await this._writeSessionAsset(
-      path.join("code", `${this._safeSessionName(relativePath)}.txt`),
+      path.join("code", `${safeSessionName(relativePath)}.txt`),
       code,
     );
     return code;
@@ -705,7 +714,7 @@ export default class RecomposeTester {
       files.slice(0, MAX_OVERVIEW_FILES).map(async (relativePath) => {
         const absolute = path.join(sourceDir, relativePath);
         const raw = await fs.promises.readFile(absolute, "utf8");
-        const { body } = this._parseMarkdown(raw);
+        const { body } = parseMarkdown(raw);
         return `### ${relativePath}\n${body.split(/\n+/).slice(0, 6).join("\n")}`;
       }),
     );
@@ -983,7 +992,7 @@ export default class RecomposeTester {
   }
 
   _warnWorkspaceOverviewFallback(attemptCount) {
-    const logLabel = this.promptLogPath ? this._relativeToCwd(this.promptLogPath) : null;
+    const logLabel = this.promptLogPath ? relativeToCwd(this.promptLogPath) : null;
     const attempts = Number(attemptCount) || 1;
     const suffix = logLabel ? ` (see ${logLabel})` : "";
     console.warn(
@@ -1255,19 +1264,8 @@ export default class RecomposeTester {
       .join("\n\n");
   }
 
-  _extractCodeFromResponse(response) {
-    if (!response) {
-      return null;
-    }
-    const match = response.match(/```[a-z0-9+-]*\s*\r?\n([\s\S]*?)```/i);
-    if (match) {
-      return match[1];
-    }
-    return null;
-  }
-
   async _startSession(label) {
-    const slug = this._slugify(label ?? this.promptLabel ?? "recompose");
+    const slug = slugify(label ?? this.promptLabel ?? "recompose");
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const root = this.sessionRoot ?? path.join(process.cwd(), ".miniphi", "recompose");
     this.sessionDir = path.join(root, `${timestamp}-${slug}`);
@@ -1294,10 +1292,6 @@ export default class RecomposeTester {
     await this._ensureDir(path.dirname(target));
     await fs.promises.writeFile(target, content, "utf8");
     return target;
-  }
-
-  _safeSessionName(relativePath) {
-    return relativePath.replace(/[\\/]+/g, "__");
   }
 
   async _logPromptEvent({ label, prompt, response, error, metadata, durationMs }) {
@@ -1332,7 +1326,7 @@ export default class RecomposeTester {
     await this._ensureDir(targetDir);
     const defaultName = `${this.sessionLabel ?? "recompose"}.prompts.log`;
     const fileHint = options.fileName ?? options.label ?? defaultName;
-    const fileName = this._sanitizeExportName(fileHint);
+    const fileName = sanitizeExportName(fileHint, this.sessionLabel ?? "recompose");
     const destinationPath = path.join(targetDir, fileName);
     await fs.promises.copyFile(sourcePath, destinationPath);
     return destinationPath;
@@ -1405,21 +1399,6 @@ export default class RecomposeTester {
     return sections.join("\n\n");
   }
 
-  _sanitizeExportName(name) {
-    const fallback = `${this._slugify(this.sessionLabel ?? "recompose")}.prompts.log`;
-    if (!name) {
-      return fallback;
-    }
-    const normalized = name.replace(/[\\/]+/g, "-").replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").trim();
-    if (!normalized) {
-      return fallback;
-    }
-    if (!normalized.toLowerCase().endsWith(".log")) {
-      return `${normalized}.log`;
-    }
-    return normalized;
-  }
-
   _fallbackPlanFromNarrative(relativePath, narrative) {
     const trimmed = narrative.trim();
     const excerpt = trimmed ? trimmed.replace(/\s+/g, " ").slice(0, 400) : null;
@@ -1482,7 +1461,7 @@ export default class RecomposeTester {
   }
 
   _buildOfflineCodeStub({ relativePath, blueprint, signature }) {
-    const normalizedName = this._normalizeExportName(relativePath);
+    const normalizedName = normalizeExportName(relativePath);
     const summary = this._normalizeWhitespace(blueprint?.narrative ?? "");
     const exports = Array.isArray(signature?.exports) && signature.exports.length ? signature.exports : null;
     const exportStyle = signature?.exportStyle ?? "commonjs";
@@ -1494,7 +1473,7 @@ export default class RecomposeTester {
     if (exportStyle === "esm") {
       if (exports) {
         for (const name of exports) {
-          const safe = this._normalizeExportName(name);
+          const safe = normalizeExportName(name);
           lines.push(`export function ${safe}() {`);
           lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
           lines.push("}");
@@ -1507,28 +1486,20 @@ export default class RecomposeTester {
     } else {
       const exportNames = exports ?? [`${normalizedName}Stub`];
       for (const name of exportNames) {
-        const safe = this._normalizeExportName(name);
+        const safe = normalizeExportName(name);
         lines.push(`function ${safe}() {`);
         lines.push(`  throw new Error("Offline stub executed for ${relativePath}");`);
         lines.push("}");
       }
       if (exportNames.length === 1) {
-        lines.push(`module.exports = ${this._normalizeExportName(exportNames[0])};`);
+        lines.push(`module.exports = ${normalizeExportName(exportNames[0])};`);
       } else {
         lines.push(
-          `module.exports = { ${exportNames.map((name) => this._normalizeExportName(name)).join(", ")} };`,
+          `module.exports = { ${exportNames.map((name) => normalizeExportName(name)).join(", ")} };`,
         );
       }
     }
     return lines.join("\n");
-  }
-
-  _normalizeExportName(name) {
-    if (!name) {
-      return "offlineStub";
-    }
-    const sanitized = name.replace(/[^\w]/g, "_");
-    return sanitized || "offlineStub";
   }
 
   _extractImports(lines) {
@@ -1661,7 +1632,7 @@ export default class RecomposeTester {
       const absolute = path.join(this.descriptionDir, ...candidate.split("/"));
       try {
         const raw = await fs.promises.readFile(absolute, "utf8");
-        const { body } = this._parseMarkdown(raw);
+        const { body } = parseMarkdown(raw);
         const trimmed = body.trim();
         if (trimmed) {
           return trimmed;
@@ -1701,82 +1672,6 @@ export default class RecomposeTester {
       await handle.close();
     }
     return false;
-  }
-
-  _languageFromExtension(ext) {
-    switch (ext.toLowerCase()) {
-      case ".js":
-      case ".jsx":
-      case ".mjs":
-      case ".cjs":
-        return "javascript";
-      case ".ts":
-      case ".tsx":
-        return "typescript";
-      case ".py":
-        return "python";
-      case ".rb":
-        return "ruby";
-      case ".java":
-        return "java";
-      case ".cs":
-        return "csharp";
-      case ".cpp":
-      case ".cc":
-      case ".cxx":
-        return "cpp";
-      case ".c":
-        return "c";
-      case ".h":
-      case ".hpp":
-        return "c";
-      case ".rs":
-        return "rust";
-      case ".go":
-        return "go";
-      case ".sh":
-        return "bash";
-      case ".ps1":
-        return "powershell";
-      case ".md":
-        return "markdown";
-      case ".json":
-        return "json";
-      case ".html":
-        return "html";
-      case ".css":
-      case ".scss":
-      case ".less":
-        return "css";
-      default:
-        return "text";
-    }
-  }
-
-  _parseMarkdown(raw) {
-    if (!raw) {
-      return { metadata: {}, body: "" };
-    }
-    let body = raw;
-    const metadata = {};
-    const frontMatterMatch = raw.match(/^---\s*[\r\n]+([\s\S]*?)\r?\n---\s*/);
-    if (frontMatterMatch) {
-      frontMatterMatch[1]
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .forEach((line) => {
-          const separatorIndex = line.indexOf(":");
-          if (separatorIndex === -1) {
-            return;
-          }
-          const key = line.slice(0, separatorIndex).trim();
-          const value = line.slice(separatorIndex + 1).trim();
-          metadata[key] = value;
-        });
-      body = raw.slice(frontMatterMatch[0].length);
-    }
-    return { metadata, body: body.trim() };
   }
 
   async _hashFile(filePath) {
@@ -1921,27 +1816,6 @@ export default class RecomposeTester {
     }
   }
 
-  _relativeToCwd(target) {
-    if (!target) {
-      return null;
-    }
-    const relative = path.relative(process.cwd(), target);
-    if (relative && !relative.startsWith("..")) {
-      return relative.replace(/\\/g, "/");
-    }
-    return target;
-  }
-
-  _slugify(text) {
-    const normalized = (text ?? "")
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return normalized || "recompose";
-  }
-
   _requirePhi() {
     if (!this.offlineFallbackActive && !this.phi4) {
       throw new Error("LM Studio handler is required for live recompose benchmarks.");
@@ -1988,7 +1862,7 @@ export default class RecomposeTester {
         const name = data?.timestamp ?? data?.name ?? path.parse(candidate).name;
         return {
           name,
-          path: this._relativeToCwd(absolute),
+          path: relativeToCwd(absolute),
           runs: Array.isArray(data?.runs) ? data.runs.length : 0,
         };
       } catch {

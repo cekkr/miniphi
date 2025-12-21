@@ -32,6 +32,7 @@ import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import PromptTemplateBaselineBuilder from "./libs/prompt-template-baselines.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
+import { relativeToCwd } from "./libs/recompose-utils.js";
 import CommandAuthorizationManager, {
   normalizeCommandPolicy,
 } from "./libs/command-authorization-manager.js";
@@ -3816,8 +3817,8 @@ async function handleRecompose({
     throw new Error("Failed to resolve recompose report path.");
   }
   if (promptLogExportPath) {
-    const relPrompt = path.relative(process.cwd(), promptLogExportPath) || promptLogExportPath;
-    const normalizedPrompt = relPrompt.replace(/\\/g, "/");
+    const relPrompt = relativeToCwd(promptLogExportPath);
+    const normalizedPrompt = relPrompt ? relPrompt.replace(/\\/g, "/") : relPrompt;
     report.promptLogExport = normalizedPrompt;
     console.log(`[MiniPhi][Recompose] Prompt log saved to ${normalizedPrompt}`);
   }
