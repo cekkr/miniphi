@@ -1,5 +1,5 @@
 {
-  "direction": "code-to-markdown",
+  "direction": "roundtrip",
   "sampleDir": "samples/recompose/hello-flow",
   "codeDir": "samples/recompose/hello-flow/code",
   "descriptionsDir": "samples/recompose/hello-flow/descriptions",
@@ -7,23 +7,169 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 137994,
+      "durationMs": 35965,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "cacheHits": 9,
+      "cacheHits": 0,
       "concurrency": 1,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
+    },
+    {
+      "phase": "markdown-to-code",
+      "durationMs": 848,
+      "processed": 9,
+      "converted": 0,
+      "skipped": 9,
+      "outputDir": "samples/recompose/hello-flow/reconstructed",
+      "warnings": [
+        {
+          "path": "README.md.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/pipeline.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/steps/normalize.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/steps/validate.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/greeter.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/index.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/math.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/shared/logger.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js.md",
+          "reason": "Phi-4 response did not include code after retry."
+        }
+      ]
+    },
+    {
+      "phase": "repair",
+      "attempted": 9,
+      "repaired": 0,
+      "skipped": [
+        {
+          "path": "README.md",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/steps/validate.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/greeter.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/math.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/shared/logger.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/pipeline.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/flows/steps/normalize.js",
+          "reason": "Phi-4 response did not include code after retry."
+        },
+        {
+          "path": "src/index.js",
+          "reason": "Phi-4 response did not include code after retry."
+        }
+      ],
+      "initialMismatches": 9,
+      "initialMissing": 0,
+      "durationMs": 625
+    },
+    {
+      "phase": "comparison",
+      "durationMs": 7,
+      "matches": 0,
+      "mismatches": [
+        {
+          "path": "README.md",
+          "baselineHash": "f26dda128f1dc783f9f56e325f1d40188b5555ef766d2ae8e5884b30994b2c6d",
+          "candidateHash": "d096bfe0108abed3c16909c20949e52a1c088d499b9cdbb53be9ef2b86b58e15"
+        },
+        {
+          "path": "src/flows/pipeline.js",
+          "baselineHash": "88863b2c0a2e020ecee096053b7879039e80b2c32e3cdd907f6a1e706acceb09",
+          "candidateHash": "fc1e1946bd35eedc90142e92d8ad2b5e0393e5f0ca35855e1c699d4544c0067b"
+        },
+        {
+          "path": "src/flows/steps/normalize.js",
+          "baselineHash": "039facadc7564b1e91aaca20bfed8547d573b996e99c56ed75e8e3ec3c6ccafd",
+          "candidateHash": "432bef7342f189f9b7623c55571fc67e4eeaca7bbcbc0dcc62dcd85918f20a66"
+        },
+        {
+          "path": "src/flows/steps/validate.js",
+          "baselineHash": "018f307febc7b54587f7056a123c3d6b943a2364eff909dd1f704551487e1de5",
+          "candidateHash": "3db3c6ff597e22869a3409961fc3ce8799557e2ea6a923ca11ed80210b09de73"
+        },
+        {
+          "path": "src/greeter.js",
+          "baselineHash": "83aed47e73533b4c518a4d0e70dbe668f600a15e7b678505ae4cdfa76d269379",
+          "candidateHash": "97cf3effa849fdf8d54b99e719e8063598e8fc858514fc89e48b7f10f957c192"
+        },
+        {
+          "path": "src/index.js",
+          "baselineHash": "0d71eb707442c7bd5064d6ed2a18e79c600ab65216f59e1f756f0ce7f5d0acd8",
+          "candidateHash": "b5683eca7daea379539897f0fdebd58f7fe1f7a9f5c9b93cd9ae0180ef4be6c8"
+        },
+        {
+          "path": "src/math.js",
+          "baselineHash": "f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab",
+          "candidateHash": "24b97361e2d6e9f797035143e6591241d8f076071519690910638a237c391576"
+        },
+        {
+          "path": "src/shared/logger.js",
+          "baselineHash": "abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05",
+          "candidateHash": "072791a20cce427fd7abda3cf235fea053e9b88e8b5b59b6252580019b298b8e"
+        },
+        {
+          "path": "src/shared/persistence/memory-store.js",
+          "baselineHash": "28ad805f082526df3eac27b05f96792e54cee82116ac60474ee7b8a86bf54d44",
+          "candidateHash": "ebd446e56670adb6dd66274e27edb267d16efc3360400cb1d07ba3dbcf2e144d"
+        }
+      ],
+      "missing": [],
+      "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2025-11-20T09-13-50-305Z-recompose",
-  "promptLog": ".miniphi/recompose/2025-11-20T09-13-50-305Z-recompose/prompts.log",
+  "sessionDir": ".miniphi/recompose/2025-12-21T15-29-21-649Z-recompose",
+  "promptLog": ".miniphi/recompose/2025-12-21T15-29-21-649Z-recompose/prompts.log",
   "workspaceContext": {
     "kind": "code",
-    "summary": "## Overview\nThe protagonist here is not a lone hero but rather an orchestrator—a system designed to execute a carefully layered flow that transforms, validates, and ultimately presents data. Its mission is to maintain deterministic behavior by ensuring every step produces a predictable, structured output while simultaneously emitting telemetry for traceability. In this small yet robust benchmark, the goal is to exercise the art of recomposition through layered imports and modular interactions.\n\n## Flow\n─────────────────────────────  \nArchitecture Rhythm\n\n## Signals\nAt its core, the system follows a rhythm defined by sequential, interdependent modules. Each module contributes a specific piece to the overall operation: some handle data validation and normalization (ensuring inputs are clean and standardized), while others compute analytical insights like averages or trend descriptions. The flow is meticulously orchestrated so that every function returns well-formed objects, and each interaction emits telemetry events for monitoring purposes. This layered design creates a predictable cadence—from greeting routines to mathematical analyses—where the output of one step seamlessly informs the next.\n\n## Edge Cases\n─────────────────────────────  \nSupporting Cast\n\n## Detail 5\nThe ensemble backing this orchestration brings together several specialized utilities:\n\n## Detail 6\n• A logging facility that not only records system events but also structures its messages for clarity. Its helper functions (built using concise arrow syntax) ensure that every significant event is captured as part of the overall telemetry stream.\n\n## Detail 7\n• A memory store component designed to persist state in a structured manner, providing a reliable backing for operations that depend on consistent data storage and retrieval.\n\n## Detail 8\n• Mathematical utilities that calculate averages and describe trends, adding analytical depth to the flow. These functions transform raw numerical inputs into meaningful insights that can inform subsequent decisions within the pipeline.\n\n## Detail 9\n• Friendly greeting mechanisms that add an element of human interaction—whether initiating or concluding a process—to ensure that every transaction is both informative and engaging.\n\n## Detail 10\nTogether, these modules support the protagonist’s goal by ensuring that each stage of data transformation is well documented, traceable, and executed in harmony with the next.\n\n## Detail 11\n─────────────────────────────  \nRisk Notes\n\n## Detail 12\nDespite the robust design, several risk factors loom on the horizon:\n\n## Detail 13\n• The heavy reliance on structured outputs means any deviation or unexpected format from one module could cascade through the pipeline, undermining determinism. Small errors in validation or normalization might propagate unchecked if not properly isolated.\n\n## Detail 14\n• With telemetry emitted at nearly every stage, there is a potential for log clutter or information overload. This could obscure critical events and make troubleshooting more challenging if not managed with precision.\n\n## Detail 15\n• The layered import strategy, while elegant, creates tight interdependencies between modules. A misstep in one area—such as an error in the logging mechanism or memory store—could ripple through the entire system, impacting both data integrity and user interactions.\n\n## Detail 16\n• Finally, while each function is designed to return consistent objects, the overall design may become brittle if changes occur in any module’s contract. Ensuring rigorous testing and clear documentation of expected structures becomes paramount to mitigating these risks.\n\n## Detail 17\nIn summary, the protagonist’s goals are to achieve a harmonious and deterministic flow of operations—from greeting and mathematical analysis through validation and normalization—while maintaining robust telemetry and state persistence. The supporting cast works tirelessly behind the scenes to ensure that every step is traceable and consistent, yet careful attention must be paid to potential pitfalls that could disrupt this elegant orchestration.",
+    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
     "sourceDir": "samples/recompose/hello-flow/code",
     "metadata": {
-      "sampleDir": "/Volumes/ExtSD/Sources/GitHub/miniphi/samples/recompose/hello-flow",
+      "sampleDir": "C:\\Sources\\GitHub\\miniphi\\samples\\recompose\\hello-flow",
       "sampleName": "hello-flow",
       "readmeSnippet": "# Hello Flow Sample This intentionally small project keeps the `recompose` benchmark deterministic while still exercising layered imports: - `src/greeter.js` handles friendly greetings/farewells. - `src/math.js` performs average/trend calcu",
       "plan": {
@@ -72,6 +218,6 @@
     }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2025-11-20T09:16:08.335Z",
+  "generatedAt": "2025-12-21T15:29:59.155Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }

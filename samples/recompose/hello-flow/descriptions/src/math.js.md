@@ -1,7 +1,7 @@
 ---
 source: src/math.js
 language: javascript
-generatedAt: 2025-11-20T06:55:03.226Z
+generatedAt: 2025-12-21T15:29:57.573Z
 sha256: f8bb2afdb1eea366696cb7d83e7b23f7f3a6f493af51cbbfe3cc4c36e25149ab
 ---
 

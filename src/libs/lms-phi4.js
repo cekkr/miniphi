@@ -332,6 +332,9 @@ export class Phi4Handler {
           }, () => cancelPrediction(`${this.modelKey} prompt timeout`));
         }
 
+        if (!result || !result.trim()) {
+          throw new Error(`${this.modelKey} returned an empty response.`);
+        }
         const finishedAt = Date.now();
         const validationResult = this._validateSchema(schemaDetails, result);
         schemaValidation = this._summarizeValidation(validationResult);
