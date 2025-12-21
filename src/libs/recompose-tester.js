@@ -4,13 +4,27 @@ import { createHash } from "crypto";
 import YAML from "yaml";
 import { extractJsonBlock } from "./core-utils.js";
 import {
+  codeContainsIdentifier,
+  detectExportStyle,
+  extractClasses,
+  extractExports,
+  extractImports,
+  hasDefaultExport,
   languageFromExtension,
   normalizeExportName,
+  normalizeSnippetLabel,
+  normalizeWhitespace,
   parseMarkdown,
   relativeToCwd,
   safeSessionName,
+  sanitizeNarrative,
   sanitizeExportName,
   slugify,
+  structureNarrative,
+  summarizeDiff,
+  summarizeList,
+  truncateBlock,
+  truncateLine,
 } from "./recompose-utils.js";
 import {
   buildWorkspaceHintBlock,
@@ -424,8 +438,8 @@ export default class RecomposeTester {
       schemaId: RECOMPOSE_SCHEMA_IDS.narrative,
       metadata: { file: relativePath },
     });
-    const structured = this._structureNarrative(
-      this._sanitizeNarrative(this._pickNarrativeField(payload, "narrative", raw)),
+    const structured = structureNarrative(
+      sanitizeNarrative(this._pickNarrativeField(payload, "narrative", raw)),
       relativePath,
       () =>
         this._fallbackFileNarrative({
@@ -472,8 +486,8 @@ export default class RecomposeTester {
       schemaId: RECOMPOSE_SCHEMA_IDS.plan,
       metadata: { file: relativePath },
     });
-    const planText = this._sanitizeNarrative(this._pickNarrativeField(payload, "plan", raw));
-    const plan = this._structureNarrative(planText, relativePath, () =>
+    const planText = sanitizeNarrative(this._pickNarrativeField(payload, "plan", raw));
+    const plan = structureNarrative(planText, relativePath, () =>
       this._fallbackPlanFromNarrative(relativePath, narrative),
     );
     await this._writeSessionAsset(
@@ -599,18 +613,18 @@ export default class RecomposeTester {
     }
     const issues = [];
     if (signature.exportStyle) {
-      const detected = this._detectExportStyle(code);
+      const detected = detectExportStyle(code);
       if (detected && signature.exportStyle !== detected) {
         issues.push(
           `File ${relativePath} must use ${signature.exportStyle === "esm" ? "ES module exports" : "module.exports"} syntax.`,
         );
       }
     }
-    if (signature.hasDefaultExport && !this._hasDefaultExport(code)) {
+    if (signature.hasDefaultExport && !hasDefaultExport(code)) {
       issues.push(`File ${relativePath} must include an export default declaration.`);
     }
     if (signature.exports?.length) {
-      const missing = signature.exports.filter((name) => !this._codeContainsIdentifier(code, name));
+      const missing = signature.exports.filter((name) => !codeContainsIdentifier(code, name));
       if (missing.length) {
         issues.push(`Missing exported symbols: ${missing.join(", ")}`);
       }
@@ -662,7 +676,7 @@ export default class RecomposeTester {
         timeoutMs: this.workspaceOverviewTimeoutMs,
         schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
       });
-      summaryText = this._sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
+      summaryText = sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
       const needsRetry = this._needsMoreContext(payload) || this._needsWorkspaceRetry(summaryText);
       if (needsRetry) {
         const retryPrompt = this._composeWorkspaceOverviewPrompt({
@@ -678,7 +692,7 @@ export default class RecomposeTester {
           timeoutMs: this.workspaceOverviewTimeoutMs,
           schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
         });
-        summaryText = this._sanitizeNarrative(
+        summaryText = sanitizeNarrative(
           this._pickNarrativeField(retryResponse.payload, "summary", retryResponse.raw),
         );
         if (!this._needsMoreContext(retryResponse.payload) && summaryText?.trim()) {
@@ -690,7 +704,7 @@ export default class RecomposeTester {
       }
     }
     let fallbackUsed = false;
-    const summary = this._structureNarrative(
+    const summary = structureNarrative(
       summaryText,
       "workspace",
       () => {
@@ -732,7 +746,7 @@ export default class RecomposeTester {
       label: "recompose:workspace-from-descriptions",
       schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
     });
-    let summaryText = this._sanitizeNarrative(
+    let summaryText = sanitizeNarrative(
       this._pickNarrativeField(summaryPayload.payload, "summary", summaryPayload.raw),
     );
     if (this._needsMoreContext(summaryPayload.payload) || this._needsWorkspaceRetry(summaryText)) {
@@ -744,11 +758,11 @@ export default class RecomposeTester {
         label: "recompose:workspace-from-descriptions-retry",
         schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
       });
-      summaryText = this._sanitizeNarrative(
+      summaryText = sanitizeNarrative(
         this._pickNarrativeField(summaryPayload.payload, "summary", summaryPayload.raw),
       );
     }
-    const summary = this._structureNarrative(
+    const summary = structureNarrative(
       summaryText,
       "workspace",
       () => this._fallbackWorkspaceSummaryFromDescriptions(excerpts),
@@ -932,7 +946,7 @@ export default class RecomposeTester {
       }
     }
     if (!summary.length) {
-      const fallback = this._normalizeWhitespace(lines.slice(0, 6).join(" "));
+      const fallback = normalizeWhitespace(lines.slice(0, 6).join(" "));
       if (fallback) {
         summary.push(fallback.slice(0, 240));
       }
@@ -1002,10 +1016,6 @@ export default class RecomposeTester {
     );
   }
 
-  _normalizeWhitespace(text) {
-    return (text ?? "").replace(/\s+/g, " ").trim();
-  }
-
   async _captureBaselineSignatures(codeDir) {
     if (!codeDir) {
       return;
@@ -1026,9 +1036,9 @@ export default class RecomposeTester {
       }
       try {
         const content = await fs.promises.readFile(absolute, "utf8");
-        const exports = this._extractExports(content.split(/\r?\n/));
-        const exportStyle = this._detectExportStyle(content);
-        const hasDefaultExport = this._hasDefaultExport(content);
+        const exports = extractExports(content.split(/\r?\n/));
+        const exportStyle = detectExportStyle(content);
+        const hasDefaultExport = hasDefaultExport(content);
         this.baselineSignatures.set(relativePath.replace(/\\/g, "/"), {
           exports,
           exportStyle,
@@ -1098,22 +1108,22 @@ export default class RecomposeTester {
     }
     const sections = [];
     for (const snippet of missingSnippets) {
-      const label = this._normalizeSnippetLabel(snippet);
+      const label = normalizeSnippetLabel(snippet);
       if (!label) {
         continue;
       }
       const block = [];
       const blueprint = this._lookupBlueprint(label);
       if (blueprint?.narrative) {
-        block.push(`Narrative:\n${this._truncateBlock(blueprint.narrative)}`);
+        block.push(`Narrative:\n${truncateBlock(blueprint.narrative)}`);
       }
       if (blueprint?.plan) {
-        block.push(`Plan:\n${this._truncateBlock(blueprint.plan)}`);
+        block.push(`Plan:\n${truncateBlock(blueprint.plan)}`);
       }
       if (!block.length) {
         const description = await this._loadDescriptionSnippet(label);
         if (description) {
-          block.push(`Narrative:\n${this._truncateBlock(description)}`);
+          block.push(`Narrative:\n${truncateBlock(description)}`);
         }
       }
       if (block.length) {
@@ -1237,33 +1247,6 @@ export default class RecomposeTester {
     }
   }
 
-  _sanitizeNarrative(text) {
-    if (!text) {
-      return "";
-    }
-    let sanitized = text.replace(/```[\s\S]*?```/g, (block) => {
-      const lines = block.split(/\r?\n/).length - 2;
-      return `> [omitted ${Math.max(lines, 1)} lines of code]\n`;
-    });
-    sanitized = sanitized.replace(/`([^`]+)`/g, "$1");
-    return sanitized.replace(/\r\n/g, "\n").trim();
-  }
-
-  _structureNarrative(text, label, fallbackFactory = null) {
-    const trimmed = text?.trim();
-    if (!trimmed) {
-      return fallbackFactory ? fallbackFactory() : `## Overview\n${label} narrative unavailable.`;
-    }
-    if (/##\s+/.test(trimmed)) {
-      return trimmed;
-    }
-    const paragraphs = trimmed.split(/\n{2,}/).filter(Boolean);
-    const headings = ["Overview", "Flow", "Signals", "Edge Cases"];
-    return paragraphs
-      .map((para, index) => `## ${headings[index] ?? `Detail ${index + 1}`}\n${para}`)
-      .join("\n\n");
-  }
-
   async _startSession(label) {
     const slug = slugify(label ?? this.promptLabel ?? "recompose");
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -1348,22 +1331,22 @@ export default class RecomposeTester {
       return this._fallbackMarkdownNarrative(relativePath, content);
     }
     const lines = content.split(/\r?\n/);
-    const imports = this._extractImports(lines);
-    const exports = this._extractExports(lines);
-    const classNames = this._extractClasses(lines);
+    const imports = extractImports(lines);
+    const exports = extractExports(lines);
+    const classNames = extractClasses(lines);
     const responsibilities = [];
     if (imports.length) {
       responsibilities.push(
-        `Pulls in ${imports.length} helper${imports.length === 1 ? "" : "s"} (${this._summarizeList(imports)}).`,
+        `Pulls in ${imports.length} helper${imports.length === 1 ? "" : "s"} (${summarizeList(imports)}).`,
       );
     }
     if (exports.length) {
       responsibilities.push(
-        `Exposes ${exports.length} exported symbol${exports.length === 1 ? "" : "s"} (${this._summarizeList(exports)}).`,
+        `Exposes ${exports.length} exported symbol${exports.length === 1 ? "" : "s"} (${summarizeList(exports)}).`,
       );
     }
     if (classNames.length) {
-      responsibilities.push(`Defines class constructs such as ${this._summarizeList(classNames)}.`);
+      responsibilities.push(`Defines class constructs such as ${summarizeList(classNames)}.`);
     }
     const approxLength = lines.length;
     const structure = [
@@ -1371,9 +1354,9 @@ export default class RecomposeTester {
       `The file ${relativePath} operates as a ${language} module with roughly ${approxLength} line${approxLength === 1 ? "" : "s"}.`,
       responsibilities.length ? responsibilities.join(" ") : "It focuses on orchestration and light data shaping.",
       "## Key Elements",
-      imports.length ? `- Dependencies: ${this._summarizeList(imports, 6)}` : "- Dependencies: internal-only helpers.",
-      exports.length ? `- Public interface: ${this._summarizeList(exports, 6)}` : "- Public interface: internal utilities only.",
-      classNames.length ? `- Classes: ${this._summarizeList(classNames, 4)}` : "- Classes: none, relies on functions.",
+      imports.length ? `- Dependencies: ${summarizeList(imports, 6)}` : "- Dependencies: internal-only helpers.",
+      exports.length ? `- Public interface: ${summarizeList(exports, 6)}` : "- Public interface: internal utilities only.",
+      classNames.length ? `- Classes: ${summarizeList(classNames, 4)}` : "- Classes: none, relies on functions.",
       "## Flow & Edge Cases",
       "Execution revolves around sanitizing input, coordinating helper utilities, and emitting structured results/logs. Edge cases are handled defensively (nullish names, insufficient samples, or missing state) prior to returning values.",
     ];
@@ -1462,7 +1445,7 @@ export default class RecomposeTester {
 
   _buildOfflineCodeStub({ relativePath, blueprint, signature }) {
     const normalizedName = normalizeExportName(relativePath);
-    const summary = this._normalizeWhitespace(blueprint?.narrative ?? "");
+    const summary = normalizeWhitespace(blueprint?.narrative ?? "");
     const exports = Array.isArray(signature?.exports) && signature.exports.length ? signature.exports : null;
     const exportStyle = signature?.exportStyle ?? "commonjs";
     const lines = [];
@@ -1500,102 +1483,6 @@ export default class RecomposeTester {
       }
     }
     return lines.join("\n");
-  }
-
-  _extractImports(lines) {
-    const matches = [];
-    const regex = /import\s+[^;]+from\s+["'](.+?)["']/g;
-    for (const line of lines) {
-      let match;
-      while ((match = regex.exec(line))) {
-        matches.push(match[1]);
-      }
-    }
-    return Array.from(new Set(matches));
-  }
-
-  _extractExports(lines) {
-    const exports = new Set();
-    const patterns = [
-      /export\s+function\s+([a-zA-Z0-9_]+)/g,
-      /export\s+const\s+([a-zA-Z0-9_]+)/g,
-      /export\s+class\s+([a-zA-Z0-9_]+)/g,
-      /module\.exports\s*=\s*{([^}]+)}/g,
-    ];
-    lines.forEach((line) => {
-      patterns.forEach((regex) => {
-        let match;
-        while ((match = regex.exec(line))) {
-          if (match[1]) {
-            match[1]
-              .split(",")
-              .map((token) => token.trim())
-              .filter(Boolean)
-              .forEach((token) => exports.add(token));
-          }
-        }
-      });
-    });
-    return Array.from(exports);
-  }
-
-  _extractClasses(lines) {
-    const regex = /class\s+([a-zA-Z0-9_]+)/g;
-    const classes = new Set();
-    lines.forEach((line) => {
-      let match;
-      while ((match = regex.exec(line))) {
-        classes.add(match[1]);
-      }
-    });
-    return Array.from(classes);
-  }
-
-  _summarizeList(items, limit = 5) {
-    if (!items.length) {
-      return "none";
-    }
-    const unique = Array.from(new Set(items));
-    if (unique.length <= limit) {
-      return unique.join(", ");
-    }
-    const prefix = unique.slice(0, limit).join(", ");
-    return `${prefix}, and ${unique.length - limit} more`;
-  }
-
-  _detectExportStyle(source) {
-    if (!source) {
-      return null;
-    }
-    if (/module\.exports|exports\./.test(source)) {
-      return "commonjs";
-    }
-    if (/export\s+(const|function|class|default)/.test(source)) {
-      return "esm";
-    }
-    return null;
-  }
-
-  _hasDefaultExport(source) {
-    if (!source) {
-      return false;
-    }
-    return /export\s+default\s+/m.test(source);
-  }
-
-  _codeContainsIdentifier(source, identifier) {
-    if (!source || !identifier) {
-      return false;
-    }
-    const pattern = new RegExp(`\\b${identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
-    return pattern.test(source);
-  }
-
-  _normalizeSnippetLabel(label) {
-    if (!label) {
-      return "";
-    }
-    return label.toString().trim().replace(/^['"]|['"]$/g, "");
   }
 
   _lookupBlueprint(label) {
@@ -1642,17 +1529,6 @@ export default class RecomposeTester {
       }
     }
     return null;
-  }
-
-  _truncateBlock(text, limit = 1400) {
-    const normalized = (text ?? "").trim();
-    if (!normalized) {
-      return "";
-    }
-    if (normalized.length <= limit) {
-      return normalized;
-    }
-    return `${normalized.slice(0, limit)}...`;
   }
 
   async _isBinary(filePath) {
@@ -1757,45 +1633,15 @@ export default class RecomposeTester {
     } catch {
       candidate = "";
     }
-    const diff = this._summarizeDiff(baseline, candidate);
+    const diff = summarizeDiff(baseline, candidate);
     return [
       `Repairs required for ${relativePath}`,
-      baseline ? `Baseline preview:\n${this._truncateLine(baseline.slice(0, 400))}` : "Baseline preview unavailable.",
-      type === "missing" ? "Candidate preview: file missing entirely." : `Candidate preview:\n${this._truncateLine(candidate.slice(0, 400))}`,
+      baseline ? `Baseline preview:\n${truncateLine(baseline.slice(0, 400))}` : "Baseline preview unavailable.",
+      type === "missing" ? "Candidate preview: file missing entirely." : `Candidate preview:\n${truncateLine(candidate.slice(0, 400))}`,
       diff ? `Diff sketch:\n${diff}` : "Diff sketch unavailable.",
     ].join("\n\n");
   }
 
-  _summarizeDiff(baseline, candidate) {
-    if (!baseline && !candidate) {
-      return null;
-    }
-    const a = (baseline ?? "").split(/\r?\n/);
-    const b = (candidate ?? "").split(/\r?\n/);
-    const limit = Math.min(Math.max(a.length, b.length), 400);
-    const output = [];
-    for (let i = 0; i < limit && output.length < 80; i += 1) {
-      const left = a[i] ?? "";
-      const right = b[i] ?? "";
-      if (left === right) {
-        continue;
-      }
-      output.push(`- [${i + 1}] ${this._truncateLine(left)}`);
-      output.push(`+ [${i + 1}] ${this._truncateLine(right)}`);
-    }
-    return output.length ? output.join("\n") : null;
-  }
-
-  _truncateLine(text, max = 160) {
-    const normalized = (text ?? "").replace(/\s+/g, " ").trim();
-    if (!normalized) {
-      return "(empty)";
-    }
-    if (normalized.length <= max) {
-      return normalized;
-    }
-    return `${normalized.slice(0, max)}…`;
-  }
 
   _repairPriority(relativePath) {
     const normalized = relativePath.toLowerCase();
