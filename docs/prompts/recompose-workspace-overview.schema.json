@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Recompose Workspace Overview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "needs_more_context", "missing_snippets"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Narrative overview with headings for Architecture Rhythm, Supporting Cast, and Risk Notes."
+    },
+    "highlights": {
+      "type": "array",
+      "description": "Optional bullets that capture key behaviors or modules.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Caveats or uncertainty to keep in mind during recomposition.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "Set to true when the provided workspace excerpts are insufficient.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "Minimal snippets or files needed before retrying.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Recompose File Narrative",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["narrative", "needs_more_context", "missing_snippets"],
+  "properties": {
+    "narrative": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Markdown narrative with headings, describing intent, flow, and edge cases without code fences."
+    },
+    "outline": {
+      "type": "array",
+      "description": "Optional list of headings or key sections used in the narrative.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Caveats or uncertainty to keep in mind during recomposition.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "Set to true when the provided source snippet is insufficient.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "Minimal snippets or files needed before retrying.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  }
+}

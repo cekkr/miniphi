@@ -4417,6 +4417,7 @@ async function createRecomposeHarness({
     promptLabel: sessionLabel ?? "recompose",
     verboseLogging: verbose,
     memory,
+    schemaRegistry,
     useLivePrompts: recomposeMode === "live",
     workspaceOverviewTimeoutMs,
   });

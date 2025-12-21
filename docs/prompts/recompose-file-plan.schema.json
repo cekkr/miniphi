@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Recompose File Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan", "needs_more_context", "missing_snippets"],
+  "properties": {
+    "plan": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Markdown plan with headings for Inputs, Transformations, Outputs, and Failure Modes."
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Optional input list for the file implementation.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "transformations": {
+      "type": "array",
+      "description": "Optional transformation steps for the file implementation.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Optional outputs emitted by the file implementation.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "failure_modes": {
+      "type": "array",
+      "description": "Optional failure or edge cases to preserve.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "description": "Optional extra guidance to preserve intent."
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "Set to true when the narrative is insufficient to plan the file.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "Minimal snippets or files needed before retrying.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  }
+}
