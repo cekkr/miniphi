@@ -620,7 +620,11 @@ export default class RecomposeTester {
     const issues = [];
     if (signature.exportStyle) {
       const detected = detectExportStyle(code);
-      if (detected && signature.exportStyle !== detected) {
+      if (!detected) {
+        issues.push(
+          `File ${relativePath} must use ${signature.exportStyle === "esm" ? "ES module exports" : "module.exports"} syntax, but no export style was detected.`,
+        );
+      } else if (signature.exportStyle !== detected) {
         issues.push(
           `File ${relativePath} must use ${signature.exportStyle === "esm" ? "ES module exports" : "module.exports"} syntax.`,
         );
@@ -657,6 +661,7 @@ export default class RecomposeTester {
       this.sampleMetadata?.readmeSnippet,
       { limit: 12 },
     );
+    const overviewAttempts = [];
     const overviewIntro = [
       "Survey the workspace and narrate the protagonist's goals.",
       "Produce sections for Architecture Rhythm, Supporting Cast, and Risk Notes.",
@@ -685,6 +690,7 @@ export default class RecomposeTester {
         schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
       });
       summaryText = sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
+      overviewAttempts.push({ label: attempt.label, raw, summary: summaryText });
       const needsRetry = this._needsMoreContext(payload) || this._needsWorkspaceRetry(summaryText);
       if (needsRetry) {
         const retryPrompt = composeWorkspaceOverviewPrompt({
@@ -703,6 +709,11 @@ export default class RecomposeTester {
         summaryText = sanitizeNarrative(
           this._pickNarrativeField(retryResponse.payload, "summary", retryResponse.raw),
         );
+        overviewAttempts.push({
+          label: `${attempt.label}-retry`,
+          raw: retryResponse.raw,
+          summary: summaryText,
+        });
         if (!this._needsMoreContext(retryResponse.payload) && summaryText?.trim()) {
           break;
         }
@@ -712,6 +723,8 @@ export default class RecomposeTester {
       }
     }
     let fallbackUsed = false;
+    let partialOverview = null;
+    let partialOverviewPath = null;
     const summary = structureNarrative(
       summaryText,
       "workspace",
@@ -721,12 +734,29 @@ export default class RecomposeTester {
       },
     );
     if (fallbackUsed) {
+      partialOverview = this._capturePartialOverview(overviewAttempts);
+      if (partialOverview?.content) {
+        partialOverviewPath = await this._writeSessionAsset(
+          "workspace-overview.partial.md",
+          `# Partial workspace overview attempts\n\n${partialOverview.content}\n`,
+        );
+      }
       warnWorkspaceOverviewFallback({
         promptLogPath: this.promptLogPath,
         attemptCount: attempts.length,
+        partialPath: partialOverviewPath,
+        partialPreview: partialOverview?.preview,
       });
     }
-    this.workspaceContext = { kind: "code", summary, sourceDir, metadata: this.sampleMetadata };
+    this.workspaceContext = {
+      kind: "code",
+      summary,
+      sourceDir,
+      metadata: this.sampleMetadata,
+      overviewStatus: fallbackUsed ? "fallback" : "ok",
+      partialOverviewPath: partialOverviewPath ? relativeToCwd(partialOverviewPath) : null,
+      partialOverview: fallbackUsed ? partialOverview?.preview ?? null : null,
+    };
     await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
   }
@@ -816,6 +846,43 @@ export default class RecomposeTester {
       contentBlocks,
       metaNote,
       totalFiles: files.length,
+    };
+  }
+
+  _capturePartialOverview(attempts = []) {
+    if (!Array.isArray(attempts) || !attempts.length) {
+      return null;
+    }
+    const blocks = [];
+    let previewSource = null;
+    for (const attempt of attempts) {
+      const normalizedSummary = sanitizeNarrative(attempt?.summary ?? "");
+      const normalizedRaw = attempt?.raw ? sanitizeNarrative(attempt.raw) : "";
+      if (!previewSource && normalizedSummary) {
+        previewSource = normalizedSummary;
+      } else if (!previewSource && normalizedRaw) {
+        previewSource = normalizedRaw;
+      }
+      const parts = [];
+      if (attempt?.label) {
+        parts.push(`## ${attempt.label}`);
+      }
+      if (normalizedSummary) {
+        parts.push(normalizedSummary);
+      } else if (attempt?.raw) {
+        parts.push(this._truncateForLog(attempt.raw));
+      }
+      if (parts.length) {
+        blocks.push(parts.join("\n\n"));
+      }
+    }
+    if (!blocks.length || !previewSource) {
+      return null;
+    }
+    const preview = truncateLine(normalizeWhitespace(previewSource), 220);
+    return {
+      content: blocks.join("\n\n"),
+      preview,
     };
   }
 

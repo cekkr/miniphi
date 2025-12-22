@@ -448,13 +448,29 @@ export function summarizeCodeLine(line) {
   return null;
 }
 
-export function warnWorkspaceOverviewFallback({ promptLogPath, attemptCount } = {}) {
+export function warnWorkspaceOverviewFallback({
+  promptLogPath,
+  attemptCount,
+  partialPath = null,
+  partialPreview = null,
+} = {}) {
   const logLabel = promptLogPath ? relativeToCwd(promptLogPath) : null;
+  const partialLabel = partialPath ? relativeToCwd(partialPath) : null;
   const attempts = Number(attemptCount) || 1;
-  const suffix = logLabel ? ` (see ${logLabel})` : "";
+  const pathNotes = [];
+  if (logLabel) {
+    pathNotes.push(`prompts ${logLabel}`);
+  }
+  if (partialLabel) {
+    pathNotes.push(`partial ${partialLabel}`);
+  }
+  const suffix = pathNotes.length ? ` (${pathNotes.join(" | ")})` : "";
   console.warn(
     `[MiniPhi][Recompose] Workspace overview prompt failed after ${attempts} attempt${
       attempts === 1 ? "" : "s"
     }; saved a fallback summary built from file glimpses${suffix}. Re-run with --workspace-overview-timeout to grant Phi more time if needed.`,
   );
+  if (partialPreview) {
+    console.warn(`[MiniPhi][Recompose] Partial Phi overview: ${truncateLine(partialPreview, 220)}`);
+  }
 }
