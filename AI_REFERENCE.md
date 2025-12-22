@@ -9,6 +9,7 @@
 
 ## High priority reference
 These are the currently "fixed reference points" of miniphi project:
+- HIGH PRIORITY: Treat "recompose" as the natural-language MiniPhi agent unit-test harness driven through `src/index.js`; avoid inventing separate recomposition-only semantics and let LM Studio handle the prompt/JSON flows without extra bespoke orchestration.
 - Miniphi is an AI agent that uses LM Studio APIs for local running. By default, it manipulates the current working directory content given the user prompt.
 - Miniphi has to work with fixed and reduced context length with APIs: so it has to use recursive APIs requests to elaborate a complete task list for complete the main prompt, and then execute it in its predicted priority order
 - Miniphi has to take advantage of API's model in LM Studio itself to elaborate better prompts, ad hoc command line commands and shell/js/python scripts for current user's OS and CWD project. Given that, are essential the "basic essential prompts" where miniphi start to learn everything useful

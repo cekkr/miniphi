@@ -95,7 +95,10 @@ const RECOMPOSE_SCHEMA_IDS = {
   plan: "recompose-file-plan",
   codegen: "recompose-codegen",
 };
+const DEFAULT_AGENT_OBJECTIVE =
+  "Recompose runs as a natural-language unit test of the MiniPhi agent (via src/index.js) rather than a standalone code-only harness.";
 
+// Natural-language MiniPhi agent unit-test harness (recompose), not a recomposition-only library.
 export default class RecomposeTester {
   constructor(options = {}) {
     this.ignoredDirs = new Set(options.ignoredDirs ?? ["node_modules", ".git"]);
@@ -133,6 +136,10 @@ export default class RecomposeTester {
             .filter((value) => Number.isFinite(value) && value > 0)
         : DEFAULT_OVERVIEW_PROGRESSIVE;
     this.workspaceOverviewProgression = progression.length ? progression : DEFAULT_OVERVIEW_PROGRESSIVE;
+    this.agentObjective =
+      typeof options.agentObjective === "string" && options.agentObjective.trim()
+        ? options.agentObjective.trim()
+        : DEFAULT_AGENT_OBJECTIVE;
   }
 
   async run(options = {}) {
@@ -244,6 +251,7 @@ export default class RecomposeTester {
             kind: this.workspaceContext.kind,
             summary: this.workspaceContext.summary,
             sourceDir: relativeToCwd(this.workspaceContext.sourceDir),
+            purpose: this.workspaceContext.purpose ?? this.agentObjective ?? null,
             metadata: this.sampleMetadata,
           }
         : null,
@@ -426,6 +434,9 @@ export default class RecomposeTester {
         'Populate "narrative" with a multi-section markdown description (no code fences).',
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the narrative cannot be completed.',
       ]),
+      this._agentObjectiveLine(
+        "Recompose is a natural-language MiniPhi agent unit test invoked via src/index.js; avoid treating this as a standalone recomposition-only helper.",
+      ),
       "You are documenting a source file for the MiniPhi recomposition benchmark.",
       "Convert the code into a multi-section narrative that describes intent, data flow, and error handling.",
       "Use at least three markdown headings (##) and no fenced code blocks. Inline code should be rewritten as plain language.",
@@ -479,6 +490,9 @@ export default class RecomposeTester {
         'Use the optional arrays (inputs, transformations, outputs, failure_modes) when they help summarize details.',
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the plan cannot be completed.',
       ]),
+      this._agentObjectiveLine(
+        "Recompose is framed as a natural-language MiniPhi agent unit test; shape the plan so the main CLI prompt flow can execute it end-to-end.",
+      ),
       "You previously helped convert code into prose for a secure recomposition test.",
       "Given the narrative description, outline the concrete implementation strategy.",
       "Describe the modules, helper functions, and edge cases that must exist.",
@@ -516,6 +530,9 @@ export default class RecomposeTester {
         'Populate "code" with the complete source file (no code fences).',
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if code cannot be produced.',
       ]),
+      this._agentObjectiveLine(
+        "Recompose acts as a natural-language MiniPhi agent unit test routed through src/index.js; lean on the model rather than bespoke recomposition-only heuristics.",
+      ),
       "You now synthesize the final source file described earlier.",
       "Use the supplied plan and narrative to rebuild the exact behavior.",
       "Preserve existing exports and module style (ESM vs CommonJS) exactly.",
@@ -663,10 +680,15 @@ export default class RecomposeTester {
     );
     const overviewAttempts = [];
     const overviewIntro = [
+      this._agentObjectiveLine(
+        "Treat this overview as the natural-language setup for the MiniPhi agent rather than a recomposition-only harness.",
+      ),
       "Survey the workspace and narrate the protagonist's goals.",
       "Produce sections for Architecture Rhythm, Supporting Cast, and Risk Notes.",
       "Avoid listing file names explicitly; rely on behaviors and interactions.",
-    ].join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const metadataSummary = formatMetadataSummary(this.sampleMetadata);
     const schemaInstructions = this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.workspace, [
       'Populate "summary" with the narrative overview using markdown headings for Architecture Rhythm, Supporting Cast, and Risk Notes.',
@@ -756,6 +778,7 @@ export default class RecomposeTester {
       overviewStatus: fallbackUsed ? "fallback" : "ok",
       partialOverviewPath: partialOverviewPath ? relativeToCwd(partialOverviewPath) : null,
       partialOverview: fallbackUsed ? partialOverview?.preview ?? null : null,
+      purpose: this.agentObjective,
     };
     await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
@@ -778,6 +801,9 @@ export default class RecomposeTester {
         'Populate "summary" with the narrative overview of the workspace.',
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the overview cannot be completed.',
       ]),
+      this._agentObjectiveLine(
+        "This run treats recompose as a natural-language MiniPhi agent unit test; summarize so the agent can act through the main CLI without a bespoke recomposition layer.",
+      ),
       "The workspace contains prose-only descriptions of code files.",
       `Summarize the project from these excerpts so ${this._modelLabel()} can rebuild it.`,
       `Excerpts:\n${excerpts.join("\n\n")}`,
@@ -808,7 +834,13 @@ export default class RecomposeTester {
       "workspace",
       () => this._fallbackWorkspaceSummaryFromDescriptions(excerpts),
     );
-    this.workspaceContext = { kind: "descriptions", summary, sourceDir, metadata: this.sampleMetadata };
+    this.workspaceContext = {
+      kind: "descriptions",
+      summary,
+      sourceDir,
+      metadata: this.sampleMetadata,
+      purpose: this.agentObjective,
+    };
     await this._writeSessionAsset(WORKSPACE_OVERVIEW_FILE, `# Workspace Overview\n\n${summary}\n`);
     return summary;
   }
@@ -971,6 +1003,16 @@ export default class RecomposeTester {
         // ignore failures
       }
     }
+  }
+
+  _agentObjectiveLine(extra = null) {
+    const base =
+      typeof this.agentObjective === "string" && this.agentObjective.trim()
+        ? this.agentObjective.trim()
+        : DEFAULT_AGENT_OBJECTIVE;
+    const suffix = typeof extra === "string" && extra.trim() ? extra.trim() : "";
+    const combined = [base, suffix].filter(Boolean).join(" ");
+    return combined || null;
   }
 
   _buildSchemaInstructions(schemaId, extraLines = []) {
@@ -1182,7 +1224,7 @@ export default class RecomposeTester {
     await fs.promises.mkdir(path.join(this.sessionDir, "code"), { recursive: true });
     this.promptLogPath = path.join(this.sessionDir, "prompts.log");
     const header = [
-      `# MiniPhi Recompose Prompt Log`,
+      `# MiniPhi Agent Prompt Log (recompose unit test)`,
       `Session: ${this.sessionLabel}`,
       `Created: ${new Date().toISOString()}`,
       "",
