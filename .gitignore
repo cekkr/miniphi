@@ -150,3 +150,5 @@ miniphi-prompts.db-shm
 miniphi-prompts.db-wal
 .DS_Store
 /samples/besh/.venv
+
+local/
