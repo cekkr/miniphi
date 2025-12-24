@@ -1122,6 +1122,30 @@ function isLmStudioProtocolError(error) {
   return error instanceof LMStudioProtocolError || error?.name === "LMStudioProtocolError";
 }
 
+function classifyStopReason(error) {
+  if (!error) {
+    return "unknown";
+  }
+  if (isLmStudioProtocolError(error)) {
+    return "lmstudio-protocol";
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes("denied by policy")) {
+    return "command-denied";
+  }
+  if (normalized.includes("tokens emitted")) {
+    return "no-token-timeout";
+  }
+  if (normalized.includes("timeout")) {
+    return "timeout";
+  }
+  if (normalized.includes("cancel")) {
+    return "cancelled";
+  }
+  return "error";
+}
+
 function extractLmStudioProtocolMetadata(error) {
   if (error instanceof LMStudioProtocolError && error.metadata) {
     return error.metadata;
@@ -2141,6 +2165,9 @@ async function main() {
   let stateManager;
   let promptRecorder = null;
   let promptJournal = null;
+  let stopReason = null;
+  let stopStatus = null;
+  let stopError = null;
   const archiveMetadata = {
     promptId,
     model: modelSelection.modelKey,
@@ -3191,6 +3218,10 @@ const describeWorkspace = (dir, options = undefined) =>
     await stopResourceMonitorIfNeeded();
 
     if (stateManager && result) {
+      const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
+      const finalStatus = stopStatus ?? "completed";
+      const finalStopReason = stopReason ?? fallbackReason ?? "completed";
+      const finalError = stopError ?? null;
       const archive = await stateManager.persistExecution({
         mode: command,
         task,
@@ -3203,6 +3234,9 @@ const describeWorkspace = (dir, options = undefined) =>
         result,
         promptId,
         truncationPlan: result?.truncationPlan ?? null,
+        status: finalStatus,
+        stopReason: finalStopReason,
+        error: finalError,
       });
       if (archive && options.verbose) {
         const relativePath = path.relative(process.cwd(), archive.path);
@@ -3300,8 +3334,38 @@ const describeWorkspace = (dir, options = undefined) =>
       );
     }
   } catch (error) {
+    stopStatus = "failed";
+    stopReason = classifyStopReason(error);
+    stopError = error instanceof Error ? error.message : String(error);
     console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
+    try {
+      await stopResourceMonitorIfNeeded();
+      if (stateManager) {
+        await stateManager.persistExecutionStop({
+          mode: command,
+          task,
+          command: archiveMetadata.command,
+          filePath: archiveMetadata.filePath,
+          cwd: archiveMetadata.cwd,
+          summaryLevels,
+          contextLength,
+          resourceUsage: resourceSummary?.summary ?? null,
+          promptId,
+          status: stopStatus,
+          stopReason,
+          error: stopError,
+        });
+      }
+    } catch (persistError) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to persist failure record: ${
+            persistError instanceof Error ? persistError.message : persistError
+          }`,
+        );
+      }
+    }
   } finally {
     try {
       if (promptId && stateManager) {

@@ -202,6 +202,9 @@ export default class MiniPhiMemory {
    *   summaryLevels?: number,
    *   contextLength?: number,
    *   promptId?: string,
+   *   status?: string,
+   *   stopReason?: string,
+   *   error?: string,
    *   result: {
    *     prompt: string,
    *     analysis: string,
@@ -224,7 +227,7 @@ export default class MiniPhiMemory {
     const segmentsDir = path.join(executionDir, "segments");
     await fs.promises.mkdir(segmentsDir, { recursive: true });
 
-    const metadata = {
+   const metadata = {
       id: executionId,
       mode: payload.mode,
       task: payload.task,
@@ -240,6 +243,9 @@ export default class MiniPhiMemory {
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
       truncationPlan: null,
+      status: payload.status ?? "completed",
+      stopReason: payload.stopReason ?? null,
+      error: payload.error ?? null,
     };
 
     const promptFile = path.join(executionDir, "prompt.json");
@@ -325,6 +331,70 @@ export default class MiniPhiMemory {
     await this._updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
 
     return { id: executionId, path: executionDir, truncationPlanPath };
+  }
+
+  /**
+   * Records a failed or aborted execution without requiring analysis output.
+   * @param {{
+   *   mode: string,
+   *   task?: string,
+   *   command?: string,
+   *   filePath?: string,
+   *   cwd?: string,
+   *   summaryLevels?: number,
+   *   contextLength?: number,
+   *   promptId?: string,
+   *   resourceUsage?: Record<string, any> | null,
+   *   status?: string,
+   *   stopReason?: string | null,
+   *   error?: string | null
+   * }} payload
+   */
+  async persistExecutionStop(payload) {
+    if (!payload) {
+      return null;
+    }
+    await this.prepare();
+
+    const timestamp = new Date().toISOString();
+    const executionId = randomUUID();
+    const executionDir = path.join(this.executionsDir, executionId);
+    await fs.promises.mkdir(executionDir, { recursive: true });
+
+    const metadata = {
+      id: executionId,
+      mode: payload.mode ?? "unknown",
+      task: payload.task ?? null,
+      command: payload.command ?? null,
+      filePath: payload.filePath ?? null,
+      cwd: payload.cwd ?? this.startDir,
+      summaryLevels: payload.summaryLevels ?? null,
+      contextLength: payload.contextLength ?? null,
+      linesAnalyzed: null,
+      compressedTokens: null,
+      contextRequests: [],
+      resourceUsage: payload.resourceUsage ?? null,
+      promptId: payload.promptId ?? null,
+      createdAt: timestamp,
+      truncationPlan: null,
+      status: payload.status ?? "failed",
+      stopReason: payload.stopReason ?? null,
+      error: payload.error ?? null,
+    };
+
+    const metadataFile = path.join(executionDir, "execution.json");
+    const executionIndexFile = path.join(executionDir, "index.json");
+    await this._writeJSON(metadataFile, metadata);
+    await this._writeJSON(executionIndexFile, {
+      id: executionId,
+      createdAt: timestamp,
+      files: {
+        metadata: this._relative(metadataFile),
+      },
+    });
+
+    await this._updateExecutionIndex(executionId, metadata, executionIndexFile, payload.task);
+    return { id: executionId, path: executionDir };
   }
 
   async savePromptDecomposition(payload) {
@@ -1200,6 +1270,8 @@ export default class MiniPhiMemory {
       createdAt: metadata.createdAt,
       linesAnalyzed: metadata.linesAnalyzed,
       compressedTokens: metadata.compressedTokens,
+      status: metadata.status ?? null,
+      stopReason: metadata.stopReason ?? null,
       path: this._relative(executionIndexFile),
     };
 
