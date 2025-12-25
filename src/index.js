@@ -627,9 +627,12 @@ async function checkLmStudioCompatibility(restClient, manager, options = undefin
       statusPayload?.status?.serverVersion ??
       null;
     const statusError = statusPayload?.error ?? statusPayload?.status?.error ?? null;
-    if (typeof statusError === "string" && /unexpected endpoint/i.test(statusError)) {
+    const statusUnsupported =
+      typeof statusError === "string" && /unexpected endpoint/i.test(statusError);
+    if (!statusPayload?.ok && !statusUnsupported) {
       result.ok = false;
       result.reason =
+        statusError ??
         "LM Studio status endpoint unavailable; SDK/Server versions likely out of sync. Update LM Studio or align the SDK.";
       result.preferRest = true;
     }

@@ -270,16 +270,23 @@ export class LMStudioRestClient {
       return { ok: true, status: payload ?? null };
     } catch (error) {
       const statusCode = typeof error?.status === "number" ? error.status : null;
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      // LM Studio servers without /status return 404/"Unexpected endpoint"; treat it as informational.
+      const unsupported =
+        typeof message === "string" &&
+        (/unexpected endpoint/i.test(message) || (statusCode && statusCode >= 400 && statusCode < 500));
       let fallback = null;
-      try {
-        fallback = await this.listModels();
-      } catch {
-        // ignore fallback failures to preserve the original error context
+      if (!unsupported) {
+        try {
+          fallback = await this.listModels();
+        } catch {
+          // ignore fallback failures to preserve the original error context
+        }
       }
       return {
-        ok: false,
+        ok: !unsupported,
         statusCode,
-        error: error instanceof Error ? error.message : String(error ?? "Unknown error"),
+        error: message,
         fallback,
       };
     }
