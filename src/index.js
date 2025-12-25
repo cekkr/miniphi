@@ -78,7 +78,8 @@ const COMMANDS = new Set([
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
 const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const GENERAL_BENCHMARK_BASELINE_PATH = path.join(
   PROJECT_ROOT,
@@ -5303,4 +5304,11 @@ Benchmark helper:
 `);
 }
 
-main();
+const invokedDirectly =
+  typeof process.argv[1] === "string" &&
+  path.resolve(process.argv[1]) === path.resolve(__filename);
+if (invokedDirectly) {
+  main();
+}
+
+export { extractImplicitWorkspaceTask, parseDirectFileReferences };
