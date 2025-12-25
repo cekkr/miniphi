@@ -12,6 +12,7 @@
 These are the fixed reference points for the MiniPhi project:
 - HIGH PRIORITY: Treat "recompose" as the natural-language MiniPhi agent unit-test harness driven through `src/index.js`; avoid separate recomposition-only semantics and let LM Studio handle prompt/JSON flows.
 - MiniPhi is a local LM Studio-powered agent for file manipulation in the current working directory.
+- Keep LM Studio API access healthy (status/models endpoints, SDK) so runs can discover available models and pick the best-fit preset dynamically.
 - JSON-first prompts are mandatory: include `response_format=json_schema`, a schema id from `docs/prompts/*.schema.json`, and reject responses that fail JSON parsing or schema validation.
 - Respect context limits by decomposing tasks; cap recursion and persist the plan so it can resume without loops.
 - Use the model to propose OS-specific commands and helper scripts, but store helpers under `.miniphi/`, version them, and enforce timeouts/exit checks.
@@ -75,6 +76,7 @@ These are the fixed reference points for the MiniPhi project:
 ### Roadmap rules
 - Only work on the next milestone; adding a new item must remove or defer a lower-priority one.
 - If a task cannot be verified with a sample or test, it is not done.
+- High priority: do not let roadmap churn crowd out end-to-end agent flow tests against LM Studio; every roadmap slice should include a live `miniphi "<task>"` validation path.
 
 ## Current runtime building blocks
 - `ApiNavigator` runs in parallel with the npm-based analyzers, asking LM Studio's API for navigation guidance, synthesizing single-use Node.js/Python helper scripts, executing them immediately, and feeding the navigation block + helper output back into downstream prompts while storing the code and stdout/stderr artifacts under `.miniphi/helpers/`.
