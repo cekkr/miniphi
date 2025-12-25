@@ -48,3 +48,9 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-05T17:34:45.333Z (analyze-file): Audit the besh shell and capture a prompt journal
 
 - Forgotten requirement for 2025-12-05T18:06:35.482Z (analyze-file): Audit the besh shell and capture a prompt journal
+
+- Forgotten requirement for 2025-12-25T21:00:07.012Z (workspace): Draft release notes
+
+- Forgotten requirement for 2025-12-25T21:02:20.119Z (workspace): Draft release notes
+
+- Forgotten requirement for 2025-12-25T21:08:43.309Z (workspace): Draft release notes

@@ -131,6 +131,7 @@ These are the fixed reference points for the MiniPhi project:
 - There is no automated test suite; compression heuristics, Phi prompts, and LM Studio integrations still rely on manual verification.
 - Packaging, retention policies, and richer summarization backends are in flight; use `node src/index.js ...` or `npx miniphi ...` directly until publishing hardening lands.
 - Benchmark suites currently focus on Bash recomposition; other language samples (GPU stressors, Windows helpers, etc.) are still TODO.
+- LM Studio on this host rejects prompt decomposer REST calls at 4,096 ctx (`400 Trying to keep the first 4097 tokens…`) so workspace flows like `miniphi "Draft release notes"` time out until the model is loaded with a larger context or prompts are trimmed. Navigator helper paths on Windows still break with quoted helper filenames.
 
 ## Archived backlog (reference only)
 These items are parked until v0.1 ships; keep updates in `docs/studies/todo/author.md`.

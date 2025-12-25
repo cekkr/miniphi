@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { extractImplicitWorkspaceTask, parseDirectFileReferences } from "../src/index.js";
+import {
+  extractImplicitWorkspaceTask,
+  parseDirectFileReferences,
+} from "../src/index.js";
+import { mergeFixedReferences } from "../src/libs/core-utils.js";
 
 test("extractImplicitWorkspaceTask captures implicit workspace requests", () => {
   const { task, rest } = extractImplicitWorkspaceTask([
@@ -36,6 +40,10 @@ test("parseDirectFileReferences resolves pinned file attachments", () => {
   assert.equal(ref.relative, path.basename(filePath));
   assert.equal(ref.bytes, 11);
   assert.ok(ref.hash && ref.hash.length > 0);
+
+  // Ensure the workspace context threads the references through untouched.
+  const workspaceContext = mergeFixedReferences({ summary: "fake" }, references);
+  assert.deepEqual(workspaceContext.fixedReferences, references);
 
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
