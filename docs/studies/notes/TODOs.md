@@ -54,3 +54,5 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-25T21:02:20.119Z (workspace): Draft release notes
 
 - Forgotten requirement for 2025-12-25T21:08:43.309Z (workspace): Draft release notes
+
+- Forgotten requirement for 2025-12-26T05:27:57.434Z (workspace): Plan next roadmap fixes to improve MiniPhi self-editing reliability

@@ -1378,7 +1378,8 @@ export default class MiniPhiMemory {
     const timestamp = new Date().toISOString();
     const language = this._normalizeHelperLanguage(script.language);
     const slug = this._slugify(script.name ?? `helper-${language}`);
-    const ext = language === "python" ? ".py" : ".js";
+    // Use .cjs for Node helpers so they run as CommonJS even inside ESM projects.
+    const ext = language === "python" ? ".py" : ".cjs";
     const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
     const existing =
       (script.id && index.entries.find((item) => item.id === script.id)) ||

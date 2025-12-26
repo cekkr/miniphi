@@ -1678,6 +1678,20 @@ async function main() {
     noTokenTimeoutMs,
     modelKey: modelSelection.modelKey,
   });
+  try {
+    await manager.getModel(modelSelection.modelKey, {
+      contextLength,
+      gpu,
+    });
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Unable to preload model ${modelSelection.modelKey}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+  }
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, {

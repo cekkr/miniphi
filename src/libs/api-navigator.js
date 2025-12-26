@@ -440,7 +440,7 @@ export default class ApiNavigator {
     const runner =
       normalizedLang === "python"
         ? await this._resolvePythonRunner()
-        : { command: "node", label: "node" };
+        : { command: "node", args: ["--experimental-default-type=commonjs"], label: "node" };
     if (!runner?.command) {
       return {
         command: "(python not found)",
@@ -451,7 +451,10 @@ export default class ApiNavigator {
         silenceExceeded: false,
       };
     }
-    const command = `${runner.command} "${absolutePath}"`;
+    const helperArgs = Array.isArray(runner.args) ? [...runner.args] : [];
+    const needsQuotes = /\s/.test(absolutePath);
+    helperArgs.push(needsQuotes ? this._quoteArg(absolutePath) : absolutePath);
+    const command = [runner.command, ...helperArgs].join(" ");
     try {
       const startedAt = Date.now();
       const result = await this.cli.executeCommand(command, {
@@ -490,21 +493,22 @@ export default class ApiNavigator {
     const candidates =
       process.platform === "win32"
         ? [
-            { command: "python3", args: ["--version"], label: "python3" },
-            { command: "py", args: ["-3", "--version"], label: "py -3" },
-            { command: "python", args: ["--version"], label: "python" },
-            { command: "py", args: ["--version"], label: "py" },
+            { command: "python3", probeArgs: ["--version"], runtimeArgs: [], label: "python3" },
+            { command: "py", probeArgs: ["-3", "--version"], runtimeArgs: ["-3"], label: "py -3" },
+            { command: "python", probeArgs: ["--version"], runtimeArgs: [], label: "python" },
+            { command: "py", probeArgs: ["--version"], runtimeArgs: [], label: "py" },
           ]
         : [
-            { command: "python3", args: ["--version"], label: "python3" },
-            { command: "python", args: ["--version"], label: "python" },
+            { command: "python3", probeArgs: ["--version"], runtimeArgs: [], label: "python3" },
+            { command: "python", probeArgs: ["--version"], runtimeArgs: [], label: "python" },
           ];
 
     for (const candidate of candidates) {
-      const ok = await this._probeExecutable(candidate.command, candidate.args);
+      const ok = await this._probeExecutable(candidate.command, candidate.probeArgs);
       if (ok) {
         const runner = {
-          command: candidate.label,
+          command: candidate.command,
+          args: Array.isArray(candidate.runtimeArgs) ? candidate.runtimeArgs : [],
           label: candidate.label,
         };
         this.pythonRunnerCache = {
@@ -555,6 +559,17 @@ export default class ApiNavigator {
       return "";
     }
     return candidate.trim().replace(/^['"]+|['"]+$/g, "");
+  }
+
+  _quoteArg(arg) {
+    if (arg === undefined || arg === null) {
+      return '""';
+    }
+    const text = String(arg);
+    if (!/[\s"]/g.test(text)) {
+      return text;
+    }
+    return `"${text.replace(/"/g, '""')}"`;
   }
 
   _sanitizeHelperCode(code) {

@@ -226,6 +226,7 @@ export default class PromptDecomposer {
     const classification = payload.workspace?.classification ?? null;
     const cachedWorkspace = this._buildCachedWorkspaceHint(payload.workspace?.cachedHints);
     const stats = this._sanitizeWorkspaceStats(payload.workspace?.stats);
+    const cachedHintBlock = payload.workspace?.cachedHints?.hintBlock ?? null;
     const body = {
       objective: payload.objective,
       command: payload.command ?? null,
@@ -238,7 +239,7 @@ export default class PromptDecomposer {
           : null,
         hint: payload.workspace?.hintBlock ?? null,
         directives: payload.workspace?.planDirectives ?? payload.workspace?.directives ?? null,
-        cached_hint: payload.workspace?.cachedHints?.hintBlock ?? null,
+        cached_hint: cachedHintBlock,
         cached_context: cachedWorkspace,
         manifestSample: (payload.workspace?.manifestPreview ?? []).slice(0, 8),
         stats,
@@ -262,6 +263,35 @@ export default class PromptDecomposer {
     }
     if (resume) {
       body.resume = resume;
+    }
+    if (body.workspace.cached_hint && body.workspace.hint === body.workspace.cached_hint) {
+      body.workspace.cached_hint = null;
+    }
+    if (cachedWorkspace) {
+      if (cachedWorkspace.summary && cachedWorkspace.summary === body.workspace.summary) {
+        cachedWorkspace.summary = null;
+      }
+      if (cachedWorkspace.hint && cachedWorkspace.hint === body.workspace.hint) {
+        cachedWorkspace.hint = null;
+      }
+      if (
+        cachedWorkspace.directives &&
+        cachedWorkspace.directives === body.workspace.directives
+      ) {
+        cachedWorkspace.directives = null;
+      }
+      const hasManifest =
+        Array.isArray(cachedWorkspace.manifestSample) && cachedWorkspace.manifestSample.length > 0;
+      const hasNavigation =
+        cachedWorkspace.navigation?.summary || cachedWorkspace.navigation?.block;
+      const hasClassification = Boolean(cachedWorkspace.classification);
+      const hasHints =
+        cachedWorkspace.summary ||
+        cachedWorkspace.hint ||
+        cachedWorkspace.directives ||
+        cachedWorkspace.updated_at;
+      body.workspace.cached_context =
+        hasManifest || hasNavigation || hasClassification || hasHints ? cachedWorkspace : null;
     }
     return body;
   }

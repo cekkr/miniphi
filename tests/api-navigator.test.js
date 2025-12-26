@@ -27,7 +27,7 @@ test("ApiNavigator executes helpers after stripping surrounding quotes from path
   try {
     const result = await navigator._executeHelper(`"${helperPath}"`, "python", path.dirname(helperPath));
 
-    const expectedCommand = `python \"${helperPath}\"`;
+    const expectedCommand = `python ${helperPath.includes(" ") ? `"${helperPath}"` : helperPath}`;
     assert.strictEqual(result.command, expectedCommand);
     assert.strictEqual(capturedCommand, expectedCommand);
     assert.strictEqual(capturedCwd, path.dirname(helperPath));
