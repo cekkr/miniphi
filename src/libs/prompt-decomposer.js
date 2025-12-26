@@ -12,6 +12,9 @@ const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 45000;
 const MAX_STEP_PREVIEW = 10;
+const COMPACT_SUMMARY_LIMIT = 800;
+const COMPACT_HINT_LIMIT = 600;
+const COMPACT_CAPABILITY_LIMIT = 400;
 
 const SYSTEM_PROMPT = [
   "You are the MiniPhi prompt decomposer.",
@@ -116,55 +119,75 @@ export default class PromptDecomposer {
       }
       return null;
     }
-    const requestBody = this._buildRequestBody(payload);
-    const messages = [
+    let requestBody = null;
+    let responseText = "";
+    let normalizedPlan = null;
+    let errorMessage = null;
+
+    const attempts = [
+      this._buildRequestBody(payload, { compact: false }),
+      this._buildRequestBody(payload, { compact: true }),
+      this._buildRequestBody(payload, { compact: true, minimal: true }),
+    ];
+
+    const buildMessages = (body) => [
       {
         role: "system",
         content: `${SYSTEM_PROMPT}\nJSON schema:\n\`\`\`json\n${PLAN_SCHEMA}\n\`\`\``,
       },
       {
         role: "user",
-        content: JSON.stringify(requestBody, null, 2),
+        content: JSON.stringify(body, null, 2),
       },
     ];
 
-    let responseText = "";
-    let normalizedPlan = null;
-    let errorMessage = null;
-
-    try {
+    const runCompletion = async (body, responseFormat = JSON_ONLY_RESPONSE_FORMAT) => {
+      const messages = buildMessages(body);
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
           temperature: this.temperature,
           max_tokens: -1,
-          response_format: JSON_ONLY_RESPONSE_FORMAT,
+          response_format: responseFormat,
         }),
       );
-      responseText = completion?.choices?.[0]?.message?.content ?? "";
-      normalizedPlan = this._parsePlan(responseText, payload);
-    } catch (error) {
-      errorMessage = error instanceof Error ? error.message : String(error);
-      if (this._isResponseFormatError(errorMessage)) {
-        try {
-          this._log(
-            "[PromptDecomposer] response_format rejected; retrying with text and JSON block parsing.",
-          );
-          const completion = await this._withTimeout(
-            this.restClient.createChatCompletion({
-              messages,
-              temperature: this.temperature,
-              max_tokens: -1,
-              response_format: { type: "text" },
-            }),
-          );
-          responseText = completion?.choices?.[0]?.message?.content ?? "";
-          normalizedPlan = this._parsePlan(responseText, payload);
-          errorMessage = null;
-        } catch (retryError) {
-          errorMessage = retryError instanceof Error ? retryError.message : String(retryError);
+      return completion?.choices?.[0]?.message?.content ?? "";
+    };
+
+    for (let i = 0; i < attempts.length && !normalizedPlan; i += 1) {
+      requestBody = attempts[i];
+      const modeLabel = i === 0 ? "full" : i === 1 ? "compact" : "minimal";
+      try {
+        if (i > 0) {
+          this._log(`[PromptDecomposer] Attempting ${modeLabel} workspace payload due to previous failure.`);
+        }
+        responseText = await runCompletion(requestBody, JSON_ONLY_RESPONSE_FORMAT);
+        normalizedPlan = this._parsePlan(responseText, payload);
+        errorMessage = null;
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+        if (this._isResponseFormatError(errorMessage)) {
+          try {
+            this._log(
+              "[PromptDecomposer] response_format rejected; retrying with text and JSON block parsing.",
+            );
+            responseText = await runCompletion(requestBody, { type: "text" });
+            normalizedPlan = this._parsePlan(responseText, payload);
+            errorMessage = null;
+          } catch (retryError) {
+            errorMessage = retryError instanceof Error ? retryError.message : String(retryError);
+          }
+        }
+        if (errorMessage && this._isContextOverflowError(errorMessage)) {
+          continue;
+        }
+        if (errorMessage) {
+          break;
         }
       }
+    }
+
+    if (errorMessage) {
       this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
       if (this._shouldDisable(errorMessage)) {
         this._disableDecomposer(errorMessage);
@@ -220,35 +243,59 @@ export default class PromptDecomposer {
     return normalizedPlan;
   }
 
-  _buildRequestBody(payload) {
+  _buildRequestBody(payload, { compact = false, minimal = false } = {}) {
     const commandAnalysis = this._analyzeCommand(payload.command);
     const resume = this._buildResumeContext(payload);
     const classification = payload.workspace?.classification ?? null;
-    const cachedWorkspace = this._buildCachedWorkspaceHint(payload.workspace?.cachedHints);
-    const stats = this._sanitizeWorkspaceStats(payload.workspace?.stats);
-    const cachedHintBlock = payload.workspace?.cachedHints?.hintBlock ?? null;
+    const cachedWorkspace =
+      minimal ? null : this._buildCachedWorkspaceHint(payload.workspace?.cachedHints, compact);
+    const stats = minimal ? null : this._sanitizeWorkspaceStats(payload.workspace?.stats);
+    const cachedHintBlock = minimal ? null : payload.workspace?.cachedHints?.hintBlock ?? null;
+    const summary =
+      minimal && payload.workspace?.summary
+        ? this._compactText(payload.workspace.summary, 240)
+        : compact
+          ? this._compactText(payload.workspace?.summary, COMPACT_SUMMARY_LIMIT)
+          : payload.workspace?.summary ?? null;
+    const hintBlock =
+      minimal && payload.workspace?.hintBlock
+        ? this._compactText(payload.workspace.hintBlock, 240)
+        : compact
+          ? this._compactText(payload.workspace?.hintBlock, COMPACT_HINT_LIMIT)
+          : payload.workspace?.hintBlock ?? null;
+    const directives =
+      minimal
+        ? null
+        : compact && payload.workspace?.planDirectives
+          ? this._compactText(payload.workspace.planDirectives, COMPACT_HINT_LIMIT)
+          : payload.workspace?.planDirectives ?? payload.workspace?.directives ?? null;
     const body = {
       objective: payload.objective,
       command: payload.command ?? null,
       workspace: {
         classification,
         domain: classification?.domain ?? null,
-        summary: payload.workspace?.summary ?? null,
+        summary,
         actions: Array.isArray(classification?.actions) && classification.actions.length
           ? classification.actions
           : null,
-        hint: payload.workspace?.hintBlock ?? null,
-        directives: payload.workspace?.planDirectives ?? payload.workspace?.directives ?? null,
+        hint: hintBlock,
+        directives,
         cached_hint: cachedHintBlock,
         cached_context: cachedWorkspace,
-        manifestSample: (payload.workspace?.manifestPreview ?? []).slice(0, 8),
+        manifestSample:
+          minimal || compact ? [] : (payload.workspace?.manifestPreview ?? []).slice(0, 8),
         stats,
-        capabilitySummary: payload.workspace?.capabilitySummary ?? null,
-        navigationSummary: payload.workspace?.navigationSummary ?? null,
+        capabilitySummary: compact
+          ? this._compactText(payload.workspace?.capabilitySummary, COMPACT_CAPABILITY_LIMIT)
+          : payload.workspace?.capabilitySummary ?? null,
+        navigationSummary: compact
+          ? this._compactText(payload.workspace?.navigationSummary, COMPACT_CAPABILITY_LIMIT)
+          : payload.workspace?.navigationSummary ?? null,
       },
       limits: {
-        maxDepth: this.maxDepth,
-        maxActions: this.maxActions,
+        maxDepth: minimal ? Math.min(2, this.maxDepth ?? DEFAULT_MAX_DEPTH) : this.maxDepth,
+        maxActions: minimal ? Math.min(6, this.maxActions ?? DEFAULT_MAX_ACTIONS) : this.maxActions,
       },
       expectations: {
         recursive: true,
@@ -594,6 +641,17 @@ export default class PromptDecomposer {
     }
   }
 
+  _compactText(text, limit = COMPACT_SUMMARY_LIMIT) {
+    if (!text || typeof text !== "string") {
+      return text ?? null;
+    }
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length <= limit) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, Math.max(10, limit))}…`;
+  }
+
   _isResponseFormatError(message) {
     if (!message) {
       return false;
@@ -603,6 +661,15 @@ export default class PromptDecomposer {
       normalized.includes("response_format") ||
       normalized.includes("json_schema") ||
       normalized.includes("json object")
+    );
+  }
+
+  _isContextOverflowError(message) {
+    if (!message) return false;
+    const normalized = message.toString().toLowerCase();
+    return (
+      normalized.includes("context length") ||
+      normalized.includes("context") && normalized.includes("overflow")
     );
   }
 }

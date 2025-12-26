@@ -334,6 +334,10 @@ export class LMStudioRestClient {
       stream: false,
       max_tokens: -1,
       model: payload.model ?? this.defaultModel,
+      context_length:
+        typeof payload.context_length === "number"
+          ? payload.context_length
+          : this.defaultContextLength,
       ...payload,
     };
     return this._post("/chat/completions", body);
@@ -360,6 +364,10 @@ export class LMStudioRestClient {
       stream: false,
       max_tokens: -1,
       model: payload.model ?? this.defaultModel,
+      context_length:
+        typeof payload.context_length === "number"
+          ? payload.context_length
+          : this.defaultContextLength,
       ...payload,
     };
     return this._post("/completions", body);

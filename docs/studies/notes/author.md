@@ -129,3 +129,10 @@ Next steps (optional, to exercise the new recompose JSON chain end-to-end):
 
 node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --recompose-mode live --verbose
 benchmark-plan.yaml --clean --verbose
+
+Recursive prompt:
+
+[AI_REFERENCE.md](AI_REFERENCE.md) 
+Continue with roadmap and next step implementations but... using miniphi itself with devstral, comparing its results with your choice and fixing miniphi source code to work efficiently as an AI agent
+
+This time, use miniphi step-by-step flow to check every time how a complex task is divided recursively in subtask and how requests and their practical json responses are handled in practice, to make greater improvents rather than "some line changes" against major issues

@@ -215,24 +215,32 @@ export default class ApiNavigator {
       .filter(Boolean);
   }
   async _requestPlan(payload) {
-    const manifest = Array.isArray(payload.workspace?.manifestPreview)
-      ? payload.workspace.manifestPreview.slice(0, 12)
-      : [];
-    const body = {
-      objective: payload.objective ?? null,
-      cwd: payload.cwd ?? process.cwd(),
-      workspace: {
-        classification: payload.workspace?.classification ?? null,
-        summary: payload.workspace?.summary ?? null,
-        stats: payload.workspace?.stats ?? null,
-        highlights: payload.workspace?.highlights ?? null,
-        hintBlock: payload.workspace?.hintBlock ?? null,
-      },
-      manifest,
-      capabilitySummary: payload.capabilities?.summary ?? null,
-      capabilities: payload.capabilities?.details ?? payload.capabilities ?? null,
+    const buildBody = (compact = false) => {
+      const manifest = Array.isArray(payload.workspace?.manifestPreview)
+        ? payload.workspace.manifestPreview.slice(0, compact ? 2 : 12)
+        : [];
+      return {
+        objective: payload.objective ?? null,
+        cwd: payload.cwd ?? process.cwd(),
+        workspace: {
+          classification: payload.workspace?.classification ?? null,
+          summary: compact
+            ? this._compactText(payload.workspace?.summary, 320)
+            : payload.workspace?.summary ?? null,
+          stats: compact ? null : payload.workspace?.stats ?? null,
+          highlights: compact ? null : payload.workspace?.highlights ?? null,
+          hintBlock: compact
+            ? this._compactText(payload.workspace?.hintBlock, 280)
+            : payload.workspace?.hintBlock ?? null,
+        },
+        manifest: compact ? [] : manifest,
+        capabilitySummary: compact
+          ? this._compactText(payload.capabilities?.summary, 240)
+          : payload.capabilities?.summary ?? null,
+        capabilities: compact ? null : payload.capabilities?.details ?? payload.capabilities ?? null,
+      };
     };
-    const messages = [
+    const buildMessages = (body) => [
       {
         role: "system",
         content: `${SYSTEM_PROMPT}\nJSON schema:\n\`\`\`json\n${NAVIGATION_SCHEMA}\n\`\`\``,
@@ -242,9 +250,11 @@ export default class ApiNavigator {
         content: JSON.stringify(body, null, 2),
       },
     ];
+    let body = buildBody(false);
+    let compactTried = false;
     try {
       const completion = await this.restClient.createChatCompletion({
-        messages,
+        messages: buildMessages(body),
         temperature: this.temperature,
         max_tokens: -1,
         response_format: JSON_ONLY_RESPONSE_FORMAT,
@@ -252,14 +262,30 @@ export default class ApiNavigator {
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      let message = error instanceof Error ? error.message : String(error);
+      if (this._isContextOverflowError(message) && !compactTried) {
+        compactTried = true;
+        body = buildBody(true);
+        try {
+          const completion = await this.restClient.createChatCompletion({
+            messages: buildMessages(body),
+            temperature: this.temperature,
+            max_tokens: -1,
+            response_format: JSON_ONLY_RESPONSE_FORMAT,
+          });
+          const raw = completion?.choices?.[0]?.message?.content ?? "";
+          return this._parsePlan(raw);
+        } catch (compactError) {
+          message = compactError instanceof Error ? compactError.message : String(compactError);
+        }
+      }
       if (this._isResponseFormatError(message)) {
         try {
           this._log(
             "[ApiNavigator] response_format rejected; retrying with text and JSON block parsing.",
           );
           const completion = await this.restClient.createChatCompletion({
-            messages,
+            messages: buildMessages(body),
             temperature: this.temperature,
             max_tokens: -1,
             response_format: { type: "text" },
@@ -653,5 +679,25 @@ export default class ApiNavigator {
     if (this.logger) {
       this.logger(message);
     }
+  }
+
+  _compactText(text, limit = 320) {
+    if (!text || typeof text !== "string") {
+      return text ?? null;
+    }
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length <= limit) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, Math.max(10, limit))}…`;
+  }
+
+  _isContextOverflowError(message) {
+    if (!message) return false;
+    const normalized = message.toString().toLowerCase();
+    return (
+      normalized.includes("context length") ||
+      (normalized.includes("context") && normalized.includes("overflow"))
+    );
   }
 }
