@@ -255,6 +255,16 @@ export class LMStudioRestClient {
   }
 
   /**
+   * Lists models via the OpenAI-compatible /v1/models endpoint (when available).
+   * Useful when /api/v0/models is disabled or trimmed for compatibility.
+   * @returns {Promise<object>}
+   */
+  async listModelsV1() {
+    const url = this._buildCompatUrl("/v1/models");
+    return this._execute(url, { method: "GET" });
+  }
+
+  /**
    * Retrieves the LM Studio status snapshot (model, context length, GPU).
    * @returns {Promise<object | null>}
    */
@@ -477,6 +487,22 @@ export class LMStudioRestClient {
 
     const relativePath = maybePath.startsWith("/") ? maybePath.slice(1) : maybePath;
     return `${this.baseUrl}/api/${this.apiVersion}/${relativePath}`;
+  }
+
+  /**
+   * Builds a URL without the /api/<version> prefix (for OpenAI-compatible endpoints).
+   * @param {string} maybePath
+   */
+  _buildCompatUrl(maybePath) {
+    if (!maybePath) {
+      throw new Error("Path is required.");
+    }
+    if (/^https?:\/\//i.test(maybePath)) {
+      return maybePath;
+    }
+    const base = trimTrailingSlash(this.baseUrl);
+    const relativePath = maybePath.startsWith("/") ? maybePath : `/${maybePath}`;
+    return `${base}${relativePath}`;
   }
 
   /**

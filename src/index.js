@@ -644,20 +644,49 @@ async function checkLmStudioCompatibility(restClient, manager, options = undefin
     result.preferRest = true;
   }
 
-  if (result.ok) {
+  let modelsV0 = null;
+  let modelsV1 = null;
+
+  try {
+    modelsV0 = await restClient.listModels();
+  } catch (error) {
+    result.ok = false;
+    result.reason =
+      error instanceof Error ? error.message : `LM Studio /models check failed: ${String(error)}`;
+    result.preferRest = true;
+  }
+
+  if (typeof restClient.listModelsV1 === "function") {
     try {
-      await restClient.listModels();
+      modelsV1 = await restClient.listModelsV1();
+      if (!result.ok && modelsV1) {
+        result.ok = true;
+        result.reason = null;
+      }
     } catch (error) {
-      result.ok = false;
-      result.reason =
-        error instanceof Error ? error.message : `LM Studio /models check failed: ${String(error)}`;
-      result.preferRest = true;
+      if (options?.verbose) {
+        console.warn(
+          `[MiniPhi] LM Studio /v1/models check failed: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
     }
   }
+
+  result.availableModels = {
+    v0: modelsV0 ?? null,
+    v1: modelsV1 ?? null,
+  };
 
   if (!result.ok && options?.verbose) {
     const sdkLabel = result.sdkVersion ? ` (SDK ${result.sdkVersion})` : "";
     console.warn(`[MiniPhi] LM Studio compatibility warning${sdkLabel}: ${result.reason}`);
+  } else if (options?.verbose && (modelsV0 || modelsV1)) {
+    const sources = [];
+    if (modelsV0) sources.push("/api/v0/models");
+    if (modelsV1) sources.push("/v1/models");
+    console.log(`[MiniPhi] LM Studio models discovered via ${sources.join(" & ")}`);
   }
   return result;
 }
