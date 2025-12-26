@@ -393,12 +393,13 @@ export default class ApiNavigator {
       return null;
     }
     let runRecord = null;
-    const execution = await this._executeHelper(
-      record.path,
-      definition.language,
-      payload.cwd,
-      definition.stdin ?? null,
-    );
+    const stdinPayload =
+      definition.stdin !== undefined && definition.stdin !== null
+        ? definition.stdin
+        : payload.cwd
+          ? `${payload.cwd}\n`
+          : null;
+    const execution = await this._executeHelper(record.path, definition.language, payload.cwd, stdinPayload);
     if (execution) {
       const summaryBase = this._summarizeHelperOutput(execution.stdout, execution.stderr);
       const summary = execution.silenceExceeded

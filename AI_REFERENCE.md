@@ -8,283 +8,96 @@
 
 # MiniPhi Reference
 
-## High priority reference
-These are the fixed reference points for the MiniPhi project:
-- HIGH PRIORITY: Treat "recompose" as the natural-language MiniPhi agent unit-test harness driven through `src/index.js`; avoid separate recomposition-only semantics and let LM Studio handle prompt/JSON flows.
-- MiniPhi is a local LM Studio-powered agent for file manipulation in the current working directory.
-- Keep LM Studio API access healthy (status/models endpoints, SDK) so runs can discover available models and pick the best-fit preset dynamically.
-- JSON-first prompts are mandatory: include `response_format=json_schema`, a schema id from `docs/prompts/*.schema.json`, and reject responses that fail JSON parsing or schema validation.
-- Respect context limits by decomposing tasks; cap recursion and persist the plan so it can resume without loops.
-- Use the model to propose OS-specific commands and helper scripts, but store helpers under `.miniphi/`, version them, and enforce timeouts/exit checks.
-- Maintain a capability inventory of OS tools/libraries so prompts list available commands before generating helpers.
-- Benchmarks validate runtime behavior; monitor stdout/stderr step-by-step and treat hangs as runtime bugs.
-- Prefer minimal-token prompts and include `needs_more_context` + `missing_snippets` so the model can request only essential additions.
+## Core guardrails
+- MiniPhi is a local LM Studio-powered agent for file manipulation in the current working directory; no remote writes.
+- `recompose` is the natural-language agent unit-test harness driven through `src/index.js`; keep semantics aligned with the main run/workspace flows.
+- JSON-first prompts are mandatory: embed a schema id from `docs/prompts/*.schema.json`, set `response_format=json_schema`, and validate every response before using it.
+- Keep context manageable by decomposing tasks; cap recursion, retries, and helper runtimes, and persist resumable plans in `.miniphi/`.
+- LM Studio health and capability inventory must gate prompts; helper scripts live under `.miniphi/` with timeouts and audit trails.
+- Benchmarks and recomposition runs are treated as runtime validation, not side projects.
+- Roadmap slices close only when proven by a real `miniphi` run that applies JSON-backed edits and records a stop reason.
 
 ### JSON-first operating rules
-- Every LM Studio prompt must have a schema in `docs/prompts/` with `additionalProperties: false`, explicit required fields, and `needs_more_context` + `missing_snippets` for negotiation.
-- Prompts must embed the schema block (compact) and keep the system prompt JSON-only; responses are parsed with strict JSON extraction, and non-JSON is never treated as partial success.
-- All actions the model suggests (commands, file edits, helper scripts, next prompts) must be represented as structured arrays/objects with reasons; never infer actions from prose.
-- Schema evolution must be versioned (`schema_version` or `schema_uri`) and normalized through adapters before downstream use.
+- Schemas live in `docs/prompts/` with `additionalProperties: false` and required `needs_more_context` + `missing_snippets` fields; keep schema ids/versioning visible in prompts.
+- Strip `<think>`/markdown preambles, parse strictly, and treat non-JSON as failure; trigger a deterministic fallback JSON if the model drifts.
+- All suggested actions must be structured arrays/objects with reasons and a declared `schema_version`/`schema_uri`; normalize through `SchemaAdapterRegistry` before use.
 
+## Runtime posture
+- Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
+- CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, and helper/command-library browsers.
+- Audit trails live in `.miniphi/` (`executions/`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/`); helper scripts are versioned with stdout/stderr logs.
+- Transport failover is automatic (REST -> WS) after timeouts; timeouts and max-retry settings are configurable via CLI flags or `config*.json` (profiles supported).
+- Capability inventory + command-policy (`ask|session|allow|deny`) should be surfaced in prompts so commands and helpers match the host environment.
 
-## Comparison: Mistral Vibe (local/mistral-vibe-main) vs MiniPhi
-- Vibe ships an interactive chat loop, a fixed toolset (read/write/patch/grep/bash/todo), a simple config file, and tool-approval UX.
-- MiniPhi prioritizes JSON-first LM Studio orchestration, `.miniphi` audit trails, and recomposition/benchmark workflows.
-- Gaps to close for MiniPhi to feel practical: default `miniphi "<task>"` entrypoint, explicit file-edit tools with diff summaries, and predictable command approval UX.
-- Advantage to preserve: strict schema validation and local-only execution with clear audit logs.
-- Roadmap focus: ship the Vibe-style core loop for local file edits before expanding orchestration depth.
+## How to work the roadmap (stay outcome-focused)
+- Start with an LM Studio health check (`scripts/lmstudio-json-debug.js` or `/api/v0/status` via the CLI) before prompting.
+- For every slice, run a real task: `miniphi "<task>"` or `node src/index.js run --cmd "<cmd>" --task "<objective>" --prompt-journal <id>`. Verify recursive decomposition produces actionable branches and valid JSON.
+- When schemas fail, re-prompt or fall back to deterministic JSON and record the cause in `.miniphi` before iterating; do not loop on the same wording.
+- Prefer switching to a new real-task run (or another sample) over rephrasing the same mini-detail; use helper/command-library reuse to vary the action set.
+- Close a step only after the JSON was applied to files, diffs were summarized, and a validation command/test passed.
 
+## Active roadmap: ship v0.1 local file agent
+Goal: deliver a Vibe-style local file-edit loop with JSON-first LM Studio orchestration, resumable plans, and `.miniphi` audit trails.
 
-## Current Status
-- Layered LM Studio runtime is live: `LMStudioManager` handles JIT loading and `/api/v0` diagnostics, `LMStudioHandler` streams reasoning and enforces JSON schema contracts, and `EfficientLogAnalyzer` plus `PythonLogSummarizer` compress command/file output.
-- `EfficientLogAnalyzer` now pays attention to `context_requests`, the `needs_more_context` flag, and `missing_snippets` from the log-analysis schema, prints the requested snippets/files in the CLI, and stores the hints in `.miniphi/executions/<id>/analysis.json` so operators know exactly what to gather before rerunning the analyzer.
-- Resumed `--resume-truncation` flows automatically execute helper commands surfaced in Phi’s truncation plan, persist helper/analysis progress under `.miniphi/executions/<plan-id>/truncation-progress.json`, and emit the next chunk suggestion so operators can chain chunked runs without re-processing completed slices.
-- CLI entrypoints cover commands (`run`), file analysis (`analyze-file`), research snapshots (`web-research`), `.miniphi` audit trails (`history-notes`), recomposition workflows (`recompose`), and benchmark automation (`benchmark recompose|analyze|plan scaffold`).
-- ApiNavigator and PromptDecomposer detect repeated LM Studio REST timeouts/connection failures, disable themselves for the current session, and print reminders telling operators to rerun once the API recovers instead of burning more retries on a broken transport.
-- Default workflow (`node src/index.js run --cmd "npm test" --task "Analyze failures"`) executes a command, compresses stdout/stderr, and streams Devstral reasoning in real time (requires LM Studio at `http://127.0.0.1:1234` with `mistralai/devstral-small-2-2512`; swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` when needed).
-- Model presets are available via `--model` or `defaults.model`: default `mistralai/devstral-small-2-2512` (code-tuned, 131k default ctx/393k max; `mistralai/devstral-small-2507` remains available), `ibm/granite-4-h-tiny` (code-tuned, 16k default ctx), and `microsoft/phi-4-reasoning-plus` (general-purpose, 32k default ctx/131k max).
-- Hidden `.miniphi/` workspace, managed by `MiniPhiMemory`, snapshots every execution (`executions/<id>`, `prompt.json`, `analysis.json`, compression segments, TODOs, recursive indexes), mirrors each sub-prompt as JSON under `.miniphi/prompt-exchanges/`, and now archives LM-generated helper scripts + run logs inside `.miniphi/helpers/`.
-- `PromptSchemaRegistry` loads `docs/prompts/*.schema.json`, injects the schema block into every LM Studio call (main prompts, scoring prompts, decomposers), and rejects responses that fail validation before they hit history storage.
-- `WorkspaceProfiler` (plus `FileConnectionAnalyzer` and the new `CapabilityInventory`) inspects the repo tree, renders ASCII file-connection graphs, captures repo/package scripts, and injects the combined hints into every model prompt; `PromptRecorder` mirrors the exchanges and `PromptPerformanceTracker` stores scores + telemetry inside `miniphi-prompts.db`.
-- Workspace snapshots now surface cached prompt templates from both the repo (`.miniphi/prompt-exchanges/templates/`) and the operator’s home directory (`~/.miniphi/prompts/templates/`), and those scaffolds are fed into analyzer prompts so proven truncation/log-analysis shells can be reused without retyping them.
-- Prompt/command composition caches now live under `.miniphi/indices/prompt-compositions.json` (mirrored to `~/.miniphi/helpers/prompt-compositions.json`), and workspace prompts inject a compact “recent compositions” block so Phi can reuse low-token schema/context combos while retiring invalid or fallback-heavy entries.
-- Runtime timeouts are now configured in seconds (CLI flags + `config*.json`), with Phi’s no-token guard bumped to 600 s per prompt so long-running API calls keep breathing room without stretching the overall session timeout.
-- Prompt contexts now summarize `.miniphi/index.json` plus the latest `.miniphi/history/benchmarks.json` entries before dispatch so `run`/`analyze-file` prompts reuse benchmark insights without rescanning large artifacts.
-- Config profiles support named presets selected via `--profile`/`MINIPHI_PROFILE`, and prompt decompositions persist per `--prompt-id` so runs can reuse or branch (`--plan-branch`) the cached plans instead of re-prompting every session.
-- Model prompts now fall back from REST to WS transport automatically after a REST failure, preserving chat history while avoiding repeated REST stalls.
-- Navigator, decomposer, and log-analysis/truncation prompts now force `response_format=json_schema` on LM Studio REST calls, strip `<think>`/markdown preambles before parsing, and refuse to run helper scripts unless valid JSON is captured, so command learning and truncation strategies stay deterministic.
-- Prompt decompositions capture structured "plan segments" plus JSON-first recommendations: saved plans now include depth-aware bullet lists, CLI prints the segment block + recommended helpers for every run/workspace/analyze invocation, and those blocks are threaded back into analyzer prompts so downstream JSON responses inherit the same segmentation context.
-- Fallback summaries emitted by the log analyzer now print the active schema id, captured line count, chunk totals, and compression ratio (plus the originating command/file) directly in the CLI and dev logs so operators do not need to dig into `.miniphi` artifacts to understand why Phi was replaced by the deterministic JSON.
-
-## Roadmap: finish the local file agent (v0.1)
-### Scope
-- Local, single-repo file manipulation for coding projects (read/search/patch/write, optional command execution).
-- Inputs: `miniphi "<task>"` or `node src/index.js workspace --task "<task>"`; outputs: diff + summary + optional verification commands.
-- Non-goals until v0.1 ships: multi-agent orchestration, long research workflows, external providers.
-
-### Exit criteria
-- Planner -> actions -> edits -> summary loop works with strict JSON schemas and deterministic fallbacks.
+Exit criteria:
+- Planner -> actions -> edits -> summary loop works with strict JSON validation and deterministic fallbacks.
 - File edits apply via patch/write with diff summaries and rollback on mismatch.
-- Command execution is gated by approval policy with timeouts and max retries; runs end with a clear stop reason.
-- Passes `samples/get-started` and one real repo run without manual patching.
+- Command execution is gated by command-policy with timeouts and max retries; runs end with a clear stop reason.
+- Passes `samples/get-started` plus one real repo run without manual patching.
 
-### Milestones (do in order)
-1. Core loop hardening: default `miniphi "<task>"` entrypoint, LM Studio health check, schema validation, timeouts, max retries.
-2. Reliable edit pipeline: pinned file references (`@"path"`), `needs_more_context` handshake, recompose/diff guard, helper versioning.
-3. Usable CLI + docs: quickstart updates, config/profile summary, mock LM Studio smoke tests, minimal regression benchmark.
+Current slice - Core loop hardening (do this first)
+- Default `miniphi "<task>"` entrypoint with LM Studio health gating and per-prompt timeouts/max retries.
+- Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake.
+- Proof: run `miniphi "Tighten lint config"` (or similar) against this repo, capture valid JSON, apply edits, and log the stop reason.
 
-### Roadmap rules
-- Only work on the next milestone; adding a new item must remove or defer a lower-priority one.
-- If a task cannot be verified with a sample or test, it is not done.
-- High priority: do not let roadmap churn crowd out end-to-end agent flow tests against LM Studio; every roadmap slice should include a live `miniphi "<task>"` validation path.
+Next slice - Reliable edit pipeline
+- Pinned file references `@"path"` with hashes in prompts; diff guard + rollback on mismatch; helper versioning under `.miniphi/helpers/`.
+- Proof: targeted edit on a repo file with diff summary + rollback check; rerun with prompt journal to confirm determinism.
 
-## Current runtime building blocks
-- `ApiNavigator` runs in parallel with the npm-based analyzers, asking LM Studio's API for navigation guidance, synthesizing single-use Node.js/Python helper scripts, executing them immediately, and feeding the navigation block + helper output back into downstream prompts while storing the code and stdout/stderr artifacts under `.miniphi/helpers/`.
-- `PromptDecomposer` preflights complex tasks, emits JSON trees + human-readable outlines of sub-prompts/actions, and persists them under `.miniphi/prompt-exchanges/decompositions/` so runs can resume mid-branch with the saved outline.
-- `PromptStepJournal` sits next to `PromptRecorder`, emitting `.miniphi/prompt-exchanges/stepwise/<session>/` JSON steps whenever `--prompt-journal [id]` is passed so operators (or downstream AI supervisors) can review every Phi/API prompt, the resulting commands or file analyses, and then pause/resume via `--prompt-journal-status paused|completed|closed`.
-- Resource monitoring (RAM/CPU/VRAM) ships via `ResourceMonitor`, streaming warnings to the console and recording rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
-- LM Studio status snapshots are captured before `workspace` / `run` / `analyze-file` flows and saved under `.miniphi/health/lmstudio-status.json` so timeouts can be correlated with API availability, model context, and GPU headroom.
-- Configuration now normalizes LM Studio endpoints automatically: `lmStudio.clientOptions.baseUrl` accepts either `http(s)` or `ws(s)` URLs, the WebSocket URL is coerced as needed for the SDK, the REST helper inherits the same host/port automatically, and the `prompt.system` field is optional because MiniPhi ships with a built-in system prompt.
-- Research, history, and benchmark helpers store artifacts inside `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, making every LM Studio conversation or benchmark sweep reproducible.
-- `RecomposeTester` and `RecomposeBenchmarkRunner` drive `samples/recompose/hello-flow`, cache code-to-markdown descriptions, repair mismatches with diff-driven prompts, and export Phi transcript logs next to every JSON report so reviews stay auditable.
-- Workspace-first prompts now exist: `node src/index.js workspace --task "..."` (or `miniphi "..."`) anchors planning in the current working directory, loads navigation hints, and persists prompt-decomposition plans without executing arbitrary commands.
-- Workspace profiling now highlights book/document/data-centric repositories explicitly, so chapter-heavy markdown trees are labeled “Book-like workspaces” and CSV/JSON/Parquet-heavy trees become “Data-centric workspaces” with cached directives that flow into every decomposer/navigator prompt.
-- `samples/get-started/` contains a runnable Node.js onboarding project plus curated prompt suites so contributors can test the new workspace-centric flows end-to-end (environment discovery, README drafting, targeted edits, feature work, verification).
-- Model `truncation_strategy` responses no longer disappear: every run stores the plan under `.miniphi/executions/<id>/truncation-plan.json`, and `node src/index.js analyze-file ... --resume-truncation <id> [--truncation-chunk <selector>]` replays the suggested chunk (including the requested line window) so follow-up prompts stop re-reading the entire dataset.
-- Recommended remediation commands are now harvested automatically: whenever Phi populates `recommended_fixes[].commands`, MiniPhi records the normalized commands (plus descriptions/files) under `.miniphi/helpers/command-library.json`, exposes them through `node src/index.js command-library`, and injects a short “Command library recommendations” block into every new workspace/run/analyze prompt so battle-tested fixes are visible before generating new plans.
-- Helper reuse is now observable: `node src/index.js helpers --limit 10` lists every versioned Node/Python helper under `.miniphi/helpers/`, filters by workspace type/source/search, and replays helpers via `--run <id> [--version <n>]` with stdin injection plus timeout/silence guards so watchdogs catch infinite loops before they wedge the CLI.
-- Global shared memory now lives under `~/.miniphi/` so prompt scoring (`miniphi-prompts.db`), OS profiles, command-policy preferences, and rollout metrics survive across repositories and don't need to be checked into source control.
-- `CommandAuthorizationManager` enforces `--command-policy ask|session|allow|deny`, respects `--assume-yes`, and pairs with `--command-danger` plus ApiNavigator danger metadata so risky commands require explicit approval, while direct file references (`@"path/to/file"`) are hashed, archived under `.miniphi/prompt-exchanges/fixed-references/`, and injected into every downstream prompt.
-- `SchemaAdapterRegistry` normalizes LM Studio API responses (starting with ApiNavigator’s `schema_version` field) so new JSON layouts can self-describe and be adapted without touching the CLI core.
-- Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) lets teams pin LM Studio endpoints, prompt defaults (including `defaults.model`), GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
+Next slice - Usable CLI + docs
+- Quickstart + config/profile summary; mock LM Studio smoke test; minimal regression benchmark.
+- Proof: onboarding run through `samples/get-started`, plus a dry LM Studio JSON-series run.
 
-## Reference documents
-- `README.md` - human-friendly overview, quickstart, command tour, `.miniphi` layout, and current status summary.
-- `docs/NodeJS LM Studio API Integration.md` - SDK vs REST instrumentation, including the `/api/v0` behaviors mirrored in `LMStudioRestClient`.
-- `docs/miniphi-cli-implementation.md` - compression heuristics, architectural rationale, and orchestration background.
-- `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` - offline REST docs consumed by `LMStudioRestClient`.
-- `docs/models/devstrall/defaultSystemPrompt.txt` - Devstral JSON-only system prompt baseline (use when you need deterministic machine-parseable responses).
-- `docs/models/devstrall/conversationAboutJsonAutomation.json` - example conversation showing how weak system prompts can drift into prose and break automation.
-- `scripts/lmstudio-json-debug.js` - sends a prompt to LM Studio with `response_format=json_schema`, then prints the raw completion + parsed JSON (debug without running the full CLI).
-- `scripts/lmstudio-json-series.js` - runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy (pairs well with `npm run sample:lmstudio-json-series`).
-- `tests/lmstudio-json-schema.integration.test.js` - optional live LM Studio integration test (run with `MINIPHI_LMSTUDIO_INTEGRATION=1`).
-- `docs/os-defaults/windows.md` + `docs/prompts/windows-benchmark-default.md` - Windows helper defaults and reusable Phi prompt preset.
-- `docs/studies/todo/author.md` - human editing backlog.
-- `samples/recompose/hello-flow/benchmark-plan.yaml` + `WHY_SAMPLES.md` - canonical recomposition benchmark plan and guidance for new sweeps.
-- `samples/get-started/README.md` - describes the onboarding sample and curated prompt files that exercise workspace-first behavior.
-- `samples/bash-it/` - frozen copy of Bash’s full source tree with complex directories, perfect for exercising recursive analysis, recomposition, and benchmark workflows without cloning upstream Bash.
-- `~/.miniphi/` - global hidden folder for shared telemetry (prompt DB, command-policy preferences, system profile snapshots) that every project run can reuse.
+Rule: if progress stalls on a slice, switch to another live `miniphi` run instead of revisiting the same mini-detail.
 
-### Prompt journaling regression sample
-- `samples/besh/bsh.c` is the intentionally giant “besh” shell file for recursive summarization and chirurgic editing drills. It is ideal for validating the new stepwise journaling pipeline.
-- `npm run sample:besh-journal` runs `analyze-file` on `samples/besh/bsh.c` with `--prompt-journal besh-regression --prompt-journal-status paused`; it outputs a paused ledger under `.miniphi/prompt-exchanges/stepwise/besh-regression/` so another AI (or you) can sign off on the captured steps before resuming.
-- To continue the regression after reviewing or modifying the repo, rerun the command with the same journal id (and optionally the same `--prompt-id`) but set `--prompt-journal-status completed` so the ledger shows exactly when the session resumed and closed.
-- When you need long-haul signal, run the command in a retry loop so it keeps collecting transcripts until the model returns valid JSON. A simple pattern is `until npm run sample:besh-journal -- --prompt-journal-status active --verbose; do date; sleep 60; done`, which leaves a timestamped stream plus stacked `.miniphi/prompt-exchanges` entries for every attempt.
-- Apply the same approach to the full suite via `until RECOMPOSE_MODE=live ./run-log-benchmarks.sh; do sleep 120; done`; each pass drops a fresh `current-benchmarks/<timestamp>/` directory, so label or archive the folders before the next retry to preserve the evolution of the logs.
-- `benchmark general --cmd "<command>" --task "<objective>"` now feeds the current workspace snapshot into ApiNavigator + PromptDecomposer, refreshes the truncation/log-analysis baselines, executes the optional command under CLI watchdogs, and captures `ResourceMonitor` stats plus deltas versus `benchmark/baselines/general-purpose-baseline.json` (seeded from the 2025-12-05 samples-bash explain + recursive runs) so CPU/RAM regressions surface immediately.
+## Runtime building blocks (capsule)
+- LMStudioManager / LMStudioHandler: JIT model loading, REST/WS transport, schema enforcement, streaming JSON parsing.
+- PromptSchemaRegistry / SchemaAdapterRegistry: load schemas from `docs/prompts/*.schema.json`, inject schema ids, adapt versions.
+- PromptDecomposer + ApiNavigator: plan branches, propose commands/helpers, execute safe helpers, feed outputs back into prompts.
+- PromptStepJournal / PromptRecorder / PromptPerformanceTracker: persist per-step exchanges under `.miniphi/prompt-exchanges/` with telemetry.
+- EfficientLogAnalyzer + PythonLogSummarizer: compress outputs, honor `needs_more_context` and truncation plans; store hints in `.miniphi/executions/<id>/analysis.json`.
+- WorkspaceProfiler / CapabilityInventory / FileConnectionAnalyzer: cache repo shape + available commands, feed into prompts, and attach ASCII graphs or capability snapshots.
+- ResourceMonitor: stream RAM/CPU/VRAM warnings and store rollups under `.miniphi/health/`.
+- Helper + command library: versioned scripts in `.miniphi/helpers/`, normalized commands in `.miniphi/helpers/command-library.json` with replay via `node src/index.js helpers|command-library`.
+- Benchmarks/recompose harness: `RecomposeTester` and `benchmark recompose|analyze|plan scaffold` drive `samples/recompose/hello-flow` with per-run artifacts under `.miniphi/benchmarks/`.
+- Config: optional `config.json`/profiles for endpoints, models, context budgets, timeouts, and chunk sizes.
 
-## High-Priority Fundamentals
-1. **Narrative-only recomposition inputs.** `samples/recompose/*/descriptions` must stay prose-only so recomposition requires reasoning instead of copy/paste. Keep `hello-flow` aligned with the storytelling rules in its README.
-2. **Multi-prompt orchestration.** Each MiniPhi invocation should expand into multiple LM Studio prompts (workspace scan, plan, targeted edits). Persist those task trees and transcripts under `.miniphi/` so future runs can resume mid-branch.
-3. **JSON schema enforcement.** Store and reuse schema templates for every LM Studio interaction (main prompt plus sub-prompts) so long-running editing sessions can diff responses line-by-line.
+## Testing loops to run often
+- `node src/index.js run --cmd "npm test" --task "Analyze failures"` (default flow; watch JSON validity + truncation handling).
+- `miniphi "Draft release notes"` (or similar) with `--prompt-journal <id>` to inspect recursion + stepwise JSON.
+- `npm run sample:lmstudio-json-series` (schema-enforced multi-step LM Studio session without repo edits).
+- `npm run sample:besh-journal` (large-file truncation + journaling regression).
+- `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
+- `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 
-## Issues & Constraints
-- Persistence is local JSON only; `.miniphi/` lacks pruning, encryption, or sync tooling and can grow quickly on long projects.
-- There is no automated test suite; compression heuristics, Phi prompts, and LM Studio integrations still rely on manual verification.
-- Packaging, retention policies, and richer summarization backends are in flight; use `node src/index.js ...` or `npx miniphi ...` directly until publishing hardening lands.
-- Benchmark suites currently focus on Bash recomposition; other language samples (GPU stressors, Windows helpers, etc.) are still TODO.
-- LM Studio on this host rejects prompt decomposer REST calls at 4,096 ctx (`400 Trying to keep the first 4097 tokens…`) so workspace flows like `miniphi "Draft release notes"` time out until the model is loaded with a larger context or prompts are trimmed. Navigator helper paths on Windows still break with quoted helper filenames.
+## Reference docs
+- `README.md` for overview/CLI quickstart; `docs/miniphi-cli-implementation.md` for architecture and compression heuristics.
+- `docs/NodeJS LM Studio API Integration.md` + `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` for SDK/REST behavior.
+- `scripts/lmstudio-json-debug.js` + `scripts/lmstudio-json-series.js` for fast LM Studio sanity checks.
+- `docs/prompts/*.schema.json` are the schema source of truth; cached templates live under `.miniphi/prompt-exchanges/templates/`.
+- Samples: `samples/get-started/`, `samples/recompose/hello-flow/`, `samples/bash-it/`, `samples/besh/`.
+- Global cache: `~/.miniphi/` holds the prompt DB, capability snapshots, and shared helper metadata.
 
-## Archived backlog (reference only)
-These items are parked until v0.1 ships; keep updates in `docs/studies/todo/author.md`.
+## Issues & constraints
+- Persistence is local JSON only; `.miniphi/` can grow quickly and lacks pruning or encryption.
+- LM Studio context can stall around 4k on this host; trim prompts or load a larger model when decomposer REST calls fail.
+- Windows path quoting for navigator helpers remains fragile; prefer `python3` and log resolved paths.
+- Automated tests are sparse; rely on live LM Studio runs + sample workflows until coverage expands.
+- Benchmarks skew toward Bash recomposition; diversify when touching orchestration assumptions.
 
-1. Expand `PromptDecomposer` into a first-class planner that detects multi-goal commands, enforces JSON-only schemas (response-format + fenced/preamble stripping) so downstream command/truncation helpers stay machine-usable, and lets operators resume a given branch through `--prompt-id`.
-2. Add config profiles (named presets inside `config.json`) for LM Studio endpoints, GPU modes, prompt templates, and retention policies, and emit CLI help describing the active profile.
-3. Layer richer summarization backends (semantic chunking, embeddings, AST diffs) on top of `EfficientLogAnalyzer` so Phi receives higher-signal context for code and book workspaces.
-4. Ship `.miniphi` maintenance helpers (prune executions, archive research, health-check workspace size) and expose them via a new CLI subcommand.
-5. Harden orchestration observability: log LM Studio `/api/v0/status` snapshots, context settings, and resource baselines before each Phi call, then persist them next to every prompt exchange.
-6. Build a `.miniphi` diff viewer that compares two `history-notes` snapshots or prompt exchanges, highlighting which files, prompts, or health metrics changed between runs.
-7. Teach `web-research` to feed saved research snippets into follow-up `run`/`analyze-file` prompts automatically so investigations keep their citations without manual copy/paste.
-8. Add a CLI helper for replaying `.miniphi/prompt-exchanges/*.json` (per scope or per sub-prompt) so teams can iterate on specific Phi calls without re-running the parent command.
-9. Extend `WorkspaceProfiler` with explicit outline support (`SUMMARY.md`, `book.json`, manifest files) so document-heavy repos send richer cues into every model prompt.
-10. Surface top-performing prompts from `miniphi-prompts.db` (`prompt-scores` helper) so operators can pick known-good templates for similar objectives.
-11. Integrate recomposition telemetry with the main runtime: allow `benchmark analyze` summaries to be referenced inside standard prompts to guide future refactors instead of tweaking the benchmark scripts themselves.
-12. **Self-edit orchestration verdict.** ApiNavigator + helper script storage proves MiniPhi can now learn workspace navigation paths from the model itself; the remaining step toward full self-editing maturity is piping those helper results into guarded `miniphi run` loops that patch this repo, capture diffs for review, and roll back automatically when the LM plan disagrees with the observed edits.
-13. Harden navigator helper scripts: prefer `python3` (not bare `python`), detect missing interpreters up front, fix Windows path quoting (besh-regression navigator helper failed to open its own file), and log helper execution failures in the prompt journal so navigation runs do not stall on missing runtimes.
+## Prompt templates and baselines
+- Use `node src/index.js prompt-template --baseline <name> ...` to emit canonical prompts; saved under `.miniphi/prompt-exchanges/templates/`.
+- Truncation/log-analysis templates expose `truncation_strategy` and carryover fields; reuse them instead of inventing new schemas.
 
-### Archived: general vision ideas
-1. Layer heuristics + comment harvesting onto the new AST call-flow generator so each `shell.c::main` step includes “why” context (startup vs trap vs job-control) instead of just callee metadata.
-2. Persist the `EXPLAIN-003` chunks (and future benchmarks) into a dedicated `.miniphi/benchmarks/bash/` namespace so orchestration layers can retrieve them without rescanning 5K-line files.
-3. Catalog the “special” builtins (`set`, `trap`, `exec`, etc.) inside the benchmark output to document how `execute_simple_command` toggles `CMD_IGNORE_RETURN` under `set -e`.
-4. Add an LM Studio `/api/v0/status` pre-flight to the benchmark harness so each run archives model availability, context size (4096 default), and health data next to its log.
-5. Produce a follow-up EXPLAIN focused on `parse.y` error recovery (still depth ≤ 1) to document how `jump_to_top_level(FORCE_EOF)` influences benchmark failure cases.
-6. Wire the `.miniphi/` indexes into an actual Layer 3 orchestrator: retrieval-augmented prompting, task trees, and resumable progress tracking.
-7. Extend the configuration layer into named profiles so teams can swap context budgets, GPU modes, CLI presets, and retention policies without retyping flags.
-8. Integrate richer summarization backends (node embeddings, semantic chunking) and expose file/directory analyzers described in `docs/miniphi-cli-implementation.md`.
-9. Hardening: add smoke tests (mock LM Studio), richer error diagnostics (server unreachable, model missing), telemetry hooks for compression/token metrics, `.miniphi` health checks/pruning tools, and pre-flight REST diagnostics (list models + context) before orchestrations kick off.
-10. Document the LM Studio + Python prerequisites, `.miniphi` workspace expectations, and the new `miniphi` command so adopters know how to install and configure the CLI.
-11. Grow the benchmark suite beyond `samples/bash` (e.g., synthetic GPU-stress cases, LM Studio failure drills) and wire log outputs back into `.miniphi/health` for consolidated observability.
-12. Add a CLI helper to replay or diff `.miniphi/prompt-exchanges/*.json` records so operators can iterate on each sub-prompt without rerunning the entire parent MiniPhi command.
-13. Extend `web-research` with additional providers (local docs, offline corpora, cached citations) and feed the saved research snapshots directly into `run`/`analyze-file` prompts.
-14. Layer diff tooling atop `.miniphi/history-notes` so operators can compare two snapshots (JSON or Markdown) and pinpoint which executions/health files changed between runs.
-15. Build richer recomposition suites under `samples/recompose/*` (multi-language projects, deeply nested directories) and surface automated mismatch diffs when the round-trip diverges from the canonical code.
-16. Teach `WorkspaceProfiler` to read explicit outlines (e.g., `SUMMARY.md`, `book.json`) so book/document workspaces come with even richer editing cues (chapter order, dependencies, TODO markers) before the model is prompted.
-17. Expose a `prompt-scores` CLI helper that surfaces the best rows from `miniphi-prompts.db`, summarizes rolling averages/follow-up rates, and optionally auto-suggests the next prompt template per workspace/objective.
-18. **[P0 – Recursive decomposition handoff]** Wire the saved plan outline into `run`/`analyze-file` controls so operators can resume a specific branch (`--prompt-branch`, `--start-at <plan-id>`), mark steps complete inside `.miniphi/prompt-exchanges/decompositions/`, and show plan-progress meters alongside the streamed Phi reasoning.
-19. **[P1 – File connection graphing]** Persist the generated ASCII connection graph, include cross-language edges (e.g., JS imports that feed Python scripts), and add a CLI helper (e.g., `file-connections describe <file>`) so operators can inspect the graph outside the prompt context.
-20. **[P1 – Script scout automation]** Create a `script-scout` workflow that enumerates available CLI programs/venvs, lets the LM design an ad-hoc script (e.g., locate a reference in thousands of files or parse a giant `.log`), optionally installs missing Python deps on demand, executes the script, and caches the winning “prompt + toolchain” combo for future reuse (“prompt best composition caching”).
-21. **[P0 – JSON schema coverage tooling]** Add a schema-lint command that verifies every Phi prompt references a `docs/prompts/*.schema.json`, extend the catalog to cover recomposition + benchmark prompts, and block dispatch if the declared schema drifts from the stored template.
-22. **[P1 – Capability inventories]** Teach the capability inventory to probe commands/scripts (dry-run `npm run <script> -- --help`, list `scripts/*.ps1`, etc.), persist capability snapshots under `.miniphi/indices/capabilities.json`, and allow operators to diff two snapshots before rerunning a command.
-23. **[P1 – Realtime stdout + parallel orchestration]** Extend `CliExecutor` with realtime stdout sampling + tailing hooks so long-running jobs can be analyzed mid-flight, add background-process orchestration (e.g., keep a server running while executing tests), and ensure every helper process is auto-closed or refreshed when recompiles are requested.
-24. **[P2 – Prompt telemetry richness]** Layer a `prompt-telemetry report` CLI on top of the new structured metadata so teams can query `miniphi-prompts.db` by workspace, command, schema, or capability set, and visualize whether the chosen tools matched the available inventory.
-25. **[P2 – Post-run validation advisor]** At the end of every MiniPhi run, have a `PostRunAdvisor` ask LM Studio (or follow heuristics) for the top commands that validate syntax/code quality for the touched languages; echo those commands to the operator and, if unknown, auto-query the APIs for the correct invocations.
-
-## Archived: implementation studies
-
-### Get-started prompt suite and runnable sample
-- Create `samples/get-started/` mirroring the `hello-flow` layout (`code/`, `prompts/`, `runs/`), but centered on a multi-step onboarding story: (1) detect host OS + available tools, (2) scaffold a README for the repo found in the current CWD, (3) tweak an existing function to change a small behavior, (4) add a feature plus CLI usage, and (5) run/verify everything with Node so regressions are obvious. The sample code should expose assertions (for example `npm test` or `node code/index.js --verify`) so MiniPhi can prove both compilation and result stability.
-- Include scripted prompt files such as `prompts/01-environment.md`, `prompts/02-readme.md`, etc., describing the expected objectives and the JSON schema each Phi call must honor (list required fields, enumerations, and the “essential/general/specific prompt” separation).
-- Wire the new sample into `samples/WHY_SAMPLES.md` and the CLI docs so contributors know how to run `node src/index.js run --cmd "node samples/get-started/code/index.js --smoke"` and how to replay the curated prompts for regression checks.
-
-### Project-centric CLI and bare `miniphi "<prompt>"` entrypoint
-- Restructure `src/index.js` so the default command operates on `process.cwd()` without forcing `--cmd`. If a user executes `miniphi "Draft the README"` the CLI should treat the first positional string as the objective, infer `command="(workspace-edit)"`, and run the same workspace-scan + plan pipeline that `run` uses today.
-- Introduce a `workspace` (or `plan-run`) mode that shells out only when the prompt tree instructs it to; expose flags like `--cwd`, `--auto-approve-commands`, `--require-approval`, and `--assume-yes` so project-centric sessions can stay inside the repo root by default.
-- Update `README.md` and `docs/miniphi-cli-implementation.md` once the UX is wired so it is obvious MiniPhi edits the current project rather than just summarizing CLI output.
-
-### Command authorization and danger scoring
-- Add a `CommandAuthorizationManager` (likely under `src/libs/command-authorization.js`) that gates every call to `CliExecutor.executeCommand`. It needs policy presets (session-only approval, per-command confirmation, always allow), persistence under `.miniphi/prefs/command-policy.json`, and CLI flags to override (`--command-policy ask|allow|deny`).
-- Teach `ApiNavigator` (and any helper that synthesizes commands) to emit structured entries with predicted danger levels. Extend `NAVIGATION_SCHEMA` to something like:
-  ```json
-  "actions": [
-    {
-      "command": "npm run build",
-      "reason": "compile to validate the new feature",
-      "danger": "low|mid|high", // low=safe/read-only, mid=repo-scoped mutations, high=destructive/system-wide
-      "authorization_hint": "needs network" // optional explanation
-    }
-  ]
-  ```
-  Every field must include a `description` in the schema so the Phi prompt explains expectations, and enumerations must list their allowed values explicitly.
-- Pipe the parsed danger metadata into the authorization manager so low-risk commands follow the global policy while `mid|high` prompts always pause for confirmation unless the operator opted into auto-approval.
-
-### Schema agility for API-generated commands
-- At the moment the Phi prompts are locked to the JSON templates inside `docs/prompts/*.schema.json`. To let the APIs evolve their command payloads, add a schema negotiation handshake: API responses should include a `schema_version` or `schema_uri`, and `PromptSchemaRegistry` needs methods to register dynamic schema adapters (for example `command-plan@v2`) at runtime.
-- Implement adapter surfaces (input and output) so when a schema update lands the CLI can map `v1` command objects to the new `v2` structure before passing them downstream. Persist the adapter metadata under `.miniphi/indices/schema-adapters.json` and guard each prompt with the selected schema id so replaying history stays deterministic.
-
-### Direct file references inside prompts
-- Extend the CLI argument parser to scan the operator objective for `@"path/to/file.ext"` tokens (quotes optional) and treat them as “pinned inputs”. Resolve each path relative to `cwd`, read the contents (with a size cap), and attach the snippets to the workspace context (`workspaceContext.fixedReferences`).
-- Update the prompt builders (main log-analysis prompt plus the decomposer + navigator payloads) to list the referenced files, include SHA-256 hashes for traceability, and, when reasonable, inline short excerpts so Phi treats those files as authoritative.
-- Store the reference metadata under `.miniphi/prompt-exchanges/<id>/fixed-references.json` so reruns keep the exact same attachments even if the files change later.
-
-### Recursive prompt analysis and VRAM-aware context sizing
-- Promote the existing `PromptDecomposer` into a recursive “prompt analyzer” pipeline. Each user objective should trigger a stack of meta-prompts: (1) objective classification (“what are the goals?”), (2) checklist + sub-prompts, (3) optional sub-sub prompts if a leaf exceeds the current context window. Persist every layer as JSON plus Markdown outlines under `.miniphi/prompt-exchanges/decompositions/`.
-- Build a GPU telemetry helper (for example `src/libs/gpu-context-budgeter.js`) that polls `nvidia-smi`/AMDGPU sensors in real time (reuse `ResourceMonitor.#queryNvidiaSmi`) and computes a safe Phi context length. When VRAM pressure is high, clamp `contextLength` and summarization depth; when the GPU is idle, let prompts expand to the configured max (default 4096 today).
-- Feed the resource snapshot into the decomposer (`limits.dynamicContextBudget`) so recursive prompts stay inside whatever LM Studio can currently handle.
-
-### Placeholder / “I forgot it” capture
-- Add a standing backlog entry (e.g., append to `docs/studies/notes/TODOs.md`) that records unspecified user follow-ups. Each MiniPhi session should write a stub note such as “Forgotten requirement for <date>: [context]” so the missing information is not lost.
-
-### Recompose prompt watchdogs
-- `recompose:workspace-overview` timed out twice at the 2-minute Phi-4 budget while converting `samples/recompose/hello-flow` (`.miniphi/recompose/2025-11-20T06-27-04-083Z-recompose/prompts.log`), so add a dedicated prompt timeout knob plus progressive summarization that feeds trimmed glimpses before retrying.
-- When the overview prompt fails, subsequent code/description conversions abort silently; capture the partial overview result and surface it in the CLI output with a retry recommendation instead of only logging to `.miniphi/recompose/<timestamp>/prompts.log`.
-- Live recompose roundtrip (2025-12-21) still yielded 0/9 matches; treat this as a tracked regression until fixed and rerun.
-- When codegen returns `needs_more_context`, stop writing output, collect the requested snippets (narratives/plans), and re-prompt before saving files.
-- Block JSON-as-code fallback in recompose codegen; only accept code when `payload.code` is a non-empty string.
-- Upgrade signature validation to detect `export default` and enforce export style even when the candidate output omits it.
-- Auto-inject dependency narratives/plans when codegen asks for missing helpers (e.g., greet/computeStats/logger).
-- Add per-file compare gates and diff-summary retries while the context is still fresh.
-
-## Archived: general next steps
-### Recompose promotion
-- Promote the narrative -> plan -> codegen pipeline as a generic file-rebuild tool for run/workspace prompts.
-- Reuse the diff-summary repair loop as a generic post-edit guard for any LLM-written file.
-- Enforce the needs_more_context/missing_snippets handshake with auto-context gathering across all prompt flows.
-- Preserve exports and module style as a shared validation step for any code edits.
-- Keep the workspace-overview prompt assembly helpers centralized in `src/libs/recompose-utils.js` so future recompose/workspace flows reuse the shared builders.
-- Standardize per-file prompt logs and artifacts under `.miniphi/` beyond recompose/benchmark.
-
-### High-priority general-purpose focus
-- Treat non-code workspaces (books, docs, data) as first-class: detect repo shape, frame decomposer/plan prompts around that context, and cache the workspace hints so follow-up runs default to the right editing behaviors.
-- Make general-purpose helper reuse safe: version helpers under project and global `.miniphi/helpers/`, keep rollback copies, monitor stdout/exit timing to kill potential infinite loops, and allow optional stdin injection when replaying helpers.
-- Stand up a general-purpose benchmark loop that exercises truncation-first planning plus command/script synthesis; review stdout step-by-step to catch hangs and archive the resulting prompts/helpers inside `.miniphi/` for reuse. Fold the 2025-12-05 `samples-bash-explain`/`samples-bash-recursive-prompts` runs (baseline `05-12-25_35-18/{EXPLAIN-022,RECURSIVE-008}.md` at ~11% CPU/memory and follow-up `05-12-25_10-19/{EXPLAIN-023,RECURSIVE-009}.md` at ~11.9% memory / 11.9% & 7.6% CPU) into that loop and keep diffing future resource stats plus `.miniphi/benchmarks/bash/` mirrors against the stored general-purpose baseline JSON.
-- Cache best prompt/command compositions (with schema ids and context budgets) in both repo and global `.miniphi/` so future runs can reapply proven scaffolds automatically while retiring entries that fail validation.
-- Enforce minimal-token prompting by default: keep schema blocks slim, include `needs_more_context`/`missing_snippets` style fields so the model can request only essential additions, and drive chunked prompts automatically when the context budget is exceeded.
-
-### Runtime hardening backlog
-- Add a LM Studio protocol gate for prompt journals: when the SDK reports `channelSend for unknown channel` or other transport warnings, record the server/SDK versions, fall back between REST/WS (or disable streaming), and stop the run quickly if compatibility is broken.
-- When log-analysis schema validation fails on non-JSON output (for example Granite returning `Expected ',' or '}'`), capture the raw text, attempt structured salvage, then retry with a slim schema-only prompt; mark the journal with the salvage status instead of only emitting a fallback summary.
-- If a truncation plan lands before a failure, auto-offer or auto-run `--resume-truncation <id>` on the next chunk (including helper commands and chunk ids) so besh journal reruns do not repeat the same monolithic prompt.
-- Add a Windows-safe VRAM probe (DirectX/WMI or `nvidia-smi` fallback) so prompt journals stop printing `VRAM usage could not be determined` on hosts like the besh regression box and the 2025-12-05 `samples-bash` benchmark host that still surfaces the same warning in both baseline (`05-12-25_35-18`) and follow-up (`05-12-25_10-19`) `samples-bash-explain`/`samples-bash-recursive-prompts` runs.
-- Mirror the "external LM Studio disables ResourceMonitor" guard inside `benchmark/run-tests.js` so benchmark suites stop emitting false RAM/VRAM warnings when the APIs run over the network, and pipe those warnings back into the CLI summary for parity.
-- Harden `EfficientLogAnalyzer` with a watchdog + deterministic fallback JSON so `npm run sample:besh-journal` can emit partial-but-valid schema output instead of stalling at the 28.8-minute limit; rerun the sample afterward to refresh `.miniphi/prompt-exchanges`.
-- Feed `PromptDecomposer` and navigator plans directly into multi-pass analyzer runs (one Phi call per chunk) so large files can be split/merged automatically instead of relying on a single monolithic prompt.
-- Extend automated coverage beyond the new helper tests by introducing mocked LM Studio interactions (e.g., fixture-driven `LMStudioHandler` responses) so prompt builders, schema adapters, and navigator flows have regression protection.
-- Once the runtime stabilizes, record a fresh `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` artifact plus a clean `npm run sample:besh-journal --verbose --stream-output` journal to serve as the new baseline for future fixes.
-- Add a prompt heartbeat: if `LMStudioHandler.chatStream` provides no tokens for N seconds (configurable), cancel the request, trigger the fallback JSON, and surface the hang reason in the prompt journal so `sample:besh-bsh.c` runs (today: Granite default timed out after repeated “Still waiting...” even after chunk drops) stop idling indefinitely.
-- Publish a slimmed `log-analysis@besh-journal` baseline prompt (checked into `docs/prompts/` via `prompt-template`) that references `log-analysis.schema.json` by id and ships inline evidence/truncation examples. The current prompt in `.miniphi/executions/a372e869-f2f3-4c5c-afa7-0ab74458cc20/prompt.json:3` inlines the entire schema (~1.9k tokens) yet the run still ended with “No Phi-4 tokens emitted in 600 seconds” per `.miniphi/executions/a372e869-f2f3-4c5c-afa7-0ab74458cc20/analysis.json:2`; tightening the base template is the fastest way to free context for the actual besh signals.
-- Build on the new truncation-plan pipeline: `analyze-file` persists Phi’s `truncation_strategy` under `.miniphi/executions/<id>/truncation-plan.json`, auto-runs the helper commands/scripts it recommends, and records chunk completion under `truncation-progress.json`, but we still need to chain the remaining prompts automatically (instead of asking operators to re-run `--resume-truncation` for each chunk).
-- When a prompt journal step burns minutes without tokens (step three of the same run sat for 1,259,743 ms per `.miniphi/prompt-exchanges/stepwise/besh-regression/steps/step-003.json:26`), immediately launch a lightweight “helper commands/scripts” prompt that reuses the compressed dataset and asks Phi for shell plans we can execute manually. Store the helpers under `.miniphi/helpers/` and link them back into the journal entry so every retry expands the command/script inventory even if the main schema response fails again.
-- Stop re-dispatching identical analyzer prompts that already failed: `.miniphi/executions/4354cd51-a6ce-488e-a2f3-eff725aa61af/execution.json:2-14` shows the fourth besh journal run still compressed 4,117 lines into 2,656 tokens before hanging, and `.miniphi/prompt-exchanges/stepwise/besh-regression/steps/step-004.json:26` logged another 1,299,869 ms stall. Cache the “fallback summary” state by dataset hash + prompt journal id so MiniPhi either reuses the prior JSON or jumps straight into the truncation/helper flows instead of burning another full Phi call.
-
-### Deferred follow-ups (Dec 2, 2025)
-- Gate navigator command proposals/execution through the capability inventory (dry-run `--help`/file probes) so samples like `besh` stop suggesting `npm run lint` or missing Python helpers.
-- Wire dropped-chunk metadata from `promptAdjustments` into prompt journals and truncation resume flows so omitted slices automatically become follow-up tasks instead of silent context loss.
-- Harden navigator helper execution on Windows: add an integration test that replays a saved helper via `python` from a nested cwd and log the resolved path when the interpreter rejects it so the lingering `C:\\Sources\\GitHub\\miniphi\\samples\\besh\\\"C:\\Sources\\GitHub\\miniphi\\.miniphi\\helpers\\...py\"` error can be eliminated.
-- When Phi still returns non-JSON after chunk drops, retry with the slim log-analysis baseline (schema by id, no inline fences) before falling back; if retries fail, automatically schedule `--resume-truncation <id>` runs per dropped chunk instead of emitting a single coarse fallback summary.
-
-## Archived: project-wide immediate
-1. **JSON-only prompt channels.** Enforce `response_format=json_schema` for navigator/decomposer/truncation prompts, strip `<think>`/code fences/preambles when parsing, and add tests so command-learning and truncation flows reject prose.
-2. **Prompt reliability + telemetry.** Align every config/profile (`config.json`, `.example`, future per-profile files) with the new 300s no-token timeout, expose the active timeout + LM Studio endpoint inside verbose logs, and extend `PromptPerformanceTracker` to emit structured “slow start” events instead of silent warnings inside `stderr`.
-3. **LM Studio health gates.** Before dispatching Phi, cache `/api/v0/status`, GPU utilization, and tokenizer headroom; stash those snapshots next to `.miniphi/executions/<id>/` so archived journals explain whether a timeout came from LM Studio saturation, CLI policy, or workspace constraints.
-4. **Observability + logging.** Continue the new prompt/response previews by attaching request IDs, CLI command metadata, and navigation/helper context to both console output and `.miniphi/dev-logs/`. When Phi falls back, show which schema, chunk counts, and compression ratios were involved so triage does not require digging into JSON blobs.
-5. **Documentation + onboarding.** Sync `README.md`, `AI_REFERENCE.md`, and CLI `--help` with every runtime toggle that touches orchestration (timeouts, schema adapters, journal policies). Ship a short “operator playbook” that walks through configuring LM Studio, verifying local prompts, and interpreting the verbose logs.
-6. **Benchmark & regression loops.** Promote the besh prompt journal timeout into a standing regression under `benchmark analyze`, pin its `.miniphi/executions` bundle to git LFS (or another artifact store), and rerun it whenever the Phi timeout/logging stack changes so we can catch regressions before they land in `main`.
-7. **Helper/script lifecycle.** Track helper scripts generated under `.miniphi/helpers/` back into prompt journals, propagate the new timeout controls into helper execution, and let operators replay helpers with verbose logging enabled so we can profile the full orchestration stack, not just the Phi segment.
-8. **REST timeout failover.** After a single LM Studio REST chat timeout (e.g., 300s to `http://192.168.1.4:1234/api/v0/chat/completions`), automatically pivot Phi traffic to the WS transport for the session, record the failing host/transport in the prompt journal, and cap REST retries so prompt journals don’t burn the entire budget without tokens.
-9. **Granite default smoke failures.** A trivial `echo graphite smoke` run with the Granite default model hung for ~5 minutes, triggered `channelSend for unknown channel` warnings, failed prompt scoring on non-JSON output, and fell back to a truncation summary. Add an SDK/server version gate, faster tiny-log aborts (<120s), and a scoring bypass when Phi returns prose so default runs stabilize.
-
-## Prompt Template Baselines
-- **Truncation-first schema.** Every log-analysis prompt now exposes `truncation_strategy` (JSON) so Phi can describe how to split oversized files, which metadata to carry between chunks, and how to structure the “history” ledger outside the current slice. Examples: `{"should_split":true,"chunking_plan":[{"goal":"Chunk 2 (lines 1400-2100)","priority":1,"context":"focus on parser regressions"}],"carryover_fields":["chunk","line_hint","symptom"],"history_schema":"chunk_label,line_window,summary,helper_commands"}`.
-- **Log-analysis baseline templates.** `node src/index.js prompt-template --baseline log-analysis --schema-id log-analysis --task "Summarize the perf regression logs"` emits the base Phi prompt (schema block + reporting rules + workspace/dataset context) and archives it under `.miniphi/prompt-exchanges/templates/` so teams can standardize JSON contracts per workspace.
-- **Baseline “teach me to truncate” prompt.** When an operator needs general guidance (e.g., *“I want to make you analyse a file too big, explain me how to truncate it to let you analyze it in more pieces and how to structure history with the essential info outside the current piece using JSON…”*), reuse the log-analysis schema plus `truncation_strategy` and ask Phi to output (1) chunk goals, (2) helper commands/scripts to prep chunks, and (3) JSON keys to persist between prompts. Store these templates under `.miniphi/prompt-exchanges/` so decomposers and helper scripts can replay them verbatim.
-- **CLI scaffolding + storage.** `node src/index.js prompt-template --baseline truncation --task "…" --dataset-summary "…"` prints the baseline prompt, writes the template JSON under `.miniphi/prompt-exchanges/templates/<id>.json`, and captures helper focus/history keys so decomposers and helper scripts can replay the same scaffold. Optional flags (`--total-lines`, `--target-lines`, `--history-keys`, `--helper-focus`, `--notes`, `--output`, `--no-workspace`) let operators fix the dataset scale, carryover fields, helper commands, and whether workspace hints should be embedded before sharing the prompt with Phi.
+## Archived/backlog
+- Historical idea/backlog lists now live in `docs/studies/notes/author.md` and git history. Refer there when you need the longer parking lot; keep this file focused on active guidance.
