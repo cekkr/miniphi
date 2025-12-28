@@ -58,3 +58,9 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-26T05:27:57.434Z (workspace): Plan next roadmap fixes to improve MiniPhi self-editing reliability
 
 - Forgotten requirement for 2025-12-26T06:00:26.279Z (workspace): Strengthen recursive planning and JSON flows for workspace editing
+
+- Forgotten requirement for 2025-12-28T01:17:57.810Z (workspace): Tighten lint config
+
+- Forgotten requirement for 2025-12-28T01:25:13.351Z (workspace): Tighten lint config
+
+- Forgotten requirement for 2025-12-28T01:35:12.610Z (workspace): Tighten lint config

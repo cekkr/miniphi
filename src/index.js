@@ -1771,6 +1771,17 @@ async function main() {
   if (restClient) {
     phi4.setRestClient(restClient, { preferRestTransport });
   }
+  const navigatorRequestTimeoutMs =
+    resolveDurationMs({
+      secondsValue:
+        configData?.lmStudio?.prompt?.navigator?.timeoutSeconds ??
+        configData?.prompt?.navigator?.timeoutSeconds,
+      millisValue:
+        configData?.lmStudio?.prompt?.navigator?.timeout ??
+        configData?.prompt?.navigator?.timeout,
+      secondsLabel: "config.prompt.navigator.timeoutSeconds",
+      millisLabel: "config.prompt.navigator.timeout",
+    }) ?? 60000;
   const buildNavigator = (memoryInstance) =>
     restClient
       ? new ApiNavigator({
@@ -1781,6 +1792,7 @@ async function main() {
           logger: verbose ? (message) => console.warn(message) : null,
           adapterRegistry: schemaAdapterRegistry,
           helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
+          navigationRequestTimeoutMs: navigatorRequestTimeoutMs,
         })
       : null;
   const runNavigatorFollowUps = async ({

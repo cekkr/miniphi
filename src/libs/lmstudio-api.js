@@ -330,17 +330,18 @@ export class LMStudioRestClient {
     if (!payload?.messages || payload.messages.length === 0) {
       throw new Error("messages array is required for chat completions.");
     }
+    const { timeoutMs, ...restPayload } = payload;
     const body = {
       stream: false,
       max_tokens: -1,
-      model: payload.model ?? this.defaultModel,
+      model: restPayload.model ?? this.defaultModel,
       context_length:
-        typeof payload.context_length === "number"
-          ? payload.context_length
+        typeof restPayload.context_length === "number"
+          ? restPayload.context_length
           : this.defaultContextLength,
-      ...payload,
+      ...restPayload,
     };
-    return this._post("/chat/completions", body);
+    return this._post("/chat/completions", body, timeoutMs);
   }
 
   /**
@@ -360,17 +361,18 @@ export class LMStudioRestClient {
     if (!payload?.prompt) {
       throw new Error("prompt is required for text completions.");
     }
+    const { timeoutMs, ...restPayload } = payload;
     const body = {
       stream: false,
       max_tokens: -1,
-      model: payload.model ?? this.defaultModel,
+      model: restPayload.model ?? this.defaultModel,
       context_length:
-        typeof payload.context_length === "number"
-          ? payload.context_length
+        typeof restPayload.context_length === "number"
+          ? restPayload.context_length
           : this.defaultContextLength,
-      ...payload,
+      ...restPayload,
     };
-    return this._post("/completions", body);
+    return this._post("/completions", body, timeoutMs);
   }
 
   /**
@@ -386,11 +388,12 @@ export class LMStudioRestClient {
     if (payload?.input === undefined) {
       throw new Error("input is required for embeddings.");
     }
+    const { timeoutMs, ...restPayload } = payload;
     const body = {
-      model: payload.model ?? this.defaultModel,
-      ...payload,
+      model: restPayload.model ?? this.defaultModel,
+      ...restPayload,
     };
-    return this._post("/embeddings", body);
+    return this._post("/embeddings", body, timeoutMs);
   }
 
   /**
@@ -419,7 +422,7 @@ export class LMStudioRestClient {
    * @param {string} path
    * @param {Record<string, unknown>} body
    */
-  async _post(path, body) {
+  async _post(path, body, timeoutMs = undefined) {
     const url = this._buildUrl(path);
     return this._execute(url, {
       method: "POST",
@@ -427,6 +430,7 @@ export class LMStudioRestClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      timeoutMs,
     });
   }
 
@@ -435,21 +439,24 @@ export class LMStudioRestClient {
    * @param {RequestInit} init
    */
   async _execute(url, init) {
+    const { timeoutMs, ...restInit } = init ?? {};
+    const effectiveTimeout =
+      typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : this.timeoutMs;
     const controller =
-      typeof AbortController !== "undefined" && this.timeoutMs > 0
+      typeof AbortController !== "undefined" && effectiveTimeout > 0
         ? new AbortController()
         : undefined;
     const timeoutId =
-      controller && this.timeoutMs > 0
-        ? setTimeout(() => controller.abort(), this.timeoutMs)
+      controller && effectiveTimeout > 0
+        ? setTimeout(() => controller.abort(), effectiveTimeout)
         : undefined;
 
     try {
       const response = await this.fetchImpl(url, {
-        ...init,
+        ...restInit,
         headers: {
           Accept: "application/json",
-          ...(init.headers ?? {}),
+          ...(restInit.headers ?? {}),
         },
         signal: controller?.signal,
       });
@@ -471,7 +478,7 @@ export class LMStudioRestClient {
     } catch (error) {
       if (error.name === "AbortError") {
         throw new Error(
-          `LM Studio REST request timed out after ${this.timeoutMs}ms (url: ${url}).`,
+          `LM Studio REST request timed out after ${effectiveTimeout}ms (url: ${url}).`,
         );
       }
       throw error;

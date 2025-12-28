@@ -119,6 +119,12 @@ export default class ApiNavigator {
     this.disabled = false;
     this.disableNotice = null;
     this.pythonRunnerCache = null;
+    const navigationTimeoutMs =
+      typeof options?.navigationRequestTimeoutMs === "number"
+        ? options.navigationRequestTimeoutMs
+        : null;
+    this.navigationRequestTimeoutMs =
+      navigationTimeoutMs && navigationTimeoutMs > 0 ? navigationTimeoutMs : 60000;
   }
 
   setMemory(memory) {
@@ -258,6 +264,7 @@ export default class ApiNavigator {
         temperature: this.temperature,
         max_tokens: -1,
         response_format: JSON_ONLY_RESPONSE_FORMAT,
+        timeoutMs: this.navigationRequestTimeoutMs,
       });
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       return this._parsePlan(raw);
@@ -272,6 +279,7 @@ export default class ApiNavigator {
             temperature: this.temperature,
             max_tokens: -1,
             response_format: JSON_ONLY_RESPONSE_FORMAT,
+            timeoutMs: this.navigationRequestTimeoutMs,
           });
           const raw = completion?.choices?.[0]?.message?.content ?? "";
           return this._parsePlan(raw);
@@ -289,6 +297,7 @@ export default class ApiNavigator {
             temperature: this.temperature,
             max_tokens: -1,
             response_format: { type: "text" },
+            timeoutMs: this.navigationRequestTimeoutMs,
           });
           const raw = completion?.choices?.[0]?.message?.content ?? "";
           return this._parsePlan(raw);
