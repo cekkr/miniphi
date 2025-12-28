@@ -64,3 +64,5 @@ As a human intelligence, I write here "pretty importants" stuff to do:
 - Forgotten requirement for 2025-12-28T01:25:13.351Z (workspace): Tighten lint config
 
 - Forgotten requirement for 2025-12-28T01:35:12.610Z (workspace): Tighten lint config
+
+- Forgotten requirement for 2025-12-28T02:09:00.615Z (workspace): Tighten lint config

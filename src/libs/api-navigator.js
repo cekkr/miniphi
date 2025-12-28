@@ -125,6 +125,7 @@ export default class ApiNavigator {
         : null;
     this.navigationRequestTimeoutMs =
       navigationTimeoutMs && navigationTimeoutMs > 0 ? navigationTimeoutMs : 60000;
+    this.lastStopReason = null;
   }
 
   setMemory(memory) {
@@ -196,10 +197,14 @@ export default class ApiNavigator {
       return null;
     }
     const schemaVersion = plan.schema_version ?? "navigation-plan@v1";
-    if (!this.adapterRegistry) {
-      return { ...plan, schema_version: schemaVersion };
+    const base = { ...plan, schema_version: schemaVersion };
+    const normalizedPlan = this.adapterRegistry
+      ? this.adapterRegistry.normalizeResponse("api-navigator", schemaVersion, base)
+      : base;
+    if (this.lastStopReason && !normalizedPlan.stop_reason) {
+      normalizedPlan.stop_reason = this.lastStopReason;
     }
-    return this.adapterRegistry.normalizeResponse("api-navigator", schemaVersion, plan);
+    return normalizedPlan;
   }
 
   _normalizeActions(rawActions) {
@@ -308,6 +313,10 @@ export default class ApiNavigator {
         }
       }
       this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
+      const fallback = this._buildFallbackPlan(message);
+      if (fallback) {
+        return fallback;
+      }
       if (this._shouldDisable(message)) {
         this._disableNavigator(message);
         this._log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
@@ -365,7 +374,26 @@ export default class ApiNavigator {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return null;
     }
+    if (!parsed.stop_reason && this.lastStopReason) {
+      parsed.stop_reason = this.lastStopReason;
+    }
     return parsed;
+  }
+
+  _buildFallbackPlan(message) {
+    const reason = this._classifyDisableReason(message);
+    this.lastStopReason = reason;
+    return {
+      schema_version: "navigation-plan@fallback",
+      navigation_summary: `Navigator unavailable (${reason})`,
+      recommended_paths: [],
+      file_types: [],
+      focus_commands: [],
+      actions: [],
+      helper_script: null,
+      notes: message ?? null,
+      stop_reason: reason,
+    };
   }
 
   _isResponseFormatError(message) {
@@ -637,6 +665,9 @@ export default class ApiNavigator {
     const lines = [];
     if (plan.navigation_summary) {
       lines.push(`Navigation summary: ${plan.navigation_summary}`);
+    }
+    if (plan.stop_reason) {
+      lines.push(`Stop reason: ${plan.stop_reason}`);
     }
     if (Array.isArray(plan.recommended_paths) && plan.recommended_paths.length) {
       lines.push(`Paths to inspect: ${plan.recommended_paths.join(", ")}`);

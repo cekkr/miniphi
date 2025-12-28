@@ -27,8 +27,11 @@ const SYSTEM_PROMPT = [
 
 const PLAN_SCHEMA = [
   "{",
+  '  "schema_version": "prompt-plan@v1",',
   '  "plan_id": "string identifier",',
   '  "summary": "two-sentence overview of the strategy",',
+  '  "needs_more_context": false,',
+  '  "missing_snippets": ["files or snippets needed"],',
   '  "steps": [',
   "    {",
   '      "id": "1 or 1.1 style depth-first index",',
@@ -47,10 +50,13 @@ const PLAN_SCHEMA = [
 const PLAN_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["plan_id", "summary", "steps"],
+  required: ["plan_id", "summary", "steps", "needs_more_context", "missing_snippets"],
   properties: {
+    schema_version: { type: "string" },
     plan_id: { type: "string" },
     summary: { type: "string" },
+    needs_more_context: { type: "boolean" },
+    missing_snippets: { type: "array", items: { type: "string" }, default: [] },
     steps: {
       type: "array",
       items: {
@@ -186,6 +192,9 @@ export default class PromptDecomposer {
         }
       }
     }
+    if (!normalizedPlan && !errorMessage) {
+      errorMessage = "no valid decomposition plan returned";
+    }
 
     if (errorMessage) {
       this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
@@ -193,6 +202,7 @@ export default class PromptDecomposer {
         this._disableDecomposer(errorMessage);
         this._log("[PromptDecomposer] Disabled after repeated failures.");
       }
+      normalizedPlan = this._fallbackPlan(errorMessage, payload);
     }
 
     if (payload.promptRecorder) {
@@ -205,6 +215,7 @@ export default class PromptDecomposer {
           objective: payload.objective,
           command: payload.command ?? null,
           workspaceType: payload.workspace?.classification ?? null,
+          stop_reason: normalizedPlan?.stopReason ?? errorMessage ?? null,
         },
         request: {
           endpoint: "/chat/completions",
@@ -420,10 +431,15 @@ export default class PromptDecomposer {
       this._log(
         `[PromptDecomposer] JSON plan failed validation for "${payload.objective}": ${validation.error}`,
       );
-      return null;
+      return this._fallbackPlan(validation.error, payload);
     }
     const planId = parsed.plan_id || `plan-${randomUUID()}`;
     const summary = parsed.summary ?? null;
+    const schemaVersion = parsed.schema_version || "prompt-plan@v1";
+    const needsMoreContext = Boolean(parsed.needs_more_context);
+    const missingSnippets = Array.isArray(parsed.missing_snippets)
+      ? parsed.missing_snippets
+      : [];
 
     const segments = buildPlanSegments(parsed, { limit: 36 });
     const segmentBlock = formatPlanSegmentsBlock(segments, { limit: 14 });
@@ -439,6 +455,9 @@ export default class PromptDecomposer {
       plan: {
         plan_id: planId,
         summary,
+        schema_version: schemaVersion,
+        needs_more_context: needsMoreContext,
+        missing_snippets: missingSnippets,
         steps: validation.steps ?? [],
         recommended_tools: Array.isArray(parsed.recommended_tools)
           ? parsed.recommended_tools
@@ -451,6 +470,10 @@ export default class PromptDecomposer {
       segmentBlock,
       recommendedTools,
       recommendationsBlock,
+      schemaVersion,
+      needsMoreContext,
+      missingSnippets,
+      stopReason: null,
     };
     return normalized;
   }
@@ -458,6 +481,12 @@ export default class PromptDecomposer {
   _validatePlanShape(parsed) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { valid: false, error: "plan must be a JSON object" };
+    }
+    if (typeof parsed.needs_more_context !== "boolean") {
+      return { valid: false, error: "needs_more_context must be a boolean" };
+    }
+    if (!Array.isArray(parsed.missing_snippets)) {
+      return { valid: false, error: "missing_snippets must be an array" };
     }
     if (!Array.isArray(parsed.steps)) {
       return { valid: false, error: "plan.steps must be an array" };
@@ -671,5 +700,35 @@ export default class PromptDecomposer {
       normalized.includes("context length") ||
       normalized.includes("context") && normalized.includes("overflow")
     );
+  }
+
+  _fallbackPlan(message, payload) {
+    const planId = "prompt-plan-fallback";
+    const summary = `Decomposer failed (${message ?? "unknown error"})`;
+    const normalized = {
+      planId,
+      summary,
+      plan: {
+        plan_id: planId,
+        summary,
+        schema_version: "prompt-plan@fallback",
+        needs_more_context: true,
+        missing_snippets: ["valid prompt-plan JSON from LM Studio"],
+        steps: [],
+        recommended_tools: [],
+        notes: message ?? null,
+      },
+      outline: null,
+      branch: payload.planBranch ?? null,
+      segments: [],
+      segmentBlock: null,
+      recommendedTools: [],
+      recommendationsBlock: null,
+      schemaVersion: "prompt-plan@fallback",
+      needsMoreContext: true,
+      missingSnippets: ["valid prompt-plan JSON from LM Studio"],
+      stopReason: message ?? "unknown error",
+    };
+    return normalized;
   }
 }
