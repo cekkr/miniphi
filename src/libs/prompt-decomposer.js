@@ -16,18 +16,20 @@ const COMPACT_SUMMARY_LIMIT = 800;
 const COMPACT_HINT_LIMIT = 600;
 const COMPACT_CAPABILITY_LIMIT = 400;
 
+const PLAN_SCHEMA_ID = "prompt-plan@v1";
+
 const SYSTEM_PROMPT = [
   "You are the MiniPhi prompt decomposer.",
-  "Given a user objective, workspace metadata, and optional CLI commands, produce a structured JSON plan that breaks the work into recursive actions.",
-  "ALWAYS return strictly valid JSON that matches the declared schema. Never include commentary outside the JSON.",
-  "Each step must include a concise title, a short description, and booleans explaining whether it spawns a sub-prompt or depends on tooling.",
+  `Given a user objective, workspace metadata, and optional CLI commands, produce a structured JSON plan that matches schema ${PLAN_SCHEMA_ID}.`,
+  "ALWAYS return strictly valid JSON; never include commentary outside the JSON.",
+  "Mandatory fields: schema_version, plan_id, summary, needs_more_context, missing_snippets, steps[].id/title/description/requires_subprompt/children, recommended_tools, notes.",
   "Use depth-first numbering so follow-up prompts can resume mid-branch (e.g., 1, 1.1, 1.2, 2, ...).",
   "Do not invent actions outside the workspace scope; prefer to reference concrete files, commands, or tools when available.",
 ].join(" ");
 
 const PLAN_SCHEMA = [
   "{",
-  '  "schema_version": "prompt-plan@v1",',
+  `  "schema_version": "${PLAN_SCHEMA_ID}",`,
   '  "plan_id": "string identifier",',
   '  "summary": "two-sentence overview of the strategy",',
   '  "needs_more_context": false,',
@@ -424,7 +426,7 @@ export default class PromptDecomposer {
       this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
       );
-      return null;
+      return this._fallbackPlan("no valid JSON found", payload);
     }
     const validation = this._validatePlanShape(parsed);
     if (!validation.valid) {
@@ -481,6 +483,9 @@ export default class PromptDecomposer {
   _validatePlanShape(parsed) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { valid: false, error: "plan must be a JSON object" };
+    }
+    if (parsed.schema_version && parsed.schema_version !== PLAN_SCHEMA_ID) {
+      return { valid: false, error: `schema_version must be ${PLAN_SCHEMA_ID}` };
     }
     if (typeof parsed.needs_more_context !== "boolean") {
       return { valid: false, error: "needs_more_context must be a boolean" };

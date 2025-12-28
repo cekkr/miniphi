@@ -124,7 +124,7 @@ export default class ApiNavigator {
         ? options.navigationRequestTimeoutMs
         : null;
     this.navigationRequestTimeoutMs =
-      navigationTimeoutMs && navigationTimeoutMs > 0 ? navigationTimeoutMs : 60000;
+      navigationTimeoutMs && navigationTimeoutMs > 0 ? navigationTimeoutMs : 30000;
     this.lastStopReason = null;
   }
 

@@ -1,7 +1,7 @@
 # After a prompt
 - Keep `README.md` and this reference in sync whenever MiniPhi gains a new command, argument, or workflow.
 - Benchmark/recompose/test scripts are instrumentation; treat failures as runtime bugs and only edit scripts to expand coverage or logging.
-- Every LM Studio prompt must declare the exact JSON schema and use `response_format=json_schema`; reject non-JSON responses and re-prompt or emit deterministic fallback JSON.
+- Every LM Studio prompt must declare the exact JSON schema and use `response_format=json_schema`; reject non-JSON responses and re-prompt or emit deterministic fallback JSON. Navigator now falls back to a deterministic JSON block with `stop_reason` after timeouts, and decomposer emits a fallback plan when schema fields are missing.
 - Keep scope focused on a local file-manipulation agent for coding projects; defer broad research or multi-agent exploration until the v0.1 exit criteria are met.
 - Roadmap items need explicit exit criteria; if a new item is added, remove or defer a lower-priority one.
 - Prevent infinite loops: cap recursive prompts and retries, enforce helper timeouts, and persist a clear stop reason in `.miniphi/`.
@@ -47,7 +47,7 @@ Exit criteria:
 
 Current slice - Core loop hardening (do this first)
 - Default `miniphi "<task>"` entrypoint with LM Studio health gating and per-prompt timeouts/max retries.
-- Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake.
+- Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake; decomposer now requires `schema_version` and emits a fallback plan when missing.
 - Proof: run `miniphi "Tighten lint config"` (or similar) against this repo, capture valid JSON, apply edits, and log the stop reason.
 
 Next slice - Reliable edit pipeline
