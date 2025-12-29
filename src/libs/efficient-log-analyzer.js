@@ -161,6 +161,7 @@ export default class EfficientLogAnalyzer {
     this._logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
 
     const compression = await this._compressLines(lines, summaryLevels, verbose);
+    const schemaId = promptContext?.schemaId ?? this.schemaId;
     const prompt = this.generateSmartPrompt(
       task,
       compression.content,
@@ -168,6 +169,7 @@ export default class EfficientLogAnalyzer {
       {
         originalSize: totalSize,
         compressedTokens: compression.tokens,
+        schemaId,
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
@@ -245,7 +247,6 @@ export default class EfficientLogAnalyzer {
       fallbackReason,
     };
     const reusedFallback = Boolean(cachedFallback);
-    const schemaId = promptContext?.schemaId ?? this.schemaId;
     const responseFormat =
       promptContext?.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaId) ?? null;
     const traceOptions = {
@@ -530,6 +531,7 @@ export default class EfficientLogAnalyzer {
       );
       return { chunk, label };
     });
+    const schemaId = promptContext?.schemaId ?? this.schemaId;
     const promptBudget = await this._resolvePromptBudget();
     const adjustment = this._buildBudgetedPrompt({
       chunkSummaries,
@@ -539,6 +541,11 @@ export default class EfficientLogAnalyzer {
       workspaceContext,
       promptBudget,
       devLog,
+      schemaId,
+      chunking: {
+        maxLinesPerChunk: maxLines,
+        lineRange: lineRange ?? null,
+      },
     });
     const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
       adjustment;
@@ -571,7 +578,6 @@ export default class EfficientLogAnalyzer {
       fallbackReason,
     };
     const reusedFallback = Boolean(cachedFallback);
-    const schemaId = promptContext?.schemaId ?? this.schemaId;
     const responseFormat =
       promptContext?.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaId) ?? null;
     const traceOptions = {
@@ -842,10 +848,30 @@ export default class EfficientLogAnalyzer {
     return formatted;
   }
 
+  _buildSchemaReference(schemaId) {
+    const resolvedId =
+      typeof schemaId === "string" && schemaId.trim().length > 0
+        ? schemaId.trim()
+        : this.schemaId ?? "log-analysis";
+    if (this.schemaRegistry && resolvedId) {
+      const schema = this.schemaRegistry.getSchema(resolvedId);
+      if (schema?.definition && typeof schema.definition === "object") {
+        return {
+          id: schema.id ?? resolvedId,
+          definition: schema.definition,
+        };
+      }
+    }
+    return {
+      id: resolvedId ?? "log-analysis",
+      definition: null,
+      text: LOG_ANALYSIS_FALLBACK_SCHEMA,
+    };
+  }
+
   generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
     const contextSupplement = this._formatContextSupplement(extraContext);
-    const contextBlock = contextSupplement ? `\n\n${contextSupplement}` : "";
-    const schemaInstructions = this._buildSchemaInstructions();
+    const schemaReference = this._buildSchemaReference(metadata?.schemaId);
     const payload = {
       task,
       dataset: {
@@ -854,29 +880,32 @@ export default class EfficientLogAnalyzer {
         compression: this._formatCompression(totalLines, metadata.compressedTokens),
         approx_original_bytes: metadata.originalSize ?? "unknown",
       },
-      context: contextBlock?.trim() || null,
+      context: contextSupplement?.trim() || null,
       reporting_rules: [
         "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
         "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
         "If information is unavailable, set the field to null instead of fabricating a value.",
         "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
         "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
-        "Keep the response terse and within the schema—avoid extra prose or redundant fields.",
-        "Respond with raw JSON only—no code fences, no markdown, no <think> blocks, and no prose outside the JSON object.",
       ],
       data: compressedContent,
-      schema_instructions: schemaInstructions,
+    };
+    if (metadata?.chunking) {
+      payload.dataset.chunking = metadata.chunking;
+    }
+
+    const request = {
+      request_type: "log-analysis",
+      schema: schemaReference,
+      response_format: "json_schema",
+      instructions: [
+        "Keep the response terse and within the schema; avoid extra prose or redundant fields.",
+        "Respond with raw JSON only; no code fences, no markdown, no <think> blocks, and no prose outside the JSON object.",
+      ],
+      payload,
     };
 
-    return [
-      "# Log/Output Analysis Task",
-      "You must respond strictly with valid JSON that matches this schema (omit comments, never add prose outside the JSON):",
-      schemaInstructions,
-      "Input payload (JSON):",
-      "```json",
-      JSON.stringify(payload, null, 2),
-      "```",
-    ].join("\n");
+    return JSON.stringify(request, null, 2);
   }
 
   _buildFallbackAnalysis(task, reason, context = undefined) {
@@ -1076,12 +1105,20 @@ export default class EfficientLogAnalyzer {
     workspaceContext,
     promptBudget,
     devLog,
+    schemaId,
+    chunking,
   }) {
     let detailLevel = summaryLevels;
     let chunkLimit = chunkSummaries.length;
     if (chunkLimit === 0) {
       return {
-        prompt: this.generateSmartPrompt(task, "(no content)", 0, { compressedTokens: 1 }, {}),
+        prompt: this.generateSmartPrompt(
+          task,
+          "(no content)",
+          0,
+          { compressedTokens: 1, schemaId },
+          {},
+        ),
         body: "(no content)",
         linesUsed: 0,
         tokensUsed: 1,
@@ -1095,6 +1132,12 @@ export default class EfficientLogAnalyzer {
     let tokens;
     while (attempts < 20) {
       composed = this._composeChunkSummaries(chunkSummaries, chunkLimit, detailLevel);
+      const chunkingSummary = this._buildChunkingSummary({
+        chunkSummaries,
+        limit: chunkLimit,
+        maxLinesPerChunk: chunking?.maxLinesPerChunk ?? null,
+        lineRange: chunking?.lineRange ?? null,
+      });
       const extraContext = {
         workspaceSummary: workspaceContext?.summary ?? null,
         workspaceType:
@@ -1126,6 +1169,8 @@ export default class EfficientLogAnalyzer {
         {
           compressedTokens: this._estimateTokens(composed.text),
           originalSize: totalLines * 4,
+          schemaId,
+          chunking: chunkingSummary,
         },
         extraContext,
       );
@@ -1168,16 +1213,7 @@ export default class EfficientLogAnalyzer {
       detailReductions,
     });
     if (budgetNote) {
-      const withNote = `${prompt}\n\n[Budget] ${budgetNote}`;
-      const notedEstimate = this._estimateTokens(withNote);
-      if (notedEstimate > promptBudget) {
-        const truncated = this._truncateToBudget(withNote, promptBudget);
-        prompt = truncated.prompt;
-        tokens = truncated.tokens;
-      } else {
-        prompt = withNote;
-        tokens = notedEstimate;
-      }
+      this._logDev(devLog, `Prompt budget note: ${budgetNote}`);
     }
     return {
       prompt,
@@ -1208,6 +1244,45 @@ export default class EfficientLogAnalyzer {
     };
   }
 
+  _buildChunkingSummary({ chunkSummaries, limit, maxLinesPerChunk, lineRange }) {
+    if (!Array.isArray(chunkSummaries) || chunkSummaries.length === 0) {
+      return null;
+    }
+    const count = Math.max(1, Math.min(limit ?? chunkSummaries.length, chunkSummaries.length));
+    const ranges = [];
+    let cursor = Number.isFinite(lineRange?.startLine) ? lineRange.startLine : 1;
+    for (let idx = 0; idx < count; idx += 1) {
+      const { chunk, label } = chunkSummaries[idx];
+      const inputLines =
+        Number.isFinite(chunk?.input_lines) && chunk.input_lines >= 0 ? chunk.input_lines : 0;
+      const startLine = cursor;
+      const endLine = inputLines > 0 ? cursor + inputLines - 1 : cursor;
+      ranges.push({
+        label: label ?? `Chunk ${idx + 1}`,
+        start_line: startLine,
+        end_line: endLine,
+        input_lines: inputLines,
+      });
+      cursor = endLine + 1;
+    }
+    const totalChunks = chunkSummaries.length;
+    const rangeSummary =
+      lineRange && (lineRange.startLine || lineRange.endLine)
+        ? {
+            start_line: lineRange.startLine ?? null,
+            end_line: lineRange.endLine ?? null,
+          }
+        : null;
+    return {
+      max_lines_per_chunk: Number.isFinite(maxLinesPerChunk) ? maxLinesPerChunk : null,
+      total_chunks: totalChunks,
+      included_chunks: count,
+      dropped_chunks: totalChunks - count,
+      line_range: rangeSummary,
+      chunk_ranges: ranges,
+    };
+  }
+
   _truncateToBudget(prompt, budgetTokens) {
     if (!prompt) {
       return { prompt: "", tokens: 0 };
@@ -1216,10 +1291,37 @@ export default class EfficientLogAnalyzer {
     if (estimate <= budgetTokens) {
       return { prompt, tokens: estimate };
     }
-    const ratio = budgetTokens / estimate;
-    const maxChars = Math.max(512, Math.floor(prompt.length * ratio) - 100);
-    const truncated = `${prompt.slice(0, maxChars)}\n[Prompt truncated due to context limit]`;
-    return { prompt: truncated, tokens: this._estimateTokens(truncated) };
+    let parsed;
+    try {
+      parsed = JSON.parse(prompt);
+    } catch {
+      return { prompt, tokens: estimate };
+    }
+    if (!parsed || typeof parsed !== "object") {
+      return { prompt, tokens: estimate };
+    }
+    const data = parsed?.payload?.data;
+    if (typeof data !== "string" || data.length === 0) {
+      return { prompt, tokens: estimate };
+    }
+    const note = "[Prompt truncated due to context limit]";
+    let targetLength = Math.max(0, Math.floor(data.length * (budgetTokens / estimate)) - note.length - 8);
+    let truncatedData = data.slice(0, targetLength).trimEnd();
+    truncatedData = truncatedData ? `${truncatedData}\n${note}` : note;
+    parsed.payload.data = truncatedData;
+    let serialized = JSON.stringify(parsed, null, 2);
+    let tokens = this._estimateTokens(serialized);
+    let attempts = 0;
+    while (tokens > budgetTokens && truncatedData.length > 0 && attempts < 6) {
+      targetLength = Math.max(0, Math.floor(truncatedData.length * (budgetTokens / tokens)) - note.length - 8);
+      truncatedData = data.slice(0, targetLength).trimEnd();
+      truncatedData = truncatedData ? `${truncatedData}\n${note}` : note;
+      parsed.payload.data = truncatedData;
+      serialized = JSON.stringify(parsed, null, 2);
+      tokens = this._estimateTokens(serialized);
+      attempts += 1;
+    }
+    return { prompt: serialized, tokens };
   }
 
   async _handleInvalidJsonAnalysis(payload) {
@@ -1309,24 +1411,24 @@ export default class EfficientLogAnalyzer {
     if (!this.phi4) {
       return null;
     }
-    const schemaBlock =
-      this.schemaRegistry?.buildInstructionBlock(schemaId ?? this.schemaId, {
-        compact: true,
-        maxLength: 1800,
-      }) ?? [`\`\`\`json`, LOG_ANALYSIS_FALLBACK_SCHEMA, "```"].join("\n");
+    const schemaReference = this._buildSchemaReference(schemaId);
     const datasetSummary = this._clampContextForSchemaRetry(compression?.content ?? "");
-    const retryPrompt = [
-      "Re-run the analysis and return STRICT JSON that matches the schema below.",
-      "Do not include explanations, greetings, or code fences around the JSON.",
-      task ? `Task: ${task}` : null,
-      command ? `Origin: ${command}` : null,
-      "Schema:",
-      schemaBlock,
-      datasetSummary ? "Context excerpt:" : null,
-      datasetSummary || null,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+    const retryPrompt = JSON.stringify(
+      {
+        request_type: "analysis-schema-retry",
+        schema: schemaReference,
+        response_format: "json_schema",
+        instructions: [
+          "Re-run the analysis and return STRICT JSON that matches the schema.",
+          "Do not include explanations, greetings, or code fences around the JSON.",
+        ],
+        task: task ?? null,
+        origin: command ?? null,
+        context_excerpt: datasetSummary || null,
+      },
+      null,
+      2,
+    );
 
     const priorHistory =
       typeof this.phi4.getHistory === "function" ? this.phi4.getHistory() : null;
