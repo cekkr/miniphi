@@ -566,6 +566,10 @@ export default class EfficientLogAnalyzer {
     let analysis = cachedFallback?.analysis ?? "";
     let usedFallback = Boolean(cachedFallback);
     let fallbackReason = cachedFallback?.reason ?? null;
+    const analysisDiagnostics = {
+      salvage: null,
+      fallbackReason,
+    };
     const reusedFallback = Boolean(cachedFallback);
     const schemaId = promptContext?.schemaId ?? this.schemaId;
     const responseFormat =
@@ -629,6 +633,7 @@ export default class EfficientLogAnalyzer {
         usedFallback = true;
         const reason = error instanceof Error ? error.message : String(error);
         fallbackReason = reason;
+        analysisDiagnostics.fallbackReason = fallbackReason;
         const diag = fallbackDiagnostics();
         console.warn(
           `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
