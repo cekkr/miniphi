@@ -7,6 +7,7 @@
 - Roadmap items need explicit exit criteria; if a new item is added, remove or defer a lower-priority one.
 - Prevent infinite loops: cap recursive prompts and retries, enforce helper timeouts, and persist a clear stop reason in `.miniphi/`.
 - Do not change generic libraries just to satisfy a narrow unit test; use tests to improve MiniPhi behavior instead of editing test intent or broad utilities.
+- Avoid writing placeholder notes into docs; only record optional notes in `.miniphi/history/forgotten-notes.md` when `--forgotten-note` is supplied.
 
 # MiniPhi Reference
 
@@ -50,17 +51,17 @@ Exit criteria:
 - Passes `samples/get-started` plus one real repo run without manual patching.
 
 Current slice - Core loop hardening (do this first)
-- Default `miniphi "<task>"` entrypoint with LM Studio health gating and per-prompt timeouts/max retries.
+- Default `miniphi "<task>"` entrypoint with LM Studio health gating, per-prompt timeouts/max retries, and prompt-context hygiene (dedupe workspace directives, filter command library noise).
 - Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake; decomposer now requires `schema_version` and emits a fallback plan when missing.
 - Proof: run `miniphi "Tighten lint config"` (or similar) against this repo, capture valid JSON, apply edits, and log the stop reason.
-- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output + compaction markers in `.miniphi/prompt-exchanges/`.
+- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output, defaulted `needs_more_context/missing_snippets`, and no duplicated workspace directives in `.miniphi/prompt-exchanges/`.
 
 Next slice - Reliable edit pipeline
 - Pinned file references `@"path"` with hashes in prompts; diff guard + rollback on mismatch; helper versioning under `.miniphi/helpers/`.
 - Proof: targeted edit on a repo file with diff summary + rollback check; rerun with prompt journal to confirm determinism.
 
 Next slice - Usable CLI + docs
-- Quickstart + config/profile summary; mock LM Studio smoke test; minimal regression benchmark.
+- Quickstart + config/profile summary; minimal regression benchmark (defer mock LM Studio smoke test until after prompt hygiene).
 - Proof: onboarding run through `samples/get-started`, plus a dry LM Studio JSON-series run.
 
 Rule: if progress stalls on a slice, switch to another live `miniphi` run instead of revisiting the same mini-detail.

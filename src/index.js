@@ -1514,7 +1514,9 @@ async function main() {
   const providedForgottenNote =
     typeof options["forgotten-note"] === "string" ? options["forgotten-note"].trim() : null;
   const shouldRecordForgottenNote =
-    !skipForgottenNote && ["run", "workspace", "analyze-file"].includes(command);
+    !skipForgottenNote &&
+    Boolean(providedForgottenNote) &&
+    ["run", "workspace", "analyze-file"].includes(command);
   const resumeTruncationId =
     typeof options["resume-truncation"] === "string" && options["resume-truncation"].trim()
       ? options["resume-truncation"].trim()
@@ -1524,8 +1526,8 @@ async function main() {
       ? options["truncation-chunk"].trim()
       : null;
   if (shouldRecordForgottenNote) {
-    const noteContext = providedForgottenNote || task;
-    const notePath = path.join(PROJECT_ROOT, "docs", "studies", "notes", "TODOs.md");
+    const noteContext = providedForgottenNote;
+    const notePath = path.join(PROJECT_ROOT, ".miniphi", "history", "forgotten-notes.md");
     if (noteContext) {
       try {
         await appendForgottenRequirementNote({
@@ -5286,8 +5288,8 @@ Options:
   --max-cpu-percent <n>        Trigger warnings when CPU usage exceeds <n>%
   --max-vram-percent <n>       Trigger warnings when VRAM usage exceeds <n>%
   --resource-sample-interval <ms>  Resource sampling cadence (default: 5000)
-  --forgotten-note <text>      Custom text for the placeholder backlog entry recorded each session
-  --no-forgotten-note          Skip recording the placeholder backlog entry for this invocation
+  --forgotten-note <text>      Optional note recorded to .miniphi/history/forgotten-notes.md
+  --no-forgotten-note          Skip recording the optional note (overrides --forgotten-note)
   --python-script <path>       Custom path to log_summarizer.py
   --chunk-size <lines>         Chunk size when analyzing files (default: 2000)
   --resume-truncation <id>     Reuse the truncation plan recorded for a previous analyze-file execution
