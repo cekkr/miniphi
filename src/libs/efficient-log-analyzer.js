@@ -1602,7 +1602,29 @@ export default class EfficientLogAnalyzer {
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
       return null;
     }
-    return JSON.stringify(parsed, null, 2);
+    const normalized = this._normalizeContextFields(parsed);
+    return JSON.stringify(normalized, null, 2);
+  }
+
+  _normalizeContextFields(parsed) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return parsed;
+    }
+    const needsMoreContext =
+      typeof parsed.needs_more_context === "boolean"
+        ? parsed.needs_more_context
+        : typeof parsed.needsMoreContext === "boolean"
+          ? parsed.needsMoreContext
+          : false;
+    if (typeof parsed.needs_more_context !== "boolean") {
+      parsed.needs_more_context = needsMoreContext;
+    }
+    if (!Array.isArray(parsed.missing_snippets)) {
+      parsed.missing_snippets = Array.isArray(parsed.missingSnippets)
+        ? parsed.missingSnippets
+        : [];
+    }
+    return parsed;
   }
 
   _formatBudgetNote({ promptBudget, tokens, droppedChunks, detailReductions }) {
