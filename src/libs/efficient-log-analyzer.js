@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
+import { LMStudioProtocolError } from "./lmstudio-handler.js";
 import { extractJsonBlock, extractTruncationPlanFromAnalysis } from "./core-utils.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
@@ -905,7 +906,10 @@ export default class EfficientLogAnalyzer {
       payload,
     };
 
-    return JSON.stringify(request, null, 2);
+    if (metadata?.pretty) {
+      return JSON.stringify(request, null, 2);
+    }
+    return JSON.stringify(request);
   }
 
   _buildFallbackAnalysis(task, reason, context = undefined) {
@@ -1137,6 +1141,7 @@ export default class EfficientLogAnalyzer {
         limit: chunkLimit,
         maxLinesPerChunk: chunking?.maxLinesPerChunk ?? null,
         lineRange: chunking?.lineRange ?? null,
+        maxChunkRanges: 12,
       });
       const extraContext = {
         workspaceSummary: workspaceContext?.summary ?? null,
@@ -1244,11 +1249,12 @@ export default class EfficientLogAnalyzer {
     };
   }
 
-  _buildChunkingSummary({ chunkSummaries, limit, maxLinesPerChunk, lineRange }) {
+  _buildChunkingSummary({ chunkSummaries, limit, maxLinesPerChunk, lineRange, maxChunkRanges }) {
     if (!Array.isArray(chunkSummaries) || chunkSummaries.length === 0) {
       return null;
     }
     const count = Math.max(1, Math.min(limit ?? chunkSummaries.length, chunkSummaries.length));
+    const rangeLimit = Number.isFinite(maxChunkRanges) && maxChunkRanges > 0 ? maxChunkRanges : 12;
     const ranges = [];
     let cursor = Number.isFinite(lineRange?.startLine) ? lineRange.startLine : 1;
     for (let idx = 0; idx < count; idx += 1) {
@@ -1257,12 +1263,14 @@ export default class EfficientLogAnalyzer {
         Number.isFinite(chunk?.input_lines) && chunk.input_lines >= 0 ? chunk.input_lines : 0;
       const startLine = cursor;
       const endLine = inputLines > 0 ? cursor + inputLines - 1 : cursor;
-      ranges.push({
-        label: label ?? `Chunk ${idx + 1}`,
-        start_line: startLine,
-        end_line: endLine,
-        input_lines: inputLines,
-      });
+      if (ranges.length < rangeLimit) {
+        ranges.push({
+          label: label ?? `Chunk ${idx + 1}`,
+          start_line: startLine,
+          end_line: endLine,
+          input_lines: inputLines,
+        });
+      }
       cursor = endLine + 1;
     }
     const totalChunks = chunkSummaries.length;
@@ -1280,6 +1288,8 @@ export default class EfficientLogAnalyzer {
       dropped_chunks: totalChunks - count,
       line_range: rangeSummary,
       chunk_ranges: ranges,
+      chunk_ranges_truncated: count > rangeLimit,
+      chunk_ranges_omitted: count > rangeLimit ? count - rangeLimit : 0,
     };
   }
 
@@ -1300,28 +1310,107 @@ export default class EfficientLogAnalyzer {
     if (!parsed || typeof parsed !== "object") {
       return { prompt, tokens: estimate };
     }
-    const data = parsed?.payload?.data;
-    if (typeof data !== "string" || data.length === 0) {
-      return { prompt, tokens: estimate };
+    let compacted = this._compactPromptRequest(parsed);
+    let serialized = JSON.stringify(compacted);
+    let tokens = this._estimateTokens(serialized);
+    if (tokens <= budgetTokens) {
+      return { prompt: serialized, tokens };
     }
+
+    const data = compacted?.payload?.data;
+    if (typeof data !== "string" || data.length === 0) {
+      return { prompt: serialized, tokens };
+    }
+    const basePayload = {
+      ...(compacted.payload ?? {}),
+      data: "",
+    };
+    const baseRequest = {
+      ...compacted,
+      payload: basePayload,
+    };
+    const baseTokens = this._estimateTokens(JSON.stringify(baseRequest));
+    if (baseTokens >= budgetTokens) {
+      compacted.payload = basePayload;
+      compacted.payload.data = "[Prompt truncated due to context limit]";
+      serialized = JSON.stringify(compacted);
+      tokens = this._estimateTokens(serialized);
+      return { prompt: serialized, tokens };
+    }
+
     const note = "[Prompt truncated due to context limit]";
-    let targetLength = Math.max(0, Math.floor(data.length * (budgetTokens / estimate)) - note.length - 8);
+    const availableTokens = Math.max(1, budgetTokens - baseTokens);
+    let targetLength = Math.max(0, Math.floor(availableTokens * 4) - note.length - 8);
     let truncatedData = data.slice(0, targetLength).trimEnd();
     truncatedData = truncatedData ? `${truncatedData}\n${note}` : note;
-    parsed.payload.data = truncatedData;
-    let serialized = JSON.stringify(parsed, null, 2);
-    let tokens = this._estimateTokens(serialized);
+    compacted.payload.data = truncatedData;
+    serialized = JSON.stringify(compacted);
+    tokens = this._estimateTokens(serialized);
     let attempts = 0;
-    while (tokens > budgetTokens && truncatedData.length > 0 && attempts < 6) {
-      targetLength = Math.max(0, Math.floor(truncatedData.length * (budgetTokens / tokens)) - note.length - 8);
+    while (tokens > budgetTokens && truncatedData.length > 0 && attempts < 8) {
+      targetLength = Math.max(0, Math.floor(targetLength * (budgetTokens / tokens)) - note.length - 8);
       truncatedData = data.slice(0, targetLength).trimEnd();
       truncatedData = truncatedData ? `${truncatedData}\n${note}` : note;
-      parsed.payload.data = truncatedData;
-      serialized = JSON.stringify(parsed, null, 2);
+      compacted.payload.data = truncatedData;
+      serialized = JSON.stringify(compacted);
       tokens = this._estimateTokens(serialized);
       attempts += 1;
     }
     return { prompt: serialized, tokens };
+  }
+
+  _compactPromptRequest(request) {
+    const compacted = JSON.parse(JSON.stringify(request ?? {}));
+    const trimmed = [];
+    if (compacted.payload?.reporting_rules) {
+      delete compacted.payload.reporting_rules;
+      trimmed.push("payload.reporting_rules");
+    }
+    if (compacted.payload?.context) {
+      delete compacted.payload.context;
+      trimmed.push("payload.context");
+    }
+    if (compacted.payload?.dataset) {
+      delete compacted.payload.dataset.compression;
+      delete compacted.payload.dataset.approx_original_bytes;
+    }
+    const chunking = compacted.payload?.dataset?.chunking;
+    if (chunking?.chunk_ranges?.length) {
+      const omitted = chunking.chunk_ranges.length;
+      chunking.chunk_ranges = [];
+      chunking.chunk_ranges_truncated = true;
+      chunking.chunk_ranges_omitted = omitted;
+      trimmed.push("payload.dataset.chunking.chunk_ranges");
+    }
+    if (compacted.schema?.definition && typeof compacted.schema.definition === "object") {
+      compacted.schema.definition = this._stripSchemaDescriptions(compacted.schema.definition);
+      compacted.schema.compacted = true;
+      trimmed.push("schema.definition.description");
+    }
+    if (trimmed.length) {
+      compacted.compaction = {
+        removed: trimmed,
+        note: "Compacted prompt scaffolding to fit context budget.",
+      };
+    }
+    return compacted;
+  }
+
+  _stripSchemaDescriptions(value) {
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map((entry) => this._stripSchemaDescriptions(entry));
+    }
+    const cleaned = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === "description") {
+        continue;
+      }
+      cleaned[key] = this._stripSchemaDescriptions(entry);
+    }
+    return cleaned;
   }
 
   async _handleInvalidJsonAnalysis(payload) {

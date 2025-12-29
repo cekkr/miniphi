@@ -2338,6 +2338,7 @@ const describeWorkspace = (dir, options = undefined) =>
     }
 
     let result;
+    let workspaceContext = null;
 
     if (command === "workspace") {
       if (task === DEFAULT_TASK_DESCRIPTION && !implicitWorkspaceTask && !options.task) {
@@ -2366,7 +2367,7 @@ const describeWorkspace = (dir, options = undefined) =>
         });
       }
       const navigator = buildNavigator(stateManager);
-      let workspaceContext = await describeWorkspace(cwd, {
+      workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
         memory: stateManager,
@@ -2547,7 +2548,7 @@ const describeWorkspace = (dir, options = undefined) =>
         });
       }
       const navigator = buildNavigator(stateManager);
-      let workspaceContext = await describeWorkspace(cwd, {
+      workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
         memory: stateManager,
@@ -2903,7 +2904,7 @@ const describeWorkspace = (dir, options = undefined) =>
         });
       }
       const navigator = buildNavigator(stateManager);
-      let workspaceContext = await describeWorkspace(analyzeCwd, {
+      workspaceContext = await describeWorkspace(analyzeCwd, {
         navigator,
         objective: task,
         memory: stateManager,
