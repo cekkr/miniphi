@@ -194,7 +194,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
 - `scripts/lmstudio-json-debug.js` is a small REST runner that prints the raw LM Studio completion + the parsed JSON object (useful for debugging system prompts / schema enforcement outside the CLI).
 - `scripts/lmstudio-json-series.js` runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy of `samples/get-started/code` (use `npm run sample:lmstudio-json-series`).
-- `tests/lmstudio-json-schema.integration.test.js` is an optional integration test for LM Studio JSON-schema enforcement; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running).
+- `unit-tests-js/lmstudio-json-schema.integration.test.js` is an optional integration test for LM Studio JSON-schema enforcement; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running).
 - `docs/os-defaults/windows.md` and `docs/prompts/windows-benchmark-default.md` document the Windows helper workflow.
 - `docs/studies/todo/author.md` tracks authoring tasks that still need human review.
 - `samples/recompose/hello-flow` plus `samples/benchmark/` contain the recomposition harness and reference plans described in `WHY_SAMPLES.md`.
@@ -204,7 +204,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 ## Project status
 - Ready: layered LM Studio stack (`LMStudioManager`, `LMStudioHandler`, `EfficientLogAnalyzer`) is production ready with reasoning streaming, JSON schema guards, and prompt scoring.
 - Ready: `.miniphi` memory, prompt transcripts, and research or history snapshots are stable across commands.
-- Ready: helper utilities (danger normalization, navigation planners, LM Studio endpoint detection) now have automated coverage via `npm test` (`node --test ./tests/**/*.test.js`).
+- Ready: helper utilities (danger normalization, navigation planners, LM Studio endpoint detection) now have automated coverage via `npm test` (`node --test ./unit-tests-js/**/*.test.js`).
 - Warning: compression heuristics and Phi prompt templates still require manual verification because integration tests depend on live LM Studio responses (use `scripts/lmstudio-json-debug.js` or `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` when validating JSON-only contracts).
 - In progress: packaging (`npm bin` publish), richer summarization backends, better telemetry, and retention policies for `.miniphi` artifacts are still underway.
 - Next up: upcoming work focuses on runtime improvements (prompt orchestration, analyzers, LM Studio clients) rather than tweaking benchmark scripts; the `benchmark analyze` and `plan scaffold` tools already cover reporting needs.
