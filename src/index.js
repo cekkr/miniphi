@@ -235,6 +235,31 @@ function formatCommandLibraryBlock(entries, limit = 6) {
   return lines.join("\n");
 }
 
+function mergeHintBlocks(blocks) {
+  if (!Array.isArray(blocks)) {
+    return null;
+  }
+  const seen = new Set();
+  const merged = [];
+  for (const block of blocks) {
+    if (!block) {
+      continue;
+    }
+    const sections = String(block)
+      .split(/\n{2,}/)
+      .map((section) => section.trim())
+      .filter(Boolean);
+    for (const section of sections) {
+      if (seen.has(section)) {
+        continue;
+      }
+      seen.add(section);
+      merged.push(section);
+    }
+  }
+  return merged.length ? merged.join("\n\n") : null;
+}
+
 function displayContextRequests(contextRequests) {
   if (!Array.isArray(contextRequests) || contextRequests.length === 0) {
     return;
@@ -4682,6 +4707,7 @@ async function generateWorkspaceSnapshot({
     limit: 8,
   });
   const planDirectives = profile?.directives ?? null;
+  const hasHintBlock = Boolean(hintBlock && hintBlock.trim());
   let cachedHint = null;
   if (memory?.loadWorkspaceHint) {
     try {
@@ -4696,16 +4722,17 @@ async function generateWorkspaceSnapshot({
       }
     }
   }
-  const mergedHintBlock = [
+  const cachedHintBlock = !hasHintBlock ? cachedHint?.hintBlock ?? null : null;
+  const cachedDirectives =
+    !planDirectives && cachedHint?.directives
+      ? `Cached directives: ${cachedHint.directives}`
+      : null;
+  const mergedHintBlock = mergeHintBlocks([
     hintBlock,
     planDirectives ? `Workspace directives: ${planDirectives}` : null,
-    cachedHint?.hintBlock && cachedHint.hintBlock !== hintBlock ? cachedHint.hintBlock : null,
-    cachedHint?.directives && cachedHint.directives !== planDirectives
-      ? `Cached directives: ${cachedHint.directives}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    cachedHintBlock,
+    cachedDirectives,
+  ]);
 
   let capabilities = null;
   try {
