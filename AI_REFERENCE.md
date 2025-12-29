@@ -52,6 +52,7 @@ Current slice - Core loop hardening (do this first)
 - Default `miniphi "<task>"` entrypoint with LM Studio health gating and per-prompt timeouts/max retries.
 - Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake; decomposer now requires `schema_version` and emits a fallback plan when missing.
 - Proof: run `miniphi "Tighten lint config"` (or similar) against this repo, capture valid JSON, apply edits, and log the stop reason.
+- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output + compaction markers in `.miniphi/prompt-exchanges/`.
 
 Next slice - Reliable edit pipeline
 - Pinned file references `@"path"` with hashes in prompts; diff guard + rollback on mismatch; helper versioning under `.miniphi/helpers/`.
@@ -78,6 +79,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ## Testing loops to run often
 - `node src/index.js run --cmd "npm test" --task "Analyze failures"` (default flow; watch JSON validity + truncation handling).
 - `miniphi "Draft release notes"` (or similar) with `--prompt-journal <id>` to inspect recursion + stepwise JSON.
+- `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` (live JSON-only check; inspect prompt compaction in `.miniphi/prompt-exchanges/`).
 - `npm run sample:lmstudio-json-series` (schema-enforced multi-step LM Studio session without repo edits).
 - `npm run sample:besh-journal` (large-file truncation + journaling regression).
 - `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
@@ -100,6 +102,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ## Issues & constraints
 - Persistence is local JSON only; `.miniphi/` can grow quickly and lacks pruning or encryption.
 - LM Studio context can stall around 4k on this host; trim prompts or load a larger model when decomposer REST calls fail.
+- Live analyze-file runs can still exceed prompt budget and drop summary detail to level 0; keep tuning compaction (schema descriptions, chunk ranges, workspace hint duplication) and record compaction markers in prompt exchanges.
 - Windows path quoting for navigator helpers remains fragile; prefer `python3` and log resolved paths.
 - Automated tests are sparse; rely on live LM Studio runs + sample workflows until coverage expands.
 - Benchmarks skew toward Bash recomposition; diversify when touching orchestration assumptions.
