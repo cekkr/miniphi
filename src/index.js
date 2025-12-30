@@ -260,6 +260,98 @@ function mergeHintBlocks(blocks) {
   return merged.length ? merged.join("\n\n") : null;
 }
 
+function buildWorkspaceFileIndex(workspaceContext) {
+  const manifest = Array.isArray(workspaceContext?.manifestPreview)
+    ? workspaceContext.manifestPreview
+    : [];
+  const files = new Set();
+  const basenames = new Set();
+  for (const entry of manifest) {
+    const filePath = typeof entry?.path === "string" ? entry.path.replace(/\\/g, "/") : "";
+    if (!filePath) {
+      continue;
+    }
+    files.add(filePath.toLowerCase());
+    basenames.add(path.basename(filePath).toLowerCase());
+  }
+  const root =
+    typeof workspaceContext?.root === "string" && workspaceContext.root.trim().length
+      ? path.resolve(workspaceContext.root)
+      : null;
+  const hasPackageJson =
+    files.has("package.json") || (root ? fs.existsSync(path.join(root, "package.json")) : false);
+  return {
+    root,
+    files,
+    basenames,
+    hasPackageJson,
+    stats: workspaceContext?.stats ?? null,
+  };
+}
+
+function commandMentionsWorkspaceFile(command, fileIndex) {
+  if (!command || !fileIndex?.basenames?.size) {
+    return false;
+  }
+  const normalized = command.toLowerCase();
+  for (const basename of fileIndex.basenames) {
+    if (basename && normalized.includes(basename)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function entryMatchesWorkspaceFiles(entryFiles, fileIndex) {
+  if (!Array.isArray(entryFiles) || entryFiles.length === 0) {
+    return false;
+  }
+  for (const file of entryFiles) {
+    if (typeof file !== "string") {
+      continue;
+    }
+    const trimmed = file.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const normalized = trimmed.replace(/\\/g, "/");
+    if (fileIndex?.files?.has(normalized.toLowerCase())) {
+      return true;
+    }
+    const basename = path.basename(normalized).toLowerCase();
+    if (fileIndex?.basenames?.has(basename)) {
+      return true;
+    }
+    if (fileIndex?.root) {
+      const absolute = path.isAbsolute(trimmed)
+        ? path.resolve(trimmed)
+        : path.resolve(fileIndex.root, trimmed);
+      if (absolute.startsWith(fileIndex.root) && fs.existsSync(absolute)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isGenericCommandAllowed(command, fileIndex) {
+  if (!command) {
+    return false;
+  }
+  const normalized = command.trim().toLowerCase();
+  const hasCode = Number(fileIndex?.stats?.codeFiles ?? 0) > 0;
+  const usesNode =
+    normalized.startsWith("npm ") ||
+    normalized.startsWith("pnpm ") ||
+    normalized.startsWith("yarn ") ||
+    normalized.startsWith("node ") ||
+    normalized.startsWith("bun ");
+  if (usesNode && (fileIndex?.hasPackageJson || hasCode)) {
+    return true;
+  }
+  return false;
+}
+
 function displayContextRequests(contextRequests) {
   if (!Array.isArray(contextRequests) || contextRequests.length === 0) {
     return;
@@ -340,6 +432,7 @@ async function attachCommandLibraryToWorkspace(
   if (Array.isArray(workspaceContext?.commandLibraryEntries) && workspaceContext.commandLibraryEntries.length) {
     return workspaceContext;
   }
+  const fileIndex = buildWorkspaceFileIndex(workspaceContext);
   const limit =
     Number.isFinite(Number(options?.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 6;
   let localEntries = [];
@@ -379,6 +472,21 @@ async function attachCommandLibraryToWorkspace(
       const commandText = typeof entry?.command === "string" ? entry.command.trim() : "";
       if (!commandText) {
         continue;
+      }
+      if (origin === "global") {
+        const mode = typeof options?.mode === "string" ? options.mode.trim() : "";
+        if (mode && entry?.mode && entry.mode !== mode) {
+          continue;
+        }
+        const schemaId = typeof options?.schemaId === "string" ? options.schemaId.trim() : "";
+        if (schemaId && entry?.schemaId && entry.schemaId !== schemaId) {
+          continue;
+        }
+        const matchesFiles = entryMatchesWorkspaceFiles(entry?.files, fileIndex);
+        const mentionsFile = commandMentionsWorkspaceFile(commandText, fileIndex);
+        if (!matchesFiles && !mentionsFile && !isGenericCommandAllowed(commandText, fileIndex)) {
+          continue;
+        }
       }
       const key = commandText.toLowerCase();
       if (seen.has(key)) {
@@ -2318,6 +2426,8 @@ const describeWorkspace = (dir, options = undefined) =>
     globalMemory: options?.globalMemory ?? globalMemory,
     indexLimit: options?.indexLimit,
     benchmarkLimit: options?.benchmarkLimit,
+    mode: options?.mode ?? null,
+    schemaId: options?.schemaId ?? null,
   });
 
   try {
@@ -2398,6 +2508,8 @@ const describeWorkspace = (dir, options = undefined) =>
         navigator,
         objective: task,
         memory: stateManager,
+        mode: command,
+        schemaId: "log-analysis",
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2407,6 +2519,8 @@ const describeWorkspace = (dir, options = undefined) =>
         {
           limit: 8,
           verbose,
+          mode: command,
+          schemaId: "log-analysis",
         },
       );
       workspaceContext = await attachPromptCompositionsToWorkspace(
@@ -2579,6 +2693,7 @@ const describeWorkspace = (dir, options = undefined) =>
         navigator,
         objective: task,
         memory: stateManager,
+        mode: command,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2588,6 +2703,7 @@ const describeWorkspace = (dir, options = undefined) =>
         {
           limit: 8,
           verbose,
+          mode: command,
         },
       );
       workspaceContext = await attachPromptCompositionsToWorkspace(
@@ -2935,6 +3051,8 @@ const describeWorkspace = (dir, options = undefined) =>
         navigator,
         objective: task,
         memory: stateManager,
+        mode: command,
+        schemaId: "log-analysis",
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2944,6 +3062,8 @@ const describeWorkspace = (dir, options = undefined) =>
         {
           limit: 8,
           verbose,
+          mode: command,
+          schemaId: "log-analysis",
         },
       );
       workspaceContext = await attachPromptCompositionsToWorkspace(
@@ -4677,6 +4797,8 @@ async function generateWorkspaceSnapshot({
   globalMemory = null,
   indexLimit = 6,
   benchmarkLimit = 3,
+  mode = null,
+  schemaId = null,
 }) {
   let profile;
   try {
@@ -4839,7 +4961,7 @@ async function generateWorkspaceSnapshot({
     workspaceSnapshot,
     memory,
     globalMemory,
-    { limit: 8, verbose },
+    { limit: 8, verbose, mode, schemaId },
   );
   workspaceSnapshot = await attachPromptCompositionsToWorkspace(
     workspaceSnapshot,

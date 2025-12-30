@@ -1652,8 +1652,10 @@ export default class EfficientLogAnalyzer {
     if (extraContext.workspaceSummary) {
       lines.push(extraContext.workspaceSummary);
     }
-    if (extraContext.workspaceHint) {
-      lines.push(extraContext.workspaceHint);
+    const workspaceHint =
+      typeof extraContext.workspaceHint === "string" ? extraContext.workspaceHint : "";
+    if (workspaceHint) {
+      lines.push(workspaceHint);
     } else if (Array.isArray(extraContext.manifestPreview) && extraContext.manifestPreview.length) {
       const manifest = extraContext.manifestPreview
         .slice(0, 6)
@@ -1661,7 +1663,10 @@ export default class EfficientLogAnalyzer {
         .join("\n");
       lines.push(`File manifest sample:\n${manifest}`);
     }
-    if (extraContext.workspaceDirectives) {
+    if (
+      extraContext.workspaceDirectives &&
+      (!workspaceHint || !workspaceHint.includes("Workspace directives:"))
+    ) {
       lines.push(`Workspace directives: ${extraContext.workspaceDirectives}`);
     }
     if (extraContext.readmeSnippet) {
