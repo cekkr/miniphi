@@ -190,6 +190,7 @@ export default class EfficientLogAnalyzer {
         navigationSummary: workspaceContext?.navigationSummary ?? null,
         navigationBlock: workspaceContext?.navigationBlock ?? null,
         helperScript: workspaceContext?.helperScript ?? null,
+        truncationPlan: workspaceContext?.truncationPlan ?? null,
         fixedReferences: workspaceContext?.fixedReferences ?? null,
         indexSummaries: workspaceContext?.indexSummary ?? null,
         benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
@@ -706,7 +707,7 @@ export default class EfficientLogAnalyzer {
           command: filePath,
           linesAnalyzed: linesUsed,
           compression: {
-            content: prompt, // prompt already includes chunk summaries; reuse the body to avoid recompute.
+            content: body, // body already includes chunk summaries; reuse to avoid recompute.
           },
           traceOptions,
         });
@@ -1166,6 +1167,7 @@ export default class EfficientLogAnalyzer {
         commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
         compositionBlock: workspaceContext?.compositionBlock ?? null,
         promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
+        truncationPlan: workspaceContext?.truncationPlan ?? null,
       };
       prompt = this.generateSmartPrompt(
         task,
