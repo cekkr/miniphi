@@ -14,7 +14,7 @@ test("EfficientLogAnalyzer sanitizes Phi responses to JSON only", () => {
 
   assert.strictEqual(
     sanitized,
-    '{\n  "task": "t",\n  "root_cause": null,\n  "evidence": [],\n  "recommended_fixes": [],\n  "next_steps": []\n}',
+    '{\n  "task": "t",\n  "root_cause": null,\n  "evidence": [],\n  "recommended_fixes": [],\n  "next_steps": [],\n  "needs_more_context": false,\n  "missing_snippets": []\n}',
   );
 });
 

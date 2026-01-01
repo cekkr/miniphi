@@ -52,7 +52,7 @@ const PLAN_SCHEMA = [
 const PLAN_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["plan_id", "summary", "steps", "needs_more_context", "missing_snippets"],
+  required: ["schema_version", "plan_id", "summary", "steps", "needs_more_context", "missing_snippets"],
   properties: {
     schema_version: { type: "string" },
     plan_id: { type: "string" },
@@ -484,7 +484,10 @@ export default class PromptDecomposer {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { valid: false, error: "plan must be a JSON object" };
     }
-    if (parsed.schema_version && parsed.schema_version !== PLAN_SCHEMA_ID) {
+    if (typeof parsed.schema_version !== "string" || parsed.schema_version.trim().length === 0) {
+      return { valid: false, error: "schema_version must be a non-empty string" };
+    }
+    if (parsed.schema_version !== PLAN_SCHEMA_ID) {
       return { valid: false, error: `schema_version must be ${PLAN_SCHEMA_ID}` };
     }
     if (typeof parsed.needs_more_context !== "boolean") {

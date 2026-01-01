@@ -39,7 +39,10 @@ test("ApiNavigator executes helpers after stripping surrounding quotes from path
 test("ApiNavigator rejects prose-only navigation responses", () => {
   const navigator = new ApiNavigator();
   const parsed = navigator._parsePlan("Sure, let me think about the repo first...");
-  assert.strictEqual(parsed, null);
+  assert.ok(parsed);
+  assert.equal(parsed.schema_version, "navigation-plan@fallback");
+  assert.deepEqual(parsed.actions, []);
+  assert.equal(parsed.stop_reason, "invalid-response");
 });
 
 test("ApiNavigator sanitizes helper code wrapped in fences", () => {

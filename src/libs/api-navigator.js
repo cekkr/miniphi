@@ -34,7 +34,7 @@ const NAVIGATION_JSON_SCHEMA = {
       },
     },
     helper_script: {
-      type: "object",
+      type: ["object", "null"],
       additionalProperties: false,
       required: ["language", "code"],
       properties: {
@@ -47,6 +47,7 @@ const NAVIGATION_JSON_SCHEMA = {
       },
     },
     notes: { type: ["string", "null"] },
+    stop_reason: { type: ["string", "null"] },
   },
   required: ["actions"],
 };
@@ -81,7 +82,8 @@ const NAVIGATION_SCHEMA = [
   '    "code": "fully executable source code",',
   '    "stdin": "optional input to send via stdin"',
   "  },",
-  '  "notes": "optional supporting context"',
+  '  "notes": "optional supporting context",',
+  '  "stop_reason": "optional stop reason string"',
   "}",
 ].join("\n");
 
@@ -356,6 +358,9 @@ export default class ApiNavigator {
       return "REST failure";
     }
     const normalized = message.toLowerCase();
+    if (normalized.includes("invalid") || normalized.includes("schema") || normalized.includes("json")) {
+      return "invalid-response";
+    }
     if (normalized.includes("timeout") || normalized.includes("timed out")) {
       return "timeout";
     }
@@ -372,12 +377,55 @@ export default class ApiNavigator {
     const parsed = extractJsonBlock(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
-      return null;
+      return this._buildFallbackPlan("invalid response: no valid JSON found");
+    }
+    const validation = this._validatePlanShape(parsed);
+    if (!validation.valid) {
+      this._log(`[ApiNavigator] Invalid navigation plan: ${validation.error}`);
+      return this._buildFallbackPlan(`invalid response: ${validation.error}`);
     }
     if (!parsed.stop_reason && this.lastStopReason) {
       parsed.stop_reason = this.lastStopReason;
     }
     return parsed;
+  }
+
+  _validatePlanShape(plan) {
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+      return { valid: false, error: "plan must be a JSON object" };
+    }
+    if (!Array.isArray(plan.actions)) {
+      return { valid: false, error: "actions must be an array" };
+    }
+    for (let index = 0; index < plan.actions.length; index += 1) {
+      const action = plan.actions[index];
+      if (!action || typeof action !== "object" || Array.isArray(action)) {
+        return { valid: false, error: `actions[${index}] must be an object` };
+      }
+      if (typeof action.command !== "string" || !action.command.trim()) {
+        return { valid: false, error: `actions[${index}].command must be a string` };
+      }
+      if (typeof action.reason !== "string" || !action.reason.trim()) {
+        return { valid: false, error: `actions[${index}].reason must be a string` };
+      }
+      const danger = typeof action.danger === "string" ? action.danger.trim().toLowerCase() : "";
+      if (!["low", "mid", "high"].includes(danger)) {
+        return { valid: false, error: `actions[${index}].danger must be low, mid, or high` };
+      }
+    }
+    if (plan.helper_script !== undefined && plan.helper_script !== null) {
+      const helper = plan.helper_script;
+      if (!helper || typeof helper !== "object" || Array.isArray(helper)) {
+        return { valid: false, error: "helper_script must be an object or null" };
+      }
+      if (typeof helper.language !== "string" || !helper.language.trim()) {
+        return { valid: false, error: "helper_script.language must be a string" };
+      }
+      if (typeof helper.code !== "string" || !helper.code.trim()) {
+        return { valid: false, error: "helper_script.code must be a string" };
+      }
+    }
+    return { valid: true };
   }
 
   _buildFallbackPlan(message) {
