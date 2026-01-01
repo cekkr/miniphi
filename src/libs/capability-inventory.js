@@ -2,7 +2,18 @@ import fs from "fs";
 import path from "path";
 
 const DEFAULT_MAX_ITEMS = 8;
-const DEFAULT_MINIPHI_COMMANDS = ["run", "analyze-file", "web-research", "history-notes", "recompose", "benchmark"];
+const DEFAULT_MINIPHI_COMMANDS = [
+  "run",
+  "workspace",
+  "analyze-file",
+  "web-research",
+  "history-notes",
+  "recompose",
+  "benchmark",
+  "prompt-template",
+  "command-library",
+  "helpers",
+];
 
 export default class CapabilityInventory {
   constructor(options = undefined) {

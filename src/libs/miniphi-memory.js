@@ -239,6 +239,13 @@ export default class MiniPhiMemory {
       linesAnalyzed: payload.result.linesAnalyzed,
       compressedTokens: payload.result.compressedTokens,
       contextRequests: payload.result.contextRequests ?? [],
+      missingSnippets: Array.isArray(payload.result.missingSnippets)
+        ? payload.result.missingSnippets
+        : [],
+      needsMoreContext:
+        typeof payload.result.needsMoreContext === "boolean"
+          ? payload.result.needsMoreContext
+          : null,
       resourceUsage: payload.resourceUsage ?? null,
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
@@ -276,6 +283,13 @@ export default class MiniPhiMemory {
       analysis: payload.result.analysis,
       summary,
       contextRequests: payload.result.contextRequests ?? [],
+      missingSnippets: Array.isArray(payload.result.missingSnippets)
+        ? payload.result.missingSnippets
+        : [],
+      needsMoreContext:
+        typeof payload.result.needsMoreContext === "boolean"
+          ? payload.result.needsMoreContext
+          : null,
       updatedAt: timestamp,
     });
     await this._writeJSON(compressionFile, {

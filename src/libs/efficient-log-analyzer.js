@@ -450,6 +450,11 @@ export default class EfficientLogAnalyzer {
         devLog,
       );
     }
+    const schemaValidation = this._validateAnalysisSchema(
+      traceOptions?.schemaId ?? this.schemaId,
+      analysis,
+    );
+    const schemaValid = schemaValidation ? Boolean(schemaValidation.valid) : null;
     return {
       command,
       task,
@@ -460,6 +465,7 @@ export default class EfficientLogAnalyzer {
       analysis,
       workspaceContext: workspaceContext ?? null,
       schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
+      schemaValid,
       startedAt: invocationStartedAt,
       finishedAt: invocationFinishedAt,
       truncationPlan,
@@ -789,6 +795,11 @@ export default class EfficientLogAnalyzer {
       detailLevel: detailLevel ?? null,
       detailReductions: detailReductions ?? 0,
     };
+    const schemaValidation = this._validateAnalysisSchema(
+      traceOptions?.schemaId ?? this.schemaId,
+      analysis,
+    );
+    const schemaValid = schemaValidation ? Boolean(schemaValidation.valid) : null;
     return {
       filePath,
       task,
@@ -799,6 +810,7 @@ export default class EfficientLogAnalyzer {
       analysis,
       workspaceContext: workspaceContext ?? null,
       schemaId: traceOptions?.schemaId ?? this.schemaId ?? null,
+      schemaValid,
       startedAt: invocationStartedAt,
       finishedAt: invocationFinishedAt,
       truncationPlan,
@@ -1596,6 +1608,22 @@ export default class EfficientLogAnalyzer {
     };
   }
 
+  _validateAnalysisSchema(schemaId, analysisText) {
+    if (
+      !schemaId ||
+      !analysisText ||
+      !this.schemaRegistry ||
+      typeof this.schemaRegistry.validate !== "function"
+    ) {
+      return null;
+    }
+    try {
+      return this.schemaRegistry.validate(schemaId, analysisText);
+    } catch {
+      return null;
+    }
+  }
+
   _sanitizeJsonResponse(text) {
     if (!text) {
       return null;
@@ -1708,7 +1736,12 @@ export default class EfficientLogAnalyzer {
         .slice(0, 4)
         .map((ref) => {
           const status = ref.error ? `missing (${ref.error})` : `${ref.bytes ?? "?"} bytes`;
-          return `- ${ref.relative ?? ref.path}: ${status}`;
+          const hash =
+            typeof ref.hash === "string" && ref.hash.length
+              ? `sha256=${ref.hash.slice(0, 12)}`
+              : null;
+          const meta = [status, hash].filter(Boolean).join(" | ");
+          return `- ${ref.relative ?? ref.path}: ${meta}`;
         })
         .join("\n");
       lines.push(`Fixed references pinned for this task:\n${refs}`);
