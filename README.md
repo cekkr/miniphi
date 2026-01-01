@@ -189,6 +189,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 
 ## Documentation and samples
 - `AI_REFERENCE.md` holds the current status snapshot plus the near-term roadmap.
+- `ROADMAP.md` tracks the long-lived milestone plan and explicit exit criteria.
 - `docs/NodeJS LM Studio API Integration.md` explains how the LM Studio SDK and REST layers fit together.
 - `docs/miniphi-cli-implementation.md` walks through compression heuristics, pipelines, and architectural decisions.
 - `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
