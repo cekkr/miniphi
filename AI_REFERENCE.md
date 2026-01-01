@@ -35,14 +35,15 @@
 - Capability inventory + command-policy (`ask|session|allow|deny`) should be surfaced in prompts so commands and helpers match the host environment.
 
 ## How to work the roadmap (stay outcome-focused)
+- `ROADMAP.md` is the source of truth; keep this file to the current slice summary and proofs.
 - Start with an LM Studio health check (`scripts/lmstudio-json-debug.js` or `/api/v0/status` via the CLI) before prompting.
 - For every slice, run a real task: `miniphi "<task>"` or `node src/index.js run --cmd "<cmd>" --task "<objective>" --prompt-journal <id>`. Verify recursive decomposition produces actionable branches and valid JSON.
 - When schemas fail, re-prompt or fall back to deterministic JSON and record the cause in `.miniphi` before iterating; do not loop on the same wording.
 - Prefer switching to a new real-task run (or another sample) over rephrasing the same mini-detail; use helper/command-library reuse to vary the action set.
 - Close a step only after the JSON was applied to files, diffs were summarized, and a validation command/test passed.
 
-## Active roadmap: ship v0.1 local file agent
-Goal: deliver a Vibe-style local file-edit loop with JSON-first LM Studio orchestration, resumable plans, and `.miniphi` audit trails.
+## Active roadmap: v0.1 local file agent
+Full plan and future milestones live in `ROADMAP.md`. This section tracks the active slice and proofs.
 
 Exit criteria:
 - Planner -> actions -> edits -> summary loop works with strict JSON validation and deterministic fallbacks.
@@ -50,19 +51,14 @@ Exit criteria:
 - Command execution is gated by command-policy with timeouts and max retries; runs end with a clear stop reason.
 - Passes `samples/get-started` plus one real repo run without manual patching.
 
-Current slice - Core loop hardening (do this first)
-- Default `miniphi "<task>"` entrypoint with LM Studio health gating, per-prompt timeouts/max retries, and prompt-context hygiene (dedupe workspace directives, filter command library noise).
-- Enforce schema validation + recursive decomposition with resumable plans and the `needs_more_context/missing_snippets` handshake; decomposer now requires `schema_version` and emits a fallback plan when missing.
-- Proof: run `miniphi "Tighten lint config"` (or similar) against this repo, capture valid JSON, apply edits, and log the stop reason.
-- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output, defaulted `needs_more_context/missing_snippets`, and no duplicated workspace directives in `.miniphi/prompt-exchanges/`.
+Current slice: Core loop hardening
+- Focus: prompt hygiene, schema enforcement, recursion caps, stop reasons in `.miniphi/`.
+- Proof: run `miniphi "Tighten lint config"` (or similar) against this repo.
+- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output with no duplicated workspace directives.
 
-Next slice - Reliable edit pipeline
-- Pinned file references `@"path"` with hashes in prompts; diff guard + rollback on mismatch; helper versioning under `.miniphi/helpers/`.
-- Proof: targeted edit on a repo file with diff summary + rollback check; rerun with prompt journal to confirm determinism.
-
-Next slice - Usable CLI + docs
-- Quickstart + config/profile summary; minimal regression benchmark (defer mock LM Studio smoke test until after prompt hygiene).
-- Proof: onboarding run through `samples/get-started`, plus a dry LM Studio JSON-series run.
+Next slices (see `ROADMAP.md` for full scope and exit criteria):
+- Reliable edit pipeline.
+- Usable CLI + docs.
 
 Rule: if progress stalls on a slice, switch to another live `miniphi` run instead of revisiting the same mini-detail.
 
@@ -94,6 +90,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - No LM Studio is required; use failures to fix MiniPhi prompt, JSON handling, or chunk selection logic rather than editing the test or generic utilities.
 
 ## Reference docs
+- `ROADMAP.md` for the long-lived milestone plan and exit criteria.
 - `README.md` for overview/CLI quickstart; `docs/miniphi-cli-implementation.md` for architecture and compression heuristics.
 - `docs/NodeJS LM Studio API Integration.md` + `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` for SDK/REST behavior.
 - `scripts/lmstudio-json-debug.js` + `scripts/lmstudio-json-series.js` for fast LM Studio sanity checks.
