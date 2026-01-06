@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import path from "path";
-import { extractJsonBlock } from "./core-utils.js";
+import { parseStrictJsonObject } from "./core-utils.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
@@ -294,26 +294,6 @@ export default class ApiNavigator {
           message = compactError instanceof Error ? compactError.message : String(compactError);
         }
       }
-      if (this._isResponseFormatError(message)) {
-        try {
-          this._log(
-            "[ApiNavigator] response_format rejected; retrying with text and JSON block parsing.",
-          );
-          const completion = await this.restClient.createChatCompletion({
-            messages: buildMessages(body),
-            temperature: this.temperature,
-            max_tokens: -1,
-            response_format: { type: "text" },
-            timeoutMs: this.navigationRequestTimeoutMs,
-          });
-          const raw = completion?.choices?.[0]?.message?.content ?? "";
-          return this._parsePlan(raw);
-        } catch (retryError) {
-          const retryMessage =
-            retryError instanceof Error ? retryError.message : String(retryError);
-          this._log(`[ApiNavigator] Retry after response_format failure also failed: ${retryMessage}`);
-        }
-      }
       this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
       const fallback = this._buildFallbackPlan(message);
       if (fallback) {
@@ -374,7 +354,7 @@ export default class ApiNavigator {
   }
 
   _parsePlan(raw) {
-    const parsed = extractJsonBlock(raw);
+    const parsed = parseStrictJsonObject(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return this._buildFallbackPlan("invalid response: no valid JSON found");
@@ -442,16 +422,6 @@ export default class ApiNavigator {
       notes: message ?? null,
       stop_reason: reason,
     };
-  }
-
-  _isResponseFormatError(message) {
-    if (!message) return false;
-    const normalized = message.toString().toLowerCase();
-    return (
-      normalized.includes("response_format") ||
-      normalized.includes("json_schema") ||
-      normalized.includes("json object")
-    );
   }
 
   async _materializeHelperScript(definition, payload) {

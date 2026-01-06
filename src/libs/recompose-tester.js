@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import YAML from "yaml";
-import { extractJsonBlock } from "./core-utils.js";
+import { parseStrictJsonObject } from "./core-utils.js";
 import {
   buildWorkspaceOverviewAttempts,
   codeContainsIdentifier,
@@ -1036,7 +1036,7 @@ export default class RecomposeTester {
   }
 
   _extractJsonPayload(responseText) {
-    const parsed = extractJsonBlock(responseText);
+    const parsed = parseStrictJsonObject(responseText);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }

@@ -11,6 +11,7 @@ Each milestone includes explicit exit criteria and proof runs so progress stays 
 - JSON-first: every model exchange is schema-validated with deterministic fallbacks.
 - Local-only: edits and helpers operate within the working directory and `.miniphi/`.
 - Reproducible: every slice closes only after a real MiniPhi run and recorded stop reason.
+- Evaluation-driven: prompt/response changes must pass ai-agent-evals style checks (JSON compliance, tool-call accuracy, task adherence, token usage) before a slice closes.
 - Minimal drift: if a new roadmap item is added, defer or remove a lower-priority item.
 
 ## Milestones
@@ -53,11 +54,12 @@ Exit criteria:
 - Prompt and plan reuse reduce repeated tokens without breaking schema validity.
 - Helper and command libraries show consistent reuse across at least two different repos.
 - Workspace caching and capability inventory remain accurate across runs.
+- Offline evaluation harness (ai-agent-evals style) runs locally and records JSON compliance + tool-call accuracy metrics with a stored report.
 
 Focus areas:
 - Prompt decomposition resume improvements and branch selection hygiene.
 - Helper script lifecycle (versioning, replay, and output summarization).
-- Fallback cache and prompt composition heuristics to reduce repeated failures.
+- Evaluation harness for prompt/response quality (JSON validity, tool-call accuracy, task adherence, token metrics).
 
 ### v0.3 Distribution and sustainability
 Objective: prepare MiniPhi for wider distribution and long-term maintenance.
@@ -71,6 +73,7 @@ Focus areas:
 - Packaging (`npm publish` readiness) and release notes workflow.
 - Benchmarks coverage expansion beyond Bash recomposition.
 - Telemetry and performance summaries (opt-in, local-only).
+- Deferred: fallback cache and prompt composition heuristics to reduce repeated failures.
 
 ## Operating checklist (for each slice)
 - Run a real `miniphi` task or sample; capture prompt journal and stop reason.

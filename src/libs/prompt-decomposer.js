@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import {
-  extractJsonBlock,
+  parseStrictJsonObject,
   buildPlanSegments,
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
@@ -174,18 +174,6 @@ export default class PromptDecomposer {
         errorMessage = null;
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
-        if (this._isResponseFormatError(errorMessage)) {
-          try {
-            this._log(
-              "[PromptDecomposer] response_format rejected; retrying with text and JSON block parsing.",
-            );
-            responseText = await runCompletion(requestBody, { type: "text" });
-            normalizedPlan = this._parsePlan(responseText, payload);
-            errorMessage = null;
-          } catch (retryError) {
-            errorMessage = retryError instanceof Error ? retryError.message : String(retryError);
-          }
-        }
         if (errorMessage && this._isContextOverflowError(errorMessage)) {
           continue;
         }
@@ -421,7 +409,7 @@ export default class PromptDecomposer {
 
   _parsePlan(responseText, payload) {
     const cleaned = this._cleanResponseText(responseText);
-    const parsed = extractJsonBlock(cleaned);
+    const parsed = parseStrictJsonObject(cleaned);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
@@ -687,18 +675,6 @@ export default class PromptDecomposer {
       return trimmed;
     }
     return `${trimmed.slice(0, Math.max(10, limit))}…`;
-  }
-
-  _isResponseFormatError(message) {
-    if (!message) {
-      return false;
-    }
-    const normalized = message.toString().toLowerCase();
-    return (
-      normalized.includes("response_format") ||
-      normalized.includes("json_schema") ||
-      normalized.includes("json object")
-    );
   }
 
   _isContextOverflowError(message) {

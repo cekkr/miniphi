@@ -3,7 +3,7 @@ import path from "path";
 import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
 import { LMStudioProtocolError } from "./lmstudio-handler.js";
-import { extractJsonBlock, extractTruncationPlanFromAnalysis } from "./core-utils.js";
+import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core-utils.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -1628,7 +1628,7 @@ export default class EfficientLogAnalyzer {
     if (!text) {
       return null;
     }
-    const parsed = extractJsonBlock(text);
+    const parsed = parseStrictJsonObject(text);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
       return null;
     }

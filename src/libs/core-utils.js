@@ -414,7 +414,7 @@ export function normalizeTruncationPlan(strategy) {
 }
 
 export function extractTruncationPlanFromAnalysis(analysisText) {
-  const parsed = extractJsonBlock(analysisText);
+  const parsed = parseStrictJsonObject(analysisText);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
@@ -447,7 +447,7 @@ export function extractTruncationPlanFromAnalysis(analysisText) {
 }
 
 export function extractRecommendedCommandsFromAnalysis(analysisText) {
-  const parsed = extractJsonBlock(analysisText);
+  const parsed = parseStrictJsonObject(analysisText);
   const fixes = parsed?.recommended_fixes ?? parsed?.recommendedFixes;
   if (!Array.isArray(fixes) || fixes.length === 0) {
     return [];
@@ -488,7 +488,7 @@ export function extractRecommendedCommandsFromAnalysis(analysisText) {
 }
 
 export function extractContextRequestsFromAnalysis(analysisText) {
-  const parsed = extractJsonBlock(analysisText);
+  const parsed = parseStrictJsonObject(analysisText);
   const rawRequests = parsed?.context_requests ?? parsed?.contextRequests;
   if (!Array.isArray(rawRequests) || rawRequests.length === 0) {
     return [];
@@ -538,7 +538,7 @@ export function extractContextRequestsFromAnalysis(analysisText) {
 }
 
 export function extractMissingSnippetsFromAnalysis(analysisText) {
-  const parsed = extractJsonBlock(analysisText);
+  const parsed = parseStrictJsonObject(analysisText);
   const rawSnippets = parsed?.missing_snippets ?? parsed?.missingSnippets;
   if (!Array.isArray(rawSnippets) || rawSnippets.length === 0) {
     return [];
@@ -549,7 +549,7 @@ export function extractMissingSnippetsFromAnalysis(analysisText) {
 }
 
 export function extractNeedsMoreContextFlag(analysisText) {
-  const parsed = extractJsonBlock(analysisText);
+  const parsed = parseStrictJsonObject(analysisText);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
@@ -586,6 +586,29 @@ function stripJsonLikeFences(payload = "") {
     return trimmed.slice(firstLineEnd + 1).replace(/```$/, "").trim();
   }
   return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
+}
+
+export function parseStrictJson(text) {
+  if (!text || typeof text !== "string") {
+    return null;
+  }
+  const cleaned = stripJsonLikeFences(stripThinkBlocks(text)).trim();
+  if (!cleaned) {
+    return null;
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
+export function parseStrictJsonObject(text) {
+  const parsed = parseStrictJson(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed;
 }
 
 function stripResponsePreamble(text = "") {
