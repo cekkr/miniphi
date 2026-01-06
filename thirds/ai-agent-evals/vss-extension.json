@@ -1,0 +1,85 @@
+{
+  "manifestVersion": 1,
+  "id": "microsoft-extension-ai-agent-evaluation",
+  "publisher": "ms-azure-exp-external",
+  "version": "0.0.x",
+  "name": "AI Agent Evaluation",
+  "public": true,
+  "categories": ["Azure Pipelines"],
+  "tags": ["Preview"],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "scopes": ["vso.build"],
+  "icons": {
+    "default": "logo.png"
+  },
+  "content": {
+    "details": {
+      "path": "overview.md"
+    },
+    "license": {
+      "path": "LICENSE"
+    }
+  },
+  "links": {
+    "privacypolicy": {
+      "uri": "https://privacy.microsoft.com/en-us/privacystatement"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/microsoft/ai-agent-evals"
+  },
+  "contributions": [
+    {
+      "id": "build-results",
+      "type": "ms.vss-build-web.build-results-tab",
+      "description": "Add AI Evaluation summary tab to the build results view",
+      "targets": ["ms.vss-build-web.build-results-view"],
+      "properties": {
+        "name": "AI Agent Evaluation",
+        "uri": "dist/index.html",
+        "supportsTasks": ["5b7b4d7a-05e1-4f6a-b880-88e2dfa9f248"]
+      }
+    },
+    {
+      "id": "AIAgentEvaluation",
+      "type": "ms.vss-distributed-task.task",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "tasks/AIAgentEvaluation"
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "tasks/AIAgentReport/dist",
+      "packagePath": "dist",
+      "addressable": true
+    },
+    {
+      "packagePath": "tasks/AIAgentEvaluation",
+      "path": "tasks/AIAgentEvaluation",
+      "addressable": false
+    },
+    {
+      "path": "logo.png",
+      "addressable": true
+    },
+    {
+      "path": "overview.md",
+      "addressable": true
+    },
+    {
+      "path": "sample-output.jpeg",
+      "addressable": true
+    },
+    {
+      "path": "LICENSE",
+      "addressable": true
+    }
+  ]
+}
