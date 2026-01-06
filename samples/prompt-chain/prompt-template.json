@@ -1,0 +1,25 @@
+{
+  "schema_id": {{schema_id_json}},
+  "schema": {{schema_json}},
+  "chain": {
+    "name": {{chain_name_json}},
+    "description": {{chain_description_json}}
+  },
+  "step": {
+    "id": {{step_id_json}},
+    "title": {{step_title_json}},
+    "objective": {{step_objective_json}}
+  },
+  "instructions": {{instructions_json}},
+  "options": {
+    "sets": {{option_sets_json}},
+    "selected": {{selected_options_json}},
+    "hints": {{option_hints_json}}
+  },
+  "response_rules": {
+    "needs_more_context_field": "needs_more_context",
+    "missing_snippets_field": "missing_snippets",
+    "no_prose": true
+  },
+  "context": {{context_json}}
+}

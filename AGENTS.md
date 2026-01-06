@@ -82,6 +82,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` (live JSON-only check; inspect prompt compaction in `.miniphi/prompt-exchanges/`).
 - `npm run sample:lmstudio-json-series` (schema-enforced multi-step LM Studio session without repo edits).
 - `npm run sample:besh-journal` (large-file truncation + journaling regression).
+- `node scripts/prompt-composer.js --send --response-file .miniphi/prompt-chain/response.json` plus `node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json` to iterate on prompt-chain JSON composition and learned options.
 - `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
 - `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 - `node --test unit-tests-js/romeo-miniphi-flow.test.js` (exercise EfficientLogAnalyzer file flow with stubbed Phi and chunked summaries).
@@ -96,6 +97,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `README.md` for overview/CLI quickstart; `docs/miniphi-cli-implementation.md` for architecture and compression heuristics.
 - `docs/NodeJS LM Studio API Integration.md` + `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` for SDK/REST behavior.
 - `scripts/lmstudio-json-debug.js` + `scripts/lmstudio-json-series.js` for fast LM Studio sanity checks.
+- `scripts/prompt-composer.js` + `scripts/prompt-interpret.js` for prompt-chain JSON request/response iteration (see `samples/prompt-chain/`).
 - `docs/prompts/*.schema.json` are the schema source of truth; cached templates live under `.miniphi/prompt-exchanges/templates/`.
 - Samples: `samples/get-started/`, `samples/recompose/hello-flow/`, `samples/bash-it/`, `samples/besh/`.
 - Global cache: `~/.miniphi/` holds the prompt DB, capability snapshots, and shared helper metadata.

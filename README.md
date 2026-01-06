@@ -195,10 +195,13 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
 - `scripts/lmstudio-json-debug.js` is a small REST runner that prints the raw LM Studio completion + the parsed JSON object (useful for debugging system prompts / schema enforcement outside the CLI).
 - `scripts/lmstudio-json-series.js` runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy of `samples/get-started/code` (use `npm run sample:lmstudio-json-series`).
+- `scripts/prompt-composer.js` renders JSON-only prompt payloads from a prompt-chain definition (with option selections + templates) and can send them to LM Studio for rapid prompt iteration.
+- `scripts/prompt-interpret.js` validates prompt-chain responses against a schema and updates learned options/selected options based on the JSON output.
 - `unit-tests-js/lmstudio-json-schema.integration.test.js` is an optional integration test for LM Studio JSON-schema enforcement; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running).
 - `docs/os-defaults/windows.md` and `docs/prompts/windows-benchmark-default.md` document the Windows helper workflow.
 - `docs/studies/todo/author.md` tracks authoring tasks that still need human review.
 - `samples/recompose/hello-flow` plus `samples/benchmark/` contain the recomposition harness and reference plans described in `WHY_SAMPLES.md`.
+- `samples/prompt-chain/` includes a prompt-chain definition, JSON template, and option files for iterating on JSON-first prompt composition.
 - `samples/besh/bsh.c` is a massive single-file shell used to stress recursive summarization; `npm run sample:besh-journal` walks through it with the prompt journal enabled.
 - `samples/bash-it/` is a fixed copy of the Bash shell source tree (with its real multi-directory layout) so you can run unit-style MiniPhi tests, recomposition exercises, or benchmarking passes against a realistic, complex workspace without needing to clone GNU Bash separately.
 

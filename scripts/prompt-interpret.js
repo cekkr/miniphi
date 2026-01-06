@@ -1,0 +1,350 @@
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import PromptSchemaRegistry from "../src/libs/prompt-schema-registry.js";
+import { parseStrictJson } from "../src/libs/core-utils.js";
+import {
+  DEFAULT_LEARNED_SCHEMA_VERSION,
+  mergeLearnedOptions,
+  normalizeOptionUpdates,
+} from "../src/libs/prompt-chain-utils.js";
+
+function printUsage() {
+  const lines = [
+    "Prompt chain interpreter (validates JSON responses + updates learned options).",
+    "",
+    "Usage:",
+    "  node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json",
+    "  node scripts/prompt-interpret.js --content-file response-content.json",
+    "",
+    "Options:",
+    "  --response-file <path>  Raw LM Studio response JSON (choices[0].message.content)",
+    "  --content-file <path>   Raw assistant content or direct JSON response",
+    "  --chain <path>          Prompt chain definition (default: samples/prompt-chain/chain.json)",
+    "  --step <id|index>       Chain step id (or 1-based index) used for fallback",
+    "  --schema-id <id>        Override schema id (defaults to chain schema_id)",
+    "  --learned-file <path>   Learned option set file to update",
+    "  --selected-file <path>  Selected option file to update",
+    "  --no-update-learned     Skip learned option updates",
+    "  --no-update-selected    Skip selected option updates",
+    "  --output <path>         Write normalized response JSON to a file",
+    "  -h, --help              Show help",
+  ];
+  console.log(lines.join("\n"));
+}
+
+function parseArgs(argv) {
+  const options = {
+    help: false,
+    responseFile: null,
+    contentFile: null,
+    chain: path.join("samples", "prompt-chain", "chain.json"),
+    step: null,
+    schemaId: null,
+    learnedFile: null,
+    selectedFile: null,
+    updateLearned: true,
+    updateSelected: true,
+    output: null,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      options.help = true;
+      continue;
+    }
+    if (arg === "--response-file") {
+      options.responseFile = argv[++i];
+      continue;
+    }
+    if (arg === "--content-file") {
+      options.contentFile = argv[++i];
+      continue;
+    }
+    if (arg === "--chain") {
+      options.chain = argv[++i];
+      continue;
+    }
+    if (arg === "--step") {
+      options.step = argv[++i];
+      continue;
+    }
+    if (arg === "--schema-id") {
+      options.schemaId = argv[++i];
+      continue;
+    }
+    if (arg === "--learned-file") {
+      options.learnedFile = argv[++i];
+      continue;
+    }
+    if (arg === "--selected-file") {
+      options.selectedFile = argv[++i];
+      continue;
+    }
+    if (arg === "--no-update-learned") {
+      options.updateLearned = false;
+      continue;
+    }
+    if (arg === "--no-update-selected") {
+      options.updateSelected = false;
+      continue;
+    }
+    if (arg === "--output") {
+      options.output = argv[++i];
+      continue;
+    }
+  }
+
+  return options;
+}
+
+async function readJsonFile(filePath, { required }) {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const raw = await fsp.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (error) {
+    if (!required && error?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(
+      `Unable to read JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function resolveStep(chain, stepId) {
+  const steps = Array.isArray(chain?.steps) ? chain.steps : [];
+  if (!steps.length) {
+    return null;
+  }
+  if (!stepId) {
+    return steps[0];
+  }
+  const byId = steps.find((entry) => entry?.id === stepId);
+  if (byId) {
+    return byId;
+  }
+  const numeric = Number(stepId);
+  if (Number.isInteger(numeric) && numeric > 0 && numeric <= steps.length) {
+    return steps[numeric - 1];
+  }
+  return null;
+}
+
+function resolveChainPath(chainDir, candidate) {
+  if (!candidate || typeof candidate !== "string") {
+    return null;
+  }
+  if (path.isAbsolute(candidate)) {
+    return candidate;
+  }
+  return path.resolve(chainDir, candidate);
+}
+
+function normalizeSelections(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const normalized = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) {
+        normalized[key] = trimmed;
+      }
+    } else if (value === null) {
+      normalized[key] = null;
+    }
+  }
+  return normalized;
+}
+
+async function loadResponseContent({ responseFile, contentFile }) {
+  let rawText = null;
+  let parsedEnvelope = null;
+  let directObject = null;
+
+  if (responseFile) {
+    const raw = await fsp.readFile(responseFile, "utf8");
+    const trimmed = raw.trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      parsed = null;
+    }
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.choices) && parsed.choices[0]?.message?.content) {
+        parsedEnvelope = parsed;
+        rawText = String(parsed.choices[0].message.content);
+      } else if (typeof parsed.content === "string") {
+        parsedEnvelope = parsed;
+        rawText = parsed.content;
+      } else {
+        directObject = parsed;
+        rawText = trimmed;
+      }
+    } else {
+      rawText = trimmed;
+    }
+  }
+
+  if (!rawText && !directObject && contentFile) {
+    rawText = await fsp.readFile(contentFile, "utf8");
+  }
+
+  return { rawText, parsedEnvelope, directObject };
+}
+
+function buildFallback({ schemaId, stepId, stopReason, notes }) {
+  const fallbackVersion = schemaId ? `${schemaId}@v1` : DEFAULT_LEARNED_SCHEMA_VERSION;
+  return {
+    schema_version: fallbackVersion,
+    step_id: stepId ?? "unknown",
+    summary: "Fallback JSON generated after invalid or missing response.",
+    selected_options: {},
+    option_updates: [],
+    needs_more_context: true,
+    missing_snippets: [stopReason],
+    stop_reason: stopReason,
+    notes: notes ?? null,
+  };
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    printUsage();
+    return;
+  }
+
+  if (!options.responseFile && !options.contentFile) {
+    throw new Error("Pass --response-file or --content-file.");
+  }
+
+  const chainPath = path.resolve(options.chain);
+  const chainDir = path.dirname(chainPath);
+  const chain = await readJsonFile(chainPath, { required: true });
+  const step = resolveStep(chain, options.step);
+
+  const schemaId =
+    options.schemaId ??
+    (typeof step?.schema_id === "string" ? step.schema_id : null) ??
+    (typeof chain?.schema_id === "string" ? chain.schema_id : null);
+  if (!schemaId) {
+    throw new Error("Unable to resolve schema_id (use --schema-id to override).");
+  }
+
+  const registry = new PromptSchemaRegistry();
+  const schemaEntry = registry.getSchema(schemaId);
+  if (!schemaEntry) {
+    throw new Error(`Schema "${schemaId}" not found under docs/prompts.`);
+  }
+
+  const defaultLearned =
+    typeof chain?.learned_options_file === "string"
+      ? resolveChainPath(chainDir, chain.learned_options_file)
+      : path.join(chainDir, "learned-options.json");
+  const learnedPath = options.learnedFile
+    ? path.resolve(options.learnedFile)
+    : defaultLearned;
+  const defaultSelected =
+    typeof chain?.selected_options_file === "string"
+      ? resolveChainPath(chainDir, chain.selected_options_file)
+      : path.join(chainDir, "selected-options.json");
+  const selectedPath = options.selectedFile
+    ? path.resolve(options.selectedFile)
+    : defaultSelected;
+
+  const { rawText, directObject } = await loadResponseContent({
+    responseFile: options.responseFile ? path.resolve(options.responseFile) : null,
+    contentFile: options.contentFile ? path.resolve(options.contentFile) : null,
+  });
+
+  let parsed = directObject;
+  if (!parsed && rawText) {
+    parsed = parseStrictJson(rawText);
+  }
+
+  let finalResponse = null;
+  let fallbackReason = null;
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fallbackReason = "invalid_json";
+  } else {
+    const validation = registry.validate(schemaId, JSON.stringify(parsed));
+    if (!validation?.valid) {
+      fallbackReason = "schema_validation_failed";
+      if (validation?.errors?.length) {
+        const message = validation.errors.slice(0, 6).join("; ");
+        finalResponse = buildFallback({
+          schemaId,
+          stepId: parsed.step_id ?? step?.id ?? null,
+          stopReason: fallbackReason,
+          notes: message,
+        });
+      }
+    } else {
+      finalResponse = validation.parsed;
+    }
+  }
+
+  if (!finalResponse) {
+    finalResponse = buildFallback({
+      schemaId,
+      stepId: step?.id ?? null,
+      stopReason: fallbackReason ?? "invalid_json",
+    });
+  }
+
+  if (options.updateLearned) {
+    const updates = normalizeOptionUpdates(finalResponse.option_updates);
+    if (updates.length > 0 && learnedPath) {
+      const existing = await readJsonFile(learnedPath, { required: false });
+      const merged = mergeLearnedOptions(existing, updates, {
+        now: new Date().toISOString(),
+        stepId: finalResponse.step_id ?? step?.id ?? null,
+      });
+      await fsp.mkdir(path.dirname(learnedPath), { recursive: true });
+      await fsp.writeFile(learnedPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+    }
+  }
+
+  if (options.updateSelected && selectedPath) {
+    const normalizedSelections = normalizeSelections(finalResponse.selected_options);
+    if (Object.keys(normalizedSelections).length > 0) {
+      const existing = await readJsonFile(selectedPath, { required: false });
+      const merged = {
+        ...(existing && typeof existing === "object" ? existing : {}),
+        ...normalizedSelections,
+      };
+      await fsp.mkdir(path.dirname(selectedPath), { recursive: true });
+      await fsp.writeFile(selectedPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+    }
+  }
+
+  if (options.output) {
+    const outPath = path.resolve(options.output);
+    await fsp.mkdir(path.dirname(outPath), { recursive: true });
+    await fsp.writeFile(outPath, `${JSON.stringify(finalResponse, null, 2)}\n`, "utf8");
+  } else {
+    console.log(JSON.stringify(finalResponse, null, 2));
+  }
+}
+
+main().catch((error) => {
+  console.error(`[prompt-interpret] ${error instanceof Error ? error.message : String(error)}`);
+  if (error?.body) {
+    console.error("Error body:");
+    try {
+      console.error(JSON.stringify(error.body, null, 2));
+    } catch {
+      console.error(String(error.body));
+    }
+  }
+  process.exitCode = 1;
+});

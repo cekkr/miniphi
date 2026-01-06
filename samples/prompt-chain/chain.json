@@ -1,0 +1,85 @@
+{
+  "schema_version": "prompt-chain@v1",
+  "name": "prompt-composer-sandbox",
+  "description": "Sandbox prompt chain to tune JSON-first request/response handling.",
+  "schema_id": "prompt-chain-response",
+  "system_prompt": "You are a prompt engineering evaluator for MiniPhi. Answer with JSON only.",
+  "instructions": "Analyze the prompt structure and response handling. Prioritize strict JSON compliance, clear option selection, and deterministic fallbacks.",
+  "template_file": "samples/prompt-chain/prompt-template.json",
+  "defaults": {
+    "temperature": 0,
+    "max_tokens": 900
+  },
+  "option_sets": {
+    "focus": {
+      "description": "Primary goal for this pass.",
+      "default": "schema",
+      "options": [
+        {
+          "id": "schema",
+          "label": "Schema fidelity",
+          "prompt_hint": "Emphasize strict schema compliance and JSON-only output."
+        },
+        {
+          "id": "options",
+          "label": "Option control",
+          "prompt_hint": "Evaluate option selection and expand or prune option sets."
+        },
+        {
+          "id": "fallbacks",
+          "label": "Fallback handling",
+          "prompt_hint": "Check deterministic fallback behavior and stop_reason usage."
+        }
+      ]
+    },
+    "tone": {
+      "description": "Communication style for the feedback.",
+      "default": "diagnostic",
+      "options": [
+        {
+          "id": "crisp",
+          "label": "Crisp",
+          "prompt_hint": "Use short, direct guidance."
+        },
+        {
+          "id": "diagnostic",
+          "label": "Diagnostic",
+          "prompt_hint": "Call out failure modes and mitigations."
+        },
+        {
+          "id": "supportive",
+          "label": "Supportive",
+          "prompt_hint": "Offer gentle coaching with an example."
+        }
+      ]
+    },
+    "fallback_policy": {
+      "description": "Handling for invalid JSON responses.",
+      "default": "strict",
+      "options": [
+        {
+          "id": "strict",
+          "label": "Strict reject",
+          "prompt_hint": "Reject non-JSON and recommend deterministic fallback JSON with stop_reason."
+        },
+        {
+          "id": "retry",
+          "label": "Single retry",
+          "prompt_hint": "Recommend one re-prompt before falling back to deterministic JSON."
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "id": "compose",
+      "title": "Prompt composition review",
+      "objective": "Propose improvements to the JSON-first prompt request structure."
+    },
+    {
+      "id": "interpret",
+      "title": "Response interpretation review",
+      "objective": "Stress-test response parsing, schema validation, and fallback behavior."
+    }
+  ]
+}
