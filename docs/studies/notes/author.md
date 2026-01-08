@@ -97,7 +97,7 @@ RECOMPOSE_MODE=live RECOMPOSE_DIRECTIONS=roundtrip ./run-log-benchmarks.sh gener
 Next Steps
 
 Patch the Phi prompt templates (main analyzer + recompose prompts) so they include an explicit “JSON only” reminder and fall back to deterministic summaries before hitting the time limit; otherwise every run will continue to die on schema errors or 5‑minute hangs.
-Consider disabling prompt scoring (or hardening its schema) when LM Studio is already overloaded—the scoring Phi is currently spamming warnings for $.series_strategy and contributes nothing to the failing workflows.
+Prompt scoring evaluator now runs only when `--debug-lm` is supplied, keeping default runs on heuristic-only scoring to avoid extra LM load and schema warnings.
 Once Phi responds deterministically again, rerun RECOMPOSE_MODE=live ./run-log-benchmarks.sh so current-benchmarks includes one clean, end-to-end artifact set.
 Commands executed (all in repo root):
 
