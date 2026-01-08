@@ -185,6 +185,7 @@ export class LMStudioHandler {
       const capturedThoughts = [];
       let requestSnapshot = null;
       let result = "";
+      let responseToolCalls = null;
       let schemaValidation = null;
       let schemaFailureDetails = null;
       let predictionHandle = null;
@@ -302,10 +303,12 @@ export class LMStudioHandler {
         }
         requestSnapshot = this._buildRequestSnapshot(currentPrompt, traceContext, schemaDetails);
         if (useRestTransport) {
-          result = await this._withPromptTimeout(
+          const restResult = await this._withPromptTimeout(
             async () => this._invokeRestCompletion(requestedResponseFormat),
             () => {},
           );
+          result = restResult?.text ?? "";
+          responseToolCalls = restResult?.toolCalls ?? null;
           rawFragmentCount = result ? 1 : 0;
           solutionTokenCount = this._approximateTokens(result);
           markFirstToken("rest");
@@ -394,6 +397,7 @@ export class LMStudioHandler {
 
         const responseSnapshot = {
           text: result,
+          rawResponseText: result,
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
@@ -404,6 +408,8 @@ export class LMStudioHandler {
           },
           schemaId: schemaDetails?.id ?? null,
           schemaValidation,
+          tool_calls: responseToolCalls ?? null,
+          tool_definitions: traceContext?.toolDefinitions ?? null,
         };
         await this._recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
         if (heartbeatTimer) {
@@ -539,6 +545,7 @@ export class LMStudioHandler {
           requestSnapshot,
           {
             text: result,
+            rawResponseText: result,
             reasoning: capturedThoughts,
             startedAt,
             finishedAt,
@@ -549,6 +556,8 @@ export class LMStudioHandler {
             },
             schemaId: schemaDetails?.id ?? null,
             schemaValidation,
+            tool_calls: responseToolCalls ?? null,
+            tool_definitions: traceContext?.toolDefinitions ?? null,
           },
           message,
         );
@@ -557,6 +566,7 @@ export class LMStudioHandler {
           requestSnapshot,
           {
             text: result,
+            rawResponseText: result,
             reasoning: capturedThoughts,
             startedAt,
             finishedAt,
@@ -566,6 +576,8 @@ export class LMStudioHandler {
               rawFragments: rawFragmentCount,
               solutionTokens: solutionTokenCount,
             },
+            tool_calls: responseToolCalls ?? null,
+            tool_definitions: traceContext?.toolDefinitions ?? null,
             tokensApprox: this._approximateTokens(result),
           },
           message,
@@ -749,7 +761,10 @@ export class LMStudioHandler {
     if (!text) {
       throw new Error(`LM Studio REST completion returned an empty response for ${this.modelKey}.`);
     }
-    return text;
+    return {
+      text,
+      toolCalls: choice?.message?.tool_calls ?? null,
+    };
   }
 
   /**
@@ -914,6 +929,7 @@ export class LMStudioHandler {
       schemaId: schemaDetails?.id ?? traceContext.schemaId ?? null,
       schemaPath: schemaDetails?.filePath ?? null,
       responseFormat: traceContext.responseFormat ?? null,
+      toolDefinitions: traceContext?.toolDefinitions ?? null,
       messages,
       createdAt: new Date().toISOString(),
     };

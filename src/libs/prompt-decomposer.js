@@ -128,7 +128,10 @@ export default class PromptDecomposer {
       return null;
     }
     let requestBody = null;
+    let requestMessages = null;
     let responseText = "";
+    let responseToolCalls = null;
+    let responseToolDefinitions = null;
     let normalizedPlan = null;
     let errorMessage = null;
 
@@ -159,7 +162,14 @@ export default class PromptDecomposer {
           response_format: responseFormat,
         }),
       );
-      return completion?.choices?.[0]?.message?.content ?? "";
+      const message = completion?.choices?.[0]?.message ?? null;
+      return {
+        text: message?.content ?? "",
+        toolCalls: message?.tool_calls ?? null,
+        toolDefinitions: completion?.tool_definitions ?? null,
+        messages,
+        responseFormat,
+      };
     };
 
     for (let i = 0; i < attempts.length && !normalizedPlan; i += 1) {
@@ -169,7 +179,11 @@ export default class PromptDecomposer {
         if (i > 0) {
           this._log(`[PromptDecomposer] Attempting ${modeLabel} workspace payload due to previous failure.`);
         }
-        responseText = await runCompletion(requestBody, JSON_ONLY_RESPONSE_FORMAT);
+        const response = await runCompletion(requestBody, JSON_ONLY_RESPONSE_FORMAT);
+        responseText = response.text;
+        requestMessages = response.messages;
+        responseToolCalls = response.toolCalls;
+        responseToolDefinitions = response.toolDefinitions;
         normalizedPlan = this._parsePlan(responseText, payload);
         errorMessage = null;
       } catch (error) {
@@ -196,6 +210,13 @@ export default class PromptDecomposer {
     }
 
     if (payload.promptRecorder) {
+      const responsePayload =
+        normalizedPlan && typeof normalizedPlan === "object" && !Array.isArray(normalizedPlan)
+          ? { ...normalizedPlan }
+          : { raw: responseText };
+      responsePayload.rawResponseText = responseText ?? "";
+      responsePayload.tool_calls = responseToolCalls ?? null;
+      responsePayload.tool_definitions = responseToolDefinitions ?? null;
       await payload.promptRecorder.record({
         scope: "sub",
         label: "prompt-decomposition",
@@ -210,8 +231,10 @@ export default class PromptDecomposer {
         request: {
           endpoint: "/chat/completions",
           payload: requestBody,
+          messages: requestMessages ?? null,
+          response_format: JSON_ONLY_RESPONSE_FORMAT,
         },
-        response: normalizedPlan ?? { raw: responseText },
+        response: responsePayload,
         error: errorMessage,
       });
     }
@@ -348,18 +371,22 @@ export default class PromptDecomposer {
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
       return promise;
     }
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(
-            new Error(
-              `Prompt decomposition exceeded ${Math.round(this.timeoutMs / 1000)}s timeout.`,
-            ),
-          );
-        }, this.timeoutMs);
-      }),
-    ]);
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Prompt decomposition exceeded ${Math.round(this.timeoutMs / 1000)}s timeout.`,
+          ),
+        );
+      }, this.timeoutMs);
+      timer?.unref?.();
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    });
   }
 
   _shouldDisable(message) {

@@ -503,44 +503,99 @@ export default class EfficientLogAnalyzer {
     );
     const relativePath = path.relative(process.cwd(), filePath) || filePath;
     console.log(`[MiniPhi] Summarizing ${relativePath}${rangeLabel} ...`);
-    const summarizeStarted = Date.now();
-    const summaryResult = await this.summarizer.summarizeFile(filePath, {
-      maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
-      recursionLevels: summaryLevels,
-      lineRange,
-    });
-    const { chunks, linesIncluded } = summaryResult;
-    const summarizeFinished = Date.now();
-    this._logDev(
-      devLog,
-      `Summarizer produced ${chunks.length} chunks in ${summarizeFinished - summarizeStarted} ms.`,
-    );
-    console.log(
-      `[MiniPhi] Summarizer produced ${chunks.length} chunks in ${
-        summarizeFinished - summarizeStarted
-      } ms`,
-    );
+    const promptBudget = await this._resolvePromptBudget();
+    const rawBudgetRatio = 0.75;
+    const rawTokenBudget = Math.floor(promptBudget * rawBudgetRatio);
+    const rawByteLimit = Math.max(65536, Math.floor(promptBudget * 4 * rawBudgetRatio));
+    let chunks = [];
+    let linesIncluded = 0;
+    let usedRawContent = false;
+    let sourceLineCount = null;
+
+    if (this._isDocLikeFile(filePath)) {
+      const rawCandidate = await this._loadRawFileLines(filePath, lineRange, rawByteLimit);
+      if (rawCandidate && !rawCandidate.tooLarge) {
+        sourceLineCount = rawCandidate.lines.length;
+        const rawTokens = this._estimateTokens(rawCandidate.text);
+        if (rawCandidate.lines.length > 0 && rawTokens <= rawTokenBudget) {
+          usedRawContent = true;
+          linesIncluded = rawCandidate.lines.length;
+          chunks = this._buildRawChunks(rawCandidate.lines, {
+            startLine: rawCandidate.startLine,
+            maxLinesPerChunk: maxLines,
+          });
+          this._logDev(
+            devLog,
+            `Using raw file content (${linesIncluded} lines, ~${rawTokens} tokens).`,
+          );
+          console.log(`[MiniPhi] Using raw file content for ${relativePath}${rangeLabel} ...`);
+        } else if (rawCandidate.lines.length > 0) {
+          const previewBudget = Math.max(256, Math.floor(promptBudget * 0.35));
+          const preview = this._buildDocPreviewLines(rawCandidate.lines, {
+            startLine: rawCandidate.startLine,
+            tokenBudget: previewBudget,
+          });
+          if (preview.lines.length > 0) {
+            usedRawContent = true;
+            linesIncluded = preview.lines.length;
+            chunks = this._buildRawChunks(preview.lines, {
+              startLine: rawCandidate.startLine,
+              maxLinesPerChunk: maxLines,
+            });
+            this._logDev(
+              devLog,
+              `Using raw preview (${linesIncluded} lines, ~${preview.usedTokens} tokens) from ${sourceLineCount} total lines.`,
+            );
+            console.log(
+              `[MiniPhi] Using raw preview content for ${relativePath}${rangeLabel} ...`,
+            );
+          }
+        }
+      }
+    }
+
+    if (!usedRawContent) {
+      const summarizeStarted = Date.now();
+      const summaryResult = await this.summarizer.summarizeFile(filePath, {
+        maxLinesPerChunk: options?.maxLinesPerChunk ?? 2000,
+        recursionLevels: summaryLevels,
+        lineRange,
+      });
+      chunks = summaryResult.chunks ?? [];
+      linesIncluded = summaryResult.linesIncluded ?? 0;
+      const summarizeFinished = Date.now();
+      this._logDev(
+        devLog,
+        `Summarizer produced ${chunks.length} chunks in ${summarizeFinished - summarizeStarted} ms.`,
+      );
+      console.log(
+        `[MiniPhi] Summarizer produced ${chunks.length} chunks in ${
+          summarizeFinished - summarizeStarted
+        } ms`,
+      );
+    }
 
     if (chunks.length === 0) {
       throw new Error(`No content found in ${filePath}`);
     }
 
     const totalLines =
-      typeof linesIncluded === "number"
-        ? linesIncluded
-        : chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
+      Number.isFinite(sourceLineCount) && sourceLineCount > 0
+        ? sourceLineCount
+        : typeof linesIncluded === "number"
+          ? linesIncluded
+          : chunks.reduce((acc, chunk) => acc + (chunk?.input_lines ?? 0), 0);
     const chunkSummaries = chunks.map((chunk, idx) => {
       const label = `Chunk ${idx + 1}`;
       this._logDev(
         devLog,
-        `${label}: ${chunk?.input_lines ?? 0} lines summarized → ${this._truncateForLog(
+        `${label}: ${chunk?.input_lines ?? 0} lines summarized; summary=${this._truncateForLog(
           JSON.stringify(chunk?.summary ?? []),
         )}`,
       );
       return { chunk, label };
     });
     const schemaId = promptContext?.schemaId ?? this.schemaId;
-    const promptBudget = await this._resolvePromptBudget();
     const adjustment = this._buildBudgetedPrompt({
       chunkSummaries,
       summaryLevels,
@@ -840,13 +895,150 @@ export default class EfficientLogAnalyzer {
     ].join("\n");
   }
 
+  _isDocLikeFile(filePath) {
+    if (!filePath || typeof filePath !== "string") {
+      return false;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    return [
+      ".md",
+      ".markdown",
+      ".mdx",
+      ".txt",
+      ".rst",
+      ".adoc",
+      ".asciidoc",
+    ].includes(ext);
+  }
+
+  async _loadRawFileLines(filePath, lineRange = null, maxBytes = null) {
+    if (!filePath || typeof filePath !== "string") {
+      return null;
+    }
+    let stats;
+    try {
+      stats = await fs.promises.stat(filePath);
+    } catch {
+      return null;
+    }
+    if (!stats.isFile()) {
+      return null;
+    }
+    if (Number.isFinite(maxBytes) && maxBytes > 0 && stats.size > maxBytes) {
+      return { tooLarge: true, size: stats.size };
+    }
+    const content = await fs.promises.readFile(filePath, "utf8");
+    let lines = content.split(/\r?\n/);
+    let startLine = 1;
+    if (lineRange && (lineRange.startLine || lineRange.endLine)) {
+      const start = Number.isFinite(lineRange.startLine)
+        ? Math.max(1, Math.floor(lineRange.startLine))
+        : 1;
+      const end = Number.isFinite(lineRange.endLine)
+        ? Math.max(start, Math.floor(lineRange.endLine))
+        : lines.length;
+      lines = lines.slice(start - 1, end);
+      startLine = start;
+    }
+    return {
+      lines,
+      text: lines.join("\n"),
+      startLine,
+      size: content.length,
+    };
+  }
+
+  _buildRawChunks(lines, options = undefined) {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return [];
+    }
+    const startLine =
+      Number.isFinite(options?.startLine) && options.startLine > 0
+        ? Math.floor(options.startLine)
+        : 1;
+    const maxLinesPerChunk =
+      Number.isFinite(options?.maxLinesPerChunk) && options.maxLinesPerChunk > 0
+        ? Math.floor(options.maxLinesPerChunk)
+        : lines.length;
+    const chunks = [];
+    let lineNumber = startLine;
+    for (let idx = 0; idx < lines.length; idx += maxLinesPerChunk) {
+      const chunkLines = lines.slice(idx, idx + maxLinesPerChunk);
+      const labeledLines = chunkLines.map(
+        (line, offset) => `L${lineNumber + offset}: ${line}`,
+      );
+      chunks.push({
+        input_lines: chunkLines.length,
+        summary: {
+          raw: labeledLines.join("\n"),
+        },
+      });
+      lineNumber += chunkLines.length;
+    }
+    return chunks;
+  }
+
+  _buildDocPreviewLines(lines, options = undefined) {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return { lines: [], usedTokens: 0, truncated: false };
+    }
+    const startLine =
+      Number.isFinite(options?.startLine) && options.startLine > 0
+        ? Math.floor(options.startLine)
+        : 1;
+    const tokenBudget =
+      Number.isFinite(options?.tokenBudget) && options.tokenBudget > 0
+        ? Math.floor(options.tokenBudget)
+        : null;
+    const preview = [];
+    let usedTokens = 0;
+    for (let idx = 0; idx < lines.length; idx += 1) {
+      const line = lines[idx];
+      const labeled = `L${startLine + idx}: ${line}`;
+      const lineTokens = this._estimateTokens(labeled);
+      if (tokenBudget && preview.length > 0 && usedTokens + lineTokens > tokenBudget) {
+        break;
+      }
+      preview.push(line);
+      usedTokens += lineTokens;
+    }
+    return {
+      lines: preview,
+      usedTokens,
+      truncated: preview.length < lines.length,
+    };
+  }
+
   formatSummary(summary, label = undefined, maxLevel = Infinity) {
-    if (!summary || !Array.isArray(summary.summary)) {
+    if (!summary) {
+      return "";
+    }
+    const labelPrefix = label ? `# ${label}\n\n` : "";
+    if (typeof summary.raw === "string") {
+      const trimmed = summary.raw.trimEnd();
+      if (!trimmed) {
+        return labelPrefix.trimEnd();
+      }
+      return `${labelPrefix}${trimmed}\n`;
+    }
+    if (typeof summary?.summary?.raw === "string") {
+      const trimmed = summary.summary.raw.trimEnd();
+      if (!trimmed) {
+        return labelPrefix.trimEnd();
+      }
+      return `${labelPrefix}${trimmed}\n`;
+    }
+    const levels = Array.isArray(summary.summary)
+      ? summary.summary
+      : Array.isArray(summary)
+        ? summary
+        : null;
+    if (!levels) {
       return "";
     }
 
-    let formatted = label ? `# ${label}\n\n` : "";
-    for (const level of summary.summary) {
+    let formatted = labelPrefix;
+    for (const level of levels) {
       if (typeof level.level === "number" && level.level > maxLevel) {
         continue;
       }
@@ -1064,7 +1256,7 @@ export default class EfficientLogAnalyzer {
       if (Number.isFinite(details.lines) && details.lines > 0) {
         parts.push(`compression=${this._formatCompression(details.lines, details.tokens)}`);
       } else {
-        parts.push(`tokens≈${details.tokens}`);
+        parts.push(`tokens=${details.tokens}`);
       }
     }
     const datasetLabel = this._formatDatasetLabel(details.datasetLabel);
@@ -1181,10 +1373,12 @@ export default class EfficientLogAnalyzer {
         promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
         truncationPlan: workspaceContext?.truncationPlan ?? null,
       };
+      const lineCount =
+        Number.isFinite(totalLines) && totalLines > 0 ? totalLines : composed.lines || 1;
       prompt = this.generateSmartPrompt(
         task,
         composed.text,
-        composed.lines || totalLines || 1,
+        lineCount,
         {
           compressedTokens: this._estimateTokens(composed.text),
           originalSize: totalLines * 4,

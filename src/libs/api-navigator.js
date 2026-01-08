@@ -92,7 +92,8 @@ const SYSTEM_PROMPT = [
   "Given workspace stats, file manifests, and existing tool inventories, explain how to traverse the repo.",
   "Return JSON that matches the provided schema exactly; omit prose outside the JSON response.",
   "When additional telemetry is required (e.g., enumerating files, parsing manifests), emit a minimal helper script.",
-  "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies. If stdin is required, include a compact sample payload under helper_script.stdin.",
+  "When focus_path is provided in the request body, prefer it for helper scripts and actions.",
+  "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies. If stdin is required, include a compact sample payload under helper_script.stdin, and otherwise accept focus_path as argv[2].",
 ].join(" ");
 
 function clampText(text, limit = OUTPUT_PREVIEW_LIMIT) {
@@ -103,7 +104,7 @@ function clampText(text, limit = OUTPUT_PREVIEW_LIMIT) {
   if (normalized.length <= limit) {
     return normalized;
   }
-  return `${normalized.slice(0, limit)}…`;
+  return `${normalized.slice(0, limit)}...`;
 }
 
 export default class ApiNavigator {
@@ -118,6 +119,7 @@ export default class ApiNavigator {
     this.helperSilenceTimeout =
       options?.helperSilenceTimeout ?? options?.helperSilenceTimeoutMs ?? HELPER_SILENCE_TIMEOUT_MS;
     this.adapterRegistry = options?.adapterRegistry ?? null;
+    this.promptRecorder = options?.promptRecorder ?? null;
     this.disabled = false;
     this.disableNotice = null;
     this.pythonRunnerCache = null;
@@ -141,7 +143,9 @@ export default class ApiNavigator {
    *   capabilities?: Record<string, any> | null,
    *   objective?: string | null,
    *   cwd?: string,
-   *   executeHelper?: boolean
+   *   executeHelper?: boolean,
+   *   focusPath?: string | null,
+   *   promptId?: string | null
    * }} payload
    */
   async generateNavigationHints(payload = undefined) {
@@ -234,6 +238,7 @@ export default class ApiNavigator {
         : [];
       return {
         objective: payload.objective ?? null,
+        focus_path: payload.focusPath ?? null,
         cwd: payload.cwd ?? process.cwd(),
         workspace: {
           classification: payload.workspace?.classification ?? null,
@@ -264,46 +269,108 @@ export default class ApiNavigator {
       },
     ];
     let body = buildBody(false);
+    let requestMessages = buildMessages(body);
+    let responseText = "";
+    let toolCalls = null;
+    let errorMessage = null;
+    let plan = null;
     let compactTried = false;
-    try {
+
+    const runCompletion = async (bodyPayload) => {
+      requestMessages = buildMessages(bodyPayload);
       const completion = await this.restClient.createChatCompletion({
-        messages: buildMessages(body),
+        messages: requestMessages,
         temperature: this.temperature,
         max_tokens: -1,
         response_format: JSON_ONLY_RESPONSE_FORMAT,
         timeoutMs: this.navigationRequestTimeoutMs,
       });
-      const raw = completion?.choices?.[0]?.message?.content ?? "";
-      return this._parsePlan(raw);
+      const message = completion?.choices?.[0]?.message ?? null;
+      responseText = message?.content ?? "";
+      toolCalls = message?.tool_calls ?? null;
+      return this._parsePlan(responseText);
+    };
+
+    try {
+      plan = await runCompletion(body);
     } catch (error) {
-      let message = error instanceof Error ? error.message : String(error);
-      if (this._isContextOverflowError(message) && !compactTried) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+      if (this._isContextOverflowError(errorMessage) && !compactTried) {
         compactTried = true;
         body = buildBody(true);
         try {
-          const completion = await this.restClient.createChatCompletion({
-            messages: buildMessages(body),
-            temperature: this.temperature,
-            max_tokens: -1,
-            response_format: JSON_ONLY_RESPONSE_FORMAT,
-            timeoutMs: this.navigationRequestTimeoutMs,
-          });
-          const raw = completion?.choices?.[0]?.message?.content ?? "";
-          return this._parsePlan(raw);
+          plan = await runCompletion(body);
+          errorMessage = null;
         } catch (compactError) {
-          message = compactError instanceof Error ? compactError.message : String(compactError);
+          errorMessage =
+            compactError instanceof Error ? compactError.message : String(compactError);
         }
       }
-      this._log(`[ApiNavigator] Failed to request navigation hints: ${message}`);
-      const fallback = this._buildFallbackPlan(message);
-      if (fallback) {
-        return fallback;
+      if (!plan) {
+        this._log(`[ApiNavigator] Failed to request navigation hints: ${errorMessage}`);
+        plan = this._buildFallbackPlan(errorMessage);
+        if (this._shouldDisable(errorMessage)) {
+          this._disableNavigator(errorMessage);
+          this._log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
+        }
       }
-      if (this._shouldDisable(message)) {
-        this._disableNavigator(message);
-        this._log("[ApiNavigator] Disabling navigator for current session after repeated failures.");
-      }
-      return null;
+    }
+
+    await this._recordPromptExchange({
+      payload,
+      requestBody: body,
+      requestMessages,
+      responseText,
+      plan,
+      errorMessage,
+      toolCalls,
+    });
+
+    return plan;
+  }
+
+  async _recordPromptExchange({
+    payload,
+    requestBody,
+    requestMessages,
+    responseText,
+    plan,
+    errorMessage,
+    toolCalls,
+  }) {
+    if (!this.promptRecorder) {
+      return;
+    }
+    const responsePayload =
+      plan && typeof plan === "object" && !Array.isArray(plan) ? { ...plan } : { raw: responseText ?? "" };
+    responsePayload.rawResponseText = responseText ?? "";
+    responsePayload.tool_calls = toolCalls ?? null;
+    responsePayload.tool_definitions = null;
+    try {
+      await this.promptRecorder.record({
+        scope: "sub",
+        label: "api-navigator",
+        mainPromptId: payload?.promptId ?? null,
+        metadata: {
+          type: "api-navigator",
+          objective: payload?.objective ?? null,
+          cwd: payload?.cwd ?? null,
+          workspaceType: payload?.workspace?.classification ?? null,
+          stop_reason: plan?.stop_reason ?? errorMessage ?? null,
+        },
+        request: {
+          endpoint: "/chat/completions",
+          payload: requestBody ?? null,
+          messages: requestMessages ?? null,
+          response_format: JSON_ONLY_RESPONSE_FORMAT,
+        },
+        response: responsePayload,
+        error: errorMessage ?? null,
+      });
+    } catch (error) {
+      this._log(
+        `[ApiNavigator] Prompt recorder failed: ${error instanceof Error ? error.message : error}`,
+      );
     }
   }
 
@@ -451,10 +518,18 @@ export default class ApiNavigator {
     const stdinPayload =
       definition.stdin !== undefined && definition.stdin !== null
         ? definition.stdin
-        : payload.cwd
-          ? `${payload.cwd}\n`
-          : null;
-    const execution = await this._executeHelper(record.path, definition.language, payload.cwd, stdinPayload);
+        : null;
+    const helperArgs = [];
+    if (typeof payload.focusPath === "string" && payload.focusPath.trim()) {
+      helperArgs.push(payload.focusPath.trim());
+    }
+    const execution = await this._executeHelper(
+      record.path,
+      definition.language,
+      payload.cwd,
+      stdinPayload,
+      helperArgs,
+    );
     if (execution) {
       const summaryBase = this._summarizeHelperOutput(execution.stdout, execution.stderr);
       const summary = execution.silenceExceeded
@@ -509,7 +584,7 @@ export default class ApiNavigator {
     };
   }
 
-  async _executeHelper(scriptPath, language, cwd, stdin = null) {
+  async _executeHelper(scriptPath, language, cwd, stdin = null, args = undefined) {
     if (!this.cli) {
       return null;
     }
@@ -536,6 +611,18 @@ export default class ApiNavigator {
     const helperArgs = Array.isArray(runner.args) ? [...runner.args] : [];
     const needsQuotes = /\s/.test(absolutePath);
     helperArgs.push(needsQuotes ? this._quoteArg(absolutePath) : absolutePath);
+    if (Array.isArray(args) && args.length) {
+      for (const arg of args) {
+        if (typeof arg !== "string") {
+          continue;
+        }
+        const trimmed = arg.trim();
+        if (!trimmed) {
+          continue;
+        }
+        helperArgs.push(/\s/.test(trimmed) ? this._quoteArg(trimmed) : trimmed);
+      }
+    }
     const command = [runner.command, ...helperArgs].join(" ");
     try {
       const startedAt = Date.now();

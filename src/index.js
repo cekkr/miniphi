@@ -1926,6 +1926,7 @@ async function main() {
           globalMemory,
           logger: verbose ? (message) => console.warn(message) : null,
           adapterRegistry: schemaAdapterRegistry,
+          promptRecorder,
           helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
           navigationRequestTimeoutMs: navigatorRequestTimeoutMs,
         })
@@ -2428,11 +2429,13 @@ const describeWorkspace = (dir, options = undefined) =>
     benchmarkLimit: options?.benchmarkLimit,
     mode: options?.mode ?? null,
     schemaId: options?.schemaId ?? null,
+    focusPath: options?.focusPath ?? null,
+    promptId: options?.promptId ?? null,
   });
 
   try {
     await phi4.load({ contextLength, gpu });
-    if (performanceTracker) {
+    if (performanceTracker && debugLm) {
         scoringPhi = new LMStudioHandler(manager, {
           systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
           schemaRegistry,
@@ -2472,6 +2475,8 @@ const describeWorkspace = (dir, options = undefined) =>
           );
         }
       }
+    } else if (performanceTracker && verbose) {
+      console.log("[MiniPhi] Prompt scoring evaluator disabled (enable with --debug-lm).");
     }
 
     let result;
@@ -2503,6 +2508,9 @@ const describeWorkspace = (dir, options = undefined) =>
           cwd,
         });
       }
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
+      phi4.setPromptRecorder(promptRecorder);
       const navigator = buildNavigator(stateManager);
       workspaceContext = await describeWorkspace(cwd, {
         navigator,
@@ -2510,6 +2518,7 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
         mode: command,
         schemaId: "log-analysis",
+        promptId: promptGroupId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2550,9 +2559,6 @@ const describeWorkspace = (dir, options = undefined) =>
       } else {
         promptJournal = null;
       }
-      promptRecorder = new PromptRecorder(stateManager.baseDir);
-      await promptRecorder.prepare();
-      phi4.setPromptRecorder(promptRecorder);
       if (promptId) {
         const history = await stateManager.loadPromptSession(promptId);
         if (history) {
@@ -2688,12 +2694,16 @@ const describeWorkspace = (dir, options = undefined) =>
           cwd,
         });
       }
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
+      phi4.setPromptRecorder(promptRecorder);
       const navigator = buildNavigator(stateManager);
       workspaceContext = await describeWorkspace(cwd, {
         navigator,
         objective: task,
         memory: stateManager,
         mode: command,
+        promptId: promptGroupId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2736,8 +2746,6 @@ const describeWorkspace = (dir, options = undefined) =>
       let planResult = null;
       let planSource = null;
       let resumePlan = null;
-      promptRecorder = new PromptRecorder(stateManager.baseDir);
-      await promptRecorder.prepare();
       phi4.setPromptRecorder(promptRecorder);
       if (verbose) {
         console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
@@ -3046,6 +3054,8 @@ const describeWorkspace = (dir, options = undefined) =>
           cwd: analyzeCwd,
         });
       }
+      promptRecorder = new PromptRecorder(stateManager.baseDir);
+      await promptRecorder.prepare();
       const navigator = buildNavigator(stateManager);
       workspaceContext = await describeWorkspace(analyzeCwd, {
         navigator,
@@ -3053,6 +3063,8 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
         mode: command,
         schemaId: "log-analysis",
+        focusPath: filePath,
+        promptId: promptGroupId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -3110,8 +3122,6 @@ const describeWorkspace = (dir, options = undefined) =>
       let planResult = null;
       let planSource = null;
       let resumePlan = null;
-      promptRecorder = new PromptRecorder(stateManager.baseDir);
-      await promptRecorder.prepare();
       phi4.setPromptRecorder(promptRecorder);
       if (verbose) {
         console.log(`[MiniPhi] Prompt recorder enabled (main id: ${promptGroupId})`);
@@ -4799,6 +4809,8 @@ async function generateWorkspaceSnapshot({
   benchmarkLimit = 3,
   mode = null,
   schemaId = null,
+  focusPath = null,
+  promptId = null,
 }) {
   let profile;
   try {
@@ -5006,6 +5018,8 @@ async function generateWorkspaceSnapshot({
         objective,
         cwd: rootDir,
         executeHelper,
+        focusPath,
+        promptId,
       });
     } catch (error) {
       if (verbose) {
