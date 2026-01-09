@@ -1,6 +1,15 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID, createHash } from "crypto";
+import {
+  buildCompositionKey,
+  ensureJsonFile,
+  normalizeCompositionStatus,
+  readJsonFile,
+  relativePath,
+  slugifyId,
+  writeJsonFile,
+} from "./memory-store-utils.js";
 
 const DEFAULT_SEGMENT_SIZE = 2000; // characters per chunk to stay context-friendly
 
@@ -1078,28 +1087,23 @@ export default class MiniPhiMemory {
   }
 
   async _ensureFile(filePath, defaultValue) {
-    try {
-      await fs.promises.access(filePath, fs.constants.F_OK);
-    } catch {
-      await this._writeJSON(filePath, defaultValue);
-    }
+    await ensureJsonFile(filePath, defaultValue);
   }
 
   async _writeJSON(filePath, data) {
-    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+    await writeJsonFile(filePath, data);
   }
 
   async _readJSON(filePath, fallback) {
-    try {
-      const content = await fs.promises.readFile(filePath, "utf8");
-      return JSON.parse(content);
-    } catch {
-      return fallback;
-    }
+    return readJsonFile(filePath, fallback);
   }
 
   _relative(target) {
-    return path.relative(this.baseDir, target).replace(/\\/g, "/");
+    return relativePath(this.baseDir, target, {
+      normalizeSlashes: true,
+      alwaysRelative: true,
+      fallbackToTarget: false,
+    });
   }
 
   _resolveHelperAbsolute(target) {
@@ -1726,33 +1730,11 @@ export default class MiniPhiMemory {
   }
 
   _normalizeCompositionStatus(status) {
-    if (!status && status !== 0) {
-      return "ok";
-    }
-    const normalized = status.toString().trim().toLowerCase();
-    if (normalized === "invalid" || normalized === "retire" || normalized === "remove") {
-      return "invalid";
-    }
-    if (normalized === "fallback" || normalized === "degraded") {
-      return "fallback";
-    }
-    return "ok";
+    return normalizeCompositionStatus(status);
   }
 
   _buildCompositionKey(payload) {
-    const schema = typeof payload?.schemaId === "string" ? payload.schemaId.trim().toLowerCase() : "none";
-    const mode = typeof payload?.mode === "string" ? payload.mode.trim().toLowerCase() : "unknown";
-    const commandText =
-      typeof payload?.command === "string" && payload.command.trim().length
-        ? payload.command.trim().toLowerCase()
-        : typeof payload?.task === "string" && payload.task.trim().length
-          ? payload.task.trim().toLowerCase()
-          : "objective";
-    const workspace =
-      typeof payload?.workspaceType === "string" && payload.workspaceType.trim().length
-        ? payload.workspaceType.trim().toLowerCase()
-        : "any";
-    return [schema || "none", mode || "unknown", commandText, workspace].join("::");
+    return buildCompositionKey(payload);
   }
 
   _buildFallbackKey(datasetHash, promptJournalId = null) {
@@ -1831,13 +1813,7 @@ export default class MiniPhiMemory {
   }
 
   _slugify(text) {
-    const normalized = (text ?? "")
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return normalized.slice(0, 48) || "note";
+    return slugifyId(text, { maxLength: 48, fallback: "note" });
   }
 
   _extractNextActions(analysis = "") {

@@ -1,6 +1,15 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import {
+  buildCompositionKey,
+  ensureJsonFile,
+  normalizeCompositionStatus,
+  readJsonFile,
+  relativePath,
+  slugifyId,
+  writeJsonFile,
+} from "./memory-store-utils.js";
 
 const DEFAULT_DIR_NAME = ".miniphi";
 
@@ -459,73 +468,30 @@ export default class GlobalMiniPhiMemory {
   }
 
   async _ensureFile(filePath, defaultContent) {
-    try {
-      await fs.promises.access(filePath, fs.constants.F_OK);
-    } catch {
-      await fs.promises.writeFile(filePath, JSON.stringify(defaultContent, null, 2), "utf8");
-      return;
-    }
-    try {
-      await fs.promises.readFile(filePath, "utf8");
-    } catch {
-      await fs.promises.writeFile(filePath, JSON.stringify(defaultContent, null, 2), "utf8");
-    }
+    await ensureJsonFile(filePath, defaultContent, { ensureReadable: true });
   }
 
   async _readJSON(filePath, fallback = null) {
-    try {
-      const raw = await fs.promises.readFile(filePath, "utf8");
-      return JSON.parse(raw);
-    } catch {
-      return fallback;
-    }
+    return readJsonFile(filePath, fallback);
   }
 
   async _writeJSON(filePath, data) {
-    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+    await writeJsonFile(filePath, data);
   }
 
   _normalizeCompositionStatus(status) {
-    if (!status && status !== 0) {
-      return "ok";
-    }
-    const normalized = status.toString().trim().toLowerCase();
-    if (normalized === "invalid" || normalized === "retire" || normalized === "remove") {
-      return "invalid";
-    }
-    if (normalized === "fallback" || normalized === "degraded") {
-      return "fallback";
-    }
-    return "ok";
+    return normalizeCompositionStatus(status);
   }
 
   _buildCompositionKey(payload) {
-    const schema = typeof payload?.schemaId === "string" ? payload.schemaId.trim().toLowerCase() : "none";
-    const mode = typeof payload?.mode === "string" ? payload.mode.trim().toLowerCase() : "unknown";
-    const commandText =
-      typeof payload?.command === "string" && payload.command.trim().length
-        ? payload.command.trim().toLowerCase()
-        : typeof payload?.task === "string" && payload.task.trim().length
-          ? payload.task.trim().toLowerCase()
-          : "objective";
-    const workspace =
-      typeof payload?.workspaceType === "string" && payload.workspaceType.trim().length
-        ? payload.workspaceType.trim().toLowerCase()
-        : "any";
-    return [schema || "none", mode || "unknown", commandText, workspace].join("::");
+    return buildCompositionKey(payload);
   }
 
   _relative(target) {
-    return path.isAbsolute(target) ? path.relative(this.baseDir, target) || target : target;
+    return relativePath(this.baseDir, target);
   }
 
   _slugify(text) {
-    return (text ?? "")
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64) || "entry";
+    return slugifyId(text, { maxLength: 64, fallback: "entry" });
   }
 }
