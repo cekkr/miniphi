@@ -27,11 +27,12 @@ Exit criteria:
 
 Slices (do in order):
 1) Core loop hardening
-   - Scope: prompt hygiene, schema enforcement, recursion caps, stop reasons in `.miniphi/`.
+   - Scope: prompt hygiene, schema enforcement, request building/compaction, response parsing (needs_more_context/missing_snippets), recursion caps, stop reasons in `.miniphi/`.
    - Proof runs:
      - `miniphi "Tighten lint config"` (or similar) against this repo.
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>`.
-   - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), no duplicated workspace directives, stop reason recorded.
+     - Inspect `.miniphi/prompt-exchanges/` and `.miniphi/prompt-exchanges/stepwise/<id>/` for schema id/response_format on requests, raw JSON responses, and captured missing snippets.
+   - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.

@@ -3591,7 +3591,7 @@ const describeWorkspace = (dir, options = undefined) =>
         await stateManager.savePromptSession(promptId, phi4.getHistory());
       }
       if (promptJournal && promptJournalId) {
-        const finalJournalStatus = promptJournalStatus ?? "completed";
+        const finalJournalStatus = promptJournalStatus ?? "paused";
         await promptJournal.setStatus(promptJournalId, finalJournalStatus, {
           mode: command,
           completedAt: new Date().toISOString(),
