@@ -2359,23 +2359,37 @@ async function main() {
     phi4.setPerformanceTracker(performanceTracker);
   }
 
-  let stateManager;
-  let promptRecorder = null;
-  let promptJournal = null;
-  let stopReason = null;
-  let stopStatus = null;
-  let stopError = null;
+    let stateManager;
+    let promptRecorder = null;
+    let promptJournal = null;
+    let promptJournalFinalized = false;
+    let stopReason = null;
+    let stopStatus = null;
+    let stopError = null;
   const archiveMetadata = {
     promptId,
     model: modelSelection.modelKey,
     contextLength,
   };
-  let resourceMonitor;
-  let resourceSummary = null;
-  const initializeResourceMonitor = async (label) => {
-    if (resourceMonitorForcedDisabled || resourceMonitor) {
-      return;
-    }
+    let resourceMonitor;
+    let resourceSummary = null;
+    const finalizePromptJournal = async (noteOverrides = undefined) => {
+      if (!promptJournal || !promptJournalId || promptJournalFinalized) {
+        return;
+      }
+      const finalJournalStatus = promptJournalStatus ?? "paused";
+      const note = {
+        mode: command,
+        completedAt: new Date().toISOString(),
+        ...(noteOverrides ?? {}),
+      };
+      await promptJournal.setStatus(promptJournalId, finalJournalStatus, note);
+      promptJournalFinalized = true;
+    };
+    const initializeResourceMonitor = async (label) => {
+      if (resourceMonitorForcedDisabled || resourceMonitor) {
+        return;
+      }
     const historyFile = stateManager?.resourceUsageFile ?? null;
     resourceMonitor = new ResourceMonitor({
       ...resourceConfig,
@@ -3559,6 +3573,12 @@ const describeWorkspace = (dir, options = undefined) =>
     console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
     try {
+      if (result) {
+        const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
+        const finalStopReason = stopReason ?? fallbackReason ?? "completed";
+        await finalizePromptJournal({ stopReason: finalStopReason });
+      }
+
       await stopResourceMonitorIfNeeded();
       if (stateManager) {
         await stateManager.persistExecutionStop({
@@ -3590,15 +3610,9 @@ const describeWorkspace = (dir, options = undefined) =>
       if (promptId && stateManager) {
         await stateManager.savePromptSession(promptId, phi4.getHistory());
       }
-      if (promptJournal && promptJournalId) {
-        const finalJournalStatus = promptJournalStatus ?? "paused";
-        await promptJournal.setStatus(promptJournalId, finalJournalStatus, {
-          mode: command,
-          completedAt: new Date().toISOString(),
-        });
-      }
-      await stopResourceMonitorIfNeeded();
-      await phi4.eject();
+        await finalizePromptJournal({ stopReason });
+        await stopResourceMonitorIfNeeded();
+        await phi4.eject();
       if (scoringPhi) {
         await scoringPhi.eject();
       }
