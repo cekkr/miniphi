@@ -76,6 +76,8 @@ miniPhi can run shell commands when you use `run` (or other workflows that execu
 
 The deeper “JSON-only contracts”, schema rules, and contributor guardrails live in **AGENTS.md**.
 
+For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluator and print the scored objectives/prompts.
+
 ## Where outputs go
 
 miniPhi stores reproducible artifacts in two places:
