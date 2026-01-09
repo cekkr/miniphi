@@ -174,6 +174,7 @@ export default class EfficientLogAnalyzer {
         compressedTokens: compression.tokens,
         schemaId,
         contextBudgetTokens,
+        sourceLabel: command,
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
@@ -250,6 +251,9 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
+    };
+    const sanitizeOptions = {
+      workspaceContext,
     };
     const reusedFallback = Boolean(cachedFallback);
     const responseFormat =
@@ -360,10 +364,15 @@ export default class EfficientLogAnalyzer {
     }
 
     if (!usedFallback) {
-      const sanitized = this._sanitizeJsonResponse(analysis);
-      if (sanitized) {
-        analysis = sanitized;
-      } else {
+      const sanitizeAnalysis = () => {
+        const sanitized = this._sanitizeJsonResponse(analysis, sanitizeOptions);
+        if (sanitized) {
+          analysis = sanitized;
+          return true;
+        }
+        return false;
+      };
+      if (!sanitizeAnalysis()) {
         const salvage = await this._handleInvalidJsonAnalysis({
           analysis,
           devLog,
@@ -384,6 +393,9 @@ export default class EfficientLogAnalyzer {
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
             analysisDiagnostics.fallbackReason = fallbackReason;
+          }
+          if (!usedFallback) {
+            sanitizeAnalysis();
           }
         } else {
           usedFallback = true;
@@ -612,6 +624,7 @@ export default class EfficientLogAnalyzer {
         maxLinesPerChunk: maxLines,
         lineRange: lineRange ?? null,
       },
+      sourceLabel: filePath,
     });
     const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
       adjustment;
@@ -642,6 +655,11 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
+    };
+    const sanitizeOptions = {
+      workspaceContext,
+      sourceFile: filePath,
+      docLike: this._isDocLikeFile(filePath),
     };
     const reusedFallback = Boolean(cachedFallback);
     const responseFormat =
@@ -759,10 +777,15 @@ export default class EfficientLogAnalyzer {
       );
     }
     if (!usedFallback) {
-      const sanitized = this._sanitizeJsonResponse(analysis);
-      if (sanitized) {
-        analysis = sanitized;
-      } else {
+      const sanitizeAnalysis = () => {
+        const sanitized = this._sanitizeJsonResponse(analysis, sanitizeOptions);
+        if (sanitized) {
+          analysis = sanitized;
+          return true;
+        }
+        return false;
+      };
+      if (!sanitizeAnalysis()) {
         const salvage = await this._handleInvalidJsonAnalysis({
           analysis,
           devLog,
@@ -784,6 +807,9 @@ export default class EfficientLogAnalyzer {
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
             analysisDiagnostics.fallbackReason = fallbackReason;
+          }
+          if (!usedFallback) {
+            sanitizeAnalysis();
           }
         } else {
           usedFallback = true;
@@ -1083,6 +1109,10 @@ export default class EfficientLogAnalyzer {
       Number.isFinite(metadata?.contextBudgetTokens) && metadata.contextBudgetTokens > 0
         ? Math.floor(metadata.contextBudgetTokens)
         : null;
+    const sourceLabel =
+      typeof metadata?.sourceLabel === "string" && metadata.sourceLabel.trim().length > 0
+        ? metadata.sourceLabel.trim().slice(0, 240)
+        : null;
     const contextSupplement = this._formatContextSupplement(extraContext, {
       maxTokens: contextBudgetTokens,
     });
@@ -1100,12 +1130,16 @@ export default class EfficientLogAnalyzer {
         "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
         "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
         "If the dataset is descriptive or lacks actionable defects, return an empty recommended_fixes array and do not invent commands or file names.",
+        "When proposing fixes, only reference files visible in the workspace manifest or dataset source; otherwise leave files and commands empty.",
         "If information is unavailable, set the field to null instead of fabricating a value.",
         "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
         "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
       ],
       data: compressedContent,
     };
+    if (sourceLabel) {
+      payload.dataset.source = sourceLabel;
+    }
     if (metadata?.chunking) {
       payload.dataset.chunking = metadata.chunking;
     }
@@ -1326,6 +1360,7 @@ export default class EfficientLogAnalyzer {
     devLog,
     schemaId,
     chunking,
+    sourceLabel,
   }) {
     let detailLevel = summaryLevels;
     let chunkLimit = chunkSummaries.length;
@@ -1335,7 +1370,7 @@ export default class EfficientLogAnalyzer {
           task,
           "(no content)",
           0,
-          { compressedTokens: 1, schemaId },
+          { compressedTokens: 1, schemaId, sourceLabel },
           {},
         ),
         body: "(no content)",
@@ -1396,6 +1431,7 @@ export default class EfficientLogAnalyzer {
           schemaId,
           chunking: chunkingSummary,
           contextBudgetTokens,
+          sourceLabel,
         },
         extraContext,
       );
@@ -1830,7 +1866,7 @@ export default class EfficientLogAnalyzer {
     }
   }
 
-  _sanitizeJsonResponse(text) {
+  _sanitizeJsonResponse(text, options = undefined) {
     if (!text) {
       return null;
     }
@@ -1838,11 +1874,11 @@ export default class EfficientLogAnalyzer {
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
       return null;
     }
-    const normalized = this._normalizeContextFields(parsed);
+    const normalized = this._normalizeContextFields(parsed, options);
     return JSON.stringify(normalized, null, 2);
   }
 
-  _normalizeContextFields(parsed) {
+  _normalizeContextFields(parsed, options = undefined) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return parsed;
     }
@@ -1860,7 +1896,174 @@ export default class EfficientLogAnalyzer {
         ? parsed.missingSnippets
         : [];
     }
+    return this._sanitizeRecommendedFixes(parsed, options);
+  }
+
+  _sanitizeRecommendedFixes(parsed, options = undefined) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return parsed;
+    }
+    if (!Array.isArray(parsed.recommended_fixes)) {
+      return parsed;
+    }
+    const docLike =
+      typeof options?.docLike === "boolean"
+        ? options.docLike
+        : typeof options?.sourceFile === "string" && this._isDocLikeFile(options.sourceFile);
+    const fileHints = this._buildAllowedFileHints(options);
+    const sanitized = [];
+    for (const entry of parsed.recommended_fixes) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        continue;
+      }
+      const description =
+        typeof entry.description === "string" ? entry.description.trim() : "";
+      if (!description) {
+        continue;
+      }
+      const files = Array.isArray(entry.files)
+        ? entry.files
+            .filter((file) => typeof file === "string")
+            .map((file) => file.trim())
+            .filter(Boolean)
+        : [];
+      const commands = Array.isArray(entry.commands)
+        ? entry.commands
+            .filter((command) => typeof command === "string")
+            .map((command) => command.trim())
+            .filter(Boolean)
+        : [];
+      const validFiles = files.filter((file) => this._isAllowedFileReference(file, fileHints));
+      const commandMentions = commands.some((command) =>
+        this._commandMentionsAllowedFile(command, fileHints),
+      );
+      if (docLike && validFiles.length === 0 && !commandMentions) {
+        continue;
+      }
+      if (!docLike && files.length > 0 && validFiles.length === 0 && !commandMentions) {
+        continue;
+      }
+      sanitized.push({
+        ...entry,
+        description,
+        files: validFiles,
+        commands,
+      });
+    }
+    parsed.recommended_fixes = sanitized;
     return parsed;
+  }
+
+  _buildAllowedFileHints(options = undefined) {
+    const workspaceContext = options?.workspaceContext ?? null;
+    const root =
+      typeof workspaceContext?.root === "string" && workspaceContext.root.trim().length
+        ? path.resolve(workspaceContext.root)
+        : process.cwd();
+    const hints = {
+      root,
+      paths: new Set(),
+      basenames: new Set(),
+    };
+    const addCandidate = (candidate) => {
+      const normalized = this._normalizeFileHint(candidate);
+      if (!normalized) {
+        return;
+      }
+      const lower = normalized.toLowerCase();
+      hints.paths.add(lower);
+      const basename = path.basename(normalized).toLowerCase();
+      if (basename) {
+        hints.basenames.add(basename);
+      }
+      const absolute = path.isAbsolute(normalized)
+        ? path.resolve(normalized)
+        : path.resolve(hints.root, normalized);
+      if (absolute) {
+        const absoluteNormalized = absolute.replace(/\\/g, "/").toLowerCase();
+        hints.paths.add(absoluteNormalized);
+        const rootLower = hints.root.replace(/\\/g, "/").toLowerCase();
+        if (absoluteNormalized.startsWith(rootLower)) {
+          const relative = path
+            .relative(hints.root, absolute)
+            .replace(/\\/g, "/")
+            .toLowerCase();
+          if (relative) {
+            hints.paths.add(relative);
+          }
+        }
+      }
+    };
+    if (typeof options?.sourceFile === "string") {
+      addCandidate(options.sourceFile);
+    }
+    if (Array.isArray(workspaceContext?.manifestPreview)) {
+      for (const entry of workspaceContext.manifestPreview) {
+        addCandidate(entry?.path);
+      }
+    }
+    if (Array.isArray(workspaceContext?.fixedReferences)) {
+      for (const ref of workspaceContext.fixedReferences) {
+        addCandidate(ref?.path ?? ref?.relative ?? ref?.label);
+      }
+    }
+    return hints;
+  }
+
+  _normalizeFileHint(candidate) {
+    if (!candidate || typeof candidate !== "string") {
+      return null;
+    }
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.replace(/\\/g, "/");
+  }
+
+  _isAllowedFileReference(filePath, hints) {
+    if (!filePath || typeof filePath !== "string") {
+      return false;
+    }
+    const normalized = this._normalizeFileHint(filePath);
+    if (!normalized) {
+      return false;
+    }
+    const lower = normalized.toLowerCase();
+    if (hints?.paths?.has(lower)) {
+      return true;
+    }
+    const basename = path.basename(normalized).toLowerCase();
+    if (basename && hints?.basenames?.has(basename)) {
+      return true;
+    }
+    const root = hints?.root;
+    if (root) {
+      const absolute = path.isAbsolute(normalized)
+        ? path.resolve(normalized)
+        : path.resolve(root, normalized);
+      const rootLower = root.replace(/\\/g, "/").toLowerCase();
+      const absoluteLower = absolute.replace(/\\/g, "/").toLowerCase();
+      if (absoluteLower.startsWith(rootLower) && fs.existsSync(absolute)) {
+        return true;
+      }
+    } else if (path.isAbsolute(normalized) && fs.existsSync(normalized)) {
+      return true;
+    }
+    return false;
+  }
+
+  _commandMentionsAllowedFile(command, hints) {
+    if (!command || !hints?.basenames?.size) {
+      return false;
+    }
+    const normalized = command.toLowerCase();
+    for (const basename of hints.basenames) {
+      if (basename && normalized.includes(basename)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   _formatBudgetNote({ promptBudget, tokens, droppedChunks, detailReductions }) {
