@@ -31,7 +31,7 @@ Slices (do in order):
    - Proof runs:
      - `miniphi "Tighten lint config"` (or similar) against this repo.
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>`.
-   - Exit criteria: JSON-only output, no duplicated workspace directives, stop reason recorded.
+   - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), no duplicated workspace directives, stop reason recorded.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.

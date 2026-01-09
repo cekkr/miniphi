@@ -583,18 +583,29 @@ function stripJsonLikeFences(payload = "") {
     return "";
   }
   const trimmed = payload.trim();
-  if (!trimmed.startsWith("```")) {
-    return trimmed;
+  if (!trimmed) {
+    return "";
   }
-  const firstLineEnd = trimmed.indexOf("\n");
+  let candidate = trimmed;
+  if (!candidate.startsWith("```")) {
+    const fenceIndex = candidate.search(/(^|\n)```/);
+    if (fenceIndex !== -1) {
+      const offset = candidate[fenceIndex] === "\n" ? 1 : 0;
+      candidate = candidate.slice(fenceIndex + offset).trimStart();
+    }
+  }
+  if (!candidate.startsWith("```")) {
+    return candidate;
+  }
+  const firstLineEnd = candidate.indexOf("\n");
   if (firstLineEnd === -1) {
-    return trimmed;
+    return candidate;
   }
-  const fence = trimmed.slice(0, firstLineEnd);
+  const fence = candidate.slice(0, firstLineEnd);
   if (/```json/i.test(fence)) {
-    return trimmed.slice(firstLineEnd + 1).replace(/```$/, "").trim();
+    return candidate.slice(firstLineEnd + 1).replace(/```$/, "").trim();
   }
-  return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
+  return candidate.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
 }
 
 export function parseStrictJson(text) {

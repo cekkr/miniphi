@@ -71,7 +71,7 @@ Exit criteria:
 Current slice: Core loop hardening
 - Focus: prompt hygiene, schema enforcement, recursion caps, stop reasons in `.miniphi/`.
 - Proof: run `miniphi "Tighten lint config"` (or similar) against this repo.
-- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output with no duplicated workspace directives.
+- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output with strict parsing (strip <think> blocks + fences + short preambles) and no duplicated workspace directives.
 
 Next slices (see `ROADMAP.md` for full scope and exit criteria):
 - Reliable edit pipeline.

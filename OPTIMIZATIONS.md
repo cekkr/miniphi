@@ -64,8 +64,9 @@ path (run/analyze/workspace/decomposer/navigator).
 Exit criteria:
 - A single JSON validation module is used by `LMStudioHandler`, `EfficientLogAnalyzer`, and prompt
   decomposition/navigation flows.
-- All model calls set `response_format=json_schema` with explicit schema ids, and non-JSON responses
-  produce deterministic fallback payloads.
+- All model calls set `response_format=json_schema` with explicit schema ids; parsing strips
+  `<think>` blocks and JSON fences (including short preambles) while rejecting prose, and non-JSON
+  responses produce deterministic fallback payloads.
 - Prompt/response artifacts retain response text, tool_calls, and tool_definitions for scoring.
 
 ### P0 - Shared persistence helpers
