@@ -911,6 +911,7 @@ export class LMStudioHandler {
       subPromptId,
       schemaId,
       responseFormat,
+      toolDefinitions: options?.toolDefinitions ?? null,
     };
   }
 

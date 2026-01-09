@@ -14,6 +14,8 @@ const PROMPT_SCORE_FALLBACK_SCHEMA = [
   '  "summary": "one-sentence rationale",',
   '  "follow_up_needed": false,',
   '  "follow_up_reason": "null or explanation",',
+  '  "needs_more_context": false,',
+  '  "missing_snippets": [],',
   '  "tags": ["array", "of", "strings"],',
   '  "recommended_prompt_pattern": "reuse hint",',
   '  "series_strategy": ["next prompt idea 1", "next prompt idea 2"]',

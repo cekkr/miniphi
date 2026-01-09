@@ -426,6 +426,15 @@ export function extractTruncationPlanFromAnalysis(analysisText) {
   if (!plan) {
     return null;
   }
+  const hasGuidance =
+    plan.chunkingPlan.length > 0 ||
+    plan.helperCommands.length > 0 ||
+    plan.helperFocus.length > 0 ||
+    Boolean(plan.historySchema) ||
+    Boolean(plan.notes);
+  if (!plan.shouldSplit && !hasGuidance) {
+    return null;
+  }
   const nextStepsCandidate = parsed.next_steps ?? parsed.nextSteps;
   const nextSteps = Array.isArray(nextStepsCandidate)
     ? nextStepsCandidate

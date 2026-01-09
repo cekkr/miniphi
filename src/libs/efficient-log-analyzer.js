@@ -163,6 +163,8 @@ export default class EfficientLogAnalyzer {
 
     const compression = await this._compressLines(lines, summaryLevels, verbose);
     const schemaId = promptContext?.schemaId ?? this.schemaId;
+    const promptBudget = await this._resolvePromptBudget();
+    const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
     const prompt = this.generateSmartPrompt(
       task,
       compression.content,
@@ -171,6 +173,7 @@ export default class EfficientLogAnalyzer {
         originalSize: totalSize,
         compressedTokens: compression.tokens,
         schemaId,
+        contextBudgetTokens,
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
@@ -1076,7 +1079,13 @@ export default class EfficientLogAnalyzer {
   }
 
   generateSmartPrompt(task, compressedContent, totalLines, metadata, extraContext = undefined) {
-    const contextSupplement = this._formatContextSupplement(extraContext);
+    const contextBudgetTokens =
+      Number.isFinite(metadata?.contextBudgetTokens) && metadata.contextBudgetTokens > 0
+        ? Math.floor(metadata.contextBudgetTokens)
+        : null;
+    const contextSupplement = this._formatContextSupplement(extraContext, {
+      maxTokens: contextBudgetTokens,
+    });
     const schemaReference = this._buildSchemaReference(metadata?.schemaId);
     const payload = {
       task,
@@ -1090,6 +1099,7 @@ export default class EfficientLogAnalyzer {
       reporting_rules: [
         "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
         "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
+        "If the dataset is descriptive or lacks actionable defects, return an empty recommended_fixes array and do not invent commands or file names.",
         "If information is unavailable, set the field to null instead of fabricating a value.",
         "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
         "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
@@ -1375,6 +1385,7 @@ export default class EfficientLogAnalyzer {
       };
       const lineCount =
         Number.isFinite(totalLines) && totalLines > 0 ? totalLines : composed.lines || 1;
+      const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
       prompt = this.generateSmartPrompt(
         task,
         composed.text,
@@ -1384,6 +1395,7 @@ export default class EfficientLogAnalyzer {
           originalSize: totalLines * 4,
           schemaId,
           chunking: chunkingSummary,
+          contextBudgetTokens,
         },
         extraContext,
       );
@@ -1865,7 +1877,7 @@ export default class EfficientLogAnalyzer {
     return parts.join(" ");
   }
 
-  _formatContextSupplement(extraContext) {
+  _formatContextSupplement(extraContext, options = undefined) {
     if (!extraContext) {
       return "";
     }
@@ -2029,7 +2041,23 @@ export default class EfficientLogAnalyzer {
     if (!lines.length) {
       return "";
     }
-    return lines.join("\n");
+    const context = lines.join("\n");
+    if (options?.maxTokens && Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
+      return this._truncateContextSupplement(context, options.maxTokens);
+    }
+    return context;
+  }
+
+  _truncateContextSupplement(text, maxTokens) {
+    if (!text) {
+      return "";
+    }
+    const maxChars = Math.max(256, Math.floor(maxTokens * 4));
+    if (text.length <= maxChars) {
+      return text;
+    }
+    const trimmed = text.slice(0, maxChars).trimEnd();
+    return `${trimmed}\n[context trimmed for budget]`;
   }
 
   _formatTruncationPlan(context) {

@@ -9,6 +9,8 @@
     "summary",
     "follow_up_needed",
     "follow_up_reason",
+    "needs_more_context",
+    "missing_snippets",
     "tags",
     "recommended_prompt_pattern",
     "series_strategy"
@@ -32,6 +34,19 @@
     },
     "follow_up_reason": {
       "type": ["string", "null"]
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "Set to true when more prompt context is required to score accurately.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "Minimal snippets or context needed before re-scoring.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
     },
     "tags": {
       "type": "array",
