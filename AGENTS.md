@@ -1,5 +1,5 @@
 # After a prompt
-- Keep `README.md` and this reference in sync whenever MiniPhi gains a new command, argument, or workflow.
+- Keep `README.md` for human documentation and this AGENTS.md for AI in sync whenever MiniPhi gains a new command, argument, or workflow and source code status.
 - Benchmark/recompose/test scripts are instrumentation; treat failures as runtime bugs and only edit scripts to expand coverage or logging.
 - Every LM Studio prompt must declare the exact JSON schema and use `response_format=json_schema`; reject non-JSON responses and re-prompt or emit deterministic fallback JSON. Navigator now falls back to a deterministic JSON block with `stop_reason` after timeouts, and decomposer emits a fallback plan when schema fields are missing.
 - JSON request payloads and JSON responses are mandatory; never use narrative-only exchanges for chunk selection, truncation plans, or missing snippet requests.
@@ -9,6 +9,11 @@
 - Prevent infinite loops: cap recursive prompts and retries, enforce helper timeouts, and persist a clear stop reason in `.miniphi/`.
 - Do not change generic libraries just to satisfy a narrow unit test; use tests to improve MiniPhi behavior instead of editing test intent or broad utilities.
 - Avoid writing placeholder notes into docs; only record optional notes in `.miniphi/history/forgotten-notes.md` when `--forgotten-note` is supplied.
+- Use `OPTIMIZATIONS.md` as the high-priority optimization roadmap; avoid isolated changes to `src/libs/efficient-log-analyzer.js` unless the issue is log-analysis-specific and review the full `src/` pipeline (`src/index.js`, `lmstudio-handler`, `prompt-*`, `workspace-*`, `miniphi-memory`, `cli-executor`) before proposing edits.
+
+## High priority references
+
+- `OPTIMIZATIONS.md` is the optimization roadmap for cross-cutting improvements across the entire `src/` runtime pipeline.
 
 
 ## What goes where
@@ -232,6 +237,7 @@ miniPhi always writes to the nearest `.miniphi/` directory (creating one if it d
 All of these artifacts are plain text so you can sync them to your own dashboards or feed them into future orchestrators.
 
 ### Documentation and samples
+- `OPTIMIZATIONS.md` is the optimization roadmap for full-pipeline improvements across `src/`.
 - `AI_REFERENCE.md` holds the current status snapshot plus the near-term roadmap.
 - `ROADMAP.md` tracks the long-lived milestone plan and explicit exit criteria.
 - `docs/NodeJS LM Studio API Integration.md` explains how the LM Studio SDK and REST layers fit together.
