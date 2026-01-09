@@ -73,6 +73,7 @@ node src/index.js <command> [flags...]
 ## Safety and command execution
 
 miniPhi can run shell commands when you use `run` (or other workflows that execute commands). Review what it’s about to do and use the command policy flags if you want stricter gating.
+Use `--session-timeout` to cap total runtime; follow-up helpers are skipped once the budget is exhausted.
 
 The deeper “JSON-only contracts”, schema rules, and contributor guardrails live in **AGENTS.md**.
 

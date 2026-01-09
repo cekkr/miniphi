@@ -145,7 +145,8 @@ export default class ApiNavigator {
    *   cwd?: string,
    *   executeHelper?: boolean,
    *   focusPath?: string | null,
-   *   promptId?: string | null
+   *   promptId?: string | null,
+   *   promptJournalId?: string | null
    * }} payload
    */
   async generateNavigationHints(payload = undefined) {
@@ -272,6 +273,7 @@ export default class ApiNavigator {
     let requestMessages = buildMessages(body);
     let responseText = "";
     let toolCalls = null;
+    let toolDefinitions = null;
     let errorMessage = null;
     let plan = null;
     let compactTried = false;
@@ -288,6 +290,7 @@ export default class ApiNavigator {
       const message = completion?.choices?.[0]?.message ?? null;
       responseText = message?.content ?? "";
       toolCalls = message?.tool_calls ?? null;
+      toolDefinitions = completion?.tool_definitions ?? null;
       return this._parsePlan(responseText);
     };
 
@@ -324,6 +327,7 @@ export default class ApiNavigator {
       plan,
       errorMessage,
       toolCalls,
+      toolDefinitions,
     });
 
     return plan;
@@ -337,6 +341,7 @@ export default class ApiNavigator {
     plan,
     errorMessage,
     toolCalls,
+    toolDefinitions,
   }) {
     if (!this.promptRecorder) {
       return;
@@ -345,7 +350,7 @@ export default class ApiNavigator {
       plan && typeof plan === "object" && !Array.isArray(plan) ? { ...plan } : { raw: responseText ?? "" };
     responsePayload.rawResponseText = responseText ?? "";
     responsePayload.tool_calls = toolCalls ?? null;
-    responsePayload.tool_definitions = null;
+    responsePayload.tool_definitions = toolDefinitions ?? null;
     try {
       await this.promptRecorder.record({
         scope: "sub",
@@ -356,6 +361,7 @@ export default class ApiNavigator {
           objective: payload?.objective ?? null,
           cwd: payload?.cwd ?? null,
           workspaceType: payload?.workspace?.classification ?? null,
+          promptJournalId: payload?.promptJournalId ?? null,
           stop_reason: plan?.stop_reason ?? errorMessage ?? null,
         },
         request: {

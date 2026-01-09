@@ -1314,6 +1314,18 @@ function classifyStopReason(error) {
   return "error";
 }
 
+function getSessionRemainingMs(sessionDeadline) {
+  if (!Number.isFinite(sessionDeadline)) {
+    return null;
+  }
+  return sessionDeadline - Date.now();
+}
+
+function isSessionDeadlineExceeded(sessionDeadline) {
+  const remainingMs = getSessionRemainingMs(sessionDeadline);
+  return remainingMs !== null && remainingMs <= 0;
+}
+
 function extractLmStudioProtocolMetadata(error) {
   if (error instanceof LMStudioProtocolError && error.metadata) {
     return error.metadata;
@@ -1973,6 +1985,38 @@ async function main() {
     const MAX_FOLLOW_UPS = 2;
     const followUps = [];
     for (const entry of normalizedEntries.slice(0, MAX_FOLLOW_UPS)) {
+      if (isSessionDeadlineExceeded(sessionDeadline)) {
+        followUps.push({
+          command: entry.command,
+          skipped: true,
+          danger: entry.danger,
+          reason: "session-timeout",
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Navigator follow-up skipped: ${entry.command}`,
+            prompt: `Navigator suggested ${entry.command}`,
+            response: null,
+            status: "skipped",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: entry.danger,
+                status: "skipped",
+                summary: "Navigator follow-up skipped after session timeout",
+              },
+            ],
+            metadata: {
+              mode: "navigator-follow-up",
+              parent: baseMetadata?.parentCommand ?? null,
+              reason: "session-timeout",
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
+        continue;
+      }
       if (!isNavigatorCommandSafe(entry.command)) {
         if (verbose) {
           console.warn(`[MiniPhi] Navigator follow-up blocked: ${entry.command}`);
@@ -2025,6 +2069,7 @@ async function main() {
               ...(baseMetadata ?? {}),
               mode: "navigator-follow-up",
               command: entry.command,
+              promptJournalId: promptJournalId ?? null,
               workspaceType:
                 workspaceContext?.classification?.domain ??
                 workspaceContext?.classification?.label ??
@@ -2156,6 +2201,38 @@ async function main() {
     const MAX_HELPERS = 2;
     const results = [];
     for (const entry of helpers.slice(0, MAX_HELPERS)) {
+      if (isSessionDeadlineExceeded(sessionDeadline)) {
+        results.push({
+          command: entry.command,
+          status: "skipped",
+          note: "session-timeout",
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Truncation helper skipped: ${entry.command}`,
+            prompt: `Helper command suggested by truncation plan (${chunk.goal ?? chunk.label ?? chunkKey ?? "chunk"})`,
+            response: null,
+            status: "skipped",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: "mid",
+                status: "skipped",
+                summary: "Truncation helper skipped after session timeout",
+              },
+            ],
+            metadata: {
+              mode: "truncation-helper",
+              chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
+              planExecutionId,
+              reason: "session-timeout",
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
+        continue;
+      }
       if (!isNavigatorCommandSafe(entry.command)) {
         if (verbose) {
           console.warn(`[MiniPhi] Truncation helper command blocked: ${entry.command}`);
@@ -2208,6 +2285,7 @@ async function main() {
               mode: "truncation-helper",
               chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
               planExecutionId,
+              promptJournalId: promptJournalId ?? null,
               workspaceType:
                 workspaceContext?.classification?.domain ??
                 workspaceContext?.classification?.label ??
@@ -2447,6 +2525,7 @@ const describeWorkspace = (dir, options = undefined) =>
     schemaId: options?.schemaId ?? null,
     focusPath: options?.focusPath ?? null,
     promptId: options?.promptId ?? null,
+    promptJournalId: options?.promptJournalId ?? null,
   });
 
   try {
@@ -2535,6 +2614,7 @@ const describeWorkspace = (dir, options = undefined) =>
         mode: command,
         schemaId: "log-analysis",
         promptId: promptGroupId,
+        promptJournalId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2616,6 +2696,7 @@ const describeWorkspace = (dir, options = undefined) =>
             promptRecorder,
             storage: stateManager,
             mainPromptId: promptGroupId,
+            promptJournalId,
             metadata: { mode: "workspace" },
             resumePlan,
             planBranch,
@@ -2720,6 +2801,7 @@ const describeWorkspace = (dir, options = undefined) =>
         memory: stateManager,
         mode: command,
         promptId: promptGroupId,
+        promptJournalId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -2804,6 +2886,7 @@ const describeWorkspace = (dir, options = undefined) =>
             promptRecorder,
             storage: stateManager,
             mainPromptId: promptGroupId,
+            promptJournalId,
             metadata: { mode: "run" },
             resumePlan,
             planBranch,
@@ -2871,6 +2954,7 @@ const describeWorkspace = (dir, options = undefined) =>
               mode: "run",
               command: cmd,
               cwd,
+              promptJournalId: promptJournalId ?? null,
               workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
               workspaceSummary: workspaceContext?.summary ?? null,
               workspaceHint: workspaceContext?.hintBlock ?? null,
@@ -3081,6 +3165,7 @@ const describeWorkspace = (dir, options = undefined) =>
         schemaId: "log-analysis",
         focusPath: filePath,
         promptId: promptGroupId,
+        promptJournalId,
       });
       workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
       workspaceContext = await attachCommandLibraryToWorkspace(
@@ -3180,6 +3265,7 @@ const describeWorkspace = (dir, options = undefined) =>
             promptRecorder,
             storage: stateManager,
             mainPromptId: promptGroupId,
+            promptJournalId,
             metadata: { mode: "analyze-file" },
             resumePlan,
             planBranch,
@@ -3293,6 +3379,7 @@ const describeWorkspace = (dir, options = undefined) =>
               mode: "analyze-file",
               filePath,
               cwd: analyzeCwd,
+              promptJournalId: promptJournalId ?? null,
               workspaceType: workspaceContext?.classification?.domain ?? workspaceContext?.classification?.label ?? null,
               workspaceSummary: workspaceContext?.summary ?? null,
               workspaceHint: workspaceContext?.hintBlock ?? null,
@@ -3606,21 +3693,61 @@ const describeWorkspace = (dir, options = undefined) =>
       }
     }
   } finally {
-    try {
-      if (promptId && stateManager) {
+    if (promptId && stateManager) {
+      try {
         await stateManager.savePromptSession(promptId, phi4.getHistory());
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            `[MiniPhi] Unable to persist prompt session: ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+        }
       }
-        await finalizePromptJournal({ stopReason });
-        await stopResourceMonitorIfNeeded();
-        await phi4.eject();
-      if (scoringPhi) {
-        await scoringPhi.eject();
+    }
+    try {
+      const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
+      const finalStopReason = stopReason ?? fallbackReason ?? "completed";
+      await finalizePromptJournal({ stopReason: finalStopReason });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to finalize prompt journal: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
       }
-      if (performanceTracker) {
-        await performanceTracker.dispose();
+    }
+    try {
+      await stopResourceMonitorIfNeeded();
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to stop resource monitor: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
       }
+    }
+    try {
+      await phi4.eject();
     } catch {
       // no-op
+    }
+    if (scoringPhi) {
+      try {
+        await scoringPhi.eject();
+      } catch {
+        // no-op
+      }
+    }
+    if (performanceTracker) {
+      try {
+        await performanceTracker.dispose();
+      } catch {
+        // no-op
+      }
     }
   }
 }
@@ -4827,6 +4954,7 @@ async function generateWorkspaceSnapshot({
   schemaId = null,
   focusPath = null,
   promptId = null,
+  promptJournalId = null,
 }) {
   let profile;
   try {
@@ -5036,6 +5164,7 @@ async function generateWorkspaceSnapshot({
         executeHelper,
         focusPath,
         promptId,
+        promptJournalId,
       });
     } catch (error) {
       if (verbose) {

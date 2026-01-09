@@ -33,7 +33,7 @@ Slices (do in order):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>`.
      - Inspect `.miniphi/prompt-exchanges/` and `.miniphi/prompt-exchanges/stepwise/<id>/` for schema id/response_format on requests, raw JSON responses, and captured missing snippets.
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
-   - Conclusion: finalize prompt journal status immediately after analysis completion (and again in final cleanup) so sessions never linger in "active" when runs end or are interrupted.
+   - Conclusion: finalize prompt journal status in dedicated cleanup with a stop reason, skip navigator/truncation follow-ups after session budget exhaustion, and persist promptJournalId/tool metadata in prompt exchanges for eval-grade tracing.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.

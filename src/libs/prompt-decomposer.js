@@ -115,6 +115,7 @@ export default class PromptDecomposer {
    *   promptRecorder?: import("./prompt-recorder.js").default | null,
    *   storage?: import("./miniphi-memory.js").default | null,
    *   mainPromptId?: string | null,
+   *   promptJournalId?: string | null,
    *   metadata?: Record<string, unknown> | null,
    *   resumePlan?: object | null,
    *   planBranch?: string | null,
@@ -226,6 +227,7 @@ export default class PromptDecomposer {
           objective: payload.objective,
           command: payload.command ?? null,
           workspaceType: payload.workspace?.classification ?? null,
+          promptJournalId: payload.promptJournalId ?? null,
           stop_reason: normalizedPlan?.stopReason ?? errorMessage ?? null,
         },
         request: {
