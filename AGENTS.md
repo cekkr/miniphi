@@ -190,6 +190,44 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 5. **WorkspaceProfiler + FileConnectionAnalyzer + CapabilityInventory** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code/docs split, import/dependency graph, and available scripts/binaries.
 6. **PromptPerformanceTracker** scores every prompt/response pair inside `miniphi-prompts.db` (SQLite), captures prompt lineage/schema IDs/commands/capabilities, and exposes the structured telemetry to scoring prompts and future runs.
 
+### src/ file map
+- `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
+- `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
+- `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
+- `src/libs/capability-inventory.js`: Scans package scripts, `scripts/`, `.bin` tools, and OS commands to summarize available capabilities.
+- `src/libs/cli-executor.js`: Cross-platform shell command runner with streaming output, timeouts, and silence detection.
+- `src/libs/command-authorization-manager.js`: Enforces command policies (`ask|allow|deny|session`) and prompts for approval.
+- `src/libs/config-loader.js`: Loads `config.json` or `miniphi.config.json`, applies profiles, and merges settings.
+- `src/libs/core-utils.js`: Shared helpers for plan formatting, JSON parsing, danger normalization, and LM Studio URL handling.
+- `src/libs/efficient-log-analyzer.js`: Orchestrates command/file analysis with summarization, schema enforcement, and truncation plans.
+- `src/libs/file-connection-analyzer.js`: Builds a lightweight import graph (JS/Python) and hotspot summary for the workspace.
+- `src/libs/global-memory.js`: Home-level `.miniphi` store for shared helpers, templates, preferences, and prompt telemetry.
+- `src/libs/history-notes.js`: Captures `.miniphi` snapshots (optionally with git metadata) into JSON and Markdown.
+- `src/libs/lms-phi4.js`: Legacy alias for `lmstudio-handler` exports.
+- `src/libs/lmstudio-api.js`: LM Studio SDK wrapper and REST client utilities, including URL normalization and model lifecycle.
+- `src/libs/lmstudio-handler.js`: LM Studio chat handler with streaming, schema enforcement, retries, and history management.
+- `src/libs/memory-store-utils.js`: JSON file IO helpers, slug/relative path utilities, and composition key builders.
+- `src/libs/miniphi-memory.js`: Project `.miniphi` store layout and persistence for executions, prompts, helpers, and indexes.
+- `src/libs/model-presets.js`: Model presets, aliases, default context lengths, and config resolution.
+- `src/libs/phi4-stream-parser.js`: Stream transformer that separates `<think>` blocks from solution tokens.
+- `src/libs/prompt-chain-utils.js`: Utilities for prompt-chain templates, option sets, and learned option merges.
+- `src/libs/prompt-decomposer.js`: LM Studio-backed task decomposition with JSON plan schema enforcement.
+- `src/libs/prompt-performance-tracker.js`: SQLite-based prompt scoring and telemetry capture, with optional semantic grading.
+- `src/libs/prompt-recorder.js`: Writes prompt/response exchanges under `.miniphi/prompt-exchanges/`.
+- `src/libs/prompt-schema-registry.js`: Loads schemas from `docs/prompts/`, builds instruction blocks, validates responses.
+- `src/libs/prompt-step-journal.js`: Stepwise prompt journal manager for `.miniphi/prompt-exchanges/stepwise/`.
+- `src/libs/prompt-template-baselines.js`: Builds baseline prompts for truncation and log-analysis workflows.
+- `src/libs/python-log-summarizer.js`: Runs the Python summarizer and chunks line-based inputs.
+- `src/libs/recompose-benchmark-runner.js`: Runs recompose benchmark series and writes reports/logs.
+- `src/libs/recompose-tester.js`: Recompose harness that converts between code and markdown using LM Studio.
+- `src/libs/recompose-utils.js`: Recompose helpers for parsing, normalization, and narrative/diff summarization.
+- `src/libs/resource-monitor.js`: Samples CPU/RAM/VRAM usage and persists session summaries.
+- `src/libs/schema-adapter-registry.js`: Registers schema adapters for request/response normalization.
+- `src/libs/stream-analyzer.js`: Line-by-line file reader for chunked analysis of large files.
+- `src/libs/web-researcher.js`: DuckDuckGo Instant Answer client for the `web-research` command.
+- `src/libs/workspace-context-utils.js`: Builds workspace file manifests, README snippets, and prompt hint blocks.
+- `src/libs/workspace-profiler.js`: Profiles workspace contents (code/docs/data) and optionally includes connection graphs.
+
 ### Command tour
 - `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.
