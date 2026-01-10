@@ -608,11 +608,18 @@ function stripJsonLikeFences(payload = "") {
   return candidate.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
 }
 
-export function parseStrictJson(text) {
+export function sanitizeJsonResponseText(text) {
   if (!text || typeof text !== "string") {
-    return null;
+    return "";
   }
-  const cleaned = stripJsonLikeFences(stripThinkBlocks(text)).trim();
+  const withoutThink = stripThinkBlocks(text);
+  const withoutFences = stripJsonLikeFences(withoutThink);
+  const withoutPreamble = stripResponsePreamble(withoutFences);
+  return withoutPreamble.trim();
+}
+
+export function parseStrictJson(text) {
+  const cleaned = sanitizeJsonResponseText(text);
   if (!cleaned) {
     return null;
   }

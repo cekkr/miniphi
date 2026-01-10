@@ -3,6 +3,7 @@ import path from "path";
 import { createHash } from "crypto";
 import { open } from "sqlite";
 import sqlite3 from "sqlite3";
+import { parseStrictJsonObject } from "./core-utils.js";
 
 const DEFAULT_DB_FILENAME = "miniphi-prompts.db";
 const MAX_STORED_TEXT = 4000;
@@ -714,20 +715,11 @@ export default class PromptPerformanceTracker {
     if (!raw) {
       return null;
     }
-    const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "");
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) {
+    const parsed = parseStrictJsonObject(String(raw));
+    if (!parsed) {
       return null;
     }
-    try {
-      const parsed = JSON.parse(match[0]);
-      if (!parsed || typeof parsed !== "object") {
-        return null;
-      }
-      return this._normalizeEvaluationShape(parsed);
-    } catch {
-      return null;
-    }
+    return this._normalizeEvaluationShape(parsed);
   }
 
   _normalizeEvaluationShape(payload) {

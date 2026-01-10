@@ -1,23 +1,9 @@
 import fs from "fs";
 import path from "path";
+import { sanitizeJsonResponseText } from "./core-utils.js";
 
 function stripJsonFences(payload) {
-  if (!payload) {
-    return "";
-  }
-  const trimmed = payload.trim();
-  if (!trimmed.startsWith("```")) {
-    return trimmed;
-  }
-  const firstLineEnd = trimmed.indexOf("\n");
-  if (firstLineEnd === -1) {
-    return trimmed;
-  }
-  const fence = trimmed.slice(0, firstLineEnd);
-  if (/```json/i.test(fence)) {
-    return trimmed.slice(firstLineEnd + 1).replace(/```$/, "").trim();
-  }
-  return trimmed.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
+  return sanitizeJsonResponseText(payload);
 }
 
 export default class PromptSchemaRegistry {

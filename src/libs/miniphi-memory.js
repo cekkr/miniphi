@@ -1,32 +1,67 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID, createHash } from "crypto";
-import {
-  buildCompositionKey,
-  ensureJsonFile,
-  normalizeCompositionStatus,
-  readJsonFile,
-  relativePath,
-  slugifyId,
-  writeJsonFile,
-} from "./memory-store-utils.js";
+import MemoryStoreBase from "./memory-store-base.js";
 
 const DEFAULT_SEGMENT_SIZE = 2000; // characters per chunk to stay context-friendly
+
+function findExistingMiniPhi(startDir) {
+  let current = startDir;
+  const { root } = path.parse(current);
+
+  while (true) {
+    const candidate = path.join(current, ".miniphi");
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      return candidate;
+    }
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+function detectProjectRoot(startDir) {
+  let current = startDir;
+  const { root } = path.parse(current);
+
+  while (true) {
+    if (fs.existsSync(path.join(current, "package.json")) || fs.existsSync(path.join(current, ".git"))) {
+      return current;
+    }
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+  return startDir;
+}
 
 /**
  * Manages the hidden .miniphi directory used for persistent execution state, knowledge, and indexes.
  */
-export default class MiniPhiMemory {
+export default class MiniPhiMemory extends MemoryStoreBase {
   constructor(startDir = process.cwd()) {
-    this.startDir = path.resolve(startDir);
-    const existingBase = this._findExistingMiniPhi(this.startDir);
-    if (existingBase) {
-      this.projectRoot = path.dirname(existingBase);
-      this.baseDir = existingBase;
-    } else {
-      this.projectRoot = this._detectProjectRoot(this.startDir);
-      this.baseDir = path.join(this.projectRoot, ".miniphi");
-    }
+    const resolvedStart = path.resolve(startDir);
+    const existingBase = findExistingMiniPhi(resolvedStart);
+    const projectRoot = existingBase
+      ? path.dirname(existingBase)
+      : detectProjectRoot(resolvedStart);
+    const baseDir = existingBase ?? path.join(projectRoot, ".miniphi");
+    super(baseDir, {
+      ensureReadable: false,
+      relativeOptions: {
+        normalizeSlashes: true,
+        alwaysRelative: true,
+        fallbackToTarget: false,
+      },
+      slugifyOptions: { maxLength: 48, fallback: "note" },
+    });
+
+    this.startDir = resolvedStart;
+    this.projectRoot = projectRoot;
+    this.baseDir = baseDir;
 
     this.executionsDir = path.join(this.baseDir, "executions");
     this.indicesDir = path.join(this.baseDir, "indices");
@@ -1035,39 +1070,6 @@ export default class MiniPhiMemory {
     return { path: progressFile, relative: this._relative(progressFile) };
   }
 
-  _findExistingMiniPhi(startDir) {
-    let current = startDir;
-    const { root } = path.parse(current);
-
-    while (true) {
-      const candidate = path.join(current, ".miniphi");
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-        return candidate;
-      }
-      if (current === root) {
-        break;
-      }
-      current = path.dirname(current);
-    }
-    return null;
-  }
-
-  _detectProjectRoot(startDir) {
-    let current = startDir;
-    const { root } = path.parse(current);
-
-    while (true) {
-      if (fs.existsSync(path.join(current, "package.json")) || fs.existsSync(path.join(current, ".git"))) {
-        return current;
-      }
-      if (current === root) {
-        break;
-      }
-      current = path.dirname(current);
-    }
-    return startDir;
-  }
-
   _sanitizeId(raw) {
     if (!raw) {
       return "";
@@ -1084,26 +1086,6 @@ export default class MiniPhiMemory {
       return "node";
     }
     return "node";
-  }
-
-  async _ensureFile(filePath, defaultValue) {
-    await ensureJsonFile(filePath, defaultValue);
-  }
-
-  async _writeJSON(filePath, data) {
-    await writeJsonFile(filePath, data);
-  }
-
-  async _readJSON(filePath, fallback) {
-    return readJsonFile(filePath, fallback);
-  }
-
-  _relative(target) {
-    return relativePath(this.baseDir, target, {
-      normalizeSlashes: true,
-      alwaysRelative: true,
-      fallbackToTarget: false,
-    });
   }
 
   _resolveHelperAbsolute(target) {
@@ -1729,14 +1711,6 @@ export default class MiniPhiMemory {
     return createHash("sha1").update(text ?? "", "utf8").digest("hex");
   }
 
-  _normalizeCompositionStatus(status) {
-    return normalizeCompositionStatus(status);
-  }
-
-  _buildCompositionKey(payload) {
-    return buildCompositionKey(payload);
-  }
-
   _buildFallbackKey(datasetHash, promptJournalId = null) {
     const journal =
       typeof promptJournalId === "string" && promptJournalId.trim().length
@@ -1810,10 +1784,6 @@ export default class MiniPhiMemory {
     await this._writeJSON(this.fallbackCacheFile, cache);
     await this._updateRootIndex();
     return record;
-  }
-
-  _slugify(text) {
-    return slugifyId(text, { maxLength: 48, fallback: "note" });
   }
 
   _extractNextActions(analysis = "") {

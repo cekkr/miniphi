@@ -1,15 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import {
-  buildCompositionKey,
-  ensureJsonFile,
-  normalizeCompositionStatus,
-  readJsonFile,
-  relativePath,
-  slugifyId,
-  writeJsonFile,
-} from "./memory-store-utils.js";
+import MemoryStoreBase from "./memory-store-base.js";
 
 const DEFAULT_DIR_NAME = ".miniphi";
 
@@ -17,10 +9,15 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-export default class GlobalMiniPhiMemory {
+export default class GlobalMiniPhiMemory extends MemoryStoreBase {
   constructor(options = undefined) {
     const homeDir = options?.homeDir ?? os.homedir();
-    this.baseDir = path.join(homeDir, DEFAULT_DIR_NAME);
+    const baseDir = path.join(homeDir, DEFAULT_DIR_NAME);
+    super(baseDir, {
+      ensureReadable: true,
+      slugifyOptions: { maxLength: 64, fallback: "entry" },
+    });
+    this.baseDir = baseDir;
     this.configDir = path.join(this.baseDir, "config");
     this.promptsDir = path.join(this.baseDir, "prompts");
     this.promptTemplatesDir = path.join(this.promptsDir, "templates");
@@ -467,31 +464,4 @@ export default class GlobalMiniPhiMemory {
     return payload;
   }
 
-  async _ensureFile(filePath, defaultContent) {
-    await ensureJsonFile(filePath, defaultContent, { ensureReadable: true });
-  }
-
-  async _readJSON(filePath, fallback = null) {
-    return readJsonFile(filePath, fallback);
-  }
-
-  async _writeJSON(filePath, data) {
-    await writeJsonFile(filePath, data);
-  }
-
-  _normalizeCompositionStatus(status) {
-    return normalizeCompositionStatus(status);
-  }
-
-  _buildCompositionKey(payload) {
-    return buildCompositionKey(payload);
-  }
-
-  _relative(target) {
-    return relativePath(this.baseDir, target);
-  }
-
-  _slugify(text) {
-    return slugifyId(text, { maxLength: 64, fallback: "entry" });
-  }
 }
