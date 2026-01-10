@@ -38,6 +38,7 @@ When you add or change CLI behavior:
 
 ### JSON-first operating rules
 - Schemas live in `docs/prompts/` with `additionalProperties: false` and required `needs_more_context` + `missing_snippets` fields; keep schema ids/versioning visible in prompts.
+- ApiNavigator and PromptDecomposer validate responses via `json-schema-utils` and require `needs_more_context` + `missing_snippets` in their schemas.
 - Strip `<think>`/markdown preambles, parse strictly, and treat non-JSON as failure; trigger a deterministic fallback JSON if the model drifts.
 - Never salvage JSON from mixed prose; only accept payloads that are valid JSON after stripping `<think>` blocks and JSON fences.
 - All suggested actions must be structured arrays/objects with reasons and a declared `schema_version`/`schema_uri`; normalize through `SchemaAdapterRegistry` before use.
@@ -82,6 +83,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ## Runtime building blocks (capsule)
 - LMStudioManager / LMStudioHandler: JIT model loading, REST/WS transport, schema enforcement, streaming JSON parsing.
 - PromptSchemaRegistry / SchemaAdapterRegistry: load schemas from `docs/prompts/*.schema.json`, inject schema ids, adapt versions.
+- json-schema-utils: shared response_format builder + schema validator across LM Studio calls (run/analyze/navigator/decomposer).
 - PromptDecomposer + ApiNavigator: plan branches, propose commands/helpers, execute safe helpers, feed outputs back into prompts.
 - PromptStepJournal / PromptRecorder / PromptPerformanceTracker: persist per-step exchanges under `.miniphi/prompt-exchanges/` with telemetry.
 - EfficientLogAnalyzer + PythonLogSummarizer: compress outputs, honor `needs_more_context` and truncation plans; store hints in `.miniphi/executions/<id>/analysis.json`.
@@ -185,10 +187,11 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 ### Architecture snapshot
 1. **LMStudioManager** (src/libs/lmstudio-api.js) performs JIT model loading and surfaces the `/api/v0` REST primitives (list models, chat/completion probes, embeddings, runtime stats).
 2. **LMStudioHandler** (src/libs/lmstudio-handler.js) wraps LM Studio calls, enforces reasoning streams, wires `--session-timeout`, and declares the JSON schema that each downstream model call must respect.
-3. **EfficientLogAnalyzer + PythonLogSummarizer** compress streamed stdout/stderr or files by chunk, annotate the segments, and feed the high-signal slices to the model while embedding the proper JSON schema from `docs/prompts/`.
-4. **miniPhiMemory + PromptRecorder** archive prompts, compressed context, responses, TODOs, scoring metadata, recursive prompt plans, and capability outlines under `.miniphi/` so future runs can rehydrate any exchange.
-5. **WorkspaceProfiler + FileConnectionAnalyzer + CapabilityInventory** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code/docs split, import/dependency graph, and available scripts/binaries.
-6. **PromptPerformanceTracker** scores every prompt/response pair inside `miniphi-prompts.db` (SQLite), captures prompt lineage/schema IDs/commands/capabilities, and exposes the structured telemetry to scoring prompts and future runs.
+3. **JsonSchemaUtils** (src/libs/json-schema-utils.js) builds `response_format=json_schema` payloads and validates JSON responses before downstream handlers apply fallbacks.
+4. **EfficientLogAnalyzer + PythonLogSummarizer** compress streamed stdout/stderr or files by chunk, annotate the segments, and feed the high-signal slices to the model while embedding the proper JSON schema from `docs/prompts/`.
+5. **miniPhiMemory + PromptRecorder** archive prompts, compressed context, responses, TODOs, scoring metadata, recursive prompt plans, and capability outlines under `.miniphi/` so future runs can rehydrate any exchange.
+6. **WorkspaceProfiler + FileConnectionAnalyzer + CapabilityInventory** scan the repository tree ahead of a run so each prompt is prefixed with facts about the code/docs split, import/dependency graph, and available scripts/binaries.
+7. **PromptPerformanceTracker** scores every prompt/response pair inside `miniphi-prompts.db` (SQLite), captures prompt lineage/schema IDs/commands/capabilities, and exposes the structured telemetry to scoring prompts and future runs.
 
 ### src/ file map
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
@@ -203,6 +206,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/file-connection-analyzer.js`: Builds a lightweight import graph (JS/Python) and hotspot summary for the workspace.
 - `src/libs/global-memory.js`: Home-level `.miniphi` store for shared helpers, templates, preferences, and prompt telemetry.
 - `src/libs/history-notes.js`: Captures `.miniphi` snapshots (optionally with git metadata) into JSON and Markdown.
+- `src/libs/json-schema-utils.js`: Shared helpers to build JSON schema response_format blocks and validate responses.
 - `src/libs/lms-phi4.js`: Legacy alias for `lmstudio-handler` exports.
 - `src/libs/lmstudio-api.js`: LM Studio SDK wrapper and REST client utilities, including URL normalization and model lifecycle.
 - `src/libs/lmstudio-handler.js`: LM Studio chat handler with streaming, schema enforcement, retries, and history management.
