@@ -3,9 +3,8 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 
-const RESULTS_DIR = path.resolve("samples/benchmark/bash");
-const DEFAULT_TEST = "samples-bash-explain";
-const DEFAULT_PROMPT_FILE = path.resolve("docs/prompts/windows-benchmark-default.md");
+const RESULTS_DIR = path.resolve("benchmark/logs/benchmark-analyze");
+const DEFAULT_TEST = "benchmark-analyze-smoke";
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -14,33 +13,20 @@ async function main() {
     env: process.env,
   });
 
-  const latestExplain = await findLatestExplain();
-  if (!latestExplain) {
-    throw new Error(`Unable to locate EXPLAIN output under ${RESULTS_DIR}`);
+  const summaryPath = await findLatestSummary();
+  if (!summaryPath) {
+    throw new Error(`Unable to locate SUMMARY.json output under ${RESULTS_DIR}`);
   }
 
   if (options.skipAnalyze) {
-    console.log(`[BenchmarkWorkflow] Latest EXPLAIN file: ${latestExplain}`);
+    console.log(`[BenchmarkWorkflow] Latest SUMMARY.json: ${summaryPath}`);
     return;
   }
 
-  const promptPath = options.promptFile ?? DEFAULT_PROMPT_FILE;
-  const prompt = await readPrompt(promptPath);
-  const analyzeArgs = [
-    "src/index.js",
-    "analyze-file",
-    "--file",
-    latestExplain,
-    "--task",
-    prompt,
-  ];
-  if (options.verbose) {
-    analyzeArgs.push("--verbose");
-  }
-  analyzeArgs.push(...options.forwardArgs);
-  await runCommand("node", analyzeArgs, {
-    env: process.env,
-  });
+  const summary = await readSummary(summaryPath);
+  console.log(
+    `[BenchmarkWorkflow] Summary: ${summary.totalRuns ?? 0} run(s) under ${summary.directory ?? "unknown"}`,
+  );
 }
 
 function parseArgs(tokens) {
@@ -62,9 +48,6 @@ function parseArgs(tokens) {
       case "--test":
         options.test = tokens[++i];
         break;
-      case "--prompt-file":
-        options.promptFile = tokens[++i];
-        break;
       case "--skip-analyze":
         options.skipAnalyze = true;
         break;
@@ -80,38 +63,28 @@ function parseArgs(tokens) {
   return options;
 }
 
-async function findLatestExplain() {
+async function findLatestSummary() {
   const runDirs = await listRunDirs();
   let latestFile = null;
   let latestMTime = 0;
   for (const dir of runDirs) {
-    const files = await fs.promises.readdir(dir);
-    for (const name of files) {
-      if (!/^EXPLAIN-\d+\.md$/i.test(name)) {
-        continue;
-      }
-      const filePath = path.join(dir, name);
+    const filePath = path.join(dir, "SUMMARY.json");
+    try {
       const stat = await fs.promises.stat(filePath);
       if (stat.mtimeMs >= latestMTime) {
         latestMTime = stat.mtimeMs;
         latestFile = filePath;
       }
+    } catch {
+      // ignore missing summary
     }
   }
   return latestFile;
 }
 
-async function readPrompt(promptPath) {
-  try {
-    const content = await fs.promises.readFile(promptPath, "utf8");
-    console.log(`[BenchmarkWorkflow] Using prompt from ${promptPath}`);
-    return content.trim();
-  } catch (error) {
-    console.warn(
-      `[BenchmarkWorkflow] Unable to read prompt file (${promptPath}). Using default fallback.`,
-    );
-    return "Summarize the EXPLAIN report, highlight regressions, and list next implementation steps.";
-  }
+async function readSummary(summaryPath) {
+  const content = await fs.promises.readFile(summaryPath, "utf8");
+  return JSON.parse(content);
 }
 
 function runCommand(command, args, options = {}) {

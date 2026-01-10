@@ -1,20 +1,20 @@
 {
   "tests": [
     {
-      "name": "samples-bash-explain",
-      "description": "Traverse the Bash sample repository up to depth 1 and emit high level EXPLAIN reports under samples/benchmark/bash/<timestamp>/.",
-      "command": "node benchmark/scripts/bash-flow-explain.js",
+      "name": "benchmark-plan-scaffold",
+      "description": "Generate a recompose benchmark plan scaffold via the CLI.",
+      "command": "node src/index.js benchmark plan scaffold --sample samples/recompose/hello-flow --output benchmark/logs/benchmark-plan.yml",
       "cwd": ".",
-      "timeoutMs": 900000,
-      "logDir": "samples-bash"
+      "timeoutMs": 300000,
+      "logDir": "cli-benchmark"
     },
     {
-      "name": "samples-bash-recursive-prompts",
-      "description": "Run recursive Phi-4 prompts over the Bash sample (directory tree + targeted files) and archive AI-style reports.",
-      "command": "node benchmark/scripts/bash-recursive-prompts.js",
+      "name": "benchmark-analyze-smoke",
+      "description": "Create a stub benchmark run and analyze it via the CLI.",
+      "command": "node benchmark/scripts/benchmark-analyze-smoke.js",
       "cwd": ".",
-      "timeoutMs": 900000,
-      "logDir": "samples-bash"
+      "timeoutMs": 300000,
+      "logDir": "cli-benchmark"
     }
   ]
 }

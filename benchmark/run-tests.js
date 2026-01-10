@@ -1,25 +1,17 @@
 #!/usr/bin/env node
+import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import process from "process";
-import CliExecutor from "../src/libs/cli-executor.js";
-import ResourceMonitor from "../src/libs/resource-monitor.js";
-import { loadConfig as loadMiniPhiConfig } from "../src/libs/config-loader.js";
-import { resolveLmStudioHttpBaseUrl, isLocalLmStudioBaseUrl } from "../src/libs/core-utils.js";
 
 const DEFAULT_TIMEOUT = 15 * 60 * 1000;
 const PROJECT_ROOT = process.cwd();
 const LOG_ROOT = path.join(PROJECT_ROOT, "benchmark", "logs");
-const RESOURCE_HISTORY = path.join(LOG_ROOT, "resource-usage.json");
 
 async function main() {
   const { flags, filters } = parseArgs(process.argv.slice(2));
   const config = await loadBenchmarkConfig();
   const availableTests = config.tests ?? [];
-  const miniConfig = loadMiniPhiConfig()?.data ?? {};
-  const resolvedLmStudioBase = resolveLmStudioHttpBaseUrl(miniConfig);
-  const lmStudioLocal = isLocalLmStudioBaseUrl(resolvedLmStudioBase);
-  const resourceMonitorDisabled = !lmStudioLocal;
 
   if (flags.has("list")) {
     printTestList(availableTests);
@@ -38,22 +30,10 @@ async function main() {
 
   await fs.promises.mkdir(LOG_ROOT, { recursive: true });
 
-  const cli = new CliExecutor();
   let hasFailures = false;
-  const aggregatedWarnings = [];
 
   for (const test of selected) {
-    const { success, warnings } = await runTest(cli, test, flags, {
-      disableMonitor: flags.has("no-monitor")
-        ? true
-        : flags.has("force-monitor")
-          ? false
-          : resourceMonitorDisabled,
-      lmStudioBase: resolvedLmStudioBase,
-    });
-    if (warnings.length) {
-      aggregatedWarnings.push({ test: test.name, warnings });
-    }
+    const { success } = await runTest(test, flags);
     if (!success) {
       hasFailures = true;
       if (flags.has("fail-fast")) {
@@ -62,19 +42,10 @@ async function main() {
     }
   }
 
-  if (aggregatedWarnings.length) {
-    console.warn("[benchmark] Resource monitor warnings were detected during the run:");
-    for (const entry of aggregatedWarnings) {
-      for (const warning of entry.warnings) {
-        console.warn(`[benchmark][${entry.test}] ${warning}`);
-      }
-    }
-  }
-
   process.exitCode = hasFailures ? 1 : 0;
 }
 
-async function runTest(cli, test, flags, options = undefined) {
+async function runTest(test, flags) {
   const timeout = Math.min(test.timeoutMs ?? DEFAULT_TIMEOUT, DEFAULT_TIMEOUT);
   const logDir = path.join(LOG_ROOT, test.logDir ?? test.name ?? "default");
   await fs.promises.mkdir(logDir, { recursive: true });
@@ -90,27 +61,7 @@ async function runTest(cli, test, flags, options = undefined) {
   };
   log("INFO", `Starting test "${test.name}"`);
   log("INFO", test.description ?? "No description provided.");
-
-  const monitorDisabled = Boolean(options?.disableMonitor);
-  let monitor;
-  if (monitorDisabled) {
-    const reason = options?.lmStudioBase
-      ? `LM Studio endpoint is external (${options.lmStudioBase})`
-      : "resource monitor disabled via flag";
-    log("INFO", `Resource monitor skipped: ${reason}.`);
-  } else {
-    try {
-      monitor = new ResourceMonitor({
-        sampleInterval: 3000,
-        historyFile: RESOURCE_HISTORY,
-        label: `benchmark:${test.name}`,
-      });
-      await monitor.start(`benchmark:${test.name}`);
-    } catch (error) {
-      monitor = null;
-      log("WARN", `Resource monitor unavailable (${error instanceof Error ? error.message : error}).`);
-    }
-  }
+  const startedAt = Date.now();
 
   const streamChunk = (data, stream) => {
     const lines = data.replace(/\r/g, "").split("\n").filter((line) => line.length > 0);
@@ -120,48 +71,70 @@ async function runTest(cli, test, flags, options = undefined) {
   };
 
   try {
-    await cli.executeCommand(test.command, {
+    await executeCommand(test.command, {
       cwd: test.cwd ? path.resolve(PROJECT_ROOT, test.cwd) : PROJECT_ROOT,
       timeout,
-      captureOutput: false,
       onStdout: (chunk) => streamChunk(chunk, "STDOUT"),
       onStderr: (chunk) => streamChunk(chunk, "STDERR"),
     });
-    log("INFO", `Test "${test.name}" PASS (${logFile})`);
-    const warnings = await finalizeMonitor(monitor, log);
+    const durationMs = Date.now() - startedAt;
+    log("INFO", `Test "${test.name}" PASS (${logFile}) in ${durationMs} ms`);
     logStream.end();
-    return { success: true, warnings };
+    return { success: true };
   } catch (error) {
-    log("ERROR", `Test "${test.name}" FAILED: ${error instanceof Error ? error.message : error}`);
-    const warnings = await finalizeMonitor(monitor, log);
+    const durationMs = Date.now() - startedAt;
+    log(
+      "ERROR",
+      `Test "${test.name}" FAILED after ${durationMs} ms: ${error instanceof Error ? error.message : error}`,
+    );
     logStream.end();
-    return { success: false, warnings };
+    return { success: false };
   }
 }
 
-async function finalizeMonitor(monitor, log) {
-  if (!monitor) {
-    return [];
-  }
-  try {
-    const summary = await monitor.stop();
-    const warnings = Array.isArray(summary?.summary?.warnings) ? summary.summary.warnings : [];
-    if (summary?.summary?.stats) {
-      log(
-        "INFO",
-        `Resource stats - memory avg ${summary.summary.stats.memory.avg ?? "n/a"}%, cpu avg ${summary.summary.stats.cpu.avg ?? "n/a"}%, vram avg ${summary.summary.stats.vram.avg ?? "n/a"}%.`,
-      );
-    }
-    if (warnings.length) {
-      for (const warning of warnings) {
-        log("WARN", warning);
+async function executeCommand(command, options) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      shell: true,
+      cwd: options?.cwd ?? PROJECT_ROOT,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let timedOut = false;
+    const timeoutId = options?.timeout
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, options.timeout)
+      : null;
+
+    child.stdout.on("data", (data) => {
+      options?.onStdout?.(data.toString());
+    });
+    child.stderr.on("data", (data) => {
+      options?.onStderr?.(data.toString());
+    });
+    child.on("error", (error) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
-    }
-    return warnings;
-  } catch (error) {
-    log("WARN", `Unable to persist resource stats: ${error instanceof Error ? error.message : error}`);
-    return [];
-  }
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (timedOut) {
+        reject(new Error(`Command timed out after ${options.timeout} ms`));
+        return;
+      }
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Command exited with code ${code}`));
+      }
+    });
+  });
 }
 
 async function loadBenchmarkConfig() {
