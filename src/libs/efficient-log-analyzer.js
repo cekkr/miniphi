@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
 import { LMStudioProtocolError } from "./lmstudio-handler.js";
 import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core-utils.js";
+import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -29,17 +30,6 @@ export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "  }",
   "}",
 ].join("\n");
-
-function sanitizeResponseSchemaName(name) {
-  if (!name) {
-    return "miniphi-response";
-  }
-  const normalized = String(name)
-    .trim()
-    .replace(/[^\w-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized ? normalized.slice(0, 48) : "miniphi-response";
-}
 
 /**
  * Coordinates CLI execution, compression, and Phi-4 reasoning for arbitrarily large outputs.
@@ -1841,13 +1831,7 @@ export default class EfficientLogAnalyzer {
     if (!schema?.definition || typeof schema.definition !== "object") {
       return null;
     }
-    return {
-      type: "json_schema",
-      json_schema: {
-        name: sanitizeResponseSchemaName(schema.id ?? schemaId),
-        schema: schema.definition,
-      },
-    };
+    return buildJsonSchemaResponseFormat(schema.definition, schema.id ?? schemaId);
   }
 
   _validateAnalysisSchema(schemaId, analysisText) {

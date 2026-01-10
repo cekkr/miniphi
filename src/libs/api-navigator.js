@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
 import path from "path";
-import { parseStrictJsonObject } from "./core-utils.js";
+import {
+  buildJsonSchemaResponseFormat,
+  validateJsonAgainstSchema,
+} from "./json-schema-utils.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
@@ -15,6 +18,8 @@ const NAVIGATION_JSON_SCHEMA = {
   properties: {
     schema_version: { type: "string" },
     navigation_summary: { type: "string" },
+    needs_more_context: { type: "boolean" },
+    missing_snippets: { type: "array", items: { type: "string" }, default: [] },
     recommended_paths: { type: "array", items: { type: "string" }, default: [] },
     file_types: { type: "array", items: { type: "string" }, default: [] },
     focus_commands: { type: "array", items: { type: "string" }, default: [] },
@@ -49,21 +54,20 @@ const NAVIGATION_JSON_SCHEMA = {
     notes: { type: ["string", "null"] },
     stop_reason: { type: ["string", "null"] },
   },
-  required: ["actions"],
+  required: ["actions", "needs_more_context", "missing_snippets"],
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "navigation-plan",
-    schema: NAVIGATION_JSON_SCHEMA,
-  },
-};
+const JSON_ONLY_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
+  NAVIGATION_JSON_SCHEMA,
+  "navigation-plan",
+);
 
 const NAVIGATION_SCHEMA = [
   "{",
   '  "schema_version": "string // schema identifier (default navigation-plan@v1)",',
   '  "navigation_summary": "<=160 characters overview",',
+  '  "needs_more_context": false,',
+  '  "missing_snippets": ["files or snippets needed"],',
   '  "recommended_paths": ["relative/path", "glob"],',
   '  "file_types": ["js", "md"],',
   '  "focus_commands": ["npm run lint"],',
@@ -210,6 +214,12 @@ export default class ApiNavigator {
       : base;
     if (this.lastStopReason && !normalizedPlan.stop_reason) {
       normalizedPlan.stop_reason = this.lastStopReason;
+    }
+    if (typeof normalizedPlan.needs_more_context !== "boolean") {
+      normalizedPlan.needs_more_context = false;
+    }
+    if (!Array.isArray(normalizedPlan.missing_snippets)) {
+      normalizedPlan.missing_snippets = [];
     }
     return normalizedPlan;
   }
@@ -427,15 +437,21 @@ export default class ApiNavigator {
   }
 
   _parsePlan(raw) {
-    const parsed = parseStrictJsonObject(raw);
+    const schemaValidation = validateJsonAgainstSchema(NAVIGATION_JSON_SCHEMA, raw);
+    const parsed = schemaValidation?.parsed ?? null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return this._buildFallbackPlan("invalid response: no valid JSON found");
     }
-    const validation = this._validatePlanShape(parsed);
-    if (!validation.valid) {
-      this._log(`[ApiNavigator] Invalid navigation plan: ${validation.error}`);
-      return this._buildFallbackPlan(`invalid response: ${validation.error}`);
+    if (schemaValidation && !schemaValidation.valid) {
+      const detail = schemaValidation.errors?.[0] ?? "schema validation failed";
+      this._log(`[ApiNavigator] Invalid navigation plan: ${detail}`);
+      return this._buildFallbackPlan(`invalid response: ${detail}`);
+    }
+    const planValidation = this._validatePlanShape(parsed);
+    if (!planValidation.valid) {
+      this._log(`[ApiNavigator] Invalid navigation plan: ${planValidation.error}`);
+      return this._buildFallbackPlan(`invalid response: ${planValidation.error}`);
     }
     if (!parsed.stop_reason && this.lastStopReason) {
       parsed.stop_reason = this.lastStopReason;
@@ -487,6 +503,8 @@ export default class ApiNavigator {
     return {
       schema_version: "navigation-plan@fallback",
       navigation_summary: `Navigator unavailable (${reason})`,
+      needs_more_context: false,
+      missing_snippets: [],
       recommended_paths: [],
       file_types: [],
       focus_commands: [],

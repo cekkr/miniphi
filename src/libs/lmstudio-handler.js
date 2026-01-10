@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
+import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 
 const DEFAULT_SYSTEM_PROMPT = [
   "You are MiniPhi, a local workspace agent.",
@@ -12,17 +13,6 @@ const DEFAULT_SYSTEM_PROMPT = [
   "When the directory is code-heavy, act as an expert code engineer while still respecting any docs present.",
   "Always explain your reasoning, keep instructions actionable, and operate directly on the artifacts referenced in the prompt.",
 ].join(" ");
-
-function sanitizeResponseSchemaName(name) {
-  if (!name) {
-    return "miniphi-response";
-  }
-  const normalized = String(name)
-    .trim()
-    .replace(/[^\w-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized ? normalized.slice(0, 48) : "miniphi-response";
-}
 
 export class LMStudioProtocolError extends Error {
   constructor(message, metadata = undefined) {
@@ -1043,13 +1033,10 @@ export class LMStudioHandler {
     if (!schemaDetails?.definition || typeof schemaDetails.definition !== "object") {
       return null;
     }
-    return {
-      type: "json_schema",
-      json_schema: {
-        name: sanitizeResponseSchemaName(schemaDetails.id ?? "miniphi-response"),
-        schema: schemaDetails.definition,
-      },
-    };
+    return buildJsonSchemaResponseFormat(
+      schemaDetails.definition,
+      schemaDetails.id ?? "miniphi-response",
+    );
   }
 
   _resolveSchema(traceContext) {

@@ -1,10 +1,13 @@
 import { randomUUID } from "crypto";
 import {
-  parseStrictJsonObject,
   buildPlanSegments,
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
 } from "./core-utils.js";
+import {
+  buildJsonSchemaResponseFormat,
+  validateJsonAgainstSchema,
+} from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
 
 const DEFAULT_MAX_DEPTH = 3;
@@ -54,7 +57,7 @@ const PLAN_JSON_SCHEMA = {
   additionalProperties: false,
   required: ["schema_version", "plan_id", "summary", "steps", "needs_more_context", "missing_snippets"],
   properties: {
-    schema_version: { type: "string" },
+    schema_version: { type: "string", enum: [PLAN_SCHEMA_ID] },
     plan_id: { type: "string" },
     summary: { type: "string" },
     needs_more_context: { type: "boolean" },
@@ -80,13 +83,10 @@ const PLAN_JSON_SCHEMA = {
   },
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "prompt-plan",
-    schema: PLAN_JSON_SCHEMA,
-  },
-};
+const JSON_ONLY_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
+  PLAN_JSON_SCHEMA,
+  "prompt-plan",
+);
 
 export default class PromptDecomposer {
   constructor(options = undefined) {
@@ -438,12 +438,20 @@ export default class PromptDecomposer {
 
   _parsePlan(responseText, payload) {
     const cleaned = this._cleanResponseText(responseText);
-    const parsed = parseStrictJsonObject(cleaned);
+    const schemaValidation = validateJsonAgainstSchema(PLAN_JSON_SCHEMA, cleaned);
+    const parsed = schemaValidation?.parsed ?? null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
       );
       return this._fallbackPlan("no valid JSON found", payload);
+    }
+    if (schemaValidation && !schemaValidation.valid) {
+      const detail = schemaValidation.errors?.[0] ?? "schema validation failed";
+      this._log(
+        `[PromptDecomposer] JSON plan failed schema validation for "${payload.objective}": ${detail}`,
+      );
+      return this._fallbackPlan(detail, payload);
     }
     const validation = this._validatePlanShape(parsed);
     if (!validation.valid) {

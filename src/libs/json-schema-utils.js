@@ -1,0 +1,176 @@
+import { sanitizeJsonResponseText } from "./core-utils.js";
+
+export function sanitizeResponseSchemaName(name) {
+  if (!name) {
+    return "miniphi-response";
+  }
+  const normalized = String(name)
+    .trim()
+    .replace(/[^\w-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized ? normalized.slice(0, 48) : "miniphi-response";
+}
+
+export function buildJsonSchemaResponseFormat(schemaDefinition, schemaName) {
+  if (!schemaDefinition || typeof schemaDefinition !== "object") {
+    return null;
+  }
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: sanitizeResponseSchemaName(schemaName ?? "miniphi-response"),
+      schema: schemaDefinition,
+    },
+  };
+}
+
+export function validateJsonAgainstSchema(schemaDefinition, responseText) {
+  if (!schemaDefinition || typeof schemaDefinition !== "object") {
+    return null;
+  }
+  const stripped = sanitizeJsonResponseText(responseText ?? "");
+  if (!stripped) {
+    return { valid: false, errors: ["Response body was empty."] };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [
+        `Response was not valid JSON (${error instanceof Error ? error.message : error}).`,
+      ],
+    };
+  }
+  const errors = validateSchemaData(schemaDefinition, parsed, "$");
+  if (errors.length > 0) {
+    return { valid: false, errors, parsed };
+  }
+  return { valid: true, parsed };
+}
+
+export function validateSchemaData(schema, value, pointer) {
+  if (!schema || typeof schema !== "object") {
+    return [];
+  }
+  const errors = [];
+  const expectedTypes = normalizeTypes(schema.type);
+  if (expectedTypes.length > 0 && !expectedTypes.some((type) => matchesType(type, value))) {
+    errors.push(
+      `${pointer}: expected ${expectedTypes.join(" | ")}, received ${describeValue(value)}`,
+    );
+    return errors;
+  }
+  if (schema.enum && Array.isArray(schema.enum) && !schema.enum.includes(value)) {
+    errors.push(`${pointer}: value "${value}" is not in enum [${schema.enum.join(", ")}]`);
+  }
+  if (isObjectSchema(schema)) {
+    const obj = value ?? {};
+    if (typeof obj !== "object" || Array.isArray(obj)) {
+      errors.push(`${pointer}: expected object but received ${describeValue(value)}`);
+      return errors;
+    }
+    if (Array.isArray(schema.required)) {
+      for (const key of schema.required) {
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+          errors.push(`${pointer}: missing required property "${key}"`);
+        }
+      }
+    }
+    if (schema.additionalProperties === false && schema.properties) {
+      for (const key of Object.keys(obj)) {
+        if (!Object.prototype.hasOwnProperty.call(schema.properties, key)) {
+          errors.push(`${pointer}: property "${key}" is not allowed.`);
+        }
+      }
+    }
+    for (const [key, propertySchema] of Object.entries(schema.properties ?? {})) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        errors.push(...validateSchemaData(propertySchema, obj[key], `${pointer}.${key}`));
+      }
+    }
+  }
+  if (isArraySchema(schema)) {
+    if (!Array.isArray(value)) {
+      errors.push(`${pointer}: expected array but received ${describeValue(value)}`);
+    } else {
+      if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+        errors.push(`${pointer}: expected at least ${schema.minItems} items (found ${value.length}).`);
+      }
+      value.forEach((item, index) => {
+        if (schema.items) {
+          errors.push(...validateSchemaData(schema.items, item, `${pointer}[${index}]`));
+        }
+      });
+    }
+  }
+  return errors;
+}
+
+function normalizeTypes(typeValue) {
+  if (!typeValue) {
+    return [];
+  }
+  if (Array.isArray(typeValue)) {
+    return typeValue.flatMap((entry) => normalizeTypes(entry));
+  }
+  if (typeof typeValue === "string") {
+    return [typeValue.toLowerCase()];
+  }
+  return [];
+}
+
+function matchesType(expected, value) {
+  if (expected === "null") {
+    return value === null;
+  }
+  if (expected === "array") {
+    return Array.isArray(value);
+  }
+  if (expected === "object") {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  if (expected === "integer") {
+    return Number.isInteger(value);
+  }
+  if (expected === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  return typeof value === expected;
+}
+
+function describeValue(value) {
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return `array(length=${value.length})`;
+  }
+  const type = typeof value;
+  if (type === "object") {
+    return "object";
+  }
+  if (type === "string") {
+    return `string("${value.slice(0, 24)}${value.length > 24 ? "ƒ?İ" : ""}")`;
+  }
+  return type;
+}
+
+function isObjectSchema(schema) {
+  if (!schema) return false;
+  if (schema.properties || schema.required) {
+    return true;
+  }
+  const types = normalizeTypes(schema.type);
+  return types.includes("object");
+}
+
+function isArraySchema(schema) {
+  if (!schema) return false;
+  if (schema.items) {
+    return true;
+  }
+  const types = normalizeTypes(schema.type);
+  return types.includes("array");
+}
