@@ -121,6 +121,9 @@ export default class RecomposeTester {
     this.baselineSignatures = new Map();
     this.fileBlueprints = new Map();
     this.descriptionDir = null;
+    this.codeDir = null;
+    this.codeFiles = null;
+    this.descriptionFiles = null;
     this.sessionDir = null;
     this.sessionLabel = null;
     this.promptLogPath = null;
@@ -185,6 +188,10 @@ export default class RecomposeTester {
     const codeDir = resolvePath(options.codeDir, "code-dir");
     const descriptionsDir = resolvePath(options.descriptionsDir, "descriptions-dir");
     const outputDir = resolvePath(options.outputDir, "output-dir");
+    this.codeDir = codeDir;
+    this.descriptionDir = descriptionsDir;
+    this.codeFiles = null;
+    this.descriptionFiles = null;
     this.fileBlueprints.clear();
     this.baselineSignatures = new Map();
     await this._loadSampleMetadata(sampleDir, { codeDir, descriptionsDir });
@@ -269,6 +276,8 @@ export default class RecomposeTester {
   async codeToMarkdown({ sourceDir, targetDir }) {
     const start = Date.now();
     const files = await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs });
+    this.codeDir = sourceDir;
+    this.codeFiles = files;
     const workspaceSummary = await this._ensureWorkspaceSummaryFromCode(sourceDir, files);
     let converted = 0;
     let skipped = 0;
@@ -346,6 +355,7 @@ export default class RecomposeTester {
       file.toLowerCase().endsWith(".md"),
     );
     this.descriptionDir = sourceDir;
+    this.descriptionFiles = files;
     const workspaceSummary = await this._ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
     let converted = 0;
     let unchanged = 0;
@@ -458,7 +468,8 @@ export default class RecomposeTester {
     const prompt = [
       this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.narrative, [
         'Populate "narrative" with a multi-section markdown description (no code fences).',
-        'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the narrative cannot be completed.',
+        'Only set "needs_more_context" to true if the narrative cannot be completed at all; otherwise set it to false.',
+        'If more context is required, list repo-relative file paths (e.g., src/index.js) in "missing_snippets".',
       ]),
       this._agentObjectiveLine(
         "Recompose is a natural-language MiniPhi agent unit test invoked via src/index.js; avoid treating this as a standalone recomposition-only helper.",
@@ -514,7 +525,8 @@ export default class RecomposeTester {
       this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.plan, [
         'Populate "plan" with markdown headings for Inputs, Transformations, Outputs, and Failure Modes.',
         'Use the optional arrays (inputs, transformations, outputs, failure_modes) when they help summarize details.',
-        'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the plan cannot be completed.',
+        'Only set "needs_more_context" to true if the plan cannot be completed at all; otherwise set it to false.',
+        'If more context is required, list repo-relative file paths (e.g., src/index.js) in "missing_snippets".',
       ]),
       this._agentObjectiveLine(
         "Recompose is framed as a natural-language MiniPhi agent unit test; shape the plan so the main CLI prompt flow can execute it end-to-end.",
@@ -527,12 +539,37 @@ export default class RecomposeTester {
       formatMetadataSummary(this.sampleMetadata),
       `Narrative for ${relativePath}:\n${narrative}`,
     ].join("\n\n");
-    const { payload, raw } = await this._promptJson(prompt, {
+    let response = await this._promptJson(prompt, {
       label: "recompose:file-plan",
       schemaId: RECOMPOSE_SCHEMA_IDS.plan,
       metadata: { file: relativePath },
     });
-    const planText = sanitizeNarrative(this._pickNarrativeField(payload, "plan", raw));
+    let planText = sanitizeNarrative(
+      this._pickNarrativeField(response.payload, "plan", response.raw),
+    );
+    if (this._needsMoreContext(response.payload)) {
+      const missing = this._missingSnippets(response.payload);
+      const extraContext = await this._collectMissingContext({
+        relativePath,
+        missingSnippets: missing,
+      });
+      if (extraContext) {
+        const contextPrompt = [
+          prompt,
+          "Additional context requested by the previous response:",
+          extraContext,
+          "Use the added context to complete the plan. Return JSON only.",
+        ].join("\n\n");
+        response = await this._promptJson(contextPrompt, {
+          label: "recompose:file-plan-context",
+          schemaId: RECOMPOSE_SCHEMA_IDS.plan,
+          metadata: { file: relativePath },
+        });
+        planText = sanitizeNarrative(
+          this._pickNarrativeField(response.payload, "plan", response.raw),
+        );
+      }
+    }
     const plan = structureNarrative(planText, relativePath, () =>
       this._fallbackPlanFromNarrative(relativePath, narrative),
     );
@@ -555,6 +592,7 @@ export default class RecomposeTester {
       this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.codegen, [
         'Populate "code" with the complete source file (no code fences).',
         'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if code cannot be produced.',
+        'If more context is required, list repo-relative file paths (e.g., src/index.js) in "missing_snippets".',
       ]),
       this._agentObjectiveLine(
         "Recompose acts as a natural-language MiniPhi agent unit test routed through src/index.js; lean on the model rather than bespoke recomposition-only heuristics.",
@@ -718,7 +756,8 @@ export default class RecomposeTester {
     const metadataSummary = formatMetadataSummary(this.sampleMetadata);
     const schemaInstructions = this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.workspace, [
       'Populate "summary" with the narrative overview using markdown headings for Architecture Rhythm, Supporting Cast, and Risk Notes.',
-      'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the overview cannot be completed.',
+      'Only set "needs_more_context" to true if the overview cannot be completed at all; otherwise set it to false.',
+      'If more context is required, list repo-relative file paths (e.g., src/index.js) in "missing_snippets".',
     ]);
     const attempts = buildWorkspaceOverviewAttempts(glimpsesInfo, {
       progression: this.workspaceOverviewProgression ?? DEFAULT_OVERVIEW_PROGRESSIVE,
@@ -732,13 +771,45 @@ export default class RecomposeTester {
         workspaceHints,
         metadataSummary,
       });
-      const { payload, raw } = await this._promptJson(prompt, {
+      let response = await this._promptJson(prompt, {
         label: attempt.label,
         timeoutMs: this.workspaceOverviewTimeoutMs,
         schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
       });
+      let payload = response.payload;
+      let raw = response.raw;
       summaryText = sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
       overviewAttempts.push({ label: attempt.label, raw, summary: summaryText });
+      if (this._needsMoreContext(payload)) {
+        const missing = this._missingSnippets(payload);
+        const extraContext = await this._collectMissingContext({
+          relativePath: "workspace",
+          missingSnippets: missing,
+        });
+        if (extraContext) {
+          const contextPrompt = [
+            composeWorkspaceOverviewPrompt({
+              schemaInstructions,
+              intro: overviewIntro,
+              glimpsesText: attempt.glimpsesText,
+              workspaceHints,
+              metadataSummary,
+            }),
+            "Additional context requested by the previous response:",
+            extraContext,
+            "Use the added context to complete the overview. Return JSON only.",
+          ].join("\n\n");
+          response = await this._promptJson(contextPrompt, {
+            label: `${attempt.label}-context`,
+            timeoutMs: this.workspaceOverviewTimeoutMs,
+            schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
+          });
+          payload = response.payload;
+          raw = response.raw;
+          summaryText = sanitizeNarrative(this._pickNarrativeField(payload, "summary", raw));
+          overviewAttempts.push({ label: `${attempt.label}-context`, raw, summary: summaryText });
+        }
+      }
       const needsRetry = this._needsMoreContext(payload) || this._needsWorkspaceRetry(summaryText);
       if (needsRetry) {
         const retryPrompt = composeWorkspaceOverviewPrompt({
@@ -825,7 +896,8 @@ export default class RecomposeTester {
     const prompt = [
       this._buildSchemaInstructions(RECOMPOSE_SCHEMA_IDS.workspace, [
         'Populate "summary" with the narrative overview of the workspace.',
-        'Set "needs_more_context" to true and list missing snippets in "missing_snippets" if the overview cannot be completed.',
+        'Only set "needs_more_context" to true if the overview cannot be completed at all; otherwise set it to false.',
+        'If more context is required, list repo-relative file paths (e.g., src/index.js) in "missing_snippets".',
       ]),
       this._agentObjectiveLine(
         "This run treats recompose as a natural-language MiniPhi agent unit test; summarize so the agent can act through the main CLI without a bespoke recomposition layer.",
@@ -842,6 +914,28 @@ export default class RecomposeTester {
     let summaryText = sanitizeNarrative(
       this._pickNarrativeField(summaryPayload.payload, "summary", summaryPayload.raw),
     );
+    if (this._needsMoreContext(summaryPayload.payload)) {
+      const missing = this._missingSnippets(summaryPayload.payload);
+      const extraContext = await this._collectMissingContext({
+        relativePath: "workspace",
+        missingSnippets: missing,
+      });
+      if (extraContext) {
+        const contextPrompt = [
+          prompt,
+          "Additional context requested by the previous response:",
+          extraContext,
+          "Use the added context to complete the overview. Return JSON only.",
+        ].join("\n\n");
+        summaryPayload = await this._promptJson(contextPrompt, {
+          label: "recompose:workspace-from-descriptions-context",
+          schemaId: RECOMPOSE_SCHEMA_IDS.workspace,
+        });
+        summaryText = sanitizeNarrative(
+          this._pickNarrativeField(summaryPayload.payload, "summary", summaryPayload.raw),
+        );
+      }
+    }
     if (this._needsMoreContext(summaryPayload.payload) || this._needsWorkspaceRetry(summaryText)) {
       const retryPrompt = [
         prompt,
@@ -1103,22 +1197,39 @@ export default class RecomposeTester {
       if (!label) {
         continue;
       }
-      const block = [];
-      const blueprint = this._lookupBlueprint(label);
-      if (blueprint?.narrative) {
-        block.push(`Narrative:\n${truncateBlock(blueprint.narrative)}`);
-      }
-      if (blueprint?.plan) {
-        block.push(`Plan:\n${truncateBlock(blueprint.plan)}`);
-      }
-      if (!block.length) {
-        const description = await this._loadDescriptionSnippet(label);
-        if (description) {
-          block.push(`Narrative:\n${truncateBlock(description)}`);
+      const candidates = this._resolveMissingSnippetCandidates(label);
+      let selected = null;
+      let block = [];
+      for (const candidate of candidates) {
+        const parts = [];
+        const blueprint = this._lookupBlueprint(candidate);
+        if (blueprint?.narrative) {
+          parts.push(`Narrative:\n${truncateBlock(blueprint.narrative)}`);
+        }
+        if (blueprint?.plan) {
+          parts.push(`Plan:\n${truncateBlock(blueprint.plan)}`);
+        }
+        if (!parts.length) {
+          const description = await this._loadDescriptionSnippet(candidate);
+          if (description) {
+            parts.push(`Narrative:\n${truncateBlock(description)}`);
+          }
+        }
+        if (!parts.length) {
+          const codeSnippet = await this._loadCodeSnippet(candidate);
+          if (codeSnippet) {
+            parts.push(`Source excerpt:\n${truncateBlock(codeSnippet)}`);
+          }
+        }
+        if (parts.length) {
+          selected = candidate;
+          block = parts;
+          break;
         }
       }
       if (block.length) {
-        sections.push([`### ${label}`, block.join("\n\n")].join("\n"));
+        const heading = selected && selected !== label ? `${label} (${selected})` : label;
+        sections.push([`### ${heading}`, block.join("\n\n")].join("\n"));
       }
     }
     if (!sections.length) {
@@ -1550,13 +1661,78 @@ export default class RecomposeTester {
     return null;
   }
 
+  _findWorkspaceMatches(label) {
+    if (!label) {
+      return [];
+    }
+    const files = Array.isArray(this.codeFiles) ? this.codeFiles : [];
+    if (!files.length) {
+      return [];
+    }
+    const normalized = label.replace(/\\/g, "/").toLowerCase();
+    if (!normalized) {
+      return [];
+    }
+    const base = path.posix.basename(normalized);
+    const baseNoExt = base.replace(/\.[^.]+$/, "");
+    const tokenSet = new Set(
+      normalized
+        .split(/[^a-z0-9_.-]+/)
+        .map((token) => token.trim())
+        .filter(Boolean),
+    );
+    const matches = [];
+    for (const file of files) {
+      const normalizedFile = file.replace(/\\/g, "/").toLowerCase();
+      const fileBase = path.posix.basename(normalizedFile);
+      const fileBaseNoExt = fileBase.replace(/\.[^.]+$/, "");
+      if (
+        normalizedFile === normalized ||
+        normalizedFile.endsWith(`/${normalized}`) ||
+        fileBase === base ||
+        (baseNoExt && fileBaseNoExt === baseNoExt) ||
+        (fileBaseNoExt.length >= 4 && tokenSet.has(fileBaseNoExt))
+      ) {
+        matches.push(file.replace(/\\/g, "/"));
+      }
+    }
+    return matches;
+  }
+
+  _resolveMissingSnippetCandidates(label) {
+    const normalized = normalizeSnippetLabel(label);
+    if (!normalized) {
+      return [];
+    }
+    const normalizedPath = normalized.replace(/\\/g, "/").trim();
+    const candidates = new Set();
+    const addCandidate = (value) => {
+      const entry = value ? value.replace(/\\/g, "/").trim() : "";
+      if (entry) {
+        candidates.add(entry);
+      }
+    };
+    addCandidate(normalizedPath);
+    const pathMatches = normalizedPath.match(/[A-Za-z0-9._/-]+\.[A-Za-z0-9]+/g);
+    if (pathMatches) {
+      pathMatches.forEach((match) => addCandidate(match));
+    }
+    this._findWorkspaceMatches(normalizedPath).forEach((match) => addCandidate(match));
+    if (pathMatches) {
+      pathMatches.forEach((match) => {
+        this._findWorkspaceMatches(match).forEach((resolved) => addCandidate(resolved));
+      });
+    }
+    return Array.from(candidates);
+  }
+
   async _loadDescriptionSnippet(label) {
     if (!label || !this.descriptionDir) {
       return null;
     }
     const normalized = label.replace(/\\/g, "/");
     const candidates = normalized.endsWith(".md")
-      ? [normalized]
+      ? [normalized, `${normalized}.md`]
       : [`${normalized}.md`];
     for (const candidate of candidates) {
       const absolute = path.join(this.descriptionDir, ...candidate.split("/"));
@@ -1572,6 +1748,27 @@ export default class RecomposeTester {
       }
     }
     return null;
+  }
+
+  async _loadCodeSnippet(label) {
+    if (!label || !this.codeDir) {
+      return null;
+    }
+    const normalized = label.replace(/\\/g, "/");
+    const absolute = path.join(this.codeDir, ...normalized.split("/"));
+    try {
+      if (await this._isBinary(absolute)) {
+        return null;
+      }
+      const raw = await fs.promises.readFile(absolute, "utf8");
+      const trimmed = raw.replace(/\r\n/g, "\n").trim();
+      if (!trimmed) {
+        return null;
+      }
+      return trimmed.slice(0, MAX_SNIPPET_CHARS);
+    } catch {
+      return null;
+    }
   }
 
   async _isBinary(filePath) {

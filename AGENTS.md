@@ -43,6 +43,7 @@ When you add or change CLI behavior:
 - Never salvage JSON from mixed prose; only accept payloads that are valid JSON after stripping `<think>` blocks and JSON fences.
 - All suggested actions must be structured arrays/objects with reasons and a declared `schema_version`/`schema_uri`; normalize through `SchemaAdapterRegistry` before use.
 - Chunk selection, truncation plans, and missing snippets must be expressed as structured JSON fields, never prose; reject narrative responses even if they are correct.
+- When requesting `missing_snippets`, prefer repo-relative file paths (for example: `src/index.js`) so recompose can auto-fetch context.
 - EfficientLogAnalyzer normalizes missing `needs_more_context`/`missing_snippets` to defaults when the model omits them.
 
 ## Runtime posture
@@ -175,7 +176,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - **REST-aware helper guards.** ApiNavigator and PromptDecomposer automatically disable themselves after LM Studio REST timeouts/connection failures and the CLI prints a reminder to rerun once the APIs recover, preventing repeated hangs on a broken transport.
 - **Resource guard rails + health logs.** `ResourceMonitor` samples CPU, RAM, and VRAM in real time, streams warnings to the console, and records rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
 - **Research/history/benchmark archives.** Research snapshots, history notes, and benchmark artifacts land in `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, keeping every conversation reproducible.
-- **Recomposition + benchmark harness.** `RecomposeTester` and `RecomposeBenchmarkRunner` power `samples/recompose/hello-flow`, repair mismatches with diff-driven prompts, log guarded writes (diff summaries + rollback copies) under `.miniphi/recompose/<session>/edits/`, and export Phi transcripts next to each JSON report.
+- **Recomposition + benchmark harness.** `RecomposeTester` and `RecomposeBenchmarkRunner` power `samples/recompose/hello-flow`, retry workspace/plan prompts with `missing_snippets` context when available, repair mismatches with diff-driven prompts, log guarded writes (diff summaries + rollback copies) under `.miniphi/recompose/<session>/edits/`, and export Phi transcripts next to each JSON report.
 - **Prompt telemetry + scoring.** `PromptPerformanceTracker` records workspace focus, commands, schema IDs, capability summaries, and prompt lineage inside `miniphi-prompts.db` so future runs can reuse proven setups. Semantic scoring is only enabled when `--debug-lm` is supplied; otherwise heuristic scoring runs without an extra model load.
 - **Config profiles and overrides.** Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) pins LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
 - **Endpoint normalization + prompt defaults.** `lmStudio.clientOptions.baseUrl` can point to either `http://` or `ws://` servers; miniPhi normalizes the WebSocket endpoint automatically, mirrors the same host for the REST client, and lets you omit `prompt.system` entirely to fall back to MiniPhi's built-in system prompt.

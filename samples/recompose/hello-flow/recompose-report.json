@@ -7,18 +7,18 @@
   "steps": [
     {
       "phase": "code-to-markdown",
-      "durationMs": 234,
+      "durationMs": 128,
       "discovered": 9,
       "converted": 9,
       "skipped": 0,
-      "cacheHits": 0,
+      "cacheHits": 9,
       "unchanged": 0,
       "concurrency": 1,
       "descriptionsDir": "samples/recompose/hello-flow/descriptions"
     },
     {
       "phase": "markdown-to-code",
-      "durationMs": 199,
+      "durationMs": 203,
       "processed": 9,
       "converted": 9,
       "skipped": 0,
@@ -70,11 +70,11 @@
       ],
       "initialMismatches": 9,
       "initialMissing": 0,
-      "durationMs": 53
+      "durationMs": 55
     },
     {
       "phase": "comparison",
-      "durationMs": 9,
+      "durationMs": 12,
       "matches": 0,
       "mismatches": [
         {
@@ -127,10 +127,10 @@
       "extras": []
     }
   ],
-  "sessionDir": ".miniphi/recompose/2026-01-11T21-10-44-250Z-recompose",
-  "promptLog": ".miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log",
-  "editDir": ".miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/edits",
-  "editLog": ".miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/edits/edits.jsonl",
+  "sessionDir": ".miniphi/recompose/2026-01-11T21-26-17-431Z-recompose",
+  "promptLog": ".miniphi/recompose/2026-01-11T21-26-17-431Z-recompose/prompts.log",
+  "editDir": ".miniphi/recompose/2026-01-11T21-26-17-431Z-recompose/edits",
+  "editLog": ".miniphi/recompose/2026-01-11T21-26-17-431Z-recompose/edits/edits.jsonl",
   "workspaceContext": {
     "kind": "code",
     "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 9 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, src/flows/steps/validate.js, src/shared/logger.js, src/shared/persistence/memory-store.js, src/math.js, src/greeter.js.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
@@ -186,6 +186,6 @@
     }
   },
   "sessionLabel": "recompose",
-  "generatedAt": "2026-01-11T21:10:44.813Z",
+  "generatedAt": "2026-01-11T21:26:17.894Z",
   "promptLogExport": "samples/recompose/hello-flow/recompose-report.prompts.log"
 }
