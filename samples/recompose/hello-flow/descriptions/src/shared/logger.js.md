@@ -1,7 +1,7 @@
 ---
 source: src/shared/logger.js
 language: javascript
-generatedAt: 2025-12-21T15:29:57.614Z
+generatedAt: 2026-01-11T21:10:44.506Z
 sha256: abbc66716535b8070800ce65e0fa15cf5f2441640cde857a6c4b0a2b9c327c05
 ---
 

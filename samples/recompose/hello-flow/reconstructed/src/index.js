@@ -1,30 +1,6 @@
-import { greet, farewell } from './greeter.js';
-import { average, trend } from './math.js';
-import { pipeline } from './flows/pipeline.js';
-
-/**
- * Sanitizes input and coordinates helper utilities.
- * @param {Object} input - Input object with name and samples.
- * @returns {Object} Summarized results.
- */
-export function summarize(input) {
-  const sanitized = sanitizeInput(input);
-  const results = pipeline(sanitized);
-  return results;
+// Offline stub generated for src/index.js
+// Narrative excerpt: ## Purpose The file src/index.js operates as a javascript module with roughly 35 lines. Pulls in 3 helpers (./greeter.js, ./math.js, ./flows/pipeline.js). Exposes 2 exported symbols (summarize, closin
+function src_index_jsStub() {
+  throw new Error("Offline stub executed for src/index.js");
 }
-
-/**
- * Emits closing remarks based on input.
- * @param {Object} input - Input object with name and samples.
- */
-export function closingRemark(input) {
-  const sanitized = sanitizeInput(input);
-  console.log(farewell(sanitized.name));
-}
-
-function sanitizeInput(input) {
-  return {
-    name: input?.name || 'Guest',
-    samples: Array.isArray(input.samples) ? input.samples : []
-  };
-}
+module.exports = src_index_jsStub;

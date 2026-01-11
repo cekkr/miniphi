@@ -41,8 +41,15 @@ Slices (do in order):
      - Fix applied: prompt chain template path now uses chain-relative `prompt-template.json` (previous absolute-in-chain path caused ENOENT).
    - Schema enforcement run:
      - `npm run sample:lmstudio-json-series` completed with a JSON final report and passing verification (`npm test`).
+   - Recompose roundtrip run (2026-01-11):
+     - `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` fell back to the workspace overview after 3 attempts; prompt log captured in `.miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log`.
+     - Repair attempted 9 files but skipped all because regenerated code matched the candidate; final comparison still reported 9 mismatches.
+     - `npm test` passed (CLI benchmark/recompose/prompt-template smoke coverage).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
+   - Next steps:
+     - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
+     - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
