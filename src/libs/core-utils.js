@@ -608,18 +608,20 @@ function stripJsonLikeFences(payload = "") {
   return candidate.replace(/^```[\w-]*\n?/, "").replace(/```$/, "").trim();
 }
 
-export function sanitizeJsonResponseText(text) {
+export function sanitizeJsonResponseText(text, options = undefined) {
   if (!text || typeof text !== "string") {
     return "";
   }
   const withoutThink = stripThinkBlocks(text);
   const withoutFences = stripJsonLikeFences(withoutThink);
-  const withoutPreamble = stripResponsePreamble(withoutFences);
-  return withoutPreamble.trim();
+  if (options?.allowPreamble) {
+    return stripResponsePreamble(withoutFences).trim();
+  }
+  return withoutFences.trim();
 }
 
-export function parseStrictJson(text) {
-  const cleaned = sanitizeJsonResponseText(text);
+export function parseStrictJson(text, options = undefined) {
+  const cleaned = sanitizeJsonResponseText(text, options);
   if (!cleaned) {
     return null;
   }
@@ -630,8 +632,8 @@ export function parseStrictJson(text) {
   }
 }
 
-export function parseStrictJsonObject(text) {
-  const parsed = parseStrictJson(text);
+export function parseStrictJsonObject(text, options = undefined) {
+  const parsed = parseStrictJson(text, options);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
@@ -696,46 +698,15 @@ export function extractJsonBlock(text) {
   if (!text || typeof text !== "string") {
     return null;
   }
-  const cleaned = stripThinkBlocks(stripJsonLikeFences(text));
-  const trimmed = cleaned.trim();
-  const sources = [];
-  const preambleStripped = stripResponsePreamble(trimmed);
-  if (preambleStripped && preambleStripped !== trimmed) {
-    sources.push(preambleStripped);
+  const cleaned = sanitizeJsonResponseText(text);
+  if (!cleaned) {
+    return null;
   }
-  if (trimmed) {
-    sources.push(trimmed);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
   }
-  const candidates = [];
-  const seen = new Set();
-  for (const source of sources) {
-    if (!source || seen.has(source)) {
-      continue;
-    }
-    seen.add(source);
-    candidates.push(source);
-    const objectCandidate = sliceLikelyJsonPayload(source, "{", "}");
-    if (objectCandidate && !seen.has(objectCandidate)) {
-      seen.add(objectCandidate);
-      candidates.push(objectCandidate);
-    }
-    const arrayCandidate = sliceLikelyJsonPayload(source, "[", "]");
-    if (arrayCandidate && !seen.has(arrayCandidate)) {
-      seen.add(arrayCandidate);
-      candidates.push(arrayCandidate);
-    }
-  }
-  for (const candidate of candidates) {
-    if (!candidate) {
-      continue;
-    }
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // keep searching other candidates
-    }
-  }
-  return null;
 }
 
 const NON_COMMAND_EXTENSIONS = new Set([
