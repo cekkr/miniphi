@@ -161,6 +161,11 @@ export default class PromptPerformanceTracker {
         connections: traceContext.metadata?.workspaceConnections ?? null,
         connectionGraph: traceContext.metadata?.workspaceConnectionGraph ?? null,
       },
+      tooling: {
+        responseFormat: payload.request?.responseFormat ?? payload.request?.response_format ?? null,
+        toolCalls: payload.response?.tool_calls ?? null,
+        toolDefinitions: payload.response?.tool_definitions ?? null,
+      },
       stats: {
         durationMs,
         tokensApprox: payload.response?.tokensApprox ?? null,

@@ -48,7 +48,7 @@ When you add or change CLI behavior:
 ## Runtime posture
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
 - CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, and helper/command-library browsers.
-- Audit trails live in `.miniphi/` (`executions/`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/`); helper scripts are versioned with stdout/stderr logs.
+- Audit trails live in `.miniphi/` (`executions/`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/`, `recompose/<session>/edits`); helper scripts are versioned with stdout/stderr logs.
 - Transport failover is automatic (REST -> WS) after timeouts; timeouts and max-retry settings are configurable via CLI flags or `config*.json` (profiles supported).
 - Capability inventory + command-policy (`ask|session|allow|deny`) should be surfaced in prompts so commands and helpers match the host environment.
 
@@ -175,7 +175,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - **REST-aware helper guards.** ApiNavigator and PromptDecomposer automatically disable themselves after LM Studio REST timeouts/connection failures and the CLI prints a reminder to rerun once the APIs recover, preventing repeated hangs on a broken transport.
 - **Resource guard rails + health logs.** `ResourceMonitor` samples CPU, RAM, and VRAM in real time, streams warnings to the console, and records rollups under `.miniphi/health/resource-usage.json` alongside `.miniphi/history/benchmarks.json`.
 - **Research/history/benchmark archives.** Research snapshots, history notes, and benchmark artifacts land in `.miniphi/research/`, `.miniphi/history-notes/`, and `.miniphi/benchmarks/`, keeping every conversation reproducible.
-- **Recomposition + benchmark harness.** `RecomposeTester` and `RecomposeBenchmarkRunner` power `samples/recompose/hello-flow`, repair mismatches with diff-driven prompts, and export Phi transcripts next to each JSON report.
+- **Recomposition + benchmark harness.** `RecomposeTester` and `RecomposeBenchmarkRunner` power `samples/recompose/hello-flow`, repair mismatches with diff-driven prompts, log guarded writes (diff summaries + rollback copies) under `.miniphi/recompose/<session>/edits/`, and export Phi transcripts next to each JSON report.
 - **Prompt telemetry + scoring.** `PromptPerformanceTracker` records workspace focus, commands, schema IDs, capability summaries, and prompt lineage inside `miniphi-prompts.db` so future runs can reuse proven setups. Semantic scoring is only enabled when `--debug-lm` is supplied; otherwise heuristic scoring runs without an extra model load.
 - **Config profiles and overrides.** Optional `config.json` (or `--config`/`MINIPHI_CONFIG`) pins LM Studio endpoints, prompt defaults, GPU modes, context budgets, resource thresholds, and chunk sizes without retyping flags.
 - **Endpoint normalization + prompt defaults.** `lmStudio.clientOptions.baseUrl` can point to either `http://` or `ws://` servers; miniPhi normalizes the WebSocket endpoint automatically, mirrors the same host for the REST client, and lets you omit `prompt.system` entirely to fall back to MiniPhi's built-in system prompt.
@@ -204,6 +204,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/core-utils.js`: Shared helpers for plan formatting, JSON parsing, danger normalization, and LM Studio URL handling.
 - `src/libs/efficient-log-analyzer.js`: Orchestrates command/file analysis with summarization, schema enforcement, and truncation plans.
 - `src/libs/file-connection-analyzer.js`: Builds a lightweight import graph (JS/Python) and hotspot summary for the workspace.
+- `src/libs/file-edit-guard.js`: Guarded write helper that captures diff summaries and rollback copies for recompose edits.
 - `src/libs/global-memory.js`: Home-level `.miniphi` store for shared helpers, templates, preferences, and prompt telemetry.
 - `src/libs/history-notes.js`: Captures `.miniphi` snapshots (optionally with git metadata) into JSON and Markdown.
 - `src/libs/json-schema-utils.js`: Shared helpers to build JSON schema response_format blocks and validate responses.

@@ -42,10 +42,11 @@ Slices (do in order):
    - Schema enforcement run:
      - `npm run sample:lmstudio-json-series` completed with a JSON final report and passing verification (`npm test`).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
-   - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), and add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths; follow up by capturing tool_calls/tool_definitions in prompt-chain response artifacts to validate evaluator coverage.
+   - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
+   - Implementation: recompose writes now flow through a guarded writer that logs diff summaries + rollback copies under `.miniphi/recompose/<session>/edits/edits.jsonl`.
    - Proof runs:
      - Targeted edit on a repo file with diff summary + rollback check.
      - Rerun with a prompt journal to confirm determinism.

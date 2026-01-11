@@ -3,6 +3,7 @@ import path from "path";
 import { createHash } from "crypto";
 import YAML from "yaml";
 import { parseStrictJsonObject } from "./core-utils.js";
+import { writeFileWithGuard } from "./file-edit-guard.js";
 import {
   buildWorkspaceOverviewAttempts,
   codeContainsIdentifier,
@@ -123,6 +124,9 @@ export default class RecomposeTester {
     this.sessionDir = null;
     this.sessionLabel = null;
     this.promptLogPath = null;
+    this.editDir = null;
+    this.editLogPath = null;
+    this.editLogQueue = Promise.resolve();
     const timeoutCandidate = Number(options.workspaceOverviewTimeoutMs);
     this.workspaceOverviewTimeoutMs =
       Number.isFinite(timeoutCandidate) && timeoutCandidate > 0
@@ -246,6 +250,8 @@ export default class RecomposeTester {
       steps,
       sessionDir: relativeToCwd(this.sessionDir),
       promptLog: relativeToCwd(this.promptLogPath),
+      editDir: relativeToCwd(this.editDir),
+      editLog: relativeToCwd(this.editLogPath),
       workspaceContext: this.workspaceContext
         ? {
             kind: this.workspaceContext.kind,
@@ -267,6 +273,7 @@ export default class RecomposeTester {
     let converted = 0;
     let skipped = 0;
     let cacheHits = 0;
+    let unchanged = 0;
     const queue = [...files];
     const workerCount = Math.min(this.fileConcurrency, Math.max(queue.length, 1));
     const worker = async () => {
@@ -307,7 +314,15 @@ export default class RecomposeTester {
         }
         const target = path.join(targetDir, `${relativePath}.md`);
         await this._ensureDir(path.dirname(target));
-        await fs.promises.writeFile(target, document, "utf8");
+        const writeResult = await this._writeFileWithGuard({
+          relativePath: `${relativePath}.md`,
+          targetPath: target,
+          content: document,
+          phase: "code-to-markdown",
+        });
+        if (writeResult.status === "unchanged") {
+          unchanged += 1;
+        }
         converted += 1;
       }
     };
@@ -319,6 +334,7 @@ export default class RecomposeTester {
       converted,
       skipped,
       cacheHits,
+      unchanged,
       concurrency: workerCount,
       descriptionsDir: relativeToCwd(targetDir),
     };
@@ -332,6 +348,7 @@ export default class RecomposeTester {
     this.descriptionDir = sourceDir;
     const workspaceSummary = await this._ensureWorkspaceSummaryFromDescriptions(sourceDir, files);
     let converted = 0;
+    let unchanged = 0;
     const warnings = [];
 
     for (const relativePath of files) {
@@ -363,7 +380,15 @@ export default class RecomposeTester {
         });
         const targetPath = path.join(targetDir, targetPathRelative);
         await this._ensureDir(path.dirname(targetPath));
-        await fs.promises.writeFile(targetPath, `${code.replace(/\s+$/, "")}\n`, "utf8");
+        const writeResult = await this._writeFileWithGuard({
+          relativePath: targetPathRelative,
+          targetPath,
+          content: `${code.replace(/\s+$/, "")}\n`,
+          phase: "markdown-to-code",
+        });
+        if (writeResult.status === "unchanged") {
+          unchanged += 1;
+        }
         converted += 1;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -377,6 +402,7 @@ export default class RecomposeTester {
       processed: files.length,
       converted,
       skipped: files.length - converted,
+      unchanged,
       outputDir: relativeToCwd(targetDir),
       warnings,
     };
@@ -1222,6 +1248,10 @@ export default class RecomposeTester {
     await fs.promises.mkdir(path.join(this.sessionDir, "files"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "plans"), { recursive: true });
     await fs.promises.mkdir(path.join(this.sessionDir, "code"), { recursive: true });
+    this.editDir = path.join(this.sessionDir, "edits");
+    await fs.promises.mkdir(this.editDir, { recursive: true });
+    this.editLogPath = path.join(this.editDir, "edits.jsonl");
+    this.editLogQueue = Promise.resolve();
     this.promptLogPath = path.join(this.sessionDir, "prompts.log");
     const header = [
       `# MiniPhi Agent Prompt Log (recompose unit test)`,
@@ -1240,6 +1270,54 @@ export default class RecomposeTester {
     await this._ensureDir(path.dirname(target));
     await fs.promises.writeFile(target, content, "utf8");
     return target;
+  }
+
+  async _logEditEntry(entry) {
+    if (!this.editLogPath) {
+      return;
+    }
+    const payload = {
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    const line = `${JSON.stringify(payload)}\n`;
+    const append = async () => {
+      await fs.promises.appendFile(this.editLogPath, line, "utf8");
+    };
+    this.editLogQueue = this.editLogQueue.then(append, append).catch(() => {});
+    return this.editLogQueue;
+  }
+
+  async _writeFileWithGuard({ relativePath, targetPath, content, phase, expectedHash = null }) {
+    const logPath = relativePath ? relativePath.replace(/\\/g, "/") : relativeToCwd(targetPath) ?? targetPath;
+    const result = await writeFileWithGuard({
+      targetPath,
+      content,
+      expectedHash,
+      rollbackDir: this.editDir,
+      rollbackLabel: logPath,
+      diffSummaryFn: summarizeDiff,
+    });
+    await this._logEditEntry({
+      phase: phase ?? "edit",
+      path: logPath,
+      status: result.status,
+      beforeHash: result.beforeHash ?? null,
+      afterHash: result.afterHash ?? null,
+      expectedHash: result.expectedHash ?? null,
+      diffSummary: result.diffSummary ?? null,
+      rollbackPath: result.rollbackPath ? relativeToCwd(result.rollbackPath) : null,
+      rollbackError: result.rollbackError ?? null,
+      error: result.error ?? null,
+    });
+    if (result.status === "hash-mismatch") {
+      throw new Error(`Edit guard blocked write for ${logPath} (hash mismatch).`);
+    }
+    if (result.status === "failed" || result.status === "rollback") {
+      const note = result.error ? ` ${result.error}` : "";
+      throw new Error(`Write failed for ${logPath}.${note}`);
+    }
+    return result;
   }
 
   async _logPromptEvent({ label, prompt, response, error, metadata, durationMs }) {
@@ -1572,8 +1650,20 @@ export default class RecomposeTester {
         });
         const destination = path.join(candidateDir, target.path);
         await this._ensureDir(path.dirname(destination));
-        await fs.promises.writeFile(destination, `${code.replace(/\s+$/, "")}\n`, "utf8");
-        summary.repaired += 1;
+        const writeResult = await this._writeFileWithGuard({
+          relativePath: target.path,
+          targetPath: destination,
+          content: `${code.replace(/\s+$/, "")}\n`,
+          phase: "repair",
+        });
+        if (writeResult.status === "unchanged") {
+          summary.skipped.push({
+            path: target.path,
+            reason: "Generated code matched the existing candidate; no write needed.",
+          });
+        } else {
+          summary.repaired += 1;
+        }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         summary.skipped.push({ path: target.path, reason });

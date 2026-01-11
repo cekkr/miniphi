@@ -75,7 +75,7 @@ node src/index.js <command> [flags...]
 miniPhi can run shell commands when you use `run` (or other workflows that execute commands). Review what it’s about to do and use the command policy flags if you want stricter gating.
 Use `--session-timeout` to cap total runtime; follow-up helpers are skipped once the budget is exhausted.
 
-Model responses are schema-validated with deterministic JSON fallbacks across analysis, planning, and navigation prompts.
+Model responses are schema-validated with deterministic JSON fallbacks across analysis, planning, and navigation prompts. Non-JSON preambles are rejected under the strict parser, so the fallback payload is saved instead of salvaging mixed prose.
 
 The deeper “JSON-only contracts”, schema rules, and contributor guardrails live in **AGENTS.md**.
 
@@ -85,7 +85,7 @@ For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluato
 
 miniPhi stores reproducible artifacts in two places:
 
-- **Project-local:** `.miniphi/` (executions, prompt exchanges, helper scripts, reports)
+- **Project-local:** `.miniphi/` (executions, prompt exchanges, helper scripts, reports, recompose edit logs/rollbacks)
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
 If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
