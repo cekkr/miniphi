@@ -32,8 +32,11 @@ Slices (do in order):
      - `miniphi "Tighten lint config"` (or similar) against this repo.
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>`.
      - Inspect `.miniphi/prompt-exchanges/` and `.miniphi/prompt-exchanges/stepwise/<id>/` for schema id/response_format on requests, raw JSON responses, and captured missing snippets.
+   - Recent test evidence:
+     - Stepwise CLI unit tests (`cli-benchmark`, `cli-recompose`, `cli-smoke`) confirm offline CLI entrypoints execute successfully.
+     - These tests do not yet exercise request composer or response interpreter flows backed by LM Studio.
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
-   - Conclusion: finalize prompt journal status in dedicated cleanup with a stop reason, skip navigator/truncation follow-ups after session budget exhaustion, and persist promptJournalId/tool metadata in prompt exchanges for eval-grade tracing.
+   - Conclusion: add LM Studio-backed prompt composer + response interpreter checks (e.g., `scripts/prompt-composer.js --send` + `scripts/prompt-interpret.js`) to validate strict JSON enforcement, schema ids/response_format, tool_calls/tool_definitions capture, and deterministic fallback handling; keep prompt journals and stop reasons aligned with these runs.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
