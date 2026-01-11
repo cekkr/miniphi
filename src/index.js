@@ -78,6 +78,7 @@ const COMMANDS = new Set([
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
 const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
 const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
+const RECOMPOSE_AUTO_STATUS_TIMEOUT_MS = 2500;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -4137,6 +4138,44 @@ function truncateHelperSnippet(text, limit = 220) {
   return `${normalized.slice(0, limit)}…`;
 }
 
+async function resolveRecomposeMode({ rawMode, configData, modelKey, contextLength, verbose }) {
+  const normalized = typeof rawMode === "string" ? rawMode.toLowerCase().trim() : "auto";
+  if (normalized === "live" || normalized === "offline") {
+    return normalized;
+  }
+  if (normalized && normalized !== "auto") {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi][Recompose] Unknown recompose mode "${normalized}". Falling back to auto.`,
+      );
+    }
+  }
+
+  const restOptions = {
+    ...(buildRestClientOptions(configData, { modelKey, contextLength }) ?? {}),
+    timeoutMs: RECOMPOSE_AUTO_STATUS_TIMEOUT_MS,
+  };
+  try {
+    const probeClient = new LMStudioRestClient(restOptions);
+    const status = await probeClient.getStatus();
+    if (status?.ok) {
+      if (verbose) {
+        console.log("[MiniPhi][Recompose] LM Studio reachable; using live mode.");
+      }
+      return "live";
+    }
+  } catch (error) {
+    if (verbose) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[MiniPhi][Recompose] LM Studio probe failed: ${message}`);
+    }
+  }
+  if (verbose) {
+    console.log("[MiniPhi][Recompose] LM Studio not available; using offline mode.");
+  }
+  return "offline";
+}
+
 async function handleRecompose({
   options,
   positionals,
@@ -4160,8 +4199,14 @@ async function handleRecompose({
   const rawMode =
     typeof options["recompose-mode"] === "string"
       ? options["recompose-mode"].toLowerCase()
-      : configData.recompose?.mode?.toLowerCase() ?? "offline";
-  const recomposeMode = rawMode === "live" ? "live" : "offline";
+      : configData.recompose?.mode?.toLowerCase() ?? "auto";
+  const recomposeMode = await resolveRecomposeMode({
+    rawMode,
+    configData,
+    modelKey,
+    contextLength,
+    verbose,
+  });
   const workspaceOverviewTimeoutMs =
     resolveDurationMs({
       secondsValue: options["workspace-overview-timeout"],
@@ -5646,6 +5691,7 @@ Recompose benchmarks:
   --code-dir <path>            Override code directory (default: <sample>/code)
   --descriptions-dir <path>    Override markdown descriptions directory (default: <sample>/descriptions)
   --output-dir <path>          Override reconstructed code output directory (default: <sample>/reconstructed)
+  --recompose-mode <mode>      auto | live | offline (default: auto; offline creates stub code)
   --clean                      Remove generated description/output directories before running
   --report <path>              Persist benchmark report JSON to a custom path
   --help                       Show this help message

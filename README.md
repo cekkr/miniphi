@@ -103,7 +103,7 @@ These are the commands most people start with:
 - `miniphi helpers` / `miniphi command-library`  
   Inspect saved helper scripts and recommended commands.
 - `miniphi recompose` / `miniphi benchmark ...`  
-  Development and benchmarking harness (see `WHY_SAMPLES.md`).
+  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 
