@@ -5,7 +5,7 @@
   "schema_id": "prompt-chain-response",
   "system_prompt": "You are a prompt engineering evaluator for MiniPhi. Answer with JSON only.",
   "instructions": "Analyze the prompt structure and response handling. Prioritize strict JSON compliance, clear option selection, and deterministic fallbacks.",
-  "template_file": "samples/prompt-chain/prompt-template.json",
+  "template_file": "prompt-template.json",
   "defaults": {
     "temperature": 0,
     "max_tokens": 900

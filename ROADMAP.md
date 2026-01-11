@@ -35,8 +35,14 @@ Slices (do in order):
    - Recent test evidence:
      - Stepwise CLI unit tests (`cli-benchmark`, `cli-recompose`, `cli-smoke`) confirm offline CLI entrypoints execute successfully.
      - These tests do not yet exercise request composer or response interpreter flows backed by LM Studio.
+   - Composer/interpreter runs (LM Studio):
+     - `node scripts/prompt-composer.js --send --response-file .miniphi/prompt-chain/response.json` returned JSON-only content and saved a response payload.
+     - `node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json` parsed the response JSON without salvage.
+     - Fix applied: prompt chain template path now uses chain-relative `prompt-template.json` (previous absolute-in-chain path caused ENOENT).
+   - Schema enforcement run:
+     - `npm run sample:lmstudio-json-series` completed with a JSON final report and passing verification (`npm test`).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
-   - Conclusion: add LM Studio-backed prompt composer + response interpreter checks (e.g., `scripts/prompt-composer.js --send` + `scripts/prompt-interpret.js`) to validate strict JSON enforcement, schema ids/response_format, tool_calls/tool_definitions capture, and deterministic fallback handling; keep prompt journals and stop reasons aligned with these runs.
+   - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), and add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths; follow up by capturing tool_calls/tool_definitions in prompt-chain response artifacts to validate evaluator coverage.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
