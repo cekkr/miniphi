@@ -24,11 +24,15 @@ export function buildJsonSchemaResponseFormat(schemaDefinition, schemaName) {
   };
 }
 
-export function validateJsonAgainstSchema(schemaDefinition, responseText) {
+export function validateJsonAgainstSchema(schemaDefinition, responseText, options = undefined) {
   if (!schemaDefinition || typeof schemaDefinition !== "object") {
     return null;
   }
-  const stripped = sanitizeJsonResponseText(responseText ?? "");
+  const sanitizeOptions = { ...(options ?? {}) };
+  if (sanitizeOptions.allowPreamble === undefined) {
+    sanitizeOptions.allowPreamble = true;
+  }
+  const stripped = sanitizeJsonResponseText(responseText ?? "", sanitizeOptions);
   if (!stripped) {
     return { valid: false, errors: ["Response body was empty."] };
   }
@@ -152,7 +156,7 @@ function describeValue(value) {
     return "object";
   }
   if (type === "string") {
-    return `string("${value.slice(0, 24)}${value.length > 24 ? "ƒ?İ" : ""}")`;
+    return `string("${value.slice(0, 24)}${value.length > 24 ? "..." : ""}")`;
   }
   return type;
 }
