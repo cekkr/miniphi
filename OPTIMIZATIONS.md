@@ -57,9 +57,9 @@ Exit criteria:
 - CLI behavior and help output remain unchanged for existing commands.
 
 Status:
-- Command handlers for `run`, `analyze-file`, `workspace`, `web-research`, `history-notes`,
-  `command-library`, and `helpers` now live under `src/commands/`.
-- Remaining extraction: `recompose`, `benchmark`, `prompt-template`, plus shared LM Studio setup.
+- Command handlers for `run`, `analyze-file`, `workspace`, `recompose`, `benchmark`, `prompt-template`,
+  `web-research`, `history-notes`, `command-library`, and `helpers` now live under `src/commands/`.
+- Remaining extraction: shared LM Studio setup and any command-specific helper utilities still in `src/index.js`.
 
 ### P0 - Unified JSON schema enforcement + fallback
 

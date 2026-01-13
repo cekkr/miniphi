@@ -1,9 +1,8 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-import YAML from "yaml";
 import CliExecutor from "./libs/cli-executor.js";
 import LMStudioManager, {
   LMStudioRestClient,
@@ -20,8 +19,6 @@ import ResourceMonitor from "./libs/resource-monitor.js";
 import PromptRecorder from "./libs/prompt-recorder.js";
 import PromptStepJournal from "./libs/prompt-step-journal.js";
 import RecomposeTester from "./libs/recompose-tester.js";
-import RecomposeBenchmarkRunner from "./libs/recompose-benchmark-runner.js";
-import BenchmarkAnalyzer from "./libs/benchmark-analyzer.js";
 import { loadConfig } from "./libs/config-loader.js";
 import { parseNumericSetting, resolveDurationMs } from "./libs/cli-utils.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
@@ -61,10 +58,13 @@ import {
   extractNeedsMoreContextFlag,
 } from "./libs/core-utils.js";
 import { handleAnalyzeFileCommand } from "./commands/analyze-file.js";
+import { handleBenchmarkCommand } from "./commands/benchmark.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
+import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
+import { handleRecomposeCommand } from "./commands/recompose.js";
 import { handleWebResearch } from "./commands/web-research.js";
 import { handleWorkspaceCommand } from "./commands/workspace.js";
 
@@ -966,23 +966,6 @@ async function persistTruncationProgressSafe(memory, executionId, progress) {
   }
 }
 
-function parseListOption(value) {
-  if (!value && value !== 0) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) => parseListOption(entry)).filter(Boolean);
-  }
-  const text = value.toString().trim();
-  if (!text) {
-    return [];
-  }
-  return text
-    .split(/[,|]/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-}
-
 async function appendForgottenRequirementNote({ targetPath, context, command, verbose }) {
   if (!targetPath || !context) {
     return false;
@@ -1752,7 +1735,7 @@ async function main() {
 
   // "recompose" command is ONLY for development testing purposes, like "benchmark". 
   if (command === "recompose") { 
-    await handleRecompose({
+    await handleRecomposeCommand({
       options,
       positionals,
       verbose,
@@ -1764,12 +1747,14 @@ async function main() {
       schemaRegistry,
       systemPrompt: resolvedSystemPrompt,
       modelKey: modelSelection.modelKey,
-      restClient,
+      promptDbPath: globalMemory.promptDbPath,
+      resolveRecomposeMode,
+      createRecomposeHarness,
     });
     return;
   }
   if (command === "benchmark") {
-    await handleBenchmark({
+    await handleBenchmarkCommand({
       options,
       positionals,
       verbose,
@@ -1784,12 +1769,22 @@ async function main() {
       restClient,
       resourceConfig,
       resourceMonitorForcedDisabled,
+      promptDbPath: globalMemory.promptDbPath,
+      createRecomposeHarness,
+      runGeneralPurposeBenchmark,
     });
     return;
   }
 
   if (command === "prompt-template") {
-    await handlePromptTemplateCommand({ options, verbose, schemaRegistry });
+    await handlePromptTemplateCommand({
+      options,
+      verbose,
+      schemaRegistry,
+      generateWorkspaceSnapshot,
+      globalMemory,
+      mirrorPromptTemplateToGlobal,
+    });
     return;
   }
 
@@ -2888,269 +2883,7 @@ async function resolveRecomposeMode({ rawMode, configData, modelKey, contextLeng
   return "offline";
 }
 
-async function handleRecompose({
-  options,
-  positionals,
-  verbose,
-  configData,
-  promptDefaults,
-  contextLength,
-  debugLm,
-  gpu,
-  schemaRegistry,
-  systemPrompt,
-  modelKey,
-  restClient,
-}) {
-  const sessionLabel =
-    typeof options.label === "string"
-      ? options.label
-      : typeof options["session-label"] === "string"
-        ? options["session-label"]
-        : null;
-  const rawMode =
-    typeof options["recompose-mode"] === "string"
-      ? options["recompose-mode"].toLowerCase()
-      : configData.recompose?.mode?.toLowerCase() ?? "auto";
-  const recomposeMode = await resolveRecomposeMode({
-    rawMode,
-    configData,
-    modelKey,
-    contextLength,
-    verbose,
-  });
-  const workspaceOverviewTimeoutMs =
-    resolveDurationMs({
-      secondsValue: options["workspace-overview-timeout"],
-      secondsLabel: "--workspace-overview-timeout",
-      millisValue: options["workspace-overview-timeout-ms"],
-      millisLabel: "--workspace-overview-timeout-ms",
-    }) ?? null;
-  const harness = await createRecomposeHarness({
-    configData,
-    promptDefaults,
-    contextLength,
-    debugLm,
-    verbose,
-    sessionLabel,
-    gpu,
-    schemaRegistry,
-    promptDbPath: globalMemory.promptDbPath,
-    recomposeMode,
-    systemPrompt,
-    modelKey,
-    workspaceOverviewTimeoutMs,
-  });
-  const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[0] ?? null;
-  const direction = (options.direction ?? positionals[1] ?? "roundtrip").toLowerCase();
-  let report;
-  let reportPath = null;
-  let promptLogExportPath = null;
-  try {
-    report = await harness.tester.run({
-      sampleDir: sampleArg ? path.resolve(sampleArg) : null,
-      direction,
-      codeDir: options["code-dir"],
-      descriptionsDir: options["descriptions-dir"],
-      outputDir: options["output-dir"],
-      clean: Boolean(options.clean),
-      sessionLabel,
-    });
-    const defaultReportBase = report.sampleDir ?? (sampleArg ? path.resolve(sampleArg) : process.cwd());
-    reportPath = path.resolve(options.report ?? path.join(defaultReportBase, "recompose-report.json"));
-    await fs.promises.mkdir(path.dirname(reportPath), { recursive: true });
-    if (typeof harness.tester.exportPromptLog === "function") {
-      promptLogExportPath = await harness.tester.exportPromptLog({
-        targetDir: path.dirname(reportPath),
-        fileName: `${path.basename(reportPath, path.extname(reportPath))}.prompts.log`,
-        label: sessionLabel ?? direction,
-      });
-    }
-  } finally {
-    await harness.cleanup();
-  }
 
-  report.steps.forEach((step) => {
-    if (step.phase === "code-to-markdown") {
-      console.log(
-        `[MiniPhi][Recompose] code→md: ${step.converted}/${step.discovered} files converted in ${step.durationMs} ms (skipped ${step.skipped})`,
-      );
-    } else if (step.phase === "markdown-to-code") {
-      console.log(
-        `[MiniPhi][Recompose] md→code: ${step.converted}/${step.processed} markdown files restored in ${step.durationMs} ms (warnings: ${step.warnings.length})`,
-      );
-      if (verbose && step.warnings.length) {
-        step.warnings.slice(0, 5).forEach((warning) => {
-          console.warn(`[MiniPhi][Recompose][Warn] ${warning.path}: ${warning.reason}`);
-        });
-        if (step.warnings.length > 5) {
-          console.warn(`[MiniPhi][Recompose][Warn] ...${step.warnings.length - 5} additional warnings`);
-        }
-      }
-    } else if (step.phase === "comparison") {
-      console.log(
-        `[MiniPhi][Recompose] compare: ${step.matches} matches, ${step.mismatches.length} mismatches, ${step.missing.length} missing, ${step.extras.length} extra files (took ${step.durationMs} ms)`,
-      );
-    }
-  });
-
-  if (!reportPath) {
-    throw new Error("Failed to resolve recompose report path.");
-  }
-  if (promptLogExportPath) {
-    const relPrompt = relativeToCwd(promptLogExportPath);
-    const normalizedPrompt = relPrompt ? relPrompt.replace(/\\/g, "/") : relPrompt;
-    report.promptLogExport = normalizedPrompt;
-    console.log(`[MiniPhi][Recompose] Prompt log saved to ${normalizedPrompt}`);
-  }
-  await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
-  const rel = path.relative(process.cwd(), reportPath);
-  console.log(`[MiniPhi][Recompose] Report saved to ${rel || reportPath}`);
-}
-
-async function handleBenchmark({
-  options,
-  positionals,
-  verbose,
-  configData,
-  promptDefaults,
-  contextLength,
-  debugLm,
-  gpu,
-  schemaRegistry,
-  systemPrompt,
-  modelKey,
-  restClient = null,
-  resourceConfig = undefined,
-  resourceMonitorForcedDisabled = false,
-}) {
-  const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
-  if (mode === "analyze") {
-    const baselineDir = options.baseline ?? options.path ?? options.dir ?? positionals[1] ?? null;
-    if (!baselineDir) {
-      throw new Error("benchmark analyze requires --path <dir> or a positional directory argument.");
-    }
-    const candidateDir = options.compare ?? options.candidate ?? null;
-    const analyzer = new BenchmarkAnalyzer();
-    if (candidateDir) {
-      await analyzer.compareDirectories(baselineDir, candidateDir);
-    } else {
-      await analyzer.analyzeDirectory(baselineDir);
-    }
-    return;
-  }
-
-  if (mode === "general" || mode === "general-purpose" || mode === "generalpurpose") {
-    await runGeneralPurposeBenchmark({
-      options,
-      verbose,
-      schemaRegistry,
-      restClient,
-      configData,
-      resourceConfig,
-      resourceMonitorForcedDisabled,
-    });
-    return;
-  }
-
-  if (mode === "plan") {
-    const action = (positionals[1] ?? options.action ?? "scaffold").toLowerCase();
-    if (action !== "scaffold") {
-      throw new Error(`Unsupported benchmark plan action "${action}".`);
-    }
-    const sampleDir = options.sample ?? options["sample-dir"] ?? positionals[2] ?? null;
-    await scaffoldBenchmarkPlan({
-      sampleDir,
-      benchmarkRoot: options["benchmark-root"] ?? null,
-      outputPath: options.output ?? options.o ?? null,
-      verbose,
-    });
-    return;
-  }
-
-  if (mode !== "recompose") {
-    throw new Error(`Unsupported benchmark mode "${mode}". Expected "recompose" or "analyze".`);
-  }
-
-  const planPath = options.plan ?? options["plan-file"] ?? null;
-  const plan = planPath ? await loadBenchmarkPlan(planPath) : null;
-  if (plan?.path && verbose) {
-    const rel = path.relative(process.cwd(), plan.path) || plan.path;
-    console.log(`[MiniPhi][Benchmark] Loaded plan from ${rel}`);
-  }
-  const planSample = plan ? resolvePlanPath(plan, plan.data.sampleDir ?? plan.data.sample) : null;
-  const planBenchmarkRoot = plan ? resolvePlanPath(plan, plan.data.benchmarkRoot ?? plan.data.outputDir) : null;
-  const sampleArg = options.sample ?? options["sample-dir"] ?? positionals[1] ?? planSample ?? null;
-  const benchmarkRoot = options["benchmark-root"] ?? planBenchmarkRoot ?? undefined;
-  const benchmarkWorkspaceOverviewTimeout =
-    resolveDurationMs({
-      secondsValue: options["workspace-overview-timeout"],
-      secondsLabel: "--workspace-overview-timeout",
-      millisValue: options["workspace-overview-timeout-ms"],
-      millisLabel: "--workspace-overview-timeout-ms",
-    }) ?? null;
-  const harness = await createRecomposeHarness({
-    configData,
-    promptDefaults,
-    contextLength,
-    debugLm,
-    verbose,
-    sessionLabel: null,
-    gpu,
-    schemaRegistry,
-    promptDbPath: globalMemory.promptDbPath,
-    recomposeMode: "live",
-    systemPrompt,
-    modelKey,
-    workspaceOverviewTimeoutMs: benchmarkWorkspaceOverviewTimeout,
-  });
-  const runner = new RecomposeBenchmarkRunner({
-    sampleDir: sampleArg,
-    benchmarkRoot,
-    tester: harness.tester,
-  });
-  const timestamp = options.timestamp ?? plan?.data?.timestamp ?? undefined;
-  const runPrefix = options["run-prefix"] ?? plan?.data?.runPrefix ?? plan?.data?.defaults?.runPrefix ?? "RUN";
-  const clean = options.clean ?? plan?.data?.clean ?? plan?.data?.defaults?.clean ?? false;
-  const resumeDescriptions =
-    options["resume-descriptions"] ??
-    plan?.data?.resumeDescriptions ??
-    plan?.data?.defaults?.resumeDescriptions ??
-    false;
-
-  let result;
-  try {
-    if (plan) {
-      const planRuns = buildBenchmarkPlanRuns(plan.data);
-      if (!planRuns.length) {
-        throw new Error("Benchmark plan must include at least one run definition.");
-      }
-      result = await runner.runSeries({
-        planRuns,
-        timestamp,
-        runPrefix,
-        clean,
-        resumeDescriptions: Boolean(resumeDescriptions),
-      });
-    } else {
-      const directionsValue = options.directions ?? options.direction ?? "roundtrip";
-      const directions = directionsValue.split(",").map((value) => value.trim()).filter(Boolean);
-      const repeat = Number(options.repeat ?? 1);
-      result = await runner.runSeries({
-        directions,
-        repeat,
-        clean: Boolean(clean),
-        timestamp,
-        runPrefix,
-        resumeDescriptions: Boolean(resumeDescriptions),
-      });
-    }
-  } finally {
-    await harness.cleanup();
-  }
-  const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
-  console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
-}
 
 async function runGeneralPurposeBenchmark({
   options,
@@ -3519,7 +3252,7 @@ function formatResourceBaselineDiff(diff) {
     const delta = entry.delta;
     const deltaLabel = delta > 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2);
     parts.push(
-      `${metric} Δ ${deltaLabel} (current ${entry.currentAvg.toFixed(2)} vs baseline ${entry.baselineAvg.toFixed(2)})`,
+      `${metric} Î” ${deltaLabel} (current ${entry.currentAvg.toFixed(2)} vs baseline ${entry.baselineAvg.toFixed(2)})`,
     );
   }
   return parts.join(" | ");
@@ -3675,26 +3408,6 @@ function parseArgs(tokens) {
   return { options, positionals };
 }
 
-async function loadBenchmarkPlan(planPath) {
-  const absolute = path.resolve(planPath);
-  const raw = await fs.promises.readFile(absolute, "utf8");
-  const ext = path.extname(absolute).toLowerCase();
-  let data;
-  if (ext === ".yaml" || ext === ".yml") {
-    data = YAML.parse(raw);
-  } else {
-    data = JSON.parse(raw);
-  }
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("Benchmark plan must be a JSON or YAML object.");
-  }
-  return {
-    path: absolute,
-    dir: path.dirname(absolute),
-    data,
-  };
-}
-
 async function generateWorkspaceSnapshot({
   rootDir,
   workspaceProfiler,
@@ -3812,7 +3525,7 @@ async function generateWorkspaceSnapshot({
       const previewSource = typeof entry.prompt === "string" ? entry.prompt : null;
       const preview =
         previewSource && previewSource.length > 320
-          ? `${previewSource.slice(0, 320)}…`
+          ? `${previewSource.slice(0, 320)}â€¦`
           : previewSource;
       promptTemplates.push({
         id: entry.id ?? keyBase,
@@ -3972,328 +3685,6 @@ async function generateWorkspaceSnapshot({
   };
 }
 
-async function handlePromptTemplateCommand({ options, verbose, schemaRegistry }) {
-  const rawBaseline =
-    (typeof options.baseline === "string" && options.baseline.trim()) ||
-    (typeof options.type === "string" && options.type.trim()) ||
-    "truncation";
-  const baseline = rawBaseline.toLowerCase();
-  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-  const task =
-    (typeof options.task === "string" && options.task.trim()) ||
-    "Explain how to truncate this oversized dataset so I can analyze it with Phi across multiple prompts while keeping history synced.";
-  const datasetSummary =
-    (typeof options["dataset-summary"] === "string" && options["dataset-summary"].trim()) ||
-    (typeof options.dataset === "string" && options.dataset.trim()) ||
-    `Oversized log/output data captured from ${path.basename(cwd) || "the workspace"}.`;
-  const totalLines =
-    parseNumericSetting(options["total-lines"], "--total-lines") ??
-    parseNumericSetting(options.lines, "--lines");
-  const chunkTarget =
-    parseNumericSetting(options["target-lines"], "--target-lines") ??
-    parseNumericSetting(options["chunk-size"], "--chunk-size");
-  const helperFocus = parseListOption(options["helper-focus"]);
-  const historyKeys = parseListOption(options["history-keys"]);
-  const schemaId =
-    (typeof options["schema-id"] === "string" && options["schema-id"].trim()) ||
-    (typeof options.schema === "string" && options.schema.trim()) ||
-    null;
-  const notes =
-    typeof options.notes === "string" && options.notes.trim().length ? options.notes.trim() : null;
-  const skipWorkspace = Boolean(options["no-workspace"]);
-
-  const stateManager = new MiniPhiMemory(cwd);
-  await stateManager.prepare();
-  let workspaceContext = null;
-  if (!skipWorkspace) {
-    const workspaceProfiler = new WorkspaceProfiler();
-    const capabilityInventory = new CapabilityInventory();
-    workspaceContext = await generateWorkspaceSnapshot({
-      rootDir: cwd,
-      workspaceProfiler,
-      capabilityInventory,
-      verbose,
-      navigator: null,
-      objective: task,
-      executeHelper: false,
-      memory: stateManager,
-      globalMemory,
-    });
-  }
-
-  const builder = new PromptTemplateBaselineBuilder({ schemaRegistry });
-  let template;
-  try {
-    template = builder.build({
-      baseline,
-      task,
-      datasetSummary,
-      datasetStats: { totalLines, chunkTarget },
-      helperFocus,
-      historyKeys,
-      notes,
-      schemaId,
-      workspaceContext,
-    });
-  } catch (error) {
-    console.error(
-      `[MiniPhi] Unable to build prompt baseline: ${error instanceof Error ? error.message : error}`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
-  const labelCandidate = typeof options.label === "string" ? options.label.trim() : "";
-  const label = labelCandidate || `${baseline}-baseline`;
-  const saved = await stateManager.savePromptTemplateBaseline({
-    baseline,
-    label,
-    schemaId: template.schemaId,
-    task: template.task,
-    prompt: template.prompt,
-    metadata: template.metadata,
-    cwd,
-  });
-  const savedRel = path.relative(process.cwd(), saved.path);
-  console.log(
-    `[MiniPhi] Prompt template baseline ${saved.id} stored at ${savedRel || saved.path}`,
-  );
-  await mirrorPromptTemplateToGlobal(
-    saved,
-    {
-      label,
-      schemaId: template.schemaId ?? null,
-      baseline: template.metadata?.baseline ?? baseline,
-      task: template.task ?? task,
-    },
-    workspaceContext,
-    { verbose, source: "prompt-template-cli" },
-  );
-
-  const outputPath =
-    typeof options.output === "string" && options.output.trim()
-      ? path.resolve(options.output.trim())
-      : null;
-  if (outputPath) {
-    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.promises.writeFile(outputPath, `${template.prompt}\n`, "utf8");
-    const rel = path.relative(process.cwd(), outputPath);
-    console.log(`[MiniPhi] Prompt text exported to ${rel || outputPath}`);
-  }
-
-  console.log("\n--- Prompt Template ---\n");
-  console.log(template.prompt);
-  console.log("\n--- End Template ---");
-}
-
-function resolvePlanPath(plan, candidate) {
-  if (!candidate || typeof candidate !== "string") {
-    return null;
-  }
-  if (path.isAbsolute(candidate)) {
-    return candidate;
-  }
-  return path.resolve(plan.dir, candidate);
-}
-
-function buildBenchmarkPlanRuns(planData) {
-  if (!planData || typeof planData !== "object" || Array.isArray(planData)) {
-    throw new Error("Benchmark plan content must be an object.");
-  }
-  const defaultDirections = normalizePlanDirections(planData.defaults?.directions ?? planData.directions);
-  const fallbackDirections = defaultDirections.length ? defaultDirections : ["roundtrip"];
-  const fallbackRepeat = Math.max(1, Number(planData.defaults?.repeat ?? planData.repeat ?? 1) || 1);
-  const fallbackClean = planData.defaults?.clean ?? planData.clean ?? false;
-  const fallbackPrefix = planData.defaults?.runPrefix ?? planData.runPrefix ?? "RUN";
-  const fallbackResume = planData.defaults?.resumeDescriptions ?? planData.resumeDescriptions ?? false;
-  const entries = Array.isArray(planData.runs) && planData.runs.length
-    ? planData.runs
-    : [
-        {
-          directions: planData.directions ?? fallbackDirections,
-          repeat: planData.repeat ?? fallbackRepeat,
-          clean: planData.clean ?? fallbackClean,
-          runPrefix: planData.runPrefix ?? fallbackPrefix,
-          resumeDescriptions: planData.resumeDescriptions ?? fallbackResume,
-          label: planData.label,
-          runLabel: planData.runLabel,
-          labels: planData.labels,
-        },
-      ];
-  if (!entries.length) {
-    throw new Error("Benchmark plan must define at least one run entry.");
-  }
-  const runs = [];
-  entries.forEach((entry, entryIndex) => {
-    const entryDirections = normalizePlanDirections(entry.directions ?? entry.direction ?? fallbackDirections);
-    if (!entryDirections.length) {
-      throw new Error(`Plan run ${entryIndex} resolved to zero directions.`);
-    }
-    const repeat = Math.max(1, Number(entry.repeat ?? fallbackRepeat) || 1);
-    const entryClean = entry.clean ?? fallbackClean;
-    const entryPrefix = entry.runPrefix ?? fallbackPrefix;
-    const entryResume = entry.resumeDescriptions ?? fallbackResume;
-    const labelList = Array.isArray(entry.labels) ? entry.labels : null;
-    for (let cycle = 0; cycle < repeat; cycle += 1) {
-      entryDirections.forEach((direction, directionIndex) => {
-        const prioritizedLabel =
-          (labelList ? labelList[directionIndex] ?? labelList[labelList.length - 1] : null) ??
-          (typeof entry.runLabel === "string" ? entry.runLabel : null) ??
-          (typeof entry.label === "string" ? entry.label : null);
-        let resolvedLabel = prioritizedLabel ?? null;
-        const needsSuffix = repeat > 1 || (entryDirections.length > 1 && !labelList);
-        if (resolvedLabel && needsSuffix) {
-          const suffixParts = [cycle + 1];
-          if (entryDirections.length > 1 && !labelList) {
-            suffixParts.push(directionIndex + 1);
-          }
-          resolvedLabel = `${resolvedLabel}-${suffixParts.join("-")}`;
-        }
-        runs.push({
-          direction,
-          clean: entryClean,
-          runPrefix: entryPrefix,
-          runLabel: resolvedLabel,
-          resumeDescriptions: entryResume,
-        });
-      });
-    }
-  });
-  return runs;
-}
-
-async function scaffoldBenchmarkPlan({ sampleDir, benchmarkRoot, outputPath, verbose }) {
-  const defaultSample = path.join("samples", "recompose", "hello-flow");
-  const resolvedSample = path.resolve(sampleDir ?? defaultSample);
-  let stats;
-  try {
-    stats = await fs.promises.stat(resolvedSample);
-  } catch {
-    throw new Error(`Unable to locate sample directory ${resolvedSample}`);
-  }
-  if (!stats.isDirectory()) {
-    throw new Error(`Sample path is not a directory: ${resolvedSample}`);
-  }
-  const sampleName = path.basename(resolvedSample);
-  const codeDir = path.join(resolvedSample, "code");
-  const descriptionsDir = path.join(resolvedSample, "descriptions");
-  const normalized = (target) => {
-    const relative = path.relative(process.cwd(), target);
-    return (relative || target).replace(/\\/g, "/");
-  };
-  const planSlug = `${sampleName}-plan`;
-  const resolvedBenchmarkRoot =
-    benchmarkRoot && path.isAbsolute(benchmarkRoot)
-      ? benchmarkRoot
-      : path.resolve(benchmarkRoot ?? path.join("samples", "benchmark", "recompose", planSlug));
-  const codeFiles = await collectSampleFileStats(codeDir);
-  const descriptionFiles = await collectSampleFileStats(descriptionsDir);
-  const readmeSnippet = await loadReadmeSnippet(resolvedSample);
-  const lines = [];
-  lines.push(`# MiniPhi benchmark plan scaffold (${new Date().toISOString()})`);
-  lines.push(`# Sample: ${sampleName}`);
-  lines.push(`# Detected ${codeFiles.length} code files under ${normalized(codeDir)}`);
-  lines.push(`# Detected ${descriptionFiles.length} description files under ${normalized(descriptionsDir)}`);
-  if (readmeSnippet) {
-    lines.push(`# README excerpt: ${readmeSnippet}`);
-  }
-  if (codeFiles.length) {
-    lines.push(`# First files: ${codeFiles.slice(0, 5).map((file) => file.path).join(", ")}`);
-  }
-  lines.push("");
-  lines.push(`sampleDir: ${normalized(resolvedSample)}`);
-  lines.push(`benchmarkRoot: ${normalized(resolvedBenchmarkRoot)}`);
-  lines.push(`timestamp: ${planSlug}`);
-  lines.push(`runPrefix: PLAN`);
-  lines.push("defaults:");
-  lines.push("  # Roundtrip ensures both directions are exercised.");
-  lines.push("  directions:");
-  lines.push("    - roundtrip");
-  lines.push("  repeat: 1");
-  lines.push("  clean: false");
-  lines.push("  resumeDescriptions: false");
-  lines.push("runs:");
-  lines.push("  # Fresh sweep to regenerate markdown + reconstructed code.");
-  lines.push("  - label: clean-roundtrip");
-  lines.push("    clean: true");
-  lines.push("    directions:");
-  lines.push("      - roundtrip");
-  lines.push("  # Target markdown-to-code iterations without re-narrating files.");
-  lines.push("  - label: markdown-focus");
-  lines.push("    directions:");
-  lines.push("      - markdown-to-code");
-  lines.push("    repeat: 2");
-  lines.push("    runPrefix: PLAN-MD");
-  lines.push("    resumeDescriptions: true");
-  lines.push("");
-  const output = `${lines.join("\n").trim()}\n`;
-  if (outputPath) {
-    const resolvedOutput = path.resolve(outputPath);
-    await fs.promises.mkdir(path.dirname(resolvedOutput), { recursive: true });
-    await fs.promises.writeFile(resolvedOutput, output, "utf8");
-    const rel = normalized(resolvedOutput);
-    console.log(`[MiniPhi][Benchmark][Plan] Scaffold saved to ${rel}`);
-  } else {
-    if (!verbose) {
-      console.log("[MiniPhi][Benchmark][Plan] Use --output <file> to save this scaffold automatically.");
-    }
-    console.log(output);
-  }
-}
-
-async function collectSampleFileStats(baseDir) {
-  try {
-    const stats = await fs.promises.stat(baseDir);
-    if (!stats.isDirectory()) {
-      return [];
-    }
-  } catch {
-    return [];
-  }
-  const files = [];
-  const stack = [""];
-  while (stack.length) {
-    const current = stack.pop();
-    const absolute = path.join(baseDir, current);
-    const dirents = await fs.promises.readdir(absolute, { withFileTypes: true });
-    for (const entry of dirents) {
-      const rel = path.join(current, entry.name).replace(/\\/g, "/");
-      if (entry.isDirectory()) {
-        stack.push(rel);
-      } else if (entry.isFile()) {
-        const info = await fs.promises.stat(path.join(baseDir, rel));
-        files.push({ path: rel, bytes: info.size });
-      }
-    }
-  }
-  files.sort((a, b) => a.path.localeCompare(b.path));
-  return files;
-}
-
-async function loadReadmeSnippet(sampleDir) {
-  const candidates = [
-    path.join(sampleDir, "README.md"),
-    path.join(sampleDir, "README.md.md"),
-    path.join(sampleDir, "code", "README.md"),
-    path.join(sampleDir, "descriptions", "README.md"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      const stats = await fs.promises.stat(candidate);
-      if (!stats.isFile()) {
-        continue;
-      }
-      const content = await fs.promises.readFile(candidate, "utf8");
-      const trimmed = content.replace(/\s+/g, " ").trim();
-      if (trimmed) {
-        return trimmed.slice(0, 220);
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return null;
-}
 
 function printHelp() {
   console.log(`MiniPhi CLI
@@ -4436,3 +3827,5 @@ if (invokedDirectly) {
 }
 
 export { extractImplicitWorkspaceTask, parseDirectFileReferences };
+
+
