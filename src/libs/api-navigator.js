@@ -859,7 +859,7 @@ export default class ApiNavigator {
     if (!trimmed || trimmed.length <= limit) {
       return trimmed;
     }
-    return `${trimmed.slice(0, Math.max(10, limit))}…`;
+    return `${trimmed.slice(0, Math.max(10, limit))}...`;
   }
 
   _isContextOverflowError(message) {

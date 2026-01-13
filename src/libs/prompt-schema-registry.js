@@ -66,7 +66,7 @@ export default class PromptSchemaRegistry {
     const content = compact ? JSON.stringify(schema.definition) : schema.text;
     const trimmed =
       maxLength && content.length > maxLength
-        ? `${content.slice(0, maxLength)}…`
+        ? `${content.slice(0, maxLength)}...`
         : content;
     return ["```json", trimmed, "```"].join("\n");
   }

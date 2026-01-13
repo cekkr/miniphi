@@ -621,7 +621,11 @@ export function sanitizeJsonResponseText(text, options = undefined) {
 }
 
 export function parseStrictJson(text, options = undefined) {
-  const cleaned = sanitizeJsonResponseText(text, options);
+  const sanitizeOptions = { ...(options ?? {}) };
+  if (sanitizeOptions.allowPreamble === undefined) {
+    sanitizeOptions.allowPreamble = true;
+  }
+  const cleaned = sanitizeJsonResponseText(text, sanitizeOptions);
   if (!cleaned) {
     return null;
   }

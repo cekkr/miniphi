@@ -437,8 +437,7 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload) {
-    const cleaned = this._cleanResponseText(responseText);
-    const schemaValidation = validateJsonAgainstSchema(PLAN_JSON_SCHEMA, cleaned);
+    const schemaValidation = validateJsonAgainstSchema(PLAN_JSON_SCHEMA, responseText);
     const parsed = schemaValidation?.parsed ?? null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log(
@@ -568,14 +567,6 @@ export default class PromptDecomposer {
       }
     }
     return { valid: true, steps: normalized };
-  }
-
-  _cleanResponseText(text) {
-    if (!text || typeof text !== "string") {
-      return "";
-    }
-    const withoutThink = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
-    return withoutThink.replace(/```[\w-]*\n?/gi, "").replace(/```/g, "").trim();
   }
 
   _buildResumeContext(payload) {
@@ -711,7 +702,7 @@ export default class PromptDecomposer {
     if (!trimmed || trimmed.length <= limit) {
       return trimmed;
     }
-    return `${trimmed.slice(0, Math.max(10, limit))}…`;
+    return `${trimmed.slice(0, Math.max(10, limit))}...`;
   }
 
   _isContextOverflowError(message) {
