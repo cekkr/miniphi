@@ -196,10 +196,12 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 
 ### src/ file map
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
+- `src/commands/`: Command handlers extracted from `src/index.js` (web-research, history-notes, command-library, helpers).
 - `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
 - `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
 - `src/libs/capability-inventory.js`: Scans package scripts, `scripts/`, `.bin` tools, and OS commands to summarize available capabilities.
 - `src/libs/cli-executor.js`: Cross-platform shell command runner with streaming output, timeouts, and silence detection.
+- `src/libs/cli-utils.js`: CLI parsing helpers for numeric flags and duration parsing.
 - `src/libs/command-authorization-manager.js`: Enforces command policies (`ask|allow|deny|session`) and prompts for approval.
 - `src/libs/config-loader.js`: Loads `config.json` or `miniphi.config.json`, applies profiles, and merges settings.
 - `src/libs/core-utils.js`: Shared helpers for plan formatting, JSON parsing, danger normalization, and LM Studio URL handling.
@@ -211,8 +213,9 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/json-schema-utils.js`: Shared helpers to build JSON schema response_format blocks and validate responses.
 - `src/libs/lms-phi4.js`: Legacy alias for `lmstudio-handler` exports.
 - `src/libs/lmstudio-api.js`: LM Studio SDK wrapper and REST client utilities, including URL normalization and model lifecycle.
+- `src/libs/lmstudio-error-utils.js`: Shared LM Studio error classification and transport/timeout detection.
 - `src/libs/lmstudio-handler.js`: LM Studio chat handler with streaming, schema enforcement, retries, and history management.
-- `src/libs/memory-store-utils.js`: JSON file IO helpers, slug/relative path utilities, and composition key builders.
+- `src/libs/memory-store-utils.js`: JSON file IO helpers, slug/relative path utilities, composition key builders, and index upsert helpers.
 - `src/libs/miniphi-memory.js`: Project `.miniphi` store layout and persistence for executions, prompts, helpers, and indexes.
 - `src/libs/model-presets.js`: Model presets, aliases, default context lengths, and config resolution.
 - `src/libs/phi4-stream-parser.js`: Stream transformer that separates `<think>` blocks from solution tokens.
