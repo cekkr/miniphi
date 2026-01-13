@@ -56,6 +56,11 @@ Exit criteria:
   module under `src/commands/` (or equivalent) with its own unit tests or smoke coverage.
 - CLI behavior and help output remain unchanged for existing commands.
 
+Status:
+- Command handlers for `run`, `analyze-file`, `workspace`, `web-research`, `history-notes`,
+  `command-library`, and `helpers` now live under `src/commands/`.
+- Remaining extraction: `recompose`, `benchmark`, `prompt-template`, plus shared LM Studio setup.
+
 ### P0 - Unified JSON schema enforcement + fallback
 
 Centralize JSON parsing/validation and deterministic fallbacks so every LM Studio call uses the same
@@ -78,6 +83,10 @@ Exit criteria:
   index updates.
 - No behavior changes to `.miniphi/` or `~/.miniphi/` layout.
 - All existing tests for memory/prompt indexing still pass.
+
+Status:
+- Complete. `memory-store-utils` now provides shared index upsert helpers used by project/global
+  memory stores; `npm test` passes.
 
 ### P1 - Workspace scan and cache unification
 
@@ -105,6 +114,11 @@ Exit criteria:
 - A single place resolves LM Studio endpoints and transport choices.
 - Errors carry consistent codes/metadata for timeouts, schema failures, and transport fallbacks.
 - Session timeouts and retry caps are enforced uniformly across handlers and analyzers.
+
+Status:
+- In progress. Shared error classification now lives in `src/libs/lmstudio-error-utils.js` and is
+  used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; endpoint/transport resolution
+  still lives in `src/index.js`.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

@@ -196,7 +196,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 
 ### src/ file map
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
-- `src/commands/`: Command handlers extracted from `src/index.js` (web-research, history-notes, command-library, helpers).
+- `src/commands/`: Command handlers extracted from `src/index.js` (run, analyze-file, workspace, web-research, history-notes, command-library, helpers).
 - `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
 - `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
 - `src/libs/capability-inventory.js`: Scans package scripts, `scripts/`, `.bin` tools, and OS commands to summarize available capabilities.
