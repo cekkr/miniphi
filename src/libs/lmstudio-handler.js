@@ -5,6 +5,7 @@ import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
+import { isProtocolWarningError, isStreamingHangError } from "./lmstudio-error-utils.js";
 
 const DEFAULT_SYSTEM_PROMPT = [
   "You are MiniPhi, a local workspace agent.",
@@ -596,33 +597,14 @@ export class LMStudioHandler {
   }
 
   _isStreamingHang(message) {
-    if (!message || typeof message !== "string") {
-      return false;
-    }
-    const normalized = message.toLowerCase();
-    return (
-      normalized.includes("tokens emitted") ||
-      normalized.includes("prompt session exceeded") ||
-      normalized.includes("timed out") ||
-      (normalized.includes("stream") && normalized.includes("timeout"))
-    );
+    return isStreamingHangError(message);
   }
 
   _isProtocolWarning(message) {
     if (!message || typeof message !== "string") {
       return null;
     }
-    const normalized = message.toLowerCase();
-    if (normalized.includes("channel") && normalized.includes("unknown") && normalized.includes("send")) {
-      return message;
-    }
-    if (normalized.includes("communication warning")) {
-      return message;
-    }
-    if (normalized.includes("protocol") && normalized.includes("incompatible")) {
-      return message;
-    }
-    return null;
+    return isProtocolWarningError(message) ? message : null;
   }
 
   _buildProtocolMetadata() {

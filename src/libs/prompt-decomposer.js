@@ -9,6 +9,7 @@ import {
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
+import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
 
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
@@ -392,15 +393,7 @@ export default class PromptDecomposer {
   }
 
   _shouldDisable(message) {
-    if (!message) {
-      return false;
-    }
-    const normalized = message.toString().toLowerCase();
-    return (
-      normalized.includes("timed out") ||
-      normalized.includes("timeout") ||
-      normalized.includes("network")
-    );
+    return classifyLmStudioError(message).shouldDisable;
   }
 
   _disableDecomposer(message) {
@@ -423,17 +416,7 @@ export default class PromptDecomposer {
   }
 
   _classifyDisableReason(message) {
-    if (!message) {
-      return "REST failure";
-    }
-    const normalized = message.toLowerCase();
-    if (normalized.includes("timeout") || normalized.includes("timed out")) {
-      return "timeout";
-    }
-    if (normalized.includes("network")) {
-      return "network error";
-    }
-    return "REST failure";
+    return classifyLmStudioError(message).reason;
   }
 
   _parsePlan(responseText, payload) {
@@ -706,12 +689,7 @@ export default class PromptDecomposer {
   }
 
   _isContextOverflowError(message) {
-    if (!message) return false;
-    const normalized = message.toString().toLowerCase();
-    return (
-      normalized.includes("context length") ||
-      normalized.includes("context") && normalized.includes("overflow")
-    );
+    return isContextOverflowError(message);
   }
 
   _fallbackPlan(message, payload) {

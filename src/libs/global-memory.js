@@ -142,9 +142,7 @@ export default class GlobalMiniPhiMemory extends MemoryStoreBase {
       source: payload.source ?? existing?.source ?? "project",
       originalPath: this._relative(payload.sourcePath),
     };
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    await this._writeJSON(this.helperIndexFile, index);
+    await this._upsertIndexEntry(this.helperIndexFile, entry, { limit: 200 });
     return entry;
   }
 
@@ -178,9 +176,7 @@ export default class GlobalMiniPhiMemory extends MemoryStoreBase {
       source: payload.source ?? existing?.source ?? "project",
       updatedAt: timestamp,
     };
-    const filtered = index.entries.filter((item) => item.id !== normalizedId);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    await this._writeJSON(this.promptTemplateIndexFile, index);
+    await this._upsertIndexEntry(this.promptTemplateIndexFile, entry, { limit: 200 });
     return entry;
   }
 

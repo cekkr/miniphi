@@ -2,6 +2,7 @@ import {
   buildCompositionKey,
   ensureJsonFile,
   normalizeCompositionStatus,
+  upsertIndexEntry,
   readJsonFile,
   relativePath,
   slugifyId,
@@ -28,6 +29,10 @@ export default class MemoryStoreBase {
 
   async _readJSON(filePath, fallback = null) {
     return readJsonFile(filePath, fallback);
+  }
+
+  async _upsertIndexEntry(filePath, entry, options = undefined) {
+    return upsertIndexEntry(filePath, entry, options);
   }
 
   _relative(target) {

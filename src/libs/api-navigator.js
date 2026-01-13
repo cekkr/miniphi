@@ -4,6 +4,7 @@ import {
   buildJsonSchemaResponseFormat,
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
+import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
@@ -391,10 +392,7 @@ export default class ApiNavigator {
   }
 
   _shouldDisable(message) {
-    if (!message) {
-      return false;
-    }
-    return /timed out/i.test(message) || /ECONNREFUSED|ENOTFOUND/i.test(message);
+    return classifyLmStudioError(message).shouldDisable;
   }
 
   _disableNavigator(message) {
@@ -417,23 +415,7 @@ export default class ApiNavigator {
   }
 
   _classifyDisableReason(message) {
-    if (!message) {
-      return "REST failure";
-    }
-    const normalized = message.toLowerCase();
-    if (normalized.includes("invalid") || normalized.includes("schema") || normalized.includes("json")) {
-      return "invalid-response";
-    }
-    if (normalized.includes("timeout") || normalized.includes("timed out")) {
-      return "timeout";
-    }
-    if (normalized.includes("econnrefused") || normalized.includes("enotfound")) {
-      return "connection error";
-    }
-    if (normalized.includes("network")) {
-      return "network error";
-    }
-    return "REST failure";
+    return classifyLmStudioError(message).reason;
   }
 
   _parsePlan(raw) {
@@ -863,11 +845,6 @@ export default class ApiNavigator {
   }
 
   _isContextOverflowError(message) {
-    if (!message) return false;
-    const normalized = message.toString().toLowerCase();
-    return (
-      normalized.includes("context length") ||
-      (normalized.includes("context") && normalized.includes("overflow"))
-    );
+    return isContextOverflowError(message);
   }
 }

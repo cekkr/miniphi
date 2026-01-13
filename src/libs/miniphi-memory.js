@@ -1289,29 +1289,23 @@ export default class MiniPhiMemory extends MemoryStoreBase {
   }
 
   async _updatePromptDecompositionIndex(entry) {
-    const index = await this._readJSON(this.promptDecompositionIndexFile, { entries: [] });
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    index.updatedAt = new Date().toISOString();
-    await this._writeJSON(this.promptDecompositionIndexFile, index);
+    await this._upsertIndexEntry(this.promptDecompositionIndexFile, entry, {
+      limit: 200,
+    });
     await this._updateRootIndex();
   }
 
   async _updatePromptTemplateIndex(entry) {
-    const index = await this._readJSON(this.promptTemplatesIndexFile, { entries: [] });
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    index.updatedAt = new Date().toISOString();
-    await this._writeJSON(this.promptTemplatesIndexFile, index);
+    await this._upsertIndexEntry(this.promptTemplatesIndexFile, entry, {
+      limit: 200,
+    });
     await this._updateRootIndex();
   }
 
   async _updateHelperScriptsIndex(entry) {
-    const index = await this._readJSON(this.helperScriptsIndexFile, { entries: [] });
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    index.updatedAt = new Date().toISOString();
-    await this._writeJSON(this.helperScriptsIndexFile, index);
+    await this._upsertIndexEntry(this.helperScriptsIndexFile, entry, {
+      limit: 200,
+    });
     await this._updateRootIndex();
   }
 
@@ -1690,20 +1684,16 @@ export default class MiniPhiMemory extends MemoryStoreBase {
   }
 
   async _updateResearchIndex(entry) {
-    const index = await this._readJSON(this.researchIndexFile, { entries: [] });
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    index.updatedAt = new Date().toISOString();
-    await this._writeJSON(this.researchIndexFile, index);
+    await this._upsertIndexEntry(this.researchIndexFile, entry, {
+      limit: 200,
+    });
     await this._updateRootIndex();
   }
 
   async _updateHistoryNotesIndex(entry) {
-    const index = await this._readJSON(this.historyNotesIndexFile, { entries: [] });
-    const filtered = index.entries.filter((item) => item.id !== entry.id);
-    index.entries = [entry, ...filtered].slice(0, 200);
-    index.updatedAt = new Date().toISOString();
-    await this._writeJSON(this.historyNotesIndexFile, index);
+    await this._upsertIndexEntry(this.historyNotesIndexFile, entry, {
+      limit: 200,
+    });
     await this._updateRootIndex();
   }
 
