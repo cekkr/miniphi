@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { resolveDurationMs } from "../libs/cli-utils.js";
 import { relativeToCwd } from "../libs/recompose-utils.js";
+import { createRecomposeHarness, resolveRecomposeMode } from "../libs/recompose-harness.js";
 
 export async function handleRecomposeCommand(context) {
   const {
@@ -17,8 +18,6 @@ export async function handleRecomposeCommand(context) {
     systemPrompt,
     modelKey,
     promptDbPath,
-    resolveRecomposeMode,
-    createRecomposeHarness,
   } = context;
 
   const sessionLabel =

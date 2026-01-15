@@ -59,7 +59,10 @@ Exit criteria:
 Status:
 - Command handlers for `run`, `analyze-file`, `workspace`, `recompose`, `benchmark`, `prompt-template`,
   `web-research`, `history-notes`, `command-library`, and `helpers` now live under `src/commands/`.
-- Remaining extraction: shared LM Studio setup and any command-specific helper utilities still in `src/index.js`.
+- Recompose harness + general-purpose benchmark helpers live under `src/libs/recompose-harness.js` and
+  `src/libs/benchmark-general.js`.
+- Remaining extraction: shared LM Studio setup (handler init, prompt scoring) and any remaining
+  helpers still in `src/index.js`.
 
 ### P0 - Unified JSON schema enforcement + fallback
 

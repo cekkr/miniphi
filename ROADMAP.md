@@ -38,6 +38,7 @@ Slices (do in order):
      - `node src/index.js command-library --limit 1` completed (no commands matched the current filters).
      - `npm test` passed after modularizing `run`, `analyze-file`, and `workspace` command handlers.
      - Live LM Studio run: `node src/index.js run --cmd "node -v" --task "Summarize the Node version output." --command-policy allow --assume-yes` returned JSON analysis with `v21.5.0` and recorded an analysis summary.
+     - `npm test` passed after extracting recompose/benchmark helpers into shared libs.
    - Composer/interpreter runs (LM Studio):
      - `node scripts/prompt-composer.js --send --response-file .miniphi/prompt-chain/response.json` returned JSON-only content and saved a response payload.
      - `node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json` parsed the response JSON without salvage.

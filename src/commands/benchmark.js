@@ -5,6 +5,8 @@ import RecomposeBenchmarkRunner from "../libs/recompose-benchmark-runner.js";
 import BenchmarkAnalyzer from "../libs/benchmark-analyzer.js";
 import { resolveDurationMs } from "../libs/cli-utils.js";
 import { normalizePlanDirections } from "../libs/core-utils.js";
+import { runGeneralPurposeBenchmark } from "../libs/benchmark-general.js";
+import { createRecomposeHarness } from "../libs/recompose-harness.js";
 
 export async function handleBenchmarkCommand(context) {
   const {
@@ -23,8 +25,11 @@ export async function handleBenchmarkCommand(context) {
     resourceConfig = undefined,
     resourceMonitorForcedDisabled = false,
     promptDbPath,
-    createRecomposeHarness,
-    runGeneralPurposeBenchmark,
+    generateWorkspaceSnapshot,
+    globalMemory,
+    schemaAdapterRegistry,
+    mirrorPromptTemplateToGlobal,
+    emitFeatureDisableNotice,
   } = context;
 
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
@@ -52,6 +57,11 @@ export async function handleBenchmarkCommand(context) {
       configData,
       resourceConfig,
       resourceMonitorForcedDisabled,
+      generateWorkspaceSnapshot,
+      globalMemory,
+      schemaAdapterRegistry,
+      mirrorPromptTemplateToGlobal,
+      emitFeatureDisableNotice,
     });
     return;
   }

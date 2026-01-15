@@ -6,7 +6,6 @@ import { fileURLToPath } from "url";
 import CliExecutor from "./libs/cli-executor.js";
 import LMStudioManager, {
   LMStudioRestClient,
-  normalizeLmStudioHttpUrl,
   normalizeLmStudioWsUrl,
 } from "./libs/lmstudio-api.js";
 import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
@@ -18,17 +17,19 @@ import GlobalMiniPhiMemory from "./libs/global-memory.js";
 import ResourceMonitor from "./libs/resource-monitor.js";
 import PromptRecorder from "./libs/prompt-recorder.js";
 import PromptStepJournal from "./libs/prompt-step-journal.js";
-import RecomposeTester from "./libs/recompose-tester.js";
 import { loadConfig } from "./libs/config-loader.js";
 import { parseNumericSetting, resolveDurationMs } from "./libs/cli-utils.js";
+import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
+import {
+  DEFAULT_NO_TOKEN_TIMEOUT_MS,
+  DEFAULT_PROMPT_TIMEOUT_MS,
+} from "./libs/runtime-defaults.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
 import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
-import PromptTemplateBaselineBuilder from "./libs/prompt-template-baselines.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
-import { relativeToCwd } from "./libs/recompose-utils.js";
 import CommandAuthorizationManager, {
   normalizeCommandPolicy,
 } from "./libs/command-authorization-manager.js";
@@ -48,7 +49,6 @@ import {
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
   buildNavigationOperations,
-  normalizePlanDirections,
   buildResourceConfig,
   resolveLmStudioHttpBaseUrl,
   isLocalLmStudioBaseUrl,
@@ -82,18 +82,9 @@ const COMMANDS = new Set([
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
-const DEFAULT_PROMPT_TIMEOUT_MS = 180000;
-const DEFAULT_NO_TOKEN_TIMEOUT_MS = 300000;
-const RECOMPOSE_AUTO_STATUS_TIMEOUT_MS = 2500;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const GENERAL_BENCHMARK_BASELINE_PATH = path.join(
-  PROJECT_ROOT,
-  "benchmark",
-  "baselines",
-  "general-purpose-baseline.json",
-);
 const globalMemory = new GlobalMiniPhiMemory();
 const schemaAdapterRegistry = new SchemaAdapterRegistry();
 const PROMPT_SCORING_SYSTEM_PROMPT = [
@@ -989,37 +980,6 @@ async function appendForgottenRequirementNote({ targetPath, context, command, ve
 
 // normalizeDangerLevel and mergeFixedReferences moved to src/libs/core-utils.js
 
-function buildRestClientOptions(configData, modelSelection = undefined) {
-  const overrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
-  const options = overrides && typeof overrides === "object" ? { ...overrides } : {};
-  const explicitBase =
-    typeof options.baseUrl === "string" && options.baseUrl.trim().length
-      ? options.baseUrl
-      : null;
-  const candidateBase =
-    explicitBase ?? configData?.lmStudio?.clientOptions?.baseUrl ?? null;
-  if (candidateBase) {
-    options.baseUrl = normalizeLmStudioHttpUrl(candidateBase);
-  }
-  if (typeof options.timeoutMs === "undefined") {
-    const promptTimeoutSeconds =
-      configData?.lmStudio?.prompt?.timeoutSeconds ??
-      configData?.prompt?.timeoutSeconds ??
-      null;
-    const promptTimeoutMs = Number(promptTimeoutSeconds) * 1000;
-    if (Number.isFinite(promptTimeoutMs) && promptTimeoutMs > 0) {
-      options.timeoutMs = Math.floor(promptTimeoutMs);
-    }
-  }
-  if (modelSelection?.modelKey) {
-    options.defaultModel = modelSelection.modelKey;
-  }
-  if (Number.isFinite(modelSelection?.contextLength)) {
-    options.defaultContextLength = modelSelection.contextLength;
-  }
-  return Object.keys(options).length ? options : undefined;
-}
-
 // LM Studio base URL helpers moved to src/libs/core-utils.js
 
 const VALID_JOURNAL_STATUS = new Set(["active", "paused", "completed", "closed"]);
@@ -1748,8 +1708,6 @@ async function main() {
       systemPrompt: resolvedSystemPrompt,
       modelKey: modelSelection.modelKey,
       promptDbPath: globalMemory.promptDbPath,
-      resolveRecomposeMode,
-      createRecomposeHarness,
     });
     return;
   }
@@ -1770,8 +1728,11 @@ async function main() {
       resourceConfig,
       resourceMonitorForcedDisabled,
       promptDbPath: globalMemory.promptDbPath,
-      createRecomposeHarness,
-      runGeneralPurposeBenchmark,
+      generateWorkspaceSnapshot,
+      globalMemory,
+      schemaAdapterRegistry,
+      mirrorPromptTemplateToGlobal,
+      emitFeatureDisableNotice,
     });
     return;
   }
@@ -2845,508 +2806,9 @@ const describeWorkspace = (dir, options = undefined) =>
   }
 }
 
-async function resolveRecomposeMode({ rawMode, configData, modelKey, contextLength, verbose }) {
-  const normalized = typeof rawMode === "string" ? rawMode.toLowerCase().trim() : "auto";
-  if (normalized === "live" || normalized === "offline") {
-    return normalized;
-  }
-  if (normalized && normalized !== "auto") {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi][Recompose] Unknown recompose mode "${normalized}". Falling back to auto.`,
-      );
-    }
-  }
-
-  const restOptions = {
-    ...(buildRestClientOptions(configData, { modelKey, contextLength }) ?? {}),
-    timeoutMs: RECOMPOSE_AUTO_STATUS_TIMEOUT_MS,
-  };
-  try {
-    const probeClient = new LMStudioRestClient(restOptions);
-    const status = await probeClient.getStatus();
-    if (status?.ok) {
-      if (verbose) {
-        console.log("[MiniPhi][Recompose] LM Studio reachable; using live mode.");
-      }
-      return "live";
-    }
-  } catch (error) {
-    if (verbose) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[MiniPhi][Recompose] LM Studio probe failed: ${message}`);
-    }
-  }
-  if (verbose) {
-    console.log("[MiniPhi][Recompose] LM Studio not available; using offline mode.");
-  }
-  return "offline";
-}
 
 
 
-async function runGeneralPurposeBenchmark({
-  options,
-  verbose,
-  schemaRegistry,
-  restClient = null,
-  configData = undefined,
-  resourceConfig = undefined,
-  resourceMonitorForcedDisabled = false,
-}) {
-  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-  const task =
-    (typeof options.task === "string" && options.task.trim()) ||
-    (typeof options.objective === "string" && options.objective.trim()) ||
-    "General-purpose benchmark";
-  const command = options.cmd ?? options.command ?? null;
-  const silenceTimeout = parseNumericSetting(options["silence-timeout"], "--silence-timeout") ?? 15000;
-  const timeoutMs = parseNumericSetting(options.timeout, "--timeout") ?? 60000;
-  const stateManager = new MiniPhiMemory(cwd);
-  await stateManager.prepare();
-  let benchmarkMonitor = null;
-  let benchmarkMonitorResult = null;
-  if (!resourceMonitorForcedDisabled) {
-    const monitorHistoryFile = path.join(stateManager.historyDir, "benchmark-resource-usage.json");
-    benchmarkMonitor = new ResourceMonitor({
-      ...(resourceConfig ?? {}),
-      historyFile: monitorHistoryFile,
-      label: `benchmark:general:${path.basename(cwd) || "workspace"}`,
-    });
-    try {
-      await benchmarkMonitor.start(`benchmark:${path.basename(cwd) || cwd}`);
-    } catch (error) {
-      benchmarkMonitor = null;
-      if (verbose) {
-        console.warn(
-          `[MiniPhi][Benchmark] Resource monitor unavailable for general-purpose benchmark: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-    }
-  }
-  const cli = new CliExecutor();
-  const workspaceProfiler = new WorkspaceProfiler();
-  const capabilityInventory = new CapabilityInventory();
-  const navigator =
-    restClient &&
-    new ApiNavigator({
-      restClient,
-      cliExecutor: cli,
-      memory: stateManager,
-      globalMemory,
-      logger: verbose ? (message) => console.warn(message) : null,
-      adapterRegistry: schemaAdapterRegistry,
-      helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
-    });
-  const workspaceContext = await generateWorkspaceSnapshot({
-    rootDir: cwd,
-    workspaceProfiler,
-    capabilityInventory,
-    verbose,
-    navigator: navigator ?? null,
-    objective: task,
-    executeHelper: true,
-    memory: stateManager,
-    globalMemory,
-  });
-
-  let decompositionPlan = null;
-  if (restClient) {
-    const decomposer = new PromptDecomposer({
-      restClient,
-      logger: verbose ? (message) => console.warn(message) : null,
-    });
-    try {
-      decompositionPlan = await decomposer.decompose({
-        objective: `${task} (plan)`,
-        command: command ?? null,
-        workspace: workspaceContext,
-        storage: stateManager,
-        metadata: { mode: "benchmark", scope: "general-purpose" },
-      });
-    } catch (error) {
-      if (verbose) {
-        console.warn(
-          `[MiniPhi][Benchmark] Prompt decomposer skipped: ${error instanceof Error ? error.message : error}`,
-        );
-      }
-    } finally {
-      if (typeof decomposer.consumeDisableNotice === "function") {
-        const notice = decomposer.consumeDisableNotice();
-        if (notice) {
-          emitFeatureDisableNotice("Prompt decomposer", notice);
-        }
-      }
-    }
-  }
-
-  const builder = new PromptTemplateBaselineBuilder({ schemaRegistry });
-  const datasetSummary =
-    workspaceContext?.summary ??
-    `Workspace ${path.basename(cwd) || cwd} contains mixed artifacts; optimize prompts for this context.`;
-  const templatePayloads = [
-    builder.build({
-      baseline: "truncation",
-      task: `${task} (chunking)`,
-      datasetSummary,
-      workspaceContext,
-    }),
-    builder.build({
-      baseline: "analysis",
-      task: `${task} (analysis)`,
-      datasetSummary,
-      workspaceContext,
-    }),
-  ];
-  const savedTemplates = [];
-  for (const payload of templatePayloads) {
-    const templateLabel = `general-purpose ${payload.metadata?.baseline ?? payload.baseline ?? "prompt"}`;
-    const saved = await stateManager.savePromptTemplateBaseline({
-      ...payload,
-      label: templateLabel,
-      cwd,
-    });
-    savedTemplates.push(saved);
-    if (verbose) {
-      const rel = path.relative(process.cwd(), saved.path) || saved.path;
-      console.log(`[MiniPhi][Benchmark] Saved prompt template to ${rel}`);
-    }
-    await mirrorPromptTemplateToGlobal(
-      saved,
-      {
-        label: templateLabel,
-        schemaId: payload.schemaId ?? null,
-        baseline: payload.metadata?.baseline ?? payload.baseline ?? null,
-        task: payload.task ?? null,
-      },
-      workspaceContext,
-      { verbose, source: "general-benchmark" },
-    );
-  }
-
-  let commandDetails = null;
-  if (command) {
-    const logDir = path.join(stateManager.historyDir, "benchmarks");
-    await fs.promises.mkdir(logDir, { recursive: true });
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const slug = command.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 48) || "command";
-    const stdoutPath = path.join(logDir, `${timestamp}-${slug}-stdout.log`);
-    const stderrPath = path.join(logDir, `${timestamp}-${slug}-stderr.log`);
-    if (verbose) {
-      console.log(`[MiniPhi][Benchmark] Running general-purpose command: ${command}`);
-    }
-    let execResult;
-    try {
-      execResult = await cli.executeCommand(command, {
-        cwd,
-        timeout: timeoutMs,
-        maxSilenceMs: silenceTimeout,
-        captureOutput: true,
-        onStdout: (text) => process.stdout.write(text),
-        onStderr: (text) => process.stderr.write(text),
-      });
-    } catch (error) {
-      execResult = {
-        code: typeof error.code === "number" ? error.code : -1,
-        stdout: error.stdout ?? "",
-        stderr: error.stderr ?? (error instanceof Error ? error.message : String(error)),
-        silenceExceeded: error.silenceExceeded ?? false,
-        durationMs: error.durationMs ?? null,
-      };
-      if (verbose) {
-        console.warn(`[MiniPhi][Benchmark] Command execution failed: ${execResult.stderr}`);
-      }
-    }
-    await fs.promises.writeFile(stdoutPath, execResult.stdout ?? "", "utf8");
-    await fs.promises.writeFile(stderrPath, execResult.stderr ?? "", "utf8");
-    commandDetails = {
-      command,
-      exitCode: execResult.code ?? execResult.exitCode ?? 0,
-      stdoutPath,
-      stderrPath,
-      silenceExceeded: Boolean(execResult.silenceExceeded),
-      durationMs: execResult.durationMs ?? null,
-    };
-    if (verbose) {
-      console.log(
-        `[MiniPhi][Benchmark] Command finished with exit ${commandDetails.exitCode}${
-          commandDetails.silenceExceeded ? " (terminated for silence)" : ""
-        }`,
-      );
-    }
-    if (commandDetails.silenceExceeded) {
-      console.warn(
-        "[MiniPhi][Benchmark] Command output stalled; review stdout/stderr logs before trusting the run.",
-      );
-    }
-  }
-
-  if (benchmarkMonitor) {
-    try {
-      benchmarkMonitorResult = await benchmarkMonitor.stop();
-      if (benchmarkMonitorResult?.persisted?.path && verbose) {
-        const relMonitor =
-          path.relative(process.cwd(), benchmarkMonitorResult.persisted.path) ||
-          benchmarkMonitorResult.persisted.path;
-        console.log(`[MiniPhi][Benchmark] Resource stats appended to ${relMonitor}`);
-      }
-      if (benchmarkMonitorResult?.summary?.warnings?.length) {
-        for (const warning of benchmarkMonitorResult.summary.warnings) {
-          console.warn(`[MiniPhi][Resources] ${warning}`);
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `[MiniPhi][Benchmark] Unable to finalize resource monitor: ${error instanceof Error ? error.message : error}`,
-      );
-    }
-  }
-
-  const summaryDir = path.join(stateManager.historyDir, "benchmarks");
-  await fs.promises.mkdir(summaryDir, { recursive: true });
-  const summaryPath = path.join(
-    summaryDir,
-    `${new Date().toISOString().replace(/[:.]/g, "-")}-general-benchmark.json`,
-  );
-  const resourceStats = benchmarkMonitorResult?.summary?.stats ?? null;
-  let resourceBaseline = null;
-  let resourceBaselineDiff = null;
-  try {
-    resourceBaseline = await loadGeneralBenchmarkBaseline();
-  } catch (error) {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi][Benchmark] Unable to load general-purpose baseline: ${error instanceof Error ? error.message : error}`,
-      );
-    }
-  }
-  if (resourceStats && resourceBaseline?.resourceStats) {
-    resourceBaselineDiff = computeResourceBaselineDiff(resourceStats, resourceBaseline.resourceStats);
-  }
-  if (resourceBaselineDiff) {
-    const diffSummary = formatResourceBaselineDiff(resourceBaselineDiff);
-    if (diffSummary) {
-      console.log(`[MiniPhi][Benchmark] Resource delta vs baseline: ${diffSummary}`);
-    }
-  }
-  const summary = {
-    kind: "general-purpose",
-    analyzedAt: new Date().toISOString(),
-    directory: cwd,
-    task,
-    workspaceType: workspaceContext?.classification?.label ?? null,
-    workspaceSummary: workspaceContext?.summary ?? null,
-    templates: savedTemplates.map((entry) => entry?.path ?? null).filter(Boolean),
-    command: commandDetails,
-    navigation: workspaceContext?.navigationSummary ?? null,
-    helperScript: workspaceContext?.helperScript
-      ? {
-          id: workspaceContext.helperScript.id ?? null,
-          name: workspaceContext.helperScript.name ?? null,
-          path: workspaceContext.helperScript.path ?? null,
-          version: workspaceContext.helperScript.version ?? null,
-          stdin: workspaceContext.helperScript.stdin ?? null,
-          run: workspaceContext.helperScript.run
-            ? {
-                exitCode: workspaceContext.helperScript.run.exitCode ?? null,
-                summary: workspaceContext.helperScript.run.summary ?? null,
-                silenceExceeded: workspaceContext.helperScript.run.silenceExceeded ?? null,
-              }
-            : null,
-        }
-      : null,
-    decompositionPlan: decompositionPlan
-      ? {
-          id: decompositionPlan.planId ?? null,
-          summary: decompositionPlan.summary ?? null,
-          outline: decompositionPlan.outline ?? null,
-        }
-      : null,
-    resourceStats,
-    resourceWarnings: benchmarkMonitorResult?.summary?.warnings ?? [],
-    resourceLogPath: benchmarkMonitorResult?.persisted?.path ?? null,
-    resourceBaseline: resourceBaseline?.resourceStats ?? null,
-    resourceBaselineLabel: resourceBaseline?.label ?? null,
-    resourceBaselineSources: resourceBaseline?.logSources ?? resourceBaseline?.sources ?? null,
-    resourceBaselineDiff,
-  };
-  await fs.promises.writeFile(summaryPath, JSON.stringify(summary, null, 2), "utf8");
-  await stateManager.recordBenchmarkSummary(summary, { summaryPath, type: "general-purpose" });
-  if (verbose) {
-    const rel = path.relative(process.cwd(), summaryPath) || summaryPath;
-    console.log(`[MiniPhi][Benchmark] General-purpose benchmark summary saved to ${rel}`);
-  }
-}
-
-async function loadGeneralBenchmarkBaseline() {
-  try {
-    const payload = await fs.promises.readFile(GENERAL_BENCHMARK_BASELINE_PATH, "utf8");
-    const parsed = JSON.parse(payload);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    const resourceStats = normalizeBaselineStats(parsed.resourceStats ?? parsed.stats ?? null);
-    return {
-      ...parsed,
-      resourceStats,
-    };
-  } catch (error) {
-    if (error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function normalizeBaselineStats(stats) {
-  if (!stats || typeof stats !== "object") {
-    return null;
-  }
-  const normalized = {};
-  for (const metric of ["memory", "cpu", "vram"]) {
-    const entry = stats[metric];
-    if (!entry) {
-      continue;
-    }
-    const avg = Number(entry.avg ?? entry.average ?? entry.mean);
-    if (!Number.isFinite(avg)) {
-      continue;
-    }
-    normalized[metric] = {
-      avg: Number(avg.toFixed(2)),
-    };
-  }
-  return normalized;
-}
-
-function computeResourceBaselineDiff(current, baseline) {
-  if (!current || !baseline) {
-    return null;
-  }
-  const diff = {};
-  for (const metric of ["memory", "cpu", "vram"]) {
-    const currentAvg = Number(current[metric]?.avg ?? current[metric]?.average ?? current[metric]?.mean);
-    const baselineAvg = Number(baseline[metric]?.avg ?? baseline[metric]?.average ?? baseline[metric]?.mean);
-    if (!Number.isFinite(currentAvg) || !Number.isFinite(baselineAvg)) {
-      continue;
-    }
-    diff[metric] = {
-      currentAvg: Number(currentAvg.toFixed(2)),
-      baselineAvg: Number(baselineAvg.toFixed(2)),
-      delta: Number((currentAvg - baselineAvg).toFixed(2)),
-    };
-  }
-  return Object.keys(diff).length ? diff : null;
-}
-
-function formatResourceBaselineDiff(diff) {
-  if (!diff) {
-    return "";
-  }
-  const parts = [];
-  for (const metric of ["memory", "cpu", "vram"]) {
-    const entry = diff[metric];
-    if (!entry) {
-      continue;
-    }
-    const delta = entry.delta;
-    const deltaLabel = delta > 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2);
-    parts.push(
-      `${metric} Î” ${deltaLabel} (current ${entry.currentAvg.toFixed(2)} vs baseline ${entry.baselineAvg.toFixed(2)})`,
-    );
-  }
-  return parts.join(" | ");
-}
-
-async function createRecomposeHarness({
-  configData,
-  promptDefaults,
-  contextLength,
-  debugLm,
-  verbose,
-  sessionLabel,
-  gpu,
-  schemaRegistry,
-  promptDbPath,
-  restClient = null,
-  preferRestTransport = false,
-  recomposeMode = "live",
-  systemPrompt = undefined,
-  modelKey = undefined,
-  workspaceOverviewTimeoutMs = undefined,
-}) {
-  let phi4 = null;
-  let manager = null;
-  if (recomposeMode === "live") {
-    manager = new LMStudioManager(configData.lmStudio?.clientOptions);
-    const baseTimeoutMs =
-      resolveDurationMs({
-        secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
-        secondsLabel: "config.prompt.timeoutSeconds",
-        millisValue: promptDefaults.timeoutMs,
-        millisLabel: "config.prompt.timeoutMs",
-      }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
-    const recomposePromptTimeout = Math.max(baseTimeoutMs, 300000);
-    phi4 = new LMStudioHandler(manager, {
-      systemPrompt: systemPrompt ?? promptDefaults.system,
-      promptTimeoutMs: recomposePromptTimeout,
-      schemaRegistry,
-      modelKey,
-    });
-    if (restClient) {
-      phi4.setRestClient(restClient, { preferRestTransport });
-    }
-    const loadOptions = { contextLength, gpu };
-    await phi4.load(loadOptions);
-  }
-  const memory = new MiniPhiMemory(process.cwd());
-  await memory.prepare();
-  let promptRecorder = null;
-  if (phi4) {
-    promptRecorder = new PromptRecorder(memory.baseDir);
-    await promptRecorder.prepare();
-    phi4.setPromptRecorder(promptRecorder);
-  }
-  let performanceTracker = null;
-  if (phi4) {
-    try {
-      const tracker = new PromptPerformanceTracker({
-        dbPath: promptDbPath,
-        debug: debugLm,
-        schemaRegistry,
-      });
-      await tracker.prepare();
-      phi4.setPerformanceTracker(tracker);
-      performanceTracker = tracker;
-    } catch (error) {
-      if (verbose) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[MiniPhi][Recompose] Prompt scoring disabled: ${message}`);
-      }
-    }
-  }
-  const sessionRoot = path.join(memory.baseDir, "recompose");
-  await fs.promises.mkdir(sessionRoot, { recursive: true });
-  const tester = new RecomposeTester({
-    phi4,
-    sessionRoot,
-    promptLabel: sessionLabel ?? "recompose",
-    verboseLogging: verbose,
-    memory,
-    schemaRegistry,
-    useLivePrompts: recomposeMode === "live",
-    workspaceOverviewTimeoutMs,
-  });
-  const cleanup = async () => {
-    if (phi4) {
-      await phi4.eject();
-    }
-    if (performanceTracker) {
-      await performanceTracker.dispose();
-    }
-  };
-  return { tester, cleanup };
-}
 
 function parseArgs(tokens) {
   const options = {};

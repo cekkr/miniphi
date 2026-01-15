@@ -198,6 +198,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
 - `src/commands/`: Command handlers extracted from `src/index.js` (run, analyze-file, workspace, recompose, benchmark, prompt-template, web-research, history-notes, command-library, helpers).
 - `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
+- `src/libs/benchmark-general.js`: General-purpose benchmark flow, resource baselines, and summaries.
 - `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
 - `src/libs/capability-inventory.js`: Scans package scripts, `scripts/`, `.bin` tools, and OS commands to summarize available capabilities.
 - `src/libs/cli-executor.js`: Cross-platform shell command runner with streaming output, timeouts, and silence detection.
@@ -213,6 +214,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/json-schema-utils.js`: Shared helpers to build JSON schema response_format blocks and validate responses.
 - `src/libs/lms-phi4.js`: Legacy alias for `lmstudio-handler` exports.
 - `src/libs/lmstudio-api.js`: LM Studio SDK wrapper and REST client utilities, including URL normalization and model lifecycle.
+- `src/libs/lmstudio-client-options.js`: Build LM Studio REST client options from config defaults.
 - `src/libs/lmstudio-error-utils.js`: Shared LM Studio error classification and transport/timeout detection.
 - `src/libs/lmstudio-handler.js`: LM Studio chat handler with streaming, schema enforcement, retries, and history management.
 - `src/libs/memory-store-utils.js`: JSON file IO helpers, slug/relative path utilities, composition key builders, and index upsert helpers.
@@ -227,10 +229,12 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/prompt-step-journal.js`: Stepwise prompt journal manager for `.miniphi/prompt-exchanges/stepwise/`.
 - `src/libs/prompt-template-baselines.js`: Builds baseline prompts for truncation and log-analysis workflows.
 - `src/libs/python-log-summarizer.js`: Runs the Python summarizer and chunks line-based inputs.
+- `src/libs/recompose-harness.js`: Recompose harness setup and LM Studio availability checks.
 - `src/libs/recompose-benchmark-runner.js`: Runs recompose benchmark series and writes reports/logs.
 - `src/libs/recompose-tester.js`: Recompose harness that converts between code and markdown using LM Studio.
 - `src/libs/recompose-utils.js`: Recompose helpers for parsing, normalization, and narrative/diff summarization.
 - `src/libs/resource-monitor.js`: Samples CPU/RAM/VRAM usage and persists session summaries.
+- `src/libs/runtime-defaults.js`: Shared runtime timeout defaults.
 - `src/libs/schema-adapter-registry.js`: Registers schema adapters for request/response normalization.
 - `src/libs/stream-analyzer.js`: Line-by-line file reader for chunked analysis of large files.
 - `src/libs/web-researcher.js`: DuckDuckGo Instant Answer client for the `web-research` command.
