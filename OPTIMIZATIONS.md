@@ -61,8 +61,9 @@ Status:
   `web-research`, `history-notes`, `command-library`, and `helpers` now live under `src/commands/`.
 - Recompose harness + general-purpose benchmark helpers live under `src/libs/recompose-harness.js` and
   `src/libs/benchmark-general.js`.
-- Remaining extraction: shared LM Studio setup (handler init, prompt scoring) and any remaining
-  helpers still in `src/index.js`.
+- LM Studio runtime bootstrap (handler init, compatibility probe, prompt scoring wiring) now lives in
+  `src/libs/lmstudio-runtime.js`.
+- Remaining extraction: the core run/analyze/workspace orchestration still lives in `src/index.js`.
 
 ### P0 - Unified JSON schema enforcement + fallback
 
@@ -120,7 +121,8 @@ Exit criteria:
 
 Status:
 - In progress. Shared error classification now lives in `src/libs/lmstudio-error-utils.js` and is
-  used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; endpoint/transport resolution
+  used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; LM Studio bootstrap +
+  compatibility checks moved into `src/libs/lmstudio-runtime.js`, but endpoint/transport resolution
   still lives in `src/index.js`.
 
 ### P2 - Legacy/ad-hoc cleanup pass

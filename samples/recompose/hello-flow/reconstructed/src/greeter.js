@@ -1,12 +1,19 @@
 const greet = (name) => {
-  const sanitizedName = name ? name.trim() : '';
-  return sanitizedName ? `Hello, ${sanitizedName}!` : 'Hello!';
+  if (!name || typeof name !== 'string') {
+    return { error: 'Invalid input' };
+  }
+  const sanitizedName = name.trim();
+  console.log({ event: 'greet', name: sanitizedName });
+  return `Hello, ${sanitizedName}!`;
 };
 
 const farewell = (name) => {
-  const sanitizedName = name ? name.trim() : '';
-  return sanitizedName ? `Goodbye, ${sanitizedName}!` : 'Goodbye!';
+  if (!name || typeof name !== 'string') {
+    return { error: 'Invalid input' };
+  }
+  const sanitizedName = name.trim();
+  console.log({ event: 'farewell', name: sanitizedName });
+  return `Goodbye, ${sanitizedName}!`;
 };
 
-exports.greet = greet;
-exports.farewell = farewell;
+module.exports = { greet, farewell };

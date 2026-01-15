@@ -35,10 +35,12 @@ Slices (do in order):
    - Recent test evidence:
      - Stepwise CLI unit tests (`cli-benchmark`, `cli-recompose`, `cli-smoke`) confirm offline CLI entrypoints execute successfully.
      - These tests do not yet exercise request composer or response interpreter flows backed by LM Studio.
-     - `node src/index.js command-library --limit 1` completed (no commands matched the current filters).
-     - `npm test` passed after modularizing `run`, `analyze-file`, and `workspace` command handlers.
-     - Live LM Studio run: `node src/index.js run --cmd "node -v" --task "Summarize the Node version output." --command-policy allow --assume-yes` returned JSON analysis with `v21.5.0` and recorded an analysis summary.
-     - `npm test` passed after extracting recompose/benchmark helpers into shared libs.
+   - `node src/index.js command-library --limit 1` completed (no commands matched the current filters).
+   - `npm test` passed after modularizing `run`, `analyze-file`, and `workspace` command handlers.
+   - Live LM Studio run: `node src/index.js run --cmd "node -v" --task "Summarize the Node version output." --command-policy allow --assume-yes` returned JSON analysis with `v21.5.0` and recorded an analysis summary.
+   - `npm test` passed after extracting recompose/benchmark helpers into shared libs.
+   - Live LM Studio run (2026-01-15): `node src/index.js run --cmd "node -v" --task "Summarize the Node version output." --command-policy allow --assume-yes` emitted JSON with `v21.5.0` but the harness timed out after 122s (model load completed).
+   - Live recompose run (2026-01-15): `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean --recompose-mode live` requested missing snippets (`README.md`, `src/shared/logger.js`, `src/shared/persistence/memory-store.js`, `src/flows/steps/normalize.js`, `src/flows/steps/validate.js`) before the harness timed out; prompt log under `.miniphi/recompose/2026-01-15T00-28-01-102Z-recompose/prompts.log`.
    - Composer/interpreter runs (LM Studio):
      - `node scripts/prompt-composer.js --send --response-file .miniphi/prompt-chain/response.json` returned JSON-only content and saved a response payload.
      - `node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json` parsed the response JSON without salvage.

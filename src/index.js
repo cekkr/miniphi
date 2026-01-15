@@ -4,12 +4,9 @@ import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import CliExecutor from "./libs/cli-executor.js";
-import LMStudioManager, {
-  LMStudioRestClient,
-  normalizeLmStudioWsUrl,
-} from "./libs/lmstudio-api.js";
+import { normalizeLmStudioWsUrl } from "./libs/lmstudio-api.js";
 import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
-import LMStudioHandler, { LMStudioProtocolError } from "./libs/lmstudio-handler.js";
+import { LMStudioProtocolError } from "./libs/lmstudio-handler.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
 import EfficientLogAnalyzer from "./libs/efficient-log-analyzer.js";
 import MiniPhiMemory from "./libs/miniphi-memory.js";
@@ -19,17 +16,12 @@ import PromptRecorder from "./libs/prompt-recorder.js";
 import PromptStepJournal from "./libs/prompt-step-journal.js";
 import { loadConfig } from "./libs/config-loader.js";
 import { parseNumericSetting, resolveDurationMs } from "./libs/cli-utils.js";
-import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
-import {
-  DEFAULT_NO_TOKEN_TIMEOUT_MS,
-  DEFAULT_PROMPT_TIMEOUT_MS,
-} from "./libs/runtime-defaults.js";
 import WorkspaceProfiler from "./libs/workspace-profiler.js";
-import PromptPerformanceTracker from "./libs/prompt-performance-tracker.js";
 import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
+import { createLmStudioRuntime } from "./libs/lmstudio-runtime.js";
 import CommandAuthorizationManager, {
   normalizeCommandPolicy,
 } from "./libs/command-authorization-manager.js";
@@ -87,14 +79,6 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const globalMemory = new GlobalMiniPhiMemory();
 const schemaAdapterRegistry = new SchemaAdapterRegistry();
-const PROMPT_SCORING_SYSTEM_PROMPT = [
-  "You grade MiniPhi prompt effectiveness.",
-  "Given an objective, workspace context, prompt text, and the assistant response, you must return JSON with:",
-  "score (0-100), prompt_category, summary, follow_up_needed, follow_up_reason, needs_more_context, missing_snippets, tags, recommended_prompt_pattern, series_strategy.",
-  "series_strategy must always be an array of short strategy strings (use [] if you have no suggestions); never return a bare string.",
-  "Focus on whether the response satisfied the objective and whether another prompt is required.",
-  "Return JSON only.",
-].join(" ");
 
 function extractImplicitWorkspaceTask(tokens) {
   if (!Array.isArray(tokens) || tokens.length === 0) {
@@ -698,90 +682,6 @@ async function mirrorPromptTemplateToGlobal(
       );
     }
   }
-}
-
-async function checkLmStudioCompatibility(restClient, manager, options = undefined) {
-  const result = {
-    ok: true,
-    reason: null,
-    serverVersion: null,
-    sdkVersion: typeof manager?.getSdkVersion === "function" ? manager.getSdkVersion() : null,
-    preferRest: false,
-  };
-  if (!restClient) {
-    return result;
-  }
-  let statusPayload = null;
-  try {
-    statusPayload = await restClient.getStatus();
-    result.serverVersion =
-      statusPayload?.version ??
-      statusPayload?.status?.version ??
-      statusPayload?.status?.server_version ??
-      statusPayload?.status?.serverVersion ??
-      null;
-    const statusError = statusPayload?.error ?? statusPayload?.status?.error ?? null;
-    const statusUnsupported =
-      typeof statusError === "string" && /unexpected endpoint/i.test(statusError);
-    if (!statusPayload?.ok && !statusUnsupported) {
-      result.ok = false;
-      result.reason =
-        statusError ??
-        "LM Studio status endpoint unavailable; SDK/Server versions likely out of sync. Update LM Studio or align the SDK.";
-      result.preferRest = true;
-    }
-  } catch (error) {
-    result.ok = false;
-    result.reason =
-      error instanceof Error ? error.message : `LM Studio status check failed: ${String(error)}`;
-    result.preferRest = true;
-  }
-
-  let modelsV0 = null;
-  let modelsV1 = null;
-
-  try {
-    modelsV0 = await restClient.listModels();
-  } catch (error) {
-    result.ok = false;
-    result.reason =
-      error instanceof Error ? error.message : `LM Studio /models check failed: ${String(error)}`;
-    result.preferRest = true;
-  }
-
-  if (typeof restClient.listModelsV1 === "function") {
-    try {
-      modelsV1 = await restClient.listModelsV1();
-      if (!result.ok && modelsV1) {
-        result.ok = true;
-        result.reason = null;
-      }
-    } catch (error) {
-      if (options?.verbose) {
-        console.warn(
-          `[MiniPhi] LM Studio /v1/models check failed: ${
-            error instanceof Error ? error.message : error
-          }`,
-        );
-      }
-    }
-  }
-
-  result.availableModels = {
-    v0: modelsV0 ?? null,
-    v1: modelsV1 ?? null,
-  };
-
-  if (!result.ok && options?.verbose) {
-    const sdkLabel = result.sdkVersion ? ` (SDK ${result.sdkVersion})` : "";
-    console.warn(`[MiniPhi] LM Studio compatibility warning${sdkLabel}: ${result.reason}`);
-  } else if (options?.verbose && (modelsV0 || modelsV1)) {
-    const sources = [];
-    if (modelsV0) sources.push("/api/v0/models");
-    if (modelsV1) sources.push("/v1/models");
-    console.log(`[MiniPhi] LM Studio models discovered via ${sources.join(" & ")}`);
-  }
-  return result;
 }
 
 function describeTruncationChunk(chunk) {
@@ -1749,52 +1649,27 @@ async function main() {
     return;
   }
 
-  const manager = new LMStudioManager(configData.lmStudio?.clientOptions);
-  const promptTimeoutMs =
-    resolveDurationMs({
-      secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
-      secondsLabel: "config.prompt.timeoutSeconds",
-      millisValue: promptDefaults.timeoutMs,
-      millisLabel: "config.prompt.timeoutMs",
-    }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
-  const noTokenTimeoutMs =
-    resolveDurationMs({
-      secondsValue:
-        promptDefaults.noTokenTimeoutSeconds ?? promptDefaults.noTokenTimeout,
-      secondsLabel: "config.prompt.noTokenTimeoutSeconds",
-      millisValue: promptDefaults.noTokenTimeoutMs,
-      millisLabel: "config.prompt.noTokenTimeoutMs",
-    }) ?? DEFAULT_NO_TOKEN_TIMEOUT_MS;
-  if (verbose) {
-    const promptSeconds = Math.round(promptTimeoutMs / 1000);
-    const noTokenSeconds = Math.round(noTokenTimeoutMs / 1000);
-    const restLabel = resolvedLmStudioBaseUrl ?? "n/a";
-    const wsLabel = resolvedLmStudioWsBase ?? "default";
-    console.log(
-      `[MiniPhi] Prompt timeout ${promptSeconds}s | No-token timeout ${noTokenSeconds}s | LM Studio WS ${wsLabel} | REST ${restLabel}`,
-    );
-  }
-  const phi4 = new LMStudioHandler(manager, {
-    systemPrompt: resolvedSystemPrompt,
-    promptTimeoutMs,
+  let phi4 = null;
+  let performanceTracker = null;
+  let scoringPhi = null;
+  const lmStudioRuntime = await createLmStudioRuntime({
+    configData,
+    promptDefaults,
+    resolvedSystemPrompt,
+    modelSelection,
+    contextLength,
+    gpu,
+    debugLm,
+    verbose,
     schemaRegistry,
-    noTokenTimeoutMs,
-    modelKey: modelSelection.modelKey,
+    promptDbPath: globalMemory.promptDbPath,
+    isLmStudioLocal,
+    restBaseUrl: resolvedLmStudioBaseUrl,
+    wsBaseUrl: resolvedLmStudioWsBase,
   });
-  try {
-    await manager.getModel(modelSelection.modelKey, {
-      contextLength,
-      gpu,
-    });
-  } catch (error) {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi] Unable to preload model ${modelSelection.modelKey}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-    }
-  }
+  phi4 = lmStudioRuntime.phi4;
+  restClient = lmStudioRuntime.restClient;
+  performanceTracker = lmStudioRuntime.performanceTracker;
   const cli = new CliExecutor();
   const summarizer = new PythonLogSummarizer(pythonScriptPath);
   const analyzer = new EfficientLogAnalyzer(phi4, cli, summarizer, {
@@ -1826,25 +1701,6 @@ async function main() {
     }
     return !navigatorBlocklist.some((regex) => regex.test(trimmed));
   };
-  restClient = null;
-  let lmStudioCompatibility = { ok: true, preferRest: !isLmStudioLocal };
-  let preferRestTransport = !isLmStudioLocal;
-  try {
-    restClient = new LMStudioRestClient(buildRestClientOptions(configData, modelSelection));
-    lmStudioCompatibility = await checkLmStudioCompatibility(restClient, manager, { verbose });
-    if (typeof lmStudioCompatibility?.preferRest === "boolean") {
-      preferRestTransport = lmStudioCompatibility.preferRest;
-    }
-  } catch (error) {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi] LM Studio REST client disabled: ${error instanceof Error ? error.message : error}`,
-      );
-    }
-  }
-  if (restClient) {
-    phi4.setRestClient(restClient, { preferRestTransport });
-  }
   const navigatorRequestTimeoutMs =
     resolveDurationMs({
       secondsValue:
@@ -2335,32 +2191,6 @@ async function main() {
       }
     }
   };
-  let performanceTracker = null;
-  let scoringPhi = null;
-
-  try {
-    const tracker = new PromptPerformanceTracker({
-      dbPath: globalMemory.promptDbPath,
-      debug: debugLm,
-      schemaRegistry,
-    });
-    await tracker.prepare();
-    performanceTracker = tracker;
-    if (verbose) {
-      const relDb =
-        path.relative(process.cwd(), globalMemory.promptDbPath) || globalMemory.promptDbPath;
-      console.log(`[MiniPhi] Prompt scoring database ready at ${relDb}`);
-    }
-  } catch (error) {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi] Prompt scoring disabled: ${error instanceof Error ? error.message : error}`,
-      );
-    }
-  }
-  if (performanceTracker) {
-    phi4.setPerformanceTracker(performanceTracker);
-  }
 
     let stateManager;
     let promptRecorder = null;
@@ -2454,50 +2284,8 @@ const describeWorkspace = (dir, options = undefined) =>
   });
 
   try {
-    await phi4.load({ contextLength, gpu });
-    if (performanceTracker && debugLm) {
-        scoringPhi = new LMStudioHandler(manager, {
-          systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
-          schemaRegistry,
-          noTokenTimeoutMs,
-          modelKey: modelSelection.modelKey,
-        });
-      if (restClient) {
-        scoringPhi.setRestClient(restClient, { preferRestTransport });
-      }
-      try {
-        await scoringPhi.load({ contextLength: Math.min(contextLength, 8192), gpu });
-        performanceTracker.setSemanticEvaluator(async (evaluationPrompt, parentTrace) => {
-          scoringPhi.clearHistory();
-          return scoringPhi.chatStream(
-            evaluationPrompt,
-            undefined,
-            undefined,
-            undefined,
-            {
-              scope: "sub",
-              label: "prompt-scoring",
-              schemaId: "prompt-score",
-              metadata: {
-                mode: "prompt-evaluator",
-                workspaceType: parentTrace?.metadata?.workspaceType ?? null,
-                objective: parentTrace?.label ?? null,
-              },
-            },
-          );
-        });
-      } catch (error) {
-        scoringPhi = null;
-        performanceTracker.setSemanticEvaluator(null);
-        if (verbose) {
-          console.warn(
-            `[MiniPhi] Prompt scoring evaluator disabled: ${error instanceof Error ? error.message : error}`,
-          );
-        }
-      }
-    } else if (performanceTracker && verbose) {
-      console.log("[MiniPhi] Prompt scoring evaluator disabled (enable with --debug-lm).");
-    }
+    await lmStudioRuntime.load({ contextLength, gpu });
+    scoringPhi = lmStudioRuntime.scoringPhi;
 
     let result;
     let workspaceContext = null;

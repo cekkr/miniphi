@@ -1,52 +1,50 @@
-import { greet } from './greeter.js';
-import { average, describeTrend } from './math.js';
-import InsightPipeline from './flows/pipeline.js';
-
-const pipeline = new InsightPipeline();
+import { greet, farewell } from './greeter.js';
+import { average, trend } from './math.js';
+import { pipeline } from './flows/pipeline.js';
 
 /**
- * Sanitizes input data and coordinates helper utilities.
- * @param {Object} params - Input parameters.
- * @param {string[]} params.names - Array of names.
- * @param {number[]} params.samples - Array of samples.
- * @returns {Object} Structured results with greetings, averages, and trends.
+ * @param {Object} input - User input object
+ * @param {string} input.name - User's name
+ * @param {Array<number>} input.data - Data samples
  */
-export function summarize({ names = [], samples = [] }) {
-  const sanitizedNames = names.filter(name => name != null && name.trim() !== '');
-  const sanitizedSamples = samples.filter(sample => sample != null && !isNaN(sample));
-
-  if (sanitizedNames.length === 0 || sanitizedSamples.length < 2) {
-    return { greetings: [], average: null, trend: 'insufficient data' };
+export function summarize(input) {
+  const { name, data } = input;
+  
+  // Sanitize input
+  if (!name || !data || data.length === 0) {
+    throw new Error('Invalid input: name and non-empty data are required');
   }
-
-  const results = pipeline({
-    names: sanitizedNames,
-    samples: sanitizedSamples
-  });
-
+  
+  // Coordinate helper utilities
+  const welcomeMessage = greet(name);
+  const stats = {
+    average: average(data),
+    trend: trend(data)
+  };
+  
+  // Emit structured results/logs
+  console.log(`[Telemetry] Processed data for ${name}:`, stats);
+  
   return {
-    greetings: sanitizedNames.map(name => greet(name)),
-    average: average(sanitizedSamples),
-    trend: describeTrend(sanitizedSamples)
+    welcomeMessage,
+    ...stats
   };
 }
 
-/**
- * Generates a closing remark based on input data.
- * @param {Object} params - Input parameters.
- * @param {string[]} params.names - Array of names.
- * @returns {string} Closing remark.
- */
-export function closingRemark({ names = [] }) {
-  const sanitizedNames = names.filter(name => name != null && name.trim() !== '');
-  return sanitizedNames.length > 0
-    ? `Goodbye, ${sanitizedNames.join(', ')}!`
-    : 'Goodbye!';
-}
-
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const sampleValues = [1, 3, 5, 7];
-  console.log(summarize({ names: ['MiniPhi'], samples: sampleValues }));
-  console.log(summarize({ names: ['Ops Team'], samples: [2, 6, 11, 13, 21] }));
-  console.log(closingRemark({ names: ['MiniPhi'] }));
+export function closingRemark(input) {
+  const { name, data } = input;
+  
+  // Handle edge cases
+  if (!name || !data || data.length < 2) {
+    return farewell(name || 'user');
+  }
+  
+  const stats = {
+    average: average(data),
+    trend: trend(data)
+  };
+  
+  console.log(`[Telemetry] Closing remark for ${name}:`, stats);
+  
+  return `${farewell(name)}. Summary: avg=${stats.average}, trend=${stats.trend}`;
 }

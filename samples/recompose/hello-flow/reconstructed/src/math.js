@@ -1,16 +1,17 @@
 const average = (data) => {
   if (!Array.isArray(data)) return null;
   const filtered = data.filter(d => typeof d === 'number' && !isNaN(d));
-  if (filtered.length < 2) return null;
+  if (filtered.length === 0) return null;
   return filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
 };
 
-const describeTrend = (avg, prevAvg) => {
-  if (typeof avg !== 'number' || isNaN(avg)) return 'unknown';
-  if (prevAvg === undefined) return 'stable';
-  const diff = avg - prevAvg;
-  if (diff > 0.1 * Math.abs(prevAvg)) return 'increasing';
-  if (diff < -0.1 * Math.abs(prevAvg)) return 'decreasing';
+const describeTrend = (data) => {
+  const avg = average(data);
+  if (avg === null || data.length < 2) return 'stable';
+  const first = data[0];
+  const last = data[data.length - 1];
+  if (last > first * 1.1) return 'increasing';
+  if (last < first * 0.9) return 'decreasing';
   return 'stable';
 };
 
