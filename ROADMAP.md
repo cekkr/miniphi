@@ -53,7 +53,13 @@ Slices (do in order):
      - `npm test` passed (CLI benchmark/recompose/prompt-template smoke coverage).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
-   - Next steps:
+   - Next steps (prioritized, add proof per item):
+     - Capture schema id + tool_calls/tool_definitions for planner + navigator entries in prompt journals (exit: stepwise JSON contains schema/tool metadata or links to prompt-exchange records).
+     - Harden navigator helper_script guidance (explicit null unless language+code present) to reduce schema fallback churn (exit: navigator responses stop failing due to helper_script omissions).
+     - Add .miniphi cache pruning workflow with explicit retention controls + CLI command + docs/tests (exit: cache-prune command deletes stale artifacts and reports counts).
+     - Add sample-driven CLI integration tests that execute `miniphi` against `samples/` (exit: new tests run via `node src/index.js` and validate sample outputs).
+     - Add a local eval report script inspired by `thirds/ai-agent-evals` metrics for JSON compliance/tool-call coverage (exit: script emits a JSON report over `.miniphi/prompt-exchanges`).
+   - Deferred (lower priority while the above are in flight):
      - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
      - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.
 

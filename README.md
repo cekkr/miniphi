@@ -102,6 +102,8 @@ These are the commands most people start with:
   Analyze a log or text file.
 - `miniphi helpers` / `miniphi command-library`  
   Inspect saved helper scripts and recommended commands.
+- `miniphi cache-prune`  
+  Trim older `.miniphi/` artifacts using retention defaults or `--retain-*` overrides.
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
 

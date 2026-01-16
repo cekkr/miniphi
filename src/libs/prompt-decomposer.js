@@ -168,6 +168,7 @@ export default class PromptDecomposer {
     let responseText = "";
     let responseToolCalls = null;
     let responseToolDefinitions = null;
+    let promptRecord = null;
     let normalizedPlan = null;
     let errorMessage = null;
 
@@ -256,7 +257,7 @@ export default class PromptDecomposer {
       responsePayload.rawResponseText = responseText ?? "";
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
-      await payload.promptRecorder.record({
+      promptRecord = await payload.promptRecorder.record({
         scope: "sub",
         label: "prompt-decomposition",
         mainPromptId: payload.mainPromptId ?? null,
@@ -282,6 +283,10 @@ export default class PromptDecomposer {
     if (!normalizedPlan) {
       return null;
     }
+    normalizedPlan.schemaId = this.schemaId;
+    normalizedPlan.toolCalls = responseToolCalls ?? null;
+    normalizedPlan.toolDefinitions = responseToolDefinitions ?? null;
+    normalizedPlan.promptExchange = promptRecord ?? null;
 
     if (payload.storage) {
       await payload.storage.savePromptDecomposition({

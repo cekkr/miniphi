@@ -51,6 +51,7 @@ import {
 } from "./libs/core-utils.js";
 import { handleAnalyzeFileCommand } from "./commands/analyze-file.js";
 import { handleBenchmarkCommand } from "./commands/benchmark.js";
+import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
@@ -71,6 +72,7 @@ const COMMANDS = new Set([
   "prompt-template",
   "command-library",
   "helpers",
+  "cache-prune",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -906,6 +908,13 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
   }
   const operations = buildPlanOperations(context.planResult.plan);
   const commandLine = context.command ? `\nCommand: ${context.command}` : "";
+  const promptExchange = context.planResult.promptExchange ?? null;
+  const links = promptExchange
+    ? {
+        promptExchangeId: promptExchange.id ?? null,
+        promptExchangePath: promptExchange.path ?? null,
+      }
+    : null;
   const responseSegments = [];
   if (context.planResult.segmentBlock) {
     responseSegments.push(context.planResult.segmentBlock);
@@ -921,6 +930,7 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
     label: context.label ?? "prompt-plan",
     prompt: `Objective: ${context.objective ?? "workspace task"}${commandLine}`.trim(),
     response: responsePayload,
+    schemaId: context.planResult.schemaId ?? null,
     status: "plan",
     operations,
     metadata: {
@@ -931,7 +941,10 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       source: context.planSource ?? null,
       recommendedTools: context.planResult.recommendedTools ?? [],
     },
+    toolCalls: context.planResult.toolCalls ?? null,
+    toolDefinitions: context.planResult.toolDefinitions ?? null,
     workspaceSummary: context.workspaceSummary ?? null,
+    links,
   });
 }
 
@@ -941,17 +954,28 @@ async function recordNavigationPlanInJournal(journal, sessionId, context = undef
   }
   const plan = context.navigationHints;
   const operations = buildNavigationOperations(plan);
+  const promptExchange = plan.promptExchange ?? null;
+  const links = promptExchange
+    ? {
+        promptExchangeId: promptExchange.id ?? null,
+        promptExchangePath: promptExchange.path ?? null,
+      }
+    : null;
   await journal.appendStep(sessionId, {
     label: context.label ?? "navigator-plan",
     prompt: `Navigator objective: ${context.objective ?? "workspace guidance"}`,
     response: plan.block ?? JSON.stringify(plan.raw ?? {}, null, 2),
+    schemaId: plan.schemaId ?? null,
     status: "advisor",
     operations,
     metadata: {
       summary: plan.summary ?? null,
       helper: plan.helper ?? null,
     },
+    toolCalls: plan.toolCalls ?? null,
+    toolDefinitions: plan.toolDefinitions ?? null,
     workspaceSummary: context.workspaceSummary ?? null,
+    links,
   });
 }
 
@@ -1006,6 +1030,8 @@ function normalizePlanRecord(planRecord, branch = null) {
     segmentBlock: planRecord.segmentBlock ?? null,
     recommendedTools: Array.isArray(planRecord.recommendedTools) ? planRecord.recommendedTools : null,
     recommendationsBlock: planRecord.recommendationsBlock ?? null,
+    schemaId: "prompt-plan",
+    schemaVersion: planPayload.schema_version ?? null,
   };
   return enrichPlanResult(normalized);
 }
@@ -1590,6 +1616,11 @@ async function main() {
 
   if (command === "helpers") {
     await handleHelpersCommand({ options, verbose });
+    return;
+  }
+
+  if (command === "cache-prune") {
+    await handleCachePruneCommand({ options, verbose, configData });
     return;
   }
 
@@ -2948,6 +2979,7 @@ Usage:
   node src/index.js history-notes --label "post benchmark"
   node src/index.js command-library --limit 10
   node src/index.js helpers --limit 6
+  node src/index.js cache-prune --dry-run
   node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
@@ -3039,6 +3071,18 @@ History notes:
   --history-root <path>        Override the directory used to locate .miniphi (default: cwd)
   --label <text>               Friendly label for the snapshot (e.g., "post-upgrade")
   --no-git                     Skip git metadata when summarizing .miniphi changes
+
+Cache prune:
+  --retain-executions <n>      Keep the newest N executions (default: 200)
+  --retain-prompt-exchanges <n>  Keep the newest N prompt exchanges (default: 200)
+  --retain-prompt-journals <n> Keep the newest N prompt journals (default: 200)
+  --retain-prompt-sessions <n> Keep the newest N prompt sessions (default: 200)
+  --retain-prompt-decompositions <n>  Keep the newest N prompt decompositions (default: 200)
+  --retain-prompt-templates <n>  Keep the newest N prompt templates (default: 200)
+  --retain-history-notes <n>   Keep the newest N history notes (default: 200)
+  --retain-research <n>        Keep the newest N research snapshots (default: 200)
+  --dry-run                    Report deletions without removing files
+  --json                       Output JSON summary instead of human-readable text
 
 Recompose benchmarks:
   --sample <path>              Samples/recompose project to operate on

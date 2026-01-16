@@ -100,6 +100,7 @@ const SYSTEM_PROMPT = [
   "Return JSON that matches the provided schema exactly; omit prose outside the JSON response.",
   "When additional telemetry is required (e.g., enumerating files, parsing manifests), emit a minimal helper script.",
   "When focus_path is provided in the request body, prefer it for helper scripts and actions.",
+  "If no helper script is required, set helper_script to null and do not emit an empty object.",
   "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies. If stdin is required, include a compact sample payload under helper_script.stdin, and otherwise accept focus_path as argv[2].",
 ].join(" ");
 
@@ -169,7 +170,8 @@ export default class ApiNavigator {
     if (!this.restClient || !payload?.workspace) {
       return null;
     }
-    const plan = await this._requestPlan(payload);
+    const planResult = await this._requestPlan(payload);
+    const plan = planResult?.plan ?? null;
     if (!plan) {
       return null;
     }
@@ -207,7 +209,11 @@ export default class ApiNavigator {
       helper,
       block: this._buildNavigationBlock(normalizedPlan, helper, actions),
       raw: normalizedPlan,
+      schemaId: this.schemaId,
       schemaVersion: normalizedPlan.schema_version ?? null,
+      toolCalls: planResult?.toolCalls ?? null,
+      toolDefinitions: planResult?.toolDefinitions ?? null,
+      promptExchange: planResult?.promptRecord ?? null,
     };
   }
 
@@ -326,6 +332,7 @@ export default class ApiNavigator {
     let errorMessage = null;
     let plan = null;
     let compactTried = false;
+    let promptRecord = null;
 
     const runCompletion = async (bodyPayload) => {
       requestMessages = buildMessages(bodyPayload);
@@ -368,7 +375,7 @@ export default class ApiNavigator {
       }
     }
 
-    await this._recordPromptExchange({
+    promptRecord = await this._recordPromptExchange({
       payload,
       requestBody: body,
       requestMessages,
@@ -380,7 +387,13 @@ export default class ApiNavigator {
       responseFormat,
     });
 
-    return plan;
+    return {
+      plan,
+      toolCalls,
+      toolDefinitions,
+      responseFormat,
+      promptRecord,
+    };
   }
 
   async _recordPromptExchange({
@@ -395,7 +408,7 @@ export default class ApiNavigator {
     responseFormat,
   }) {
     if (!this.promptRecorder) {
-      return;
+      return null;
     }
     const responsePayload =
       plan && typeof plan === "object" && !Array.isArray(plan) ? { ...plan } : { raw: responseText ?? "" };
@@ -403,7 +416,7 @@ export default class ApiNavigator {
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
     try {
-      await this.promptRecorder.record({
+      const record = await this.promptRecorder.record({
         scope: "sub",
         label: "api-navigator",
         mainPromptId: payload?.promptId ?? null,
@@ -424,11 +437,13 @@ export default class ApiNavigator {
         response: responsePayload,
         error: errorMessage ?? null,
       });
+      return record;
     } catch (error) {
       this._log(
         `[ApiNavigator] Prompt recorder failed: ${error instanceof Error ? error.message : error}`,
       );
     }
+    return null;
   }
 
   _shouldDisable(message) {
