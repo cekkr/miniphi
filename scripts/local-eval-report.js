@@ -84,7 +84,8 @@ async function main() {
       continue;
     }
     total += 1;
-    const responseFormat = payload?.request?.response_format ?? null;
+    const responseFormat =
+      payload?.request?.response_format ?? payload?.request?.responseFormat ?? null;
     if (responseFormat) {
       withResponseFormat += 1;
       const schemaName = responseFormat?.json_schema?.name ?? null;

@@ -51,6 +51,10 @@ Slices (do in order):
      - `node src/index.js cache-prune --dry-run` reported 8 executions, 144 prompt exchanges, and 7 prompt journals retained (no deletions at retention 200).
    - Local eval coverage snapshot:
      - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` showed response_format coverage at 12.5% (prompt-plan 13, navigation-plan 5) with tool_calls/tool_definitions and rawResponseText at 100%.
+   - Local eval coverage update (2026-01-16):
+     - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` now reports response_format/schema name coverage at 100% across 144 prompt exchanges (log-analysis + recompose + navigator + planner).
+   - Live analyze-file run (2026-01-16):
+     - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116c --prompt-journal-status paused --no-stream --session-timeout 300` completed; prompt exchange includes `schemaId: log-analysis` and `request.response_format` for the main analysis prompt.
    - Recompose roundtrip run (2026-01-11):
      - `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` fell back to the workspace overview after 3 attempts; prompt log captured in `.miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log`.
      - Repair attempted 9 files but skipped all because regenerated code matched the candidate; final comparison still reported 9 mismatches.
@@ -58,11 +62,9 @@ Slices (do in order):
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
    - Next steps (prioritized, add proof per item):
-     - Capture schema id + tool_calls/tool_definitions for planner + navigator entries in prompt journals (exit: stepwise JSON contains schema/tool metadata or links to prompt-exchange records).
      - Harden navigator helper_script guidance (explicit null unless language+code present) to reduce schema fallback churn (exit: navigator responses stop failing due to helper_script omissions).
-     - Add .miniphi cache pruning workflow with explicit retention controls + CLI command + docs/tests (exit: cache-prune command deletes stale artifacts and reports counts).
      - Add sample-driven CLI integration tests that execute `miniphi` against `samples/` (exit: new tests run via `node src/index.js` and validate sample outputs).
-     - Raise response_format coverage for prompt exchanges beyond planner/navigator (exit: local eval report shows >90% response_format coverage for main analysis prompts).
+     - Reduce prompt budget overruns that force summary level 0 (exit: analyze-file on romeo avoids `Prompt exceeded budget` and preserves configured summary level).
    - Deferred (lower priority while the above are in flight):
      - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
      - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.

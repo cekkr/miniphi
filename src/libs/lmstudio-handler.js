@@ -902,6 +902,7 @@ export class LMStudioHandler {
       schemaId: schemaDetails?.id ?? traceContext.schemaId ?? null,
       schemaPath: schemaDetails?.filePath ?? null,
       responseFormat: traceContext.responseFormat ?? null,
+      response_format: traceContext.responseFormat ?? null,
       toolDefinitions: traceContext?.toolDefinitions ?? null,
       messages,
       createdAt: new Date().toISOString(),
