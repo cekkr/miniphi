@@ -1354,6 +1354,16 @@ export default class EfficientLogAnalyzer {
   }) {
     let detailLevel = summaryLevels;
     let chunkLimit = chunkSummaries.length;
+    const contextBudgetRatios = [0.3, 0.2, 0.15, 0.1, 0.05];
+    let contextBudgetIndex = 0;
+    const hasRawSummary = chunkSummaries.some((entry) => {
+      const summary = entry?.chunk?.summary;
+      return (
+        typeof summary?.raw === "string" ||
+        typeof summary?.summary?.raw === "string"
+      );
+    });
+    const allowDetailReduction = !hasRawSummary;
     if (chunkLimit === 0) {
       return {
         prompt: this.generateSmartPrompt(
@@ -1410,7 +1420,8 @@ export default class EfficientLogAnalyzer {
       };
       const lineCount =
         Number.isFinite(totalLines) && totalLines > 0 ? totalLines : composed.lines || 1;
-      const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
+      const contextRatio = contextBudgetRatios[contextBudgetIndex] ?? 0.3;
+      const contextBudgetTokens = Math.max(64, Math.floor(promptBudget * contextRatio));
       prompt = this.generateSmartPrompt(
         task,
         composed.text,
@@ -1430,7 +1441,15 @@ export default class EfficientLogAnalyzer {
         break;
       }
       attempts += 1;
-      if (detailLevel > 0) {
+      if (contextBudgetIndex < contextBudgetRatios.length - 1) {
+        contextBudgetIndex += 1;
+        const ratioLabel = Math.round(contextBudgetRatios[contextBudgetIndex] * 100);
+        const note = `Prompt exceeded budget (${tokens} > ${promptBudget}); reducing context supplement budget to ${ratioLabel}% of prompt budget.`;
+        console.log(`[MiniPhi] ${note}`);
+        this._logDev(devLog, note);
+        continue;
+      }
+      if (detailLevel > 0 && allowDetailReduction) {
         detailLevel -= 1;
         const note = `Prompt exceeded budget (${tokens} > ${promptBudget}); reducing summary detail to level ${detailLevel}.`;
         console.log(`[MiniPhi] ${note}`);

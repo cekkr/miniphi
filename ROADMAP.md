@@ -55,6 +55,8 @@ Slices (do in order):
      - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` now reports response_format/schema name coverage at 100% across 144 prompt exchanges (log-analysis + recompose + navigator + planner).
    - Live analyze-file run (2026-01-16):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116c --prompt-journal-status paused --no-stream --session-timeout 300` completed; prompt exchange includes `schemaId: log-analysis` and `request.response_format` for the main analysis prompt.
+   - Prompt budget compaction (2026-01-16):
+     - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116d --prompt-journal-status paused --no-stream --session-timeout 300` trimmed the context supplement budget (20%) instead of dropping summary level.
    - Recompose roundtrip run (2026-01-11):
      - `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` fell back to the workspace overview after 3 attempts; prompt log captured in `.miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log`.
      - Repair attempted 9 files but skipped all because regenerated code matched the candidate; final comparison still reported 9 mismatches.
