@@ -133,6 +133,7 @@ async function runGeneralPurposeBenchmark({
       globalMemory,
       logger: verbose ? (message) => console.warn(message) : null,
       adapterRegistry: schemaAdapterRegistry,
+      schemaRegistry,
       helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
     });
   const workspaceContext = await generateWorkspaceSnapshot({
@@ -152,6 +153,7 @@ async function runGeneralPurposeBenchmark({
     const decomposer = new PromptDecomposer({
       restClient,
       logger: verbose ? (message) => console.warn(message) : null,
+      schemaRegistry,
     });
     try {
       decompositionPlan = await decomposer.decompose({

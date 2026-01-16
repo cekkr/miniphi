@@ -12,12 +12,14 @@ const HELPER_SILENCE_TIMEOUT_MS = 12000;
 const OUTPUT_PREVIEW_LIMIT = 420;
 const PYTHON_RUNNER_CACHE_TTL_MS = 5 * 60 * 1000;
 const PYTHON_RUNNER_CHECK_TIMEOUT_MS = 2500;
+const NAVIGATION_SCHEMA_ID = "navigation-plan";
+const NAVIGATION_SCHEMA_VERSION = "navigation-plan@v1";
 
 const NAVIGATION_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    schema_version: { type: "string" },
+    schema_version: { type: "string", enum: [NAVIGATION_SCHEMA_VERSION] },
     navigation_summary: { type: "string" },
     needs_more_context: { type: "boolean" },
     missing_snippets: { type: "array", items: { type: "string" }, default: [] },
@@ -55,17 +57,17 @@ const NAVIGATION_JSON_SCHEMA = {
     notes: { type: ["string", "null"] },
     stop_reason: { type: ["string", "null"] },
   },
-  required: ["actions", "needs_more_context", "missing_snippets"],
+  required: ["schema_version", "actions", "needs_more_context", "missing_snippets"],
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
+const DEFAULT_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
   NAVIGATION_JSON_SCHEMA,
-  "navigation-plan",
+  NAVIGATION_SCHEMA_ID,
 );
 
 const NAVIGATION_SCHEMA = [
   "{",
-  '  "schema_version": "string // schema identifier (default navigation-plan@v1)",',
+  `  "schema_version": "${NAVIGATION_SCHEMA_VERSION}",`,
   '  "navigation_summary": "<=160 characters overview",',
   '  "needs_more_context": false,',
   '  "missing_snippets": ["files or snippets needed"],',
@@ -124,6 +126,11 @@ export default class ApiNavigator {
     this.helperSilenceTimeout =
       options?.helperSilenceTimeout ?? options?.helperSilenceTimeoutMs ?? HELPER_SILENCE_TIMEOUT_MS;
     this.adapterRegistry = options?.adapterRegistry ?? null;
+    this.schemaRegistry = options?.schemaRegistry ?? null;
+    this.schemaId =
+      typeof options?.schemaId === "string" && options.schemaId.trim().length
+        ? options.schemaId.trim()
+        : NAVIGATION_SCHEMA_ID;
     this.promptRecorder = options?.promptRecorder ?? null;
     this.disabled = false;
     this.disableNotice = null;
@@ -243,7 +250,38 @@ export default class ApiNavigator {
       })
       .filter(Boolean);
   }
+
+  _resolveSchemaDefinition() {
+    if (this.schemaRegistry?.getSchema) {
+      const entry = this.schemaRegistry.getSchema(this.schemaId);
+      if (entry?.definition) {
+        return entry.definition;
+      }
+    }
+    return NAVIGATION_JSON_SCHEMA;
+  }
+
+  _buildSchemaBlock() {
+    if (this.schemaRegistry?.buildInstructionBlock) {
+      const block = this.schemaRegistry.buildInstructionBlock(this.schemaId, {
+        compact: true,
+        maxLength: 1600,
+      });
+      if (block) {
+        return block;
+      }
+    }
+    return ["```json", NAVIGATION_SCHEMA, "```"].join("\n");
+  }
+
+  _resolveResponseFormat() {
+    const definition = this._resolveSchemaDefinition();
+    return buildJsonSchemaResponseFormat(definition, this.schemaId) ?? DEFAULT_RESPONSE_FORMAT;
+  }
+
   async _requestPlan(payload) {
+    const schemaBlock = this._buildSchemaBlock();
+    const responseFormat = this._resolveResponseFormat();
     const buildBody = (compact = false) => {
       const manifest = Array.isArray(payload.workspace?.manifestPreview)
         ? payload.workspace.manifestPreview.slice(0, compact ? 2 : 12)
@@ -273,7 +311,7 @@ export default class ApiNavigator {
     const buildMessages = (body) => [
       {
         role: "system",
-        content: `${SYSTEM_PROMPT}\nJSON schema:\n\`\`\`json\n${NAVIGATION_SCHEMA}\n\`\`\``,
+        content: `${SYSTEM_PROMPT}\nJSON schema:\n${schemaBlock}`,
       },
       {
         role: "user",
@@ -295,7 +333,7 @@ export default class ApiNavigator {
         messages: requestMessages,
         temperature: this.temperature,
         max_tokens: -1,
-        response_format: JSON_ONLY_RESPONSE_FORMAT,
+        response_format: responseFormat,
         timeoutMs: this.navigationRequestTimeoutMs,
       });
       const message = completion?.choices?.[0]?.message ?? null;
@@ -339,6 +377,7 @@ export default class ApiNavigator {
       errorMessage,
       toolCalls,
       toolDefinitions,
+      responseFormat,
     });
 
     return plan;
@@ -353,6 +392,7 @@ export default class ApiNavigator {
     errorMessage,
     toolCalls,
     toolDefinitions,
+    responseFormat,
   }) {
     if (!this.promptRecorder) {
       return;
@@ -379,7 +419,7 @@ export default class ApiNavigator {
           endpoint: "/chat/completions",
           payload: requestBody ?? null,
           messages: requestMessages ?? null,
-          response_format: JSON_ONLY_RESPONSE_FORMAT,
+          response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },
         response: responsePayload,
         error: errorMessage ?? null,
@@ -419,7 +459,7 @@ export default class ApiNavigator {
   }
 
   _parsePlan(raw) {
-    const schemaValidation = validateJsonAgainstSchema(NAVIGATION_JSON_SCHEMA, raw);
+    const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), raw);
     const parsed = schemaValidation?.parsed ?? null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");

@@ -20,11 +20,12 @@ const COMPACT_SUMMARY_LIMIT = 800;
 const COMPACT_HINT_LIMIT = 600;
 const COMPACT_CAPABILITY_LIMIT = 400;
 
-const PLAN_SCHEMA_ID = "prompt-plan@v1";
+const PLAN_SCHEMA_ID = "prompt-plan";
+const PLAN_SCHEMA_VERSION = "prompt-plan@v1";
 
 const SYSTEM_PROMPT = [
   "You are the MiniPhi prompt decomposer.",
-  `Given a user objective, workspace metadata, and optional CLI commands, produce a structured JSON plan that matches schema ${PLAN_SCHEMA_ID}.`,
+  `Given a user objective, workspace metadata, and optional CLI commands, produce a structured JSON plan that matches schema ${PLAN_SCHEMA_VERSION}.`,
   "ALWAYS return strictly valid JSON; never include commentary outside the JSON.",
   "Mandatory fields: schema_version, plan_id, summary, needs_more_context, missing_snippets, steps[].id/title/description/requires_subprompt/children, recommended_tools, notes.",
   "Use depth-first numbering so follow-up prompts can resume mid-branch (e.g., 1, 1.1, 1.2, 2, ...).",
@@ -33,7 +34,7 @@ const SYSTEM_PROMPT = [
 
 const PLAN_SCHEMA = [
   "{",
-  `  "schema_version": "${PLAN_SCHEMA_ID}",`,
+  `  "schema_version": "${PLAN_SCHEMA_VERSION}",`,
   '  "plan_id": "string identifier",',
   '  "summary": "two-sentence overview of the strategy",',
   '  "needs_more_context": false,',
@@ -58,7 +59,7 @@ const PLAN_JSON_SCHEMA = {
   additionalProperties: false,
   required: ["schema_version", "plan_id", "summary", "steps", "needs_more_context", "missing_snippets"],
   properties: {
-    schema_version: { type: "string", enum: [PLAN_SCHEMA_ID] },
+    schema_version: { type: "string", enum: [PLAN_SCHEMA_VERSION] },
     plan_id: { type: "string" },
     summary: { type: "string" },
     needs_more_context: { type: "boolean" },
@@ -84,9 +85,9 @@ const PLAN_JSON_SCHEMA = {
   },
 };
 
-const JSON_ONLY_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
+const DEFAULT_RESPONSE_FORMAT = buildJsonSchemaResponseFormat(
   PLAN_JSON_SCHEMA,
-  "prompt-plan",
+  PLAN_SCHEMA_ID,
 );
 
 export default class PromptDecomposer {
@@ -98,6 +99,11 @@ export default class PromptDecomposer {
     this.maxActions = options?.maxActions ?? DEFAULT_MAX_ACTIONS;
     this.temperature = options?.temperature ?? DEFAULT_TEMPERATURE;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
+    this.schemaRegistry = options?.schemaRegistry ?? null;
+    this.schemaId =
+      typeof options?.schemaId === "string" && options.schemaId.trim().length
+        ? options.schemaId.trim()
+        : PLAN_SCHEMA_ID;
     const requestedTimeout = Number(options?.timeoutMs);
     this.timeoutMs =
       Number.isFinite(requestedTimeout) && requestedTimeout > 0
@@ -105,6 +111,34 @@ export default class PromptDecomposer {
         : DEFAULT_TIMEOUT_MS;
     this.disabled = false;
     this.disableNotice = null;
+  }
+
+  _resolveSchemaDefinition() {
+    if (this.schemaRegistry?.getSchema) {
+      const entry = this.schemaRegistry.getSchema(this.schemaId);
+      if (entry?.definition) {
+        return entry.definition;
+      }
+    }
+    return PLAN_JSON_SCHEMA;
+  }
+
+  _buildSchemaBlock() {
+    if (this.schemaRegistry?.buildInstructionBlock) {
+      const block = this.schemaRegistry.buildInstructionBlock(this.schemaId, {
+        compact: true,
+        maxLength: 1600,
+      });
+      if (block) {
+        return block;
+      }
+    }
+    return ["```json", PLAN_SCHEMA, "```"].join("\n");
+  }
+
+  _resolveResponseFormat() {
+    const definition = this._resolveSchemaDefinition();
+    return buildJsonSchemaResponseFormat(definition, this.schemaId) ?? DEFAULT_RESPONSE_FORMAT;
   }
 
   /**
@@ -142,11 +176,13 @@ export default class PromptDecomposer {
       this._buildRequestBody(payload, { compact: true }),
       this._buildRequestBody(payload, { compact: true, minimal: true }),
     ];
+    const schemaBlock = this._buildSchemaBlock();
+    const responseFormat = this._resolveResponseFormat();
 
     const buildMessages = (body) => [
       {
         role: "system",
-        content: `${SYSTEM_PROMPT}\nJSON schema:\n\`\`\`json\n${PLAN_SCHEMA}\n\`\`\``,
+        content: `${SYSTEM_PROMPT}\nJSON schema:\n${schemaBlock}`,
       },
       {
         role: "user",
@@ -154,14 +190,15 @@ export default class PromptDecomposer {
       },
     ];
 
-    const runCompletion = async (body, responseFormat = JSON_ONLY_RESPONSE_FORMAT) => {
+    const runCompletion = async (body, responseFormatOverride = undefined) => {
+      const responseFormatForRun = responseFormatOverride ?? responseFormat;
       const messages = buildMessages(body);
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
           temperature: this.temperature,
           max_tokens: -1,
-          response_format: responseFormat,
+          response_format: responseFormatForRun,
         }),
       );
       const message = completion?.choices?.[0]?.message ?? null;
@@ -170,7 +207,7 @@ export default class PromptDecomposer {
         toolCalls: message?.tool_calls ?? null,
         toolDefinitions: completion?.tool_definitions ?? null,
         messages,
-        responseFormat,
+        responseFormat: responseFormatForRun,
       };
     };
 
@@ -181,7 +218,7 @@ export default class PromptDecomposer {
         if (i > 0) {
           this._log(`[PromptDecomposer] Attempting ${modeLabel} workspace payload due to previous failure.`);
         }
-        const response = await runCompletion(requestBody, JSON_ONLY_RESPONSE_FORMAT);
+        const response = await runCompletion(requestBody);
         responseText = response.text;
         requestMessages = response.messages;
         responseToolCalls = response.toolCalls;
@@ -235,7 +272,7 @@ export default class PromptDecomposer {
           endpoint: "/chat/completions",
           payload: requestBody,
           messages: requestMessages ?? null,
-          response_format: JSON_ONLY_RESPONSE_FORMAT,
+          response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },
         response: responsePayload,
         error: errorMessage,
@@ -420,7 +457,7 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload) {
-    const schemaValidation = validateJsonAgainstSchema(PLAN_JSON_SCHEMA, responseText);
+    const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
     const parsed = schemaValidation?.parsed ?? null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       this._log(
@@ -444,7 +481,7 @@ export default class PromptDecomposer {
     }
     const planId = parsed.plan_id || `plan-${randomUUID()}`;
     const summary = parsed.summary ?? null;
-    const schemaVersion = parsed.schema_version || "prompt-plan@v1";
+    const schemaVersion = parsed.schema_version || PLAN_SCHEMA_VERSION;
     const needsMoreContext = Boolean(parsed.needs_more_context);
     const missingSnippets = Array.isArray(parsed.missing_snippets)
       ? parsed.missing_snippets
@@ -494,8 +531,8 @@ export default class PromptDecomposer {
     if (typeof parsed.schema_version !== "string" || parsed.schema_version.trim().length === 0) {
       return { valid: false, error: "schema_version must be a non-empty string" };
     }
-    if (parsed.schema_version !== PLAN_SCHEMA_ID) {
-      return { valid: false, error: `schema_version must be ${PLAN_SCHEMA_ID}` };
+    if (parsed.schema_version !== PLAN_SCHEMA_VERSION) {
+      return { valid: false, error: `schema_version must be ${PLAN_SCHEMA_VERSION}` };
     }
     if (typeof parsed.needs_more_context !== "boolean") {
       return { valid: false, error: "needs_more_context must be a boolean" };

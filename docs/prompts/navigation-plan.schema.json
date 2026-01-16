@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "actions", "needs_more_context", "missing_snippets"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["navigation-plan@v1"]
+    },
+    "navigation_summary": {
+      "type": "string"
+    },
+    "needs_more_context": {
+      "type": "boolean"
+    },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "recommended_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "file_types": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "focus_commands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "actions": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "reason", "danger"],
+        "properties": {
+          "command": { "type": "string" },
+          "reason": { "type": "string" },
+          "danger": { "type": "string", "enum": ["low", "mid", "high"] },
+          "authorization_hint": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "helper_script": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["language", "code"],
+      "properties": {
+        "language": { "type": "string", "enum": ["node", "python"] },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "code": { "type": "string" },
+        "stdin": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "notes": { "type": ["string", "null"] },
+    "stop_reason": { "type": ["string", "null"] }
+  }
+}

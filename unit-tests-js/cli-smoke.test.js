@@ -29,6 +29,48 @@ test("CLI prompt-template + library commands run without LM Studio", async () =>
     assert.match(promptText, /needs_more_context/);
     assert.match(promptText, /missing_snippets/);
 
+    const planPromptPath = path.join(workspace, "prompt-plan-template.txt");
+    const planResult = runCli(
+      [
+        "prompt-template",
+        "--baseline",
+        "analysis",
+        "--task",
+        "Plan CLI flow",
+        "--schema-id",
+        "prompt-plan",
+        "--no-workspace",
+        "--output",
+        planPromptPath,
+      ],
+      { cwd: workspace },
+    );
+    assert.equal(planResult.code, 0, planResult.stderr);
+    const planText = await fs.readFile(planPromptPath, "utf8");
+    assert.match(planText, /plan_id/);
+    assert.match(planText, /missing_snippets/);
+
+    const navPromptPath = path.join(workspace, "prompt-navigation-template.txt");
+    const navResult = runCli(
+      [
+        "prompt-template",
+        "--baseline",
+        "analysis",
+        "--task",
+        "Navigator schema smoke",
+        "--schema-id",
+        "navigation-plan",
+        "--no-workspace",
+        "--output",
+        navPromptPath,
+      ],
+      { cwd: workspace },
+    );
+    assert.equal(navResult.code, 0, navResult.stderr);
+    const navText = await fs.readFile(navPromptPath, "utf8");
+    assert.match(navText, /navigation_summary/);
+    assert.match(navText, /missing_snippets/);
+
     const libraryResult = runCli(
       ["command-library", "--json", "--limit", "3", "--cwd", workspace],
       { cwd: workspace },

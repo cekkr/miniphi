@@ -1721,6 +1721,7 @@ async function main() {
           globalMemory,
           logger: verbose ? (message) => console.warn(message) : null,
           adapterRegistry: schemaAdapterRegistry,
+          schemaRegistry,
           promptRecorder,
           helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
           navigationRequestTimeoutMs: navigatorRequestTimeoutMs,
@@ -2182,6 +2183,7 @@ async function main() {
       maxDepth: configData.prompt?.decomposer?.maxDepth,
       maxActions: configData.prompt?.decomposer?.maxActions,
       timeoutMs: decomposerTimeoutMs,
+      schemaRegistry,
     });
   const emitDecomposerNoticeIfNeeded = () => {
     if (promptDecomposer && typeof promptDecomposer.consumeDisableNotice === "function") {

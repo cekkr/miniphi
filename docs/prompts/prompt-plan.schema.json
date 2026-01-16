@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "summary",
+    "needs_more_context",
+    "missing_snippets",
+    "steps"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["prompt-plan@v1"]
+    },
+    "plan_id": { "type": "string" },
+    "summary": { "type": "string" },
+    "needs_more_context": { "type": "boolean" },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "description", "requires_subprompt", "children"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "requires_subprompt": { "type": "boolean" },
+          "recommendation": { "type": ["string", "null"] },
+          "children": { "type": "array" }
+        }
+      }
+    },
+    "recommended_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "notes": { "type": ["string", "null"] }
+  }
+}
