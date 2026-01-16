@@ -1,17 +1,9 @@
 {
   "tests": [
     {
-      "name": "benchmark-plan-scaffold",
-      "description": "Generate a recompose benchmark plan scaffold via the CLI.",
-      "command": "node src/index.js benchmark plan scaffold --sample samples/recompose/hello-flow --output benchmark/logs/benchmark-plan.yml",
-      "cwd": ".",
-      "timeoutMs": 300000,
-      "logDir": "cli-benchmark"
-    },
-    {
-      "name": "benchmark-analyze-smoke",
-      "description": "Create a stub benchmark run and analyze it via the CLI.",
-      "command": "node benchmark/scripts/benchmark-analyze-smoke.js",
+      "name": "benchmark-cli-coverage",
+      "description": "Run the CLI benchmark unit test suite (merged with unit-tests-js).",
+      "command": "node --test unit-tests-js/cli-benchmark.test.js",
       "cwd": ".",
       "timeoutMs": 300000,
       "logDir": "cli-benchmark"
