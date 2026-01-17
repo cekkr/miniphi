@@ -104,7 +104,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
 - `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` to capture JSON/tool-call coverage from prompt exchanges.
-- `MINIPHI_LIVE=1 node --test unit-tests-js/cli-bash-advanced.test.js` to run live bash sample prompts (requires LM Studio).
+- `node --test unit-tests-js/cli-bash-advanced.test.js` to run live bash sample prompts (requires LM Studio; long-running).
 - `node --test unit-tests-js/romeo-miniphi-flow.test.js` (exercise EfficientLogAnalyzer file flow with stubbed Phi and chunked summaries).
 
 ## Romeo unit test quick use

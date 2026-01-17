@@ -57,6 +57,8 @@ Slices (do in order):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116c --prompt-journal-status paused --no-stream --session-timeout 300` completed; prompt exchange includes `schemaId: log-analysis` and `request.response_format` for the main analysis prompt.
    - Prompt budget compaction (2026-01-16):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116d --prompt-journal-status paused --no-stream --session-timeout 300` trimmed the context supplement budget (20%) instead of dropping summary level.
+   - Live bash prompt tests (2026-01-16):
+     - `node --test unit-tests-js/cli-bash-advanced.test.js` passed against `samples/bash`; tests isolate `.miniphi` roots and use a temp config with `prompt.timeoutSeconds=120` to avoid LM Studio timeouts (runtime ~9 min).
    - Recompose roundtrip run (2026-01-11):
      - `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` fell back to the workspace overview after 3 attempts; prompt log captured in `.miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log`.
      - Repair attempted 9 files but skipped all because regenerated code matched the candidate; final comparison still reported 9 mismatches.
@@ -64,9 +66,8 @@ Slices (do in order):
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
    - Next steps (prioritized, add proof per item):
+     - Natural-language command parity (exit: implicit `miniphi "<task>"` routes to the same handlers as explicit commands, with schema compliance + stop reason recorded).
      - Harden navigator helper_script guidance (explicit null unless language+code present) to reduce schema fallback churn (exit: navigator responses stop failing due to helper_script omissions).
-     - Add sample-driven CLI integration tests that execute `miniphi` against `samples/` (exit: new tests run via `node src/index.js` and validate sample outputs).
-     - Reduce prompt budget overruns that force summary level 0 (exit: analyze-file on romeo avoids `Prompt exceeded budget` and preserves configured summary level).
    - Deferred (lower priority while the above are in flight):
      - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
      - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.

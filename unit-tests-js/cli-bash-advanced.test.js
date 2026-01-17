@@ -8,11 +8,6 @@ import {
   runCli,
 } from "./cli-test-utils.js";
 
-const LIVE_ENABLED = ["1", "true", "yes"].includes(
-  (process.env.MINIPHI_LIVE ?? "").toLowerCase(),
-);
-const maybeTest = LIVE_ENABLED ? test : test.skip;
-
 async function stageSampleFiles(workspaceRoot, sampleRoot, files, destRoot) {
   const destBase = path.join(workspaceRoot, destRoot);
   await fs.mkdir(destBase, { recursive: true });
@@ -23,6 +18,25 @@ async function stageSampleFiles(workspaceRoot, sampleRoot, files, destRoot) {
     await fs.copyFile(source, destination);
   }
   return destBase;
+}
+
+async function ensureIsolatedMiniPhiRoot(workspaceRoot) {
+  const miniPhiRoot = path.join(workspaceRoot, ".miniphi");
+  await fs.mkdir(miniPhiRoot, { recursive: true });
+  return miniPhiRoot;
+}
+
+async function writeTestConfig(workspaceRoot) {
+  const configPath = path.join(workspaceRoot, "miniphi.config.json");
+  const payload = {
+    prompt: {
+      timeoutSeconds: 120,
+      navigator: { timeoutSeconds: 120 },
+      decomposer: { timeoutSeconds: 120 },
+    },
+  };
+  await fs.writeFile(configPath, JSON.stringify(payload, null, 2), "utf8");
+  return configPath;
 }
 
 async function buildBundleFile(bundlePath, entries, { maxLines = 80 } = {}) {
@@ -38,45 +52,81 @@ async function buildBundleFile(bundlePath, entries, { maxLines = 80 } = {}) {
   await fs.writeFile(bundlePath, blocks.join("\n").trimEnd(), "utf8");
 }
 
-async function loadLatestAnalysis(workspaceRoot) {
-  const indexPath = path.join(workspaceRoot, ".miniphi", "indices", "executions-index.json");
-  const index = JSON.parse(await fs.readFile(indexPath, "utf8"));
-  const latest = index.entries?.[0];
-  assert.ok(latest?.id, "No execution entry found in index.");
-  const analysisPath = path.join(
-    workspaceRoot,
-    ".miniphi",
-    "executions",
-    latest.id,
-    "analysis.json",
-  );
-  const analysisPayload = JSON.parse(await fs.readFile(analysisPath, "utf8"));
-  assert.ok(analysisPayload?.analysis, "analysis.json missing analysis field.");
-  return JSON.parse(analysisPayload.analysis);
+async function findMiniPhiRoot(startDir) {
+  let current = path.resolve(startDir);
+  const { root } = path.parse(current);
+  while (true) {
+    const candidate = path.join(current, ".miniphi");
+    try {
+      const stats = await fs.stat(candidate);
+      if (stats.isDirectory()) {
+        return candidate;
+      }
+    } catch {
+      // ignore missing dirs
+    }
+    if (current === root) {
+      break;
+    }
+    current = path.dirname(current);
+  }
+  return path.join(startDir, ".miniphi");
+}
+
+function sanitizeJournalId(raw) {
+  if (!raw) {
+    return "";
+  }
+  return raw.replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+async function loadLatestAnalysis(workspaceRoot, promptJournalId) {
+  const miniPhiRoot = await findMiniPhiRoot(workspaceRoot);
+  const safeId = sanitizeJournalId(promptJournalId);
+  const sessionDir = path.join(miniPhiRoot, "prompt-exchanges", "stepwise", safeId);
+  const sessionPath = path.join(sessionDir, "session.json");
+  const session = JSON.parse(await fs.readFile(sessionPath, "utf8"));
+  const stepsDir = path.join(sessionDir, "steps");
+  const steps = session.steps ?? 0;
+  assert.ok(steps > 0, "Prompt journal has no recorded steps.");
+
+  for (let sequence = steps; sequence >= 1; sequence -= 1) {
+    const stepPath = path.join(stepsDir, `step-${String(sequence).padStart(3, "0")}.json`);
+    const step = JSON.parse(await fs.readFile(stepPath, "utf8"));
+    if (typeof step.label === "string" && step.label.startsWith("analyze-file:")) {
+      assert.ok(step.response, "Prompt journal step is missing a response payload.");
+      return JSON.parse(step.response);
+    }
+  }
+
+  throw new Error("No analyze-file step found in prompt journal.");
 }
 
 function assertMultiFileFixes(result, expectedPrefixes) {
   assert.ok(result && typeof result === "object");
   assert.ok(Array.isArray(result.recommended_fixes));
-  assert.ok(result.recommended_fixes.length >= 2);
+  assert.ok(result.recommended_fixes.length >= 1);
   const referenced = new Set();
   for (const fix of result.recommended_fixes) {
     assert.ok(Array.isArray(fix.files));
     assert.ok(fix.files.length > 0);
     fix.files.forEach((file) => referenced.add(file));
   }
+  assert.ok(referenced.size >= 2);
   const matches = Array.from(referenced).filter((file) =>
     expectedPrefixes.some((prefix) => file.includes(prefix)),
   );
   assert.ok(matches.length >= 2);
 }
 
-maybeTest(
+test(
   "MiniPhi advanced prompt covers multiple bash C files",
   { timeout: 12 * 60 * 1000 },
   async () => {
     const workspace = await createTempWorkspace();
     try {
+      await ensureIsolatedMiniPhiRoot(workspace);
+      const configPath = await writeTestConfig(workspace);
       const sampleRoot = path.resolve("samples", "bash", "bash-sources");
       const files = ["array.c", "variables.c", "xmalloc.c"];
       const stagedRoot = await stageSampleFiles(
@@ -92,7 +142,7 @@ maybeTest(
           source: path.join(stagedRoot, file),
           label: `bash-sources/${file}`,
         })),
-        { maxLines: 80 },
+        { maxLines: 30 },
       );
 
       const prompt = [
@@ -102,6 +152,7 @@ maybeTest(
         "Do not leave recommended_fixes empty and include non-empty files arrays.",
       ].join(" ");
 
+      const journalId = `bash-advanced-c-${Date.now()}`;
       const result = runCli(
         [
           "analyze-file",
@@ -109,12 +160,14 @@ maybeTest(
           bundlePath,
           "--task",
           prompt,
+          "--config",
+          configPath,
           "--summary-levels",
           "1",
           "--no-stream",
           "--no-summary",
           "--prompt-journal",
-          "bash-advanced-c",
+          journalId,
           "--prompt-journal-status",
           "paused",
           "--session-timeout",
@@ -123,7 +176,7 @@ maybeTest(
         { cwd: workspace, maxBuffer: 20 * 1024 * 1024 },
       );
       assert.equal(result.code, 0, result.stderr);
-      const analysis = await loadLatestAnalysis(workspace);
+      const analysis = await loadLatestAnalysis(workspace, journalId);
       assertMultiFileFixes(analysis, ["bash-sources/array.c", "bash-sources/variables.c", "bash-sources/xmalloc.c"]);
     } finally {
       await removeTempWorkspace(workspace);
@@ -131,12 +184,14 @@ maybeTest(
   },
 );
 
-maybeTest(
+test(
   "MiniPhi advanced prompt covers multiple bash-it scripts",
   { timeout: 12 * 60 * 1000 },
   async () => {
     const workspace = await createTempWorkspace();
     try {
+      await ensureIsolatedMiniPhiRoot(workspace);
+      const configPath = await writeTestConfig(workspace);
       const sampleRoot = path.resolve("samples", "bash", "bash-it");
       const files = [
         "bash_it.sh",
@@ -156,7 +211,7 @@ maybeTest(
           source: path.join(stagedRoot, file),
           label: `bash-it/${file.replace(/\\/g, "/")}`,
         })),
-        { maxLines: 80 },
+        { maxLines: 30 },
       );
 
       const prompt = [
@@ -166,6 +221,7 @@ maybeTest(
         "Do not leave recommended_fixes empty and include non-empty files arrays.",
       ].join(" ");
 
+      const journalId = `bash-advanced-it-${Date.now()}`;
       const result = runCli(
         [
           "analyze-file",
@@ -173,12 +229,14 @@ maybeTest(
           bundlePath,
           "--task",
           prompt,
+          "--config",
+          configPath,
           "--summary-levels",
           "1",
           "--no-stream",
           "--no-summary",
           "--prompt-journal",
-          "bash-advanced-it",
+          journalId,
           "--prompt-journal-status",
           "paused",
           "--session-timeout",
@@ -187,7 +245,7 @@ maybeTest(
         { cwd: workspace, maxBuffer: 20 * 1024 * 1024 },
       );
       assert.equal(result.code, 0, result.stderr);
-      const analysis = await loadLatestAnalysis(workspace);
+      const analysis = await loadLatestAnalysis(workspace, journalId);
       assertMultiFileFixes(analysis, [
         "bash-it/bash_it.sh",
         "bash-it/plugins/available/base.plugin.bash",

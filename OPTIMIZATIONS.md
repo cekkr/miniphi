@@ -58,7 +58,9 @@ Exit criteria:
 
 Status:
 - Command handlers for `run`, `analyze-file`, `workspace`, `recompose`, `benchmark`, `prompt-template`,
-  `web-research`, `history-notes`, `command-library`, and `helpers` now live under `src/commands/`.
+  `web-research`, `history-notes`, `command-library`, and `helpers` now live under `src/commands/`;
+  keep these explicit entrypoints, but make natural-language prompts the default path into the same
+  command flows (implicit `miniphi "<task>"` should reach these handlers when appropriate).
 - Recompose harness + general-purpose benchmark helpers live under `src/libs/recompose-harness.js` and
   `src/libs/benchmark-general.js`.
 - LM Studio runtime bootstrap (handler init, compatibility probe, prompt scoring wiring) now lives in
