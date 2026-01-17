@@ -1,8 +1,12 @@
 import { normalizeLmStudioHttpUrl } from "./lmstudio-api.js";
 
-function buildRestClientOptions(configData, modelSelection = undefined) {
-  const overrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
-  const options = overrides && typeof overrides === "object" ? { ...overrides } : {};
+function buildRestClientOptions(configData, modelSelection = undefined, overrides = undefined) {
+  const configOverrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
+  const options =
+    configOverrides && typeof configOverrides === "object" ? { ...configOverrides } : {};
+  if (overrides && typeof overrides === "object") {
+    Object.assign(options, overrides);
+  }
   const explicitBase =
     typeof options.baseUrl === "string" && options.baseUrl.trim().length
       ? options.baseUrl

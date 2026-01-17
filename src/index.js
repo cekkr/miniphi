@@ -4,7 +4,6 @@ import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import CliExecutor from "./libs/cli-executor.js";
-import { normalizeLmStudioWsUrl } from "./libs/lmstudio-api.js";
 import { DEFAULT_CONTEXT_LENGTH, resolveModelConfig } from "./libs/model-presets.js";
 import { LMStudioProtocolError } from "./libs/lmstudio-handler.js";
 import PythonLogSummarizer from "./libs/python-log-summarizer.js";
@@ -21,6 +20,7 @@ import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
+import { resolveLmStudioEndpoints } from "./libs/lmstudio-endpoints.js";
 import { createLmStudioRuntime } from "./libs/lmstudio-runtime.js";
 import CommandAuthorizationManager, {
   normalizeCommandPolicy,
@@ -42,8 +42,6 @@ import {
   formatPlanRecommendationsBlock,
   buildNavigationOperations,
   buildResourceConfig,
-  resolveLmStudioHttpBaseUrl,
-  isLocalLmStudioBaseUrl,
   extractRecommendedCommandsFromAnalysis,
   extractContextRequestsFromAnalysis,
   extractMissingSnippetsFromAnalysis,
@@ -1331,6 +1329,7 @@ async function main() {
   }
   const configData = configResult?.data ?? {};
   const configPath = configResult?.path ?? null;
+  const lmStudioEndpoints = resolveLmStudioEndpoints(configData);
   if (configPath && verbose) {
     const relPath = path.relative(process.cwd(), configPath) || configPath;
     console.log(`[MiniPhi] Loaded configuration from ${relPath}`);
@@ -1338,9 +1337,8 @@ async function main() {
   const activeProfile = configResult?.profileName ?? null;
   if (activeProfile) {
     const profileDetails = [];
-    const lmStudioBase = resolveLmStudioHttpBaseUrl(configData);
-    if (lmStudioBase) {
-      profileDetails.push(`LM Studio: ${lmStudioBase}`);
+    if (lmStudioEndpoints?.restBaseUrl) {
+      profileDetails.push(`LM Studio: ${lmStudioEndpoints.restBaseUrl}`);
     }
     if (configData?.defaults?.gpu) {
       profileDetails.push(`GPU: ${configData.defaults.gpu}`);
@@ -1581,11 +1579,9 @@ async function main() {
     ...options,
   });
 
-  const resolvedLmStudioBaseUrl = resolveLmStudioHttpBaseUrl(configData);
-  const resolvedLmStudioWsBase = normalizeLmStudioWsUrl(
-    configData?.lmStudio?.clientOptions?.baseUrl,
-  );
-  const isLmStudioLocal = isLocalLmStudioBaseUrl(resolvedLmStudioBaseUrl);
+  const resolvedLmStudioBaseUrl = lmStudioEndpoints?.restBaseUrl ?? null;
+  const resolvedLmStudioWsBase = lmStudioEndpoints?.wsBaseUrl ?? null;
+  const isLmStudioLocal = lmStudioEndpoints?.isLocal ?? true;
   const resourceMonitorForcedDisabled = !isLmStudioLocal;
   if (resourceMonitorForcedDisabled && verbose) {
     const endpointLabel = resolvedLmStudioBaseUrl ?? "unknown";

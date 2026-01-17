@@ -117,7 +117,10 @@ async function createLmStudioRuntime({
   restBaseUrl = null,
   wsBaseUrl = null,
 }) {
-  const manager = new LMStudioManager(configData?.lmStudio?.clientOptions);
+  const clientOptions = wsBaseUrl
+    ? { ...(configData?.lmStudio?.clientOptions ?? {}), baseUrl: wsBaseUrl }
+    : configData?.lmStudio?.clientOptions;
+  const manager = new LMStudioManager(clientOptions);
   const promptTimeoutMs =
     resolveDurationMs({
       secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
@@ -168,7 +171,10 @@ async function createLmStudioRuntime({
   let lmStudioCompatibility = { ok: true, preferRest: !isLmStudioLocal };
   let preferRestTransport = !isLmStudioLocal;
   try {
-    restClient = new LMStudioRestClient(buildRestClientOptions(configData, modelSelection));
+    const restOverrides = restBaseUrl ? { baseUrl: restBaseUrl } : undefined;
+    restClient = new LMStudioRestClient(
+      buildRestClientOptions(configData, modelSelection, restOverrides),
+    );
     lmStudioCompatibility = await checkLmStudioCompatibility(restClient, manager, { verbose });
     if (typeof lmStudioCompatibility?.preferRest === "boolean") {
       preferRestTransport = lmStudioCompatibility.preferRest;
