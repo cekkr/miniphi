@@ -53,6 +53,8 @@ Slices (do in order):
      - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` showed response_format coverage at 12.5% (prompt-plan 13, navigation-plan 5) with tool_calls/tool_definitions and rawResponseText at 100%.
    - Local eval coverage update (2026-01-16):
      - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` now reports response_format/schema name coverage at 100% across 144 prompt exchanges (log-analysis + recompose + navigator + planner).
+   - LM Studio endpoint resolution (2026-01-17):
+     - WS/REST base URLs now resolve through `src/libs/lmstudio-endpoints.js` and the runtime consumes the resolved endpoints for consistent transport wiring.
    - Live analyze-file run (2026-01-16):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116c --prompt-journal-status paused --no-stream --session-timeout 300` completed; prompt exchange includes `schemaId: log-analysis` and `request.response_format` for the main analysis prompt.
    - Prompt budget compaction (2026-01-16):

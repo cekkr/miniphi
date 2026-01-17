@@ -94,6 +94,8 @@ export default class PromptStepJournal {
    *   status?: string | null,
    *   operations?: Array<Record<string, any>>,
    *   metadata?: Record<string, any> | null,
+   *   tool_calls?: Array<Record<string, any>> | null,
+   *   tool_definitions?: Array<Record<string, any>> | null,
    *   toolCalls?: Array<Record<string, any>> | null,
    *   toolDefinitions?: Array<Record<string, any>> | null,
    *   workspaceSummary?: string | null,
@@ -116,6 +118,8 @@ export default class PromptStepJournal {
     const stepFile = path.join(stepsDir, fileName);
     const startedAt = this._normalizeDate(payload.startedAt);
     const finishedAt = this._normalizeDate(payload.finishedAt);
+    const toolCalls = payload.tool_calls ?? payload.toolCalls ?? null;
+    const toolDefinitions = payload.tool_definitions ?? payload.toolDefinitions ?? null;
     const entry = {
       id: `${session.id}#${sequence}`,
       sequence,
@@ -126,8 +130,8 @@ export default class PromptStepJournal {
       status: payload.status ?? "recorded",
       operations: Array.isArray(payload.operations) ? payload.operations : [],
       metadata: payload.metadata ?? null,
-      toolCalls: payload.toolCalls ?? null,
-      toolDefinitions: payload.toolDefinitions ?? null,
+      tool_calls: toolCalls,
+      tool_definitions: toolDefinitions,
       workspaceSummary: payload.workspaceSummary ?? null,
       links: payload.links ?? null,
       startedAt,

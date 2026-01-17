@@ -939,8 +939,8 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       source: context.planSource ?? null,
       recommendedTools: context.planResult.recommendedTools ?? [],
     },
-    toolCalls: context.planResult.toolCalls ?? null,
-    toolDefinitions: context.planResult.toolDefinitions ?? null,
+    tool_calls: context.planResult.toolCalls ?? null,
+    tool_definitions: context.planResult.toolDefinitions ?? null,
     workspaceSummary: context.workspaceSummary ?? null,
     links,
   });
@@ -970,8 +970,8 @@ async function recordNavigationPlanInJournal(journal, sessionId, context = undef
       summary: plan.summary ?? null,
       helper: plan.helper ?? null,
     },
-    toolCalls: plan.toolCalls ?? null,
-    toolDefinitions: plan.toolDefinitions ?? null,
+    tool_calls: plan.toolCalls ?? null,
+    tool_definitions: plan.toolDefinitions ?? null,
     workspaceSummary: context.workspaceSummary ?? null,
     links,
   });

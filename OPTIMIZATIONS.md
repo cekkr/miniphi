@@ -112,6 +112,11 @@ Exit criteria:
 - Duplicated fields are removed or canonicalized across the two systems.
 - Prompt journals still contain the full prompt, response, and tool metadata required by evals.
 
+Status:
+- In progress. PromptStepJournal now stores `tool_calls`/`tool_definitions` in the same shape as
+  prompt exchanges and the contract is documented in AGENTS.md; remaining work is to reduce any
+  duplicated prompt/response payloads beyond the canonical fields.
+
 ### P1 - LM Studio transport and error taxonomy
 
 Normalize REST/WS fallback, error classification, and telemetry for all LM Studio calls.
@@ -124,8 +129,9 @@ Exit criteria:
 Status:
 - In progress. Shared error classification now lives in `src/libs/lmstudio-error-utils.js` and is
   used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; LM Studio bootstrap +
-  compatibility checks moved into `src/libs/lmstudio-runtime.js`, but endpoint/transport resolution
-  still lives in `src/index.js`.
+  compatibility checks moved into `src/libs/lmstudio-runtime.js`, and endpoint/transport resolution
+  now flows through `src/libs/lmstudio-endpoints.js` with shared WS/REST base wiring. Remaining work:
+  unify error metadata payloads across handlers/analyzers and align session timeout + retry caps.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
