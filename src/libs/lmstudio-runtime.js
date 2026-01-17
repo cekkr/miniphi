@@ -7,6 +7,7 @@ import { buildRestClientOptions } from "./lmstudio-client-options.js";
 import {
   DEFAULT_NO_TOKEN_TIMEOUT_MS,
   DEFAULT_PROMPT_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
 } from "./runtime-defaults.js";
 
 const PROMPT_SCORING_SYSTEM_PROMPT = [
@@ -121,20 +122,28 @@ async function createLmStudioRuntime({
     ? { ...(configData?.lmStudio?.clientOptions ?? {}), baseUrl: wsBaseUrl }
     : configData?.lmStudio?.clientOptions;
   const manager = new LMStudioManager(clientOptions);
-  const promptTimeoutMs =
+  const resolvedPromptTimeoutMs =
     resolveDurationMs({
       secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
       secondsLabel: "config.prompt.timeoutSeconds",
       millisValue: promptDefaults.timeoutMs,
       millisLabel: "config.prompt.timeoutMs",
     }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
-  const noTokenTimeoutMs =
+  const promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+    resolvedPromptTimeoutMs,
+    DEFAULT_PROMPT_TIMEOUT_MS,
+  );
+  const resolvedNoTokenTimeoutMs =
     resolveDurationMs({
       secondsValue: promptDefaults.noTokenTimeoutSeconds ?? promptDefaults.noTokenTimeout,
       secondsLabel: "config.prompt.noTokenTimeoutSeconds",
       millisValue: promptDefaults.noTokenTimeoutMs,
       millisLabel: "config.prompt.noTokenTimeoutMs",
     }) ?? DEFAULT_NO_TOKEN_TIMEOUT_MS;
+  const noTokenTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+    resolvedNoTokenTimeoutMs,
+    DEFAULT_NO_TOKEN_TIMEOUT_MS,
+  );
   if (verbose) {
     const promptSeconds = Math.round(promptTimeoutMs / 1000);
     const noTokenSeconds = Math.round(noTokenTimeoutMs / 1000);

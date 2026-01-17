@@ -5,6 +5,7 @@ import StreamAnalyzer from "./stream-analyzer.js";
 import { LMStudioProtocolError } from "./lmstudio-handler.js";
 import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core-utils.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
+import { MIN_LMSTUDIO_REQUEST_TIMEOUT_MS } from "./runtime-defaults.js";
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -2367,8 +2368,11 @@ export default class EfficientLogAnalyzer {
     const tinyLog =
       (lineCount !== null && lineCount <= 20) || (tokenEstimate !== null && tokenEstimate <= 800);
     if (tinyLog) {
-      const tinyCapMs = 120000;
+      const tinyCapMs = Math.max(120000, MIN_LMSTUDIO_REQUEST_TIMEOUT_MS);
       timeout = timeout ? Math.min(timeout, tinyCapMs) : tinyCapMs;
+    }
+    if (Number.isFinite(timeout) && timeout > 0) {
+      timeout = Math.max(timeout, MIN_LMSTUDIO_REQUEST_TIMEOUT_MS);
     }
     return timeout;
   }

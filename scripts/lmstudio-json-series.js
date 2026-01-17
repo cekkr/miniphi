@@ -3,6 +3,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 
+const MIN_LMSTUDIO_REQUEST_TIMEOUT_MS = 300000;
+
 function stripTrailingSlashes(value) {
   return String(value ?? "").replace(/\/+$/g, "");
 }
@@ -76,12 +78,16 @@ function printUsage() {
   console.log(lines.join("\n"));
 }
 
-async function fetchJson(url, payload, timeoutMs = 180000) {
+async function fetchJson(url, payload, timeoutMs = MIN_LMSTUDIO_REQUEST_TIMEOUT_MS) {
   if (typeof fetch !== "function") {
     throw new Error("Global fetch() is not available. Use Node.js 18+.");
   }
+  const effectiveTimeoutMs = Math.max(
+    Number(timeoutMs) || MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  );
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
   try {
     const res = await fetch(url, {
       method: "POST",

@@ -36,6 +36,9 @@ const CONNECTION_PATTERNS = [
   /ECONNRESET/i,
   /EHOSTUNREACH/i,
   /ENETUNREACH/i,
+  /ETIMEDOUT/i,
+  /connect.*timeout/i,
+  /socket hang up/i,
 ];
 
 const NETWORK_PATTERNS = [/network/i];
@@ -63,21 +66,21 @@ export function normalizeLmStudioErrorMessage(error) {
 export function classifyLmStudioError(error) {
   const message = normalizeLmStudioErrorMessage(error);
   const isProtocol = matchesAny(PROTOCOL_PATTERNS, message);
-  const isTimeout = matchesAny(TIMEOUT_PATTERNS, message);
+  const isConnection = matchesAny(CONNECTION_PATTERNS, message);
+  const isTimeout = !isConnection && matchesAny(TIMEOUT_PATTERNS, message);
   const isStreamingHang = matchesAny(STREAM_HANG_PATTERNS, message);
   const isContextOverflow = matchesAny(CONTEXT_OVERFLOW_PATTERNS, message);
   const isInvalidResponse = matchesAny(INVALID_RESPONSE_PATTERNS, message);
-  const isConnection = matchesAny(CONNECTION_PATTERNS, message);
   const isNetwork = matchesAny(NETWORK_PATTERNS, message);
 
   let code = "rest-failure";
   let reason = "REST failure";
-  if (isTimeout) {
-    code = "timeout";
-    reason = "timeout";
-  } else if (isConnection) {
+  if (isConnection) {
     code = "connection";
     reason = "connection error";
+  } else if (isTimeout) {
+    code = "timeout";
+    reason = "timeout";
   } else if (isNetwork) {
     code = "network";
     reason = "network error";

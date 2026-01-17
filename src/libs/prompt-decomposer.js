@@ -10,11 +10,15 @@ import {
 } from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
 import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
+import {
+  MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
+} from "./runtime-defaults.js";
 
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_TIMEOUT_MS = 45000;
+const DEFAULT_TIMEOUT_MS = MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
 const MAX_STEP_PREVIEW = 10;
 const COMPACT_SUMMARY_LIMIT = 800;
 const COMPACT_HINT_LIMIT = 600;
@@ -105,10 +109,10 @@ export default class PromptDecomposer {
         ? options.schemaId.trim()
         : PLAN_SCHEMA_ID;
     const requestedTimeout = Number(options?.timeoutMs);
-    this.timeoutMs =
-      Number.isFinite(requestedTimeout) && requestedTimeout > 0
-        ? requestedTimeout
-        : DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = normalizeLmStudioRequestTimeoutMs(
+      requestedTimeout,
+      DEFAULT_TIMEOUT_MS,
+    );
     this.disabled = false;
     this.disableNotice = null;
   }

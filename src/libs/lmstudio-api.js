@@ -1,6 +1,10 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { createRequire } from "module";
 import { DEFAULT_MODEL_KEY } from "./model-presets.js";
+import {
+  MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
+} from "./runtime-defaults.js";
 
 const DEFAULT_CONTEXT_LENGTH = 16384;
 const DEFAULT_LOAD_CONFIG = {
@@ -10,7 +14,7 @@ const DEFAULT_LOAD_CONFIG = {
 };
 const DEFAULT_LMSTUDIO_HTTP_BASE_URL = "http://127.0.0.1:1234";
 const DEFAULT_LMSTUDIO_WS_BASE_URL = "ws://127.0.0.1:1234";
-const DEFAULT_REST_TIMEOUT_MS = 30000;
+const DEFAULT_REST_TIMEOUT_MS = MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
 const require = createRequire(import.meta.url);
 let SDK_VERSION = null;
 try {
@@ -234,7 +238,11 @@ export class LMStudioRestClient {
       ),
     );
     this.apiVersion = this._normalizeApiVersion(options?.apiVersion ?? "v0");
-    this.timeoutMs = options?.timeoutMs ?? DEFAULT_REST_TIMEOUT_MS;
+    const timeoutCandidate = options?.timeoutMs ?? DEFAULT_REST_TIMEOUT_MS;
+    this.timeoutMs = normalizeLmStudioRequestTimeoutMs(
+      timeoutCandidate,
+      DEFAULT_REST_TIMEOUT_MS,
+    );
     this.defaultModel = options?.defaultModel ?? DEFAULT_MODEL_KEY;
     this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
     this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
@@ -440,8 +448,12 @@ export class LMStudioRestClient {
    */
   async _execute(url, init) {
     const { timeoutMs, ...restInit } = init ?? {};
-    const effectiveTimeout =
+    const requestedTimeout =
       typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : this.timeoutMs;
+    const effectiveTimeout = normalizeLmStudioRequestTimeoutMs(
+      requestedTimeout,
+      this.timeoutMs,
+    );
     const controller =
       typeof AbortController !== "undefined" && effectiveTimeout > 0
         ? new AbortController()
@@ -478,7 +490,7 @@ export class LMStudioRestClient {
     } catch (error) {
       if (error.name === "AbortError") {
         throw new Error(
-          `LM Studio REST request timed out after ${effectiveTimeout}ms (url: ${url}).`,
+          `LM Studio REST request timed out waiting for a response after ${effectiveTimeout}ms (url: ${url}).`,
         );
       }
       throw error;

@@ -1,4 +1,5 @@
 import { normalizeLmStudioHttpUrl } from "./lmstudio-api.js";
+import { normalizeLmStudioRequestTimeoutMs } from "./runtime-defaults.js";
 
 function buildRestClientOptions(configData, modelSelection = undefined, overrides = undefined) {
   const configOverrides = configData?.lmStudio?.rest ?? configData?.rest ?? null;
@@ -24,6 +25,9 @@ function buildRestClientOptions(configData, modelSelection = undefined, override
     if (Number.isFinite(promptTimeoutMs) && promptTimeoutMs > 0) {
       options.timeoutMs = Math.floor(promptTimeoutMs);
     }
+  }
+  if (typeof options.timeoutMs !== "undefined") {
+    options.timeoutMs = normalizeLmStudioRequestTimeoutMs(options.timeoutMs);
   }
   if (modelSelection?.modelKey) {
     options.defaultModel = modelSelection.modelKey;

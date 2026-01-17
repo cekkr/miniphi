@@ -5,6 +5,10 @@ import {
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
+import {
+  MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
+} from "./runtime-defaults.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
 const HELPER_TIMEOUT_MS = 20000;
@@ -142,8 +146,10 @@ export default class ApiNavigator {
       typeof options?.navigationRequestTimeoutMs === "number"
         ? options.navigationRequestTimeoutMs
         : null;
-    this.navigationRequestTimeoutMs =
-      navigationTimeoutMs && navigationTimeoutMs > 0 ? navigationTimeoutMs : 30000;
+    this.navigationRequestTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+      navigationTimeoutMs,
+      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    );
     this.lastStopReason = null;
   }
 

@@ -11,7 +11,7 @@
       "timeoutSeconds": 300,
       "noTokenTimeoutSeconds": 300,
       "navigator": {
-        "timeoutSeconds": 60,
+        "timeoutSeconds": 300,
         "helperSilenceTimeoutMs": 12000
       }
     }

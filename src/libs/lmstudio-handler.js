@@ -6,6 +6,10 @@ import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 import { isProtocolWarningError, isStreamingHangError } from "./lmstudio-error-utils.js";
+import {
+  MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
+} from "./runtime-defaults.js";
 
 const DEFAULT_SYSTEM_PROMPT = [
   "You are MiniPhi, a local workspace agent.",
@@ -37,10 +41,10 @@ export class LMStudioHandler {
     this.model = null;
     this.modelKey = options?.modelKey ?? DEFAULT_MODEL_KEY;
     this.systemPrompt = options?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
-    this.promptTimeoutMs =
-      typeof options?.promptTimeoutMs === "number" && Number.isFinite(options.promptTimeoutMs)
-        ? options.promptTimeoutMs
-        : null;
+    this.promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+      options?.promptTimeoutMs,
+      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    );
     this.restClient = options?.restClient ?? null;
     this.preferRestTransport = Boolean(options?.preferRestTransport);
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
@@ -82,11 +86,10 @@ export class LMStudioHandler {
   }
 
   setNoTokenTimeout(timeoutMs) {
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      this.noTokenTimeoutMs = null;
-      return;
-    }
-    this.noTokenTimeoutMs = timeoutMs;
+    this.noTokenTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+      timeoutMs,
+      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    );
   }
 
   /**
@@ -793,11 +796,10 @@ export class LMStudioHandler {
   }
 
   setPromptTimeout(timeoutMs) {
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      this.promptTimeoutMs = null;
-      return;
-    }
-    this.promptTimeoutMs = timeoutMs;
+    this.promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+      timeoutMs,
+      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    );
   }
 
   getHistory() {

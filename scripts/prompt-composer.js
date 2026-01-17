@@ -10,6 +10,8 @@ import {
   resolveOptionSelections,
 } from "../src/libs/prompt-chain-utils.js";
 
+const MIN_LMSTUDIO_REQUEST_TIMEOUT_MS = 300000;
+
 function stripTrailingSlashes(value) {
   return String(value ?? "").replace(/\/+$/g, "");
 }
@@ -79,7 +81,7 @@ function printUsage() {
     "  --response-file <path>  Write raw LM Studio response JSON when --send is set",
     "  --write-selected        Persist resolved selections to --selected-file",
     "  --send                  Send the prompt to LM Studio",
-    "  --timeout-ms <n>        LM Studio request timeout (default: 180000)",
+    "  --timeout-ms <n>        LM Studio request timeout (default: 300000, clamped >= 300000)",
     "  --watch                 Recompose on chain/template/selection changes",
     "  -h, --help              Show help",
   ];
@@ -105,7 +107,7 @@ function parseArgs(argv) {
     responseFile: null,
     writeSelected: false,
     send: false,
-    timeoutMs: 180000,
+    timeoutMs: MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
     watch: false,
   };
 
@@ -180,7 +182,10 @@ function parseArgs(argv) {
       continue;
     }
     if (arg === "--timeout-ms") {
-      options.timeoutMs = parseNumber(argv[++i], "--timeout-ms");
+      options.timeoutMs = Math.max(
+        parseNumber(argv[++i], "--timeout-ms"),
+        MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+      );
       continue;
     }
     if (arg === "--watch") {
@@ -196,8 +201,12 @@ async function fetchJson(url, payload, timeoutMs) {
   if (typeof fetch !== "function") {
     throw new Error("Global fetch() is not available. Use Node.js 18+.");
   }
+  const effectiveTimeoutMs = Math.max(
+    Number(timeoutMs) || MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+    MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+  );
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
   try {
     const res = await fetch(url, {
       method: "POST",

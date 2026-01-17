@@ -10,6 +10,7 @@ import { resolveDurationMs } from "./cli-utils.js";
 import { buildRestClientOptions } from "./lmstudio-client-options.js";
 import {
   DEFAULT_PROMPT_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
   RECOMPOSE_AUTO_STATUS_TIMEOUT_MS,
 } from "./runtime-defaults.js";
 
@@ -79,7 +80,10 @@ async function createRecomposeHarness({
         millisValue: promptDefaults.timeoutMs,
         millisLabel: "config.prompt.timeoutMs",
       }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
-    const recomposePromptTimeout = Math.max(baseTimeoutMs, 300000);
+    const recomposePromptTimeout = normalizeLmStudioRequestTimeoutMs(
+      baseTimeoutMs,
+      DEFAULT_PROMPT_TIMEOUT_MS,
+    );
     phi4 = new LMStudioHandler(manager, {
       systemPrompt: systemPrompt ?? promptDefaults.system,
       promptTimeoutMs: recomposePromptTimeout,
