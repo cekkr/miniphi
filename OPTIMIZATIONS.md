@@ -80,6 +80,9 @@ Exit criteria:
   responses produce deterministic fallback payloads.
 - Prompt/response artifacts retain response text, tool_calls, and tool_definitions for scoring.
 
+Status:
+- EfficientLogAnalyzer now skips JSON repair heuristics and relies on schema-only retries plus deterministic fallbacks to keep JSON-first behavior consistent.
+
 ### P0 - Shared persistence helpers
 
 Reduce duplication between project and global memory by extracting common read/write/index helpers.

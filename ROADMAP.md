@@ -65,11 +65,12 @@ Slices (do in order):
      - `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean` fell back to the workspace overview after 3 attempts; prompt log captured in `.miniphi/recompose/2026-01-11T21-10-44-250Z-recompose/prompts.log`.
      - Repair attempted 9 files but skipped all because regenerated code matched the candidate; final comparison still reported 9 mismatches.
      - `npm test` passed (CLI benchmark/recompose/prompt-template smoke coverage).
+   - Unit test sweep (2026-01-17):
+     - `npm test` passed (includes updated navigation schema prompt-template checks).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
-   - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, and capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage.
+   - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
    - Next steps (prioritized, add proof per item):
      - Natural-language command parity (exit: implicit `miniphi "<task>"` routes to the same handlers as explicit commands, with schema compliance + stop reason recorded).
-     - Harden navigator helper_script guidance (explicit null unless language+code present) to reduce schema fallback churn (exit: navigator responses stop failing due to helper_script omissions).
    - Deferred (lower priority while the above are in flight):
      - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
      - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.

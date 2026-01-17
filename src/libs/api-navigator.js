@@ -43,6 +43,7 @@ const NAVIGATION_JSON_SCHEMA = {
     },
     helper_script: {
       type: ["object", "null"],
+      description: "Use null unless both language and code are provided. Do not emit empty objects.",
       additionalProperties: false,
       required: ["language", "code"],
       properties: {
@@ -86,7 +87,7 @@ const NAVIGATION_SCHEMA = [
   '    "language": "node|python",',
   '    "name": "friendly title",',
   '    "description": "why the helper is needed",',
-  '    "code": "fully executable source code",',
+    '    "code": "fully executable source code (set helper_script to null when not needed)",',
   '    "stdin": "optional input to send via stdin"',
   "  },",
   '  "notes": "optional supporting context",',
@@ -101,6 +102,7 @@ const SYSTEM_PROMPT = [
   "When additional telemetry is required (e.g., enumerating files, parsing manifests), emit a minimal helper script.",
   "When focus_path is provided in the request body, prefer it for helper scripts and actions.",
   "If no helper script is required, set helper_script to null and do not emit an empty object.",
+  "Only include helper_script when both language and code are available; otherwise use null.",
   "Helper scripts must be idempotent, safe, and runnable via Node.js or Python without extra dependencies. If stdin is required, include a compact sample payload under helper_script.stdin, and otherwise accept focus_path as argv[2].",
 ].join(" ");
 

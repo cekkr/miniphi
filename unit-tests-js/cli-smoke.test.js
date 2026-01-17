@@ -70,6 +70,8 @@ test("CLI prompt-template + library commands run without LM Studio", async () =>
     const navText = await fs.readFile(navPromptPath, "utf8");
     assert.match(navText, /navigation_summary/);
     assert.match(navText, /missing_snippets/);
+    assert.match(navText, /helper_script/);
+    assert.match(navText, /Use null unless you provide both language and code/i);
 
     const libraryResult = runCli(
       ["command-library", "--json", "--limit", "3", "--cwd", workspace],

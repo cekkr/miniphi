@@ -1707,15 +1707,6 @@ export default class EfficientLogAnalyzer {
       note: null,
       linesAnalyzed: linesAnalyzed ?? null,
     };
-    const repaired = this._attemptJsonRepair(analysis);
-    if (repaired) {
-      const repairedText = JSON.stringify(repaired, null, 2);
-      console.warn("[MiniPhi] Phi response failed validation; used salvaged JSON payload.");
-      this._logDev(devLog, "Applied JSON repair heuristic to salvage Phi response.");
-      salvageReport.strategy = "json-repair";
-      salvageReport.note = "Applied JSON repair heuristic to salvage Phi response.";
-      return { analysis: repairedText, usedFallback: false, salvageReport };
-    }
     const retry = await this._retrySchemaOnlyPrompt({
       schemaId,
       task,
@@ -1735,30 +1726,6 @@ export default class EfficientLogAnalyzer {
     salvageReport.strategy = "schema-retry-failed";
     salvageReport.note = "JSON salvage and schema-only retry failed.";
     return { analysis: null, usedFallback: false, salvageReport };
-  }
-
-  _attemptJsonRepair(rawText) {
-    if (!rawText || typeof rawText !== "string") {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(rawText);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      // continue to heuristics
-    }
-    const firstBrace = rawText.indexOf("{");
-    const lastBrace = rawText.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      return null;
-    }
-    const candidate = rawText.slice(firstBrace, lastBrace + 1);
-    try {
-      const parsed = JSON.parse(candidate);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      return null;
-    }
   }
 
   async _retrySchemaOnlyPrompt({ schemaId, task, command, compression, traceOptions, devLog }) {

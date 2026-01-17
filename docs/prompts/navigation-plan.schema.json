@@ -50,6 +50,7 @@
     },
     "helper_script": {
       "type": ["object", "null"],
+      "description": "Use null unless you provide both language and code. Do not emit empty objects.",
       "additionalProperties": false,
       "required": ["language", "code"],
       "properties": {
