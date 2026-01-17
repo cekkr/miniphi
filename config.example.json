@@ -9,8 +9,16 @@
     },
     "prompt": {
       "timeoutSeconds": 300,
-      "noTokenTimeoutSeconds": 300
+      "noTokenTimeoutSeconds": 300,
+      "navigator": {
+        "timeoutSeconds": 60,
+        "helperSilenceTimeoutMs": 12000
+      }
     }
+  },
+  "prompt": {
+    "timeoutSeconds": 300,
+    "noTokenTimeoutSeconds": 300
   },
   "defaults": {
     "task": "Provide a precise technical analysis of the captured output.",

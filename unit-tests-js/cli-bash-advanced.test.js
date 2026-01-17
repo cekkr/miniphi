@@ -8,6 +8,8 @@ import {
   runCli,
 } from "./cli-test-utils.js";
 
+const REPO_ROOT = path.resolve(process.cwd());
+
 async function stageSampleFiles(workspaceRoot, sampleRoot, files, destRoot) {
   const destBase = path.join(workspaceRoot, destRoot);
   await fs.mkdir(destBase, { recursive: true });
@@ -24,19 +26,6 @@ async function ensureIsolatedMiniPhiRoot(workspaceRoot) {
   const miniPhiRoot = path.join(workspaceRoot, ".miniphi");
   await fs.mkdir(miniPhiRoot, { recursive: true });
   return miniPhiRoot;
-}
-
-async function writeTestConfig(workspaceRoot) {
-  const configPath = path.join(workspaceRoot, "miniphi.config.json");
-  const payload = {
-    prompt: {
-      timeoutSeconds: 120,
-      navigator: { timeoutSeconds: 120 },
-      decomposer: { timeoutSeconds: 120 },
-    },
-  };
-  await fs.writeFile(configPath, JSON.stringify(payload, null, 2), "utf8");
-  return configPath;
 }
 
 async function buildBundleFile(bundlePath, entries, { maxLines = 80 } = {}) {
@@ -126,7 +115,6 @@ test(
     const workspace = await createTempWorkspace();
     try {
       await ensureIsolatedMiniPhiRoot(workspace);
-      const configPath = await writeTestConfig(workspace);
       const sampleRoot = path.resolve("samples", "bash", "bash-sources");
       const files = ["array.c", "variables.c", "xmalloc.c"];
       const stagedRoot = await stageSampleFiles(
@@ -147,9 +135,12 @@ test(
 
       const prompt = [
         "Analyze the bundled bash C excerpts.",
-        "Return at least two recommended_fixes entries that reference multiple files.",
-        "Use file paths exactly as labeled in the bundle (bash-sources/array.c, bash-sources/variables.c, bash-sources/xmalloc.c).",
+        "Return exactly two recommended_fixes entries.",
+        "For fix 1, set files to [\"bash-sources/array.c\", \"bash-sources/variables.c\"].",
+        "For fix 2, set files to [\"bash-sources/variables.c\", \"bash-sources/xmalloc.c\"].",
+        "Use file paths exactly as labeled in the bundle.",
         "Do not leave recommended_fixes empty and include non-empty files arrays.",
+        "Do not change the file lists; keep them exactly as specified.",
       ].join(" ");
 
       const journalId = `bash-advanced-c-${Date.now()}`;
@@ -160,8 +151,6 @@ test(
           bundlePath,
           "--task",
           prompt,
-          "--config",
-          configPath,
           "--summary-levels",
           "1",
           "--no-stream",
@@ -173,7 +162,7 @@ test(
           "--session-timeout",
           "600",
         ],
-        { cwd: workspace, maxBuffer: 20 * 1024 * 1024 },
+        { cwd: REPO_ROOT, maxBuffer: 20 * 1024 * 1024 },
       );
       assert.equal(result.code, 0, result.stderr);
       const analysis = await loadLatestAnalysis(workspace, journalId);
@@ -191,7 +180,6 @@ test(
     const workspace = await createTempWorkspace();
     try {
       await ensureIsolatedMiniPhiRoot(workspace);
-      const configPath = await writeTestConfig(workspace);
       const sampleRoot = path.resolve("samples", "bash", "bash-it");
       const files = [
         "bash_it.sh",
@@ -216,9 +204,12 @@ test(
 
       const prompt = [
         "Analyze the bundled bash-it excerpts.",
-        "Return at least two recommended_fixes entries that touch multiple scripts.",
-        "Use file paths exactly as labeled in the bundle (bash-it/bash_it.sh, bash-it/plugins/available/base.plugin.bash, bash-it/lib/utilities.bash).",
+        "Return exactly two recommended_fixes entries.",
+        "For fix 1, set files to [\"bash-it/bash_it.sh\", \"bash-it/plugins/available/base.plugin.bash\"].",
+        "For fix 2, set files to [\"bash-it/lib/utilities.bash\", \"bash-it/plugins/available/base.plugin.bash\"].",
+        "Use file paths exactly as labeled in the bundle.",
         "Do not leave recommended_fixes empty and include non-empty files arrays.",
+        "Do not change the file lists; keep them exactly as specified.",
       ].join(" ");
 
       const journalId = `bash-advanced-it-${Date.now()}`;
@@ -229,8 +220,6 @@ test(
           bundlePath,
           "--task",
           prompt,
-          "--config",
-          configPath,
           "--summary-levels",
           "1",
           "--no-stream",
@@ -242,7 +231,7 @@ test(
           "--session-timeout",
           "600",
         ],
-        { cwd: workspace, maxBuffer: 20 * 1024 * 1024 },
+        { cwd: REPO_ROOT, maxBuffer: 20 * 1024 * 1024 },
       );
       assert.equal(result.code, 0, result.stderr);
       const analysis = await loadLatestAnalysis(workspace, journalId);
