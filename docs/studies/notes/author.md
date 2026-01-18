@@ -136,3 +136,8 @@ Recursive prompt:
 Continue with roadmap and next step implementations but... using miniphi itself with devstral, comparing its results with your choice and fixing miniphi source code to work efficiently as an AI agent. LM Studio APIs are available
 
 This time, use miniphi step-by-step flow to check every time how a complex task is divided recursively in subtask and how requests and their practical json responses are handled in practice, to make greater improvents rather than "some line changes" against major issues
+
+
+Other pre-cooked "continue" prompt:
+[AGENTS.md](AGENTS.md) 
+Continue with various [ROADMAP.md](ROADMAP.md) implementations and [OPTIMIZATIONS.md](OPTIMIZATIONS.md) to apply to src/ miniphi code, then execute and improve unit tests (always executing miniphi as external program to test its effectiveness over samples/ available). LM Studio APIs are listening locally http://127.0.0.1:1234 for real time testing
