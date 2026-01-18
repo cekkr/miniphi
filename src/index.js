@@ -33,6 +33,7 @@ import {
   buildPromptTemplateBlock,
   buildPromptCompositionBlock,
 } from "./libs/workspace-context-utils.js";
+import { scanWorkspace } from "./libs/workspace-scanner.js";
 import {
   normalizeDangerLevel,
   mergeFixedReferences,
@@ -2705,9 +2706,22 @@ async function generateWorkspaceSnapshot({
   promptId = null,
   promptJournalId = null,
 }) {
+  let scanResult = null;
+  try {
+    scanResult = await scanWorkspace(rootDir, {
+      ignoredDirs: workspaceProfiler?.ignoredDirs ?? undefined,
+    });
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Workspace scan failed for ${rootDir}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
   let profile;
   try {
-    profile = workspaceProfiler.describe(rootDir);
+    profile = workspaceProfiler.describe(rootDir, { scanResult });
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -2717,7 +2731,10 @@ async function generateWorkspaceSnapshot({
     return null;
   }
 
-  const manifestResult = await collectManifestSummary(rootDir, { limit: 10 }).catch((error) => {
+  const manifestResult = await collectManifestSummary(rootDir, {
+    limit: 10,
+    scanResult,
+  }).catch((error) => {
     if (verbose) {
       console.warn(
         `[MiniPhi] Workspace manifest scan failed for ${rootDir}: ${error instanceof Error ? error.message : error}`,

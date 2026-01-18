@@ -1,71 +1,44 @@
 import fs from "fs";
 import path from "path";
-
-const DEFAULT_IGNORED_DIRS = new Set(["node_modules", ".git", ".hg", ".svn", ".miniphi"]);
-const DEFAULT_SKIP_FILES = new Set([".gitkeep"]);
-
-function normalizeSet(values) {
-  if (!values) {
-    return new Set();
-  }
-  const output = new Set();
-  for (const value of values) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      output.add(value.trim().toLowerCase());
-    }
-  }
-  return output;
-}
-
-function shouldSkipDirectory(name, ignored) {
-  if (!name) {
-    return false;
-  }
-  const normalized = name.toLowerCase();
-  return ignored.has(normalized) || normalized.startsWith(".");
-}
+import {
+  DEFAULT_IGNORED_DIRS,
+  DEFAULT_SKIP_FILES,
+  filterWorkspaceFiles,
+  scanWorkspace,
+} from "./workspace-scanner.js";
 
 export async function listWorkspaceFiles(baseDir, options = undefined) {
   if (!baseDir) {
     return [];
   }
-  const ignored = normalizeSet(options?.ignoredDirs ?? DEFAULT_IGNORED_DIRS);
-  const skipFiles = normalizeSet(options?.skipFiles ?? DEFAULT_SKIP_FILES);
-  const files = [];
-  const stack = [""];
-  while (stack.length) {
-    const current = stack.pop();
-    const absolute = path.join(baseDir, current);
-    let dirents;
-    try {
-      dirents = await fs.promises.readdir(absolute, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const dirent of dirents) {
-      const relPath = path.join(current, dirent.name);
-      if (dirent.isDirectory()) {
-        if (shouldSkipDirectory(dirent.name, ignored)) {
-          continue;
-        }
-        stack.push(relPath);
-      } else if (dirent.isFile()) {
-        if (skipFiles.has(dirent.name.toLowerCase())) {
-          continue;
-        }
-        files.push(relPath.replace(/\\/g, "/"));
-      }
-    }
-  }
-  files.sort((a, b) => a.localeCompare(b));
-  return files;
+  const scanResult =
+    options?.scanResult ??
+    (await scanWorkspace(baseDir, {
+      ignoredDirs: options?.ignoredDirs ?? DEFAULT_IGNORED_DIRS,
+      maxDepth: options?.maxDepth,
+      maxEntries: options?.maxEntries,
+    }));
+  return filterWorkspaceFiles(scanResult.files, {
+    skipFiles: options?.skipFiles ?? DEFAULT_SKIP_FILES,
+  });
 }
 
 export async function collectManifestSummary(baseDir, options = undefined) {
   if (!baseDir) {
     return { files: [], manifest: [] };
   }
-  const files = await listWorkspaceFiles(baseDir, options);
+  let files = [];
+  if (Array.isArray(options?.files)) {
+    files = filterWorkspaceFiles(options.files, {
+      skipFiles: options?.skipFiles ?? DEFAULT_SKIP_FILES,
+    });
+  } else if (Array.isArray(options?.scanResult?.files)) {
+    files = filterWorkspaceFiles(options.scanResult.files, {
+      skipFiles: options?.skipFiles ?? DEFAULT_SKIP_FILES,
+    });
+  } else {
+    files = await listWorkspaceFiles(baseDir, options);
+  }
   const limit = Math.max(1, options?.limit ?? 12);
   const manifest = [];
   for (const relative of files.slice(0, limit)) {

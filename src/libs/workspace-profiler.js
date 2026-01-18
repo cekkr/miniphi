@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
 import FileConnectionAnalyzer from "./file-connection-analyzer.js";
+import {
+  DEFAULT_IGNORED_DIRS,
+  normalizeScanSet,
+  scanWorkspaceSync,
+} from "./workspace-scanner.js";
 
 const CODE_EXTENSIONS = new Set([
   ".js",
@@ -68,19 +73,6 @@ const DATA_EXTENSIONS = new Set([
   ".sas7bdat",
 ]);
 
-const IGNORED_DIRECTORIES = new Set([
-  ".git",
-  ".idea",
-  ".vscode",
-  "node_modules",
-  ".next",
-  "dist",
-  "build",
-  "out",
-  ".turbo",
-  ".cache",
-  ".miniphi",
-]);
 
 /**
  * Provides lightweight workspace profiling so MiniPhi can reason about different project types
@@ -93,6 +85,7 @@ export default class WorkspaceProfiler {
     this.sampleLimit = options?.sampleLimit ?? 8;
     this.includeConnections = options?.includeConnections ?? true;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
+    this.ignoredDirs = normalizeScanSet(options?.ignoredDirs ?? DEFAULT_IGNORED_DIRS);
     this.connectionAnalyzer =
       options?.connectionAnalyzer ??
       new FileConnectionAnalyzer({
@@ -105,99 +98,13 @@ export default class WorkspaceProfiler {
    * @param {string} rootDir
    * @returns {{ root: string, stats: object, classification: object, highlights: object, summary: string }}
    */
-  describe(rootDir) {
+  describe(rootDir, options = undefined) {
     const root = path.resolve(rootDir ?? process.cwd());
     if (!fs.existsSync(root)) {
       throw new Error(`Workspace root not found: ${root}`);
     }
-    const stats = {
-      files: 0,
-      directories: 0,
-      codeFiles: 0,
-      docFiles: 0,
-      dataFiles: 0,
-      otherFiles: 0,
-      chapterLikeFiles: [],
-    };
-    const highlights = {
-      directories: [],
-      codeFiles: [],
-      docFiles: [],
-      dataFiles: [],
-      otherFiles: [],
-      chapters: [],
-    };
-
-    const queue = [{ dir: root, depth: 0 }];
-    const visited = new Set();
-
-    while (queue.length > 0 && stats.files < this.maxEntries) {
-      const current = queue.shift();
-      if (!current) break;
-      if (visited.has(current.dir)) continue;
-      visited.add(current.dir);
-
-      let entries = [];
-      try {
-        entries = fs.readdirSync(current.dir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-
-      for (const entry of entries) {
-        const fullPath = path.join(current.dir, entry.name);
-        const relative = path.relative(root, fullPath) || entry.name;
-        if (entry.isDirectory()) {
-          stats.directories += 1;
-          if (highlights.directories.length < this.sampleLimit) {
-            highlights.directories.push(relative);
-          }
-          if (current.depth + 1 <= this.maxDepth && !this._shouldSkipDirectory(entry.name)) {
-            queue.push({ dir: fullPath, depth: current.depth + 1 });
-          }
-          continue;
-        }
-        if (!entry.isFile()) {
-          continue;
-        }
-
-        stats.files += 1;
-        const ext = path.extname(entry.name).toLowerCase();
-        const normalized = entry.name.toLowerCase();
-        if (DOC_EXTENSIONS.has(ext)) {
-          stats.docFiles += 1;
-          if (highlights.docFiles.length < this.sampleLimit) {
-            highlights.docFiles.push(relative);
-          }
-          if (/chapter|preface|appendix|epilogue/.test(normalized)) {
-            stats.chapterLikeFiles.push(relative);
-            if (highlights.chapters.length < this.sampleLimit) {
-              highlights.chapters.push(relative);
-            }
-          }
-        } else if (DATA_EXTENSIONS.has(ext)) {
-          stats.dataFiles += 1;
-          if (highlights.dataFiles.length < this.sampleLimit) {
-            highlights.dataFiles.push(relative);
-          }
-        } else if (CODE_EXTENSIONS.has(ext)) {
-          stats.codeFiles += 1;
-          if (highlights.codeFiles.length < this.sampleLimit) {
-            highlights.codeFiles.push(relative);
-          }
-        } else {
-          stats.otherFiles += 1;
-          if (highlights.otherFiles.length < this.sampleLimit) {
-            highlights.otherFiles.push(relative);
-          }
-        }
-
-        if (stats.files >= this.maxEntries) {
-          break;
-        }
-      }
-    }
-
+    const scanResult = this._resolveScan(root, options?.scanResult);
+    const { stats, highlights } = this._summarizeScan(scanResult);
     const classification = this._classify(stats);
     const summary = this._formatSummary(root, stats, highlights, classification);
     const directives = this._formatDirectives(classification);
@@ -226,12 +133,103 @@ export default class WorkspaceProfiler {
     };
   }
 
-  _shouldSkipDirectory(name) {
-    const normalized = name.toLowerCase();
-    if (IGNORED_DIRECTORIES.has(normalized)) {
-      return true;
+  _resolveScan(root, scanResult) {
+    if (scanResult?.root && path.resolve(scanResult.root) === root && Array.isArray(scanResult.entries)) {
+      return scanResult;
     }
-    return normalized.startsWith(".");
+    return scanWorkspaceSync(root, { ignoredDirs: this.ignoredDirs });
+  }
+
+  _summarizeScan(scanResult) {
+    const stats = {
+      files: 0,
+      directories: 0,
+      codeFiles: 0,
+      docFiles: 0,
+      dataFiles: 0,
+      otherFiles: 0,
+      chapterLikeFiles: [],
+    };
+    const highlights = {
+      directories: [],
+      codeFiles: [],
+      docFiles: [],
+      dataFiles: [],
+      otherFiles: [],
+      chapters: [],
+    };
+    const entries = Array.isArray(scanResult?.entries) ? scanResult.entries : [];
+    const maxDepth = Number.isFinite(this.maxDepth) ? this.maxDepth : Number.POSITIVE_INFINITY;
+    const maxFiles = Number.isFinite(this.maxEntries)
+      ? this.maxEntries
+      : Number.POSITIVE_INFINITY;
+    for (const entry of entries) {
+      if (!entry || typeof entry.path !== "string") {
+        continue;
+      }
+      const depth =
+        Number.isFinite(entry.depth) && entry.depth >= 0
+          ? entry.depth
+          : this._calculateDepth(entry.path);
+      if (entry.type === "dir") {
+        if (depth > maxDepth + 1) {
+          continue;
+        }
+        stats.directories += 1;
+        if (highlights.directories.length < this.sampleLimit) {
+          highlights.directories.push(entry.path);
+        }
+        continue;
+      }
+      if (entry.type !== "file") {
+        continue;
+      }
+      if (depth > maxDepth) {
+        continue;
+      }
+      stats.files += 1;
+      const ext = path.extname(entry.path).toLowerCase();
+      const basename = path.basename(entry.path).toLowerCase();
+      if (DOC_EXTENSIONS.has(ext)) {
+        stats.docFiles += 1;
+        if (highlights.docFiles.length < this.sampleLimit) {
+          highlights.docFiles.push(entry.path);
+        }
+        if (/chapter|preface|appendix|epilogue/.test(basename)) {
+          stats.chapterLikeFiles.push(entry.path);
+          if (highlights.chapters.length < this.sampleLimit) {
+            highlights.chapters.push(entry.path);
+          }
+        }
+      } else if (DATA_EXTENSIONS.has(ext)) {
+        stats.dataFiles += 1;
+        if (highlights.dataFiles.length < this.sampleLimit) {
+          highlights.dataFiles.push(entry.path);
+        }
+      } else if (CODE_EXTENSIONS.has(ext)) {
+        stats.codeFiles += 1;
+        if (highlights.codeFiles.length < this.sampleLimit) {
+          highlights.codeFiles.push(entry.path);
+        }
+      } else {
+        stats.otherFiles += 1;
+        if (highlights.otherFiles.length < this.sampleLimit) {
+          highlights.otherFiles.push(entry.path);
+        }
+      }
+      if (stats.files >= maxFiles) {
+        break;
+      }
+    }
+    return { stats, highlights };
+  }
+
+  _calculateDepth(relativePath) {
+    if (!relativePath) {
+      return 0;
+    }
+    const normalized = relativePath.replace(/\\/g, "/");
+    return normalized.split("/").length - 1;
   }
 
   _classify(stats) {
