@@ -266,15 +266,22 @@ async function main() {
   });
 
   let parsed = directObject;
+  let preambleDetected = false;
   if (!parsed && rawText) {
-    parsed = parseStrictJson(rawText);
+    parsed = parseStrictJson(rawText, { allowPreamble: false });
+    if (!parsed) {
+      const salvage = parseStrictJson(rawText, { allowPreamble: true });
+      if (salvage) {
+        preambleDetected = true;
+      }
+    }
   }
 
   let finalResponse = null;
   let fallbackReason = null;
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    fallbackReason = "invalid_json";
+    fallbackReason = preambleDetected ? "preamble_detected" : "invalid_json";
   } else {
     const validation = registry.validate(schemaId, JSON.stringify(parsed));
     if (!validation?.valid) {
@@ -298,6 +305,9 @@ async function main() {
       schemaId,
       stepId: step?.id ?? null,
       stopReason: fallbackReason ?? "invalid_json",
+      notes: preambleDetected
+        ? "Response included a non-JSON preamble; strict JSON-only output is required."
+        : null,
     });
   }
 

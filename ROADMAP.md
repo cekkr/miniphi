@@ -71,9 +71,9 @@ Slices (do in order):
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Next steps (prioritized, add proof per item):
     - Proof run: implicit `miniphi "<task>" --cmd "..."/--file ...` routes to `run`/`analyze-file` with schema compliance + stop reason recorded.
-   - Deferred (lower priority while the above are in flight):
-     - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
-     - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.
+    - Proof run: prompt-chain `compose` + `interpret` steps pass strict JSON parsing (no preamble salvage) and emit deterministic fallback with `stop_reason` when invalid.
+  - Deferred (lower priority while the above are in flight):
+    - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
