@@ -69,8 +69,8 @@ Slices (do in order):
      - `npm test` passed (includes updated navigation schema prompt-template checks).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
-   - Next steps (prioritized, add proof per item):
-     - Natural-language command parity (exit: implicit `miniphi "<task>"` routes to the same handlers as explicit commands, with schema compliance + stop reason recorded).
+  - Next steps (prioritized, add proof per item):
+    - Proof run: implicit `miniphi "<task>" --cmd "..."/--file ...` routes to `run`/`analyze-file` with schema compliance + stop reason recorded.
    - Deferred (lower priority while the above are in flight):
      - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
      - Use the mismatch list in `samples/recompose/hello-flow/recompose-report.json` to target prompt tweaks that force closer adherence to baseline exports and file structure.

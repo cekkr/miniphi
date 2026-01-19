@@ -296,14 +296,21 @@ export async function handleRunCommand(context) {
       });
     }
     throw error;
-  }
-  attachContextRequestsToResult(result);
-  if (promptJournal && result) {
-    await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-      label: `run:${cmd}`,
-      prompt: result.prompt,
-      response: result.analysis,
-      schemaId: result.schemaId ?? null,
+    }
+    attachContextRequestsToResult(result);
+    if (promptJournal && result) {
+      const promptExchange = result.promptExchange ?? null;
+      const links = promptExchange
+        ? {
+            promptExchangeId: promptExchange.id ?? null,
+            promptExchangePath: promptExchange.path ?? null,
+          }
+        : null;
+      await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+        label: `run:${cmd}`,
+        prompt: result.prompt,
+        response: result.analysis,
+        schemaId: result.schemaId ?? null,
       operations: [
         {
           type: "command",
@@ -318,14 +325,15 @@ export async function handleRunCommand(context) {
         mode: "run",
         linesAnalyzed: result.linesAnalyzed ?? null,
         compressedTokens: result.compressedTokens ?? null,
-        salvage: result?.analysisDiagnostics?.salvage ?? null,
-        fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
-      },
-      workspaceSummary: workspaceContext?.summary ?? null,
-      startedAt: result.startedAt ?? null,
-      finishedAt: result.finishedAt ?? null,
-    });
-  }
+          salvage: result?.analysisDiagnostics?.salvage ?? null,
+          fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
+        },
+        workspaceSummary: workspaceContext?.summary ?? null,
+        links,
+        startedAt: result.startedAt ?? null,
+        finishedAt: result.finishedAt ?? null,
+      });
+    }
   const navigatorActions =
     (workspaceContext?.navigationHints?.actions ?? []).length > 0
       ? workspaceContext.navigationHints.actions

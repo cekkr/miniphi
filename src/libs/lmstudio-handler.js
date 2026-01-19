@@ -56,6 +56,7 @@ export class LMStudioHandler {
       wsDisabled: false,
       lastWarning: null,
     };
+    this.lastPromptExchange = null;
   }
 
   /**
@@ -834,6 +835,16 @@ export class LMStudioHandler {
     this.chatHistory = sanitized;
   }
 
+  getLastPromptExchange() {
+    return this.lastPromptExchange;
+  }
+
+  consumeLastPromptExchange() {
+    const exchange = this.lastPromptExchange;
+    this.lastPromptExchange = null;
+    return exchange;
+  }
+
   async getContextWindow() {
     if (!this.model || typeof this.model.getContextLength !== "function") {
       return null;
@@ -917,7 +928,7 @@ export class LMStudioHandler {
     }
     try {
       const metadata = this._composeRecorderMetadata(traceContext, responseSnapshot);
-      await this.promptRecorder.record({
+      const record = await this.promptRecorder.record({
         scope: traceContext.scope,
         label: traceContext.label,
         mainPromptId: traceContext.mainPromptId,
@@ -935,11 +946,14 @@ export class LMStudioHandler {
           : null,
         error: errorMessage,
       });
+      this.lastPromptExchange = record ?? null;
+      return record;
     } catch (error) {
       // Recording failures should not interrupt inference.
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptRecorder");
     }
+    return null;
   }
 
   async _trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {

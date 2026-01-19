@@ -95,7 +95,7 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 These are the commands most people start with:
 
 - `miniphi "<task>"`  
-  Workspace scan + planning prompt. Good for “audit docs”, “plan refactor”, “draft README”, etc.
+  Workspace scan + planning prompt. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  
   Execute a command and analyze the output.
 - `miniphi analyze-file --file <path> --task "<objective>"`  

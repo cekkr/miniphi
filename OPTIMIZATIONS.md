@@ -117,8 +117,9 @@ Exit criteria:
 
 Status:
 - In progress. PromptStepJournal now stores `tool_calls`/`tool_definitions` in the same shape as
-  prompt exchanges and the contract is documented in AGENTS.md; remaining work is to reduce any
-  duplicated prompt/response payloads beyond the canonical fields.
+  prompt exchanges and the contract is documented in AGENTS.md; analysis steps now link to prompt
+  exchanges when LM Studio responses are recorded. Remaining work is to reduce any duplicated
+  prompt/response payloads beyond the canonical fields.
 
 ### P1 - LM Studio transport and error taxonomy
 

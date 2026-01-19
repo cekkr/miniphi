@@ -74,6 +74,7 @@ export default class EfficientLogAnalyzer {
       fallbackCacheContext = undefined,
     } = options ?? {};
 
+    this._resetPromptExchange();
     const devLog = this._startDevLog(`command-${this._safeLabel(command)}`, {
       type: "command",
       command,
@@ -239,6 +240,7 @@ export default class EfficientLogAnalyzer {
     let analysis = cachedFallback?.analysis ?? "";
     let usedFallback = Boolean(cachedFallback);
     let fallbackReason = cachedFallback?.reason ?? null;
+    let promptExchange = null;
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
@@ -461,6 +463,9 @@ export default class EfficientLogAnalyzer {
       analysis,
     );
     const schemaValid = schemaValidation ? Boolean(schemaValidation.valid) : null;
+    if (!cachedFallback) {
+      promptExchange = this._consumePromptExchange();
+    }
     return {
       command,
       task,
@@ -476,6 +481,7 @@ export default class EfficientLogAnalyzer {
       finishedAt: invocationFinishedAt,
       truncationPlan,
       analysisDiagnostics,
+      promptExchange,
     };
   }
 
@@ -492,6 +498,7 @@ export default class EfficientLogAnalyzer {
       fallbackCacheContext = undefined,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
+    this._resetPromptExchange();
     const devLog = this._startDevLog(`file-${this._safeLabel(path.basename(filePath))}`, {
       type: "log-file",
       filePath,
@@ -643,6 +650,7 @@ export default class EfficientLogAnalyzer {
     let analysis = cachedFallback?.analysis ?? "";
     let usedFallback = Boolean(cachedFallback);
     let fallbackReason = cachedFallback?.reason ?? null;
+    let promptExchange = null;
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
@@ -875,6 +883,9 @@ export default class EfficientLogAnalyzer {
       analysis,
     );
     const schemaValid = schemaValidation ? Boolean(schemaValidation.valid) : null;
+    if (!cachedFallback) {
+      promptExchange = this._consumePromptExchange();
+    }
     return {
       filePath,
       task,
@@ -892,6 +903,7 @@ export default class EfficientLogAnalyzer {
       lineRange: lineRange ?? null,
       promptAdjustments,
       analysisDiagnostics,
+      promptExchange,
     };
   }
 
@@ -2410,6 +2422,22 @@ export default class EfficientLogAnalyzer {
     );
     console.log(`[MiniPhi] --- Response preview (first ${limit} chars) ---\n${preview}`);
     console.log(`[MiniPhi] --- End response preview${truncated ? " (truncated)" : ""} ---`);
+  }
+
+  _resetPromptExchange() {
+    if (this.phi4 && typeof this.phi4.consumeLastPromptExchange === "function") {
+      this.phi4.consumeLastPromptExchange();
+    }
+  }
+
+  _consumePromptExchange() {
+    if (this.phi4 && typeof this.phi4.consumeLastPromptExchange === "function") {
+      return this.phi4.consumeLastPromptExchange();
+    }
+    if (this.phi4 && typeof this.phi4.getLastPromptExchange === "function") {
+      return this.phi4.getLastPromptExchange();
+    }
+    return null;
   }
 
   _startDevLog(label, metadata = undefined) {

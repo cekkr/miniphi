@@ -1104,21 +1104,22 @@ async function recordAnalysisStepInJournal(journal, sessionId, payload = undefin
   if (!journal || !sessionId || !payload) {
     return;
   }
-  await journal.appendStep(sessionId, {
-    label: payload.label ?? "analysis",
-    prompt: payload.prompt ?? null,
-    response: payload.response ?? null,
-    schemaId: payload.schemaId ?? null,
-    status: payload.status ?? "recorded",
-    operations: payload.operations ?? [],
-    metadata: payload.metadata ?? null,
-    toolCalls: payload.toolCalls ?? null,
-    toolDefinitions: payload.toolDefinitions ?? null,
-    workspaceSummary: payload.workspaceSummary ?? null,
-    startedAt: payload.startedAt ?? null,
-    finishedAt: payload.finishedAt ?? null,
-  });
-}
+    await journal.appendStep(sessionId, {
+      label: payload.label ?? "analysis",
+      prompt: payload.prompt ?? null,
+      response: payload.response ?? null,
+      schemaId: payload.schemaId ?? null,
+      status: payload.status ?? "recorded",
+      operations: payload.operations ?? [],
+      metadata: payload.metadata ?? null,
+      toolCalls: payload.toolCalls ?? null,
+      toolDefinitions: payload.toolDefinitions ?? null,
+      workspaceSummary: payload.workspaceSummary ?? null,
+      links: payload.links ?? null,
+      startedAt: payload.startedAt ?? null,
+      finishedAt: payload.finishedAt ?? null,
+    });
+  }
 
 function isLmStudioProtocolError(error) {
   if (!error) {
@@ -1295,6 +1296,7 @@ async function main() {
   let command = args[0];
   let rest = args.slice(1);
   let implicitWorkspaceTask = null;
+  let implicitTaskMode = false;
 
   if (!COMMANDS.has(command)) {
     const extracted = extractImplicitWorkspaceTask(args);
@@ -1302,6 +1304,7 @@ async function main() {
       implicitWorkspaceTask = extracted.task;
       rest = extracted.rest;
       command = "workspace";
+      implicitTaskMode = true;
     } else {
       console.error(`Unknown command "${command}".`);
       printHelp();
@@ -1311,6 +1314,15 @@ async function main() {
   }
 
   const { options, positionals } = parseArgs(rest);
+  if (implicitTaskMode) {
+    const cmdOverride = typeof options.cmd === "string" && options.cmd.trim().length > 0;
+    const fileOverride = typeof options.file === "string" && options.file.trim().length > 0;
+    if (cmdOverride) {
+      command = "run";
+    } else if (fileOverride) {
+      command = "analyze-file";
+    }
+  }
   const verbose = Boolean(options.verbose);
   const streamOutput = !options["no-stream"];
   const debugLm = Boolean(options["debug-lm"]);
@@ -1464,8 +1476,9 @@ async function main() {
       secondsLabel: "--timeout",
     }) ?? defaultCommandTimeoutMs;
 
-  let task = options.task ?? defaults.task ?? DEFAULT_TASK_DESCRIPTION;
-  if (command === "workspace" && implicitWorkspaceTask && !options.task) {
+  const hasExplicitTask = typeof options.task === "string" && options.task.trim().length > 0;
+  let task = hasExplicitTask ? options.task : defaults.task ?? DEFAULT_TASK_DESCRIPTION;
+  if (!hasExplicitTask && implicitWorkspaceTask) {
     task = implicitWorkspaceTask;
   }
 
@@ -3035,7 +3048,7 @@ Options:
   --command-danger <level>     Danger classification for --cmd (low | mid | high; default: mid)
   --workspace-overview-timeout <s>   Workspace overview prompt timeout (seconds; default 120s for recompose)
   --workspace-overview-timeout-ms <ms>  Workspace overview prompt timeout (milliseconds override)
-  (workspace mode also accepts free-form positional text: npx miniphi "Draft release notes".)
+  (Free-form tasks default to workspace mode; add --cmd or --file to route to run/analyze-file.)
 
 Prompt template baselines:
   --baseline <name>            Baseline template id to scaffold (default: truncation)

@@ -440,14 +440,21 @@ export async function handleAnalyzeFileCommand(context) {
       });
     }
     throw error;
-  }
-  attachContextRequestsToResult(result);
-  if (promptJournal && result) {
-    await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-      label: `analyze-file:${path.basename(filePath)}`,
-      prompt: result.prompt,
-      response: result.analysis,
-      schemaId: result.schemaId ?? null,
+    }
+    attachContextRequestsToResult(result);
+    if (promptJournal && result) {
+      const promptExchange = result.promptExchange ?? null;
+      const links = promptExchange
+        ? {
+            promptExchangeId: promptExchange.id ?? null,
+            promptExchangePath: promptExchange.path ?? null,
+          }
+        : null;
+      await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+        label: `analyze-file:${path.basename(filePath)}`,
+        prompt: result.prompt,
+        response: result.analysis,
+        schemaId: result.schemaId ?? null,
       operations: [
         {
           type: "file-analysis",
@@ -468,14 +475,15 @@ export async function handleAnalyzeFileCommand(context) {
               lineRange: truncationLineRange ?? null,
             }
           : null,
-        salvage: result?.analysisDiagnostics?.salvage ?? null,
-        fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
-      },
-      workspaceSummary: workspaceContext?.summary ?? null,
-      startedAt: result.startedAt ?? null,
-      finishedAt: result.finishedAt ?? null,
-    });
-  }
+          salvage: result?.analysisDiagnostics?.salvage ?? null,
+          fallbackReason: result?.analysisDiagnostics?.fallbackReason ?? null,
+        },
+        workspaceSummary: workspaceContext?.summary ?? null,
+        links,
+        startedAt: result.startedAt ?? null,
+        finishedAt: result.finishedAt ?? null,
+      });
+    }
   if (
     truncationResume &&
     truncationProgress &&

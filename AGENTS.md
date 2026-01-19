@@ -139,7 +139,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 
 ### Workspace-first prompts
 - `node src/index.js workspace --task "Plan README refresh"` scans the current working directory, summarizes capabilities, and saves a recursive outline without executing arbitrary shell commands.
-- Running `npx miniphi "Audit the docs structure" --verbose` (or `miniphi "<task>"` when installed globally) now triggers the same workflow: when the CLI does not recognize the first argument as a command it treats the free-form text as the task and assumes the CWD is the project root.
+- Running `npx miniphi "Audit the docs structure" --verbose` (or `miniphi "<task>"` when installed globally) now triggers the same workflow: when the CLI does not recognize the first argument as a command it treats the free-form text as the task and assumes the CWD is the project root. If `--cmd` or `--file` is supplied alongside the free-form task, MiniPhi routes into `run` or `analyze-file` respectively.
 - Workspace summaries combine `WorkspaceProfiler`, `CapabilityInventory`, and `ApiNavigator` hints so the model starts with concrete file paths, package scripts, and helper suggestions before editing anything.
 - Cached prompt scaffolds from `.miniphi/prompt-exchanges/templates/` (project) and `~/.miniphi/prompts/templates/` (global) are surfaced inside that summary so Phi can reuse proven JSON baselines (truncation-first, log-analysis, etc.) without wasting tokens re-explaining the schema on every run.
 - Command-library suggestions now merge the project `.miniphi/helpers/command-library.json` entries with the global `~/.miniphi/helpers/command-library.json` cache so the CLI can surface vetted commands (with schema ids and context budgets) regardless of which repo first learned them.
@@ -158,6 +158,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - PromptRecorder is the canonical exchange log under `.miniphi/prompt-exchanges/` and stores the full request payload, raw response text, `tool_calls`, and `tool_definitions`.
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
 - Journal step tool metadata uses `tool_calls`/`tool_definitions` so eval tooling can treat prompt exchanges and journals uniformly.
+- Analysis steps now attach prompt-exchange links when LM Studio responses are recorded via `LMStudioHandler`.
 
 ### Prompt template baselines
 - `node src/index.js prompt-template --baseline truncation --task "Teach me to split the jest log" --dataset-summary "Captured 50k lines of Jest output"` prints a ready-to-send Phi prompt that reuses the log-analysis schema (including `truncation_strategy`).
