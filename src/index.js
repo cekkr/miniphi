@@ -1875,12 +1875,12 @@ async function main() {
         }
         continue;
       }
-      try {
-        const followUpTask = `Navigator follow-up: ${entry.command}`;
-        const followUpResult = await analyzer.analyzeCommandOutput(entry.command, followUpTask, {
-          summaryLevels,
-          streamOutput,
-          cwd,
+        try {
+          const followUpTask = `Navigator follow-up: ${entry.command}`;
+          const followUpResult = await analyzer.analyzeCommandOutput(entry.command, followUpTask, {
+            summaryLevels,
+            streamOutput,
+            cwd,
           timeout,
           sessionDeadline,
           workspaceContext,
@@ -1900,26 +1900,33 @@ async function main() {
             },
           },
           commandDanger: entry.danger,
-          commandSource: "navigator",
-            authorizationContext: {
-              reason: entry.reason ?? "Navigator follow-up",
-              hint: entry.authorizationHint ?? null,
-            },
-          });
-        followUps.push({
-          command: entry.command,
-          danger: entry.danger,
-          analysis: followUpResult.analysis,
-            prompt: followUpResult.prompt,
-            linesAnalyzed: followUpResult.linesAnalyzed,
-            compressedTokens: followUpResult.compressedTokens,
-          });
-        if (promptJournal && promptJournalId) {
-          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-            label: followUpTask,
-            prompt: followUpResult.prompt,
-            response: followUpResult.analysis,
-            schemaId: followUpResult.schemaId ?? null,
+            commandSource: "navigator",
+              authorizationContext: {
+                reason: entry.reason ?? "Navigator follow-up",
+                hint: entry.authorizationHint ?? null,
+              },
+            });
+          followUps.push({
+            command: entry.command,
+            danger: entry.danger,
+            analysis: followUpResult.analysis,
+              prompt: followUpResult.prompt,
+              linesAnalyzed: followUpResult.linesAnalyzed,
+              compressedTokens: followUpResult.compressedTokens,
+            });
+          if (promptJournal && promptJournalId) {
+            const promptExchange = followUpResult.promptExchange ?? null;
+            const links = promptExchange
+              ? {
+                  promptExchangeId: promptExchange.id ?? null,
+                  promptExchangePath: promptExchange.path ?? null,
+                }
+              : null;
+            await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+              label: followUpTask,
+              prompt: followUpResult.prompt,
+              response: followUpResult.analysis,
+              schemaId: followUpResult.schemaId ?? null,
             operations: [
               {
                 type: "command",
@@ -1932,16 +1939,17 @@ async function main() {
             metadata: {
               mode: "navigator-follow-up",
               parent: baseMetadata?.parentCommand ?? null,
-              navigationReason: entry.reason ?? null,
-              salvage: followUpResult?.analysisDiagnostics?.salvage ?? null,
-              fallbackReason: followUpResult?.analysisDiagnostics?.fallbackReason ?? null,
-            },
-            workspaceSummary: workspaceContext?.summary ?? null,
-            startedAt: followUpResult.startedAt ?? null,
-            finishedAt: followUpResult.finishedAt ?? null,
-          });
-        }
-      } catch (error) {
+                navigationReason: entry.reason ?? null,
+                salvage: followUpResult?.analysisDiagnostics?.salvage ?? null,
+                fallbackReason: followUpResult?.analysisDiagnostics?.fallbackReason ?? null,
+              },
+              workspaceSummary: workspaceContext?.summary ?? null,
+              links,
+              startedAt: followUpResult.startedAt ?? null,
+              finishedAt: followUpResult.finishedAt ?? null,
+            });
+          }
+        } catch (error) {
         if (isLmStudioProtocolError(error)) {
           await handleLmStudioProtocolFailure({
             error,
@@ -2091,11 +2099,11 @@ async function main() {
         }
         continue;
       }
-      try {
-        const helperTask = `Truncation helper: ${entry.command}`;
-        const helperResult = await analyzer.analyzeCommandOutput(entry.command, helperTask, {
-          summaryLevels,
-          streamOutput,
+        try {
+          const helperTask = `Truncation helper: ${entry.command}`;
+          const helperResult = await analyzer.analyzeCommandOutput(entry.command, helperTask, {
+            summaryLevels,
+            streamOutput,
           cwd,
           timeout,
           sessionDeadline,
@@ -2122,18 +2130,25 @@ async function main() {
             hint: entry.scope === "chunk" ? "chunk-specific helper" : "plan helper",
           },
         });
-        results.push({
-          command: entry.command,
-          status: "executed",
-          linesAnalyzed: helperResult.linesAnalyzed ?? null,
-          fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
-        });
-        if (promptJournal && promptJournalId) {
-          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-            label: helperTask,
-            prompt: helperResult.prompt,
-            response: helperResult.analysis,
-            schemaId: helperResult.schemaId ?? null,
+          results.push({
+            command: entry.command,
+            status: "executed",
+            linesAnalyzed: helperResult.linesAnalyzed ?? null,
+            fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
+          });
+          if (promptJournal && promptJournalId) {
+            const promptExchange = helperResult.promptExchange ?? null;
+            const links = promptExchange
+              ? {
+                  promptExchangeId: promptExchange.id ?? null,
+                  promptExchangePath: promptExchange.path ?? null,
+                }
+              : null;
+            await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+              label: helperTask,
+              prompt: helperResult.prompt,
+              response: helperResult.analysis,
+              schemaId: helperResult.schemaId ?? null,
             operations: [
               {
                 type: "command",
@@ -2147,16 +2162,17 @@ async function main() {
               mode: "truncation-helper",
               chunk: chunk.goal ?? chunk.label ?? chunkKey ?? null,
               planExecutionId,
-              scope: entry.scope,
-              salvage: helperResult?.analysisDiagnostics?.salvage ?? null,
-              fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
-            },
-            workspaceSummary: workspaceContext?.summary ?? null,
-            startedAt: helperResult.startedAt ?? null,
-            finishedAt: helperResult.finishedAt ?? null,
-          });
-        }
-      } catch (error) {
+                scope: entry.scope,
+                salvage: helperResult?.analysisDiagnostics?.salvage ?? null,
+                fallbackReason: helperResult?.analysisDiagnostics?.fallbackReason ?? null,
+              },
+              workspaceSummary: workspaceContext?.summary ?? null,
+              links,
+              startedAt: helperResult.startedAt ?? null,
+              finishedAt: helperResult.finishedAt ?? null,
+            });
+          }
+        } catch (error) {
         if (isLmStudioProtocolError(error)) {
           await handleLmStudioProtocolFailure({
             error,
