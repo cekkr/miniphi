@@ -287,6 +287,25 @@ function resolveStep(chain, stepId) {
   throw new Error(`Unable to resolve step "${stepId}".`);
 }
 
+function resolveResponseRules(chain, step) {
+  const candidate =
+    step?.response_rules ??
+    step?.responseRules ??
+    chain?.response_rules ??
+    chain?.responseRules ??
+    null;
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+    return candidate;
+  }
+  return {
+    needs_more_context_field: "needs_more_context",
+    missing_snippets_field: "missing_snippets",
+    no_prose: true,
+    strict_json_only: true,
+    fallback_policy: "deterministic_json_with_stop_reason",
+  };
+}
+
 function buildTemplateContext({
   schemaId,
   schema,
@@ -296,6 +315,7 @@ function buildTemplateContext({
   optionSets,
   selections,
   optionHints,
+  responseRules,
   context,
 }) {
   const safe = (value) => (typeof value === "string" ? value : "");
@@ -331,6 +351,8 @@ function buildTemplateContext({
     selected_options_json: JSON.stringify(selections, null, 2),
     option_hints: optionHints,
     option_hints_json: JSON.stringify(optionHints ?? ""),
+    response_rules: responseRules,
+    response_rules_json: JSON.stringify(responseRules ?? {}, null, 2),
     context: normalizedContext,
     context_json: JSON.stringify(normalizedContext, null, 2),
   };
@@ -345,6 +367,7 @@ function buildDefaultPrompt({
   optionSets,
   selections,
   optionHints,
+  responseRules,
   context,
 }) {
   const chainName = typeof chain?.name === "string" ? chain.name : null;
@@ -378,6 +401,7 @@ function buildDefaultPrompt({
       selected: selections,
       hints: optionHints,
     },
+    response_rules: responseRules,
     context: mergedContext,
   };
 }
@@ -430,6 +454,7 @@ async function renderPrompt({
   optionSets,
   selections,
   optionHints,
+  responseRules,
   context,
   chainDir,
 }) {
@@ -444,6 +469,7 @@ async function renderPrompt({
       optionSets,
       selections,
       optionHints,
+      responseRules,
       context,
     });
   }
@@ -464,6 +490,7 @@ async function renderPrompt({
     optionSets,
     selections,
     optionHints,
+    responseRules,
     context,
   });
   const rendered = applyPromptTemplate(templateText, contextPayload);
@@ -562,6 +589,7 @@ async function runOnce(options) {
     .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
     .filter(Boolean)
     .join("\n\n");
+  const responseRules = resolveResponseRules(chain, step);
 
   const promptObject = await renderPrompt({
     schemaId,
@@ -572,6 +600,7 @@ async function runOnce(options) {
     optionSets: mergedSets,
     selections,
     optionHints,
+    responseRules,
     context: mergedContext,
     chainDir,
   });

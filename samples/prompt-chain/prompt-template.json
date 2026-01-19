@@ -19,7 +19,9 @@
   "response_rules": {
     "needs_more_context_field": "needs_more_context",
     "missing_snippets_field": "missing_snippets",
-    "no_prose": true
+    "no_prose": true,
+    "strict_json_only": true,
+    "fallback_policy": "deterministic_json_with_stop_reason"
   },
   "context": {{context_json}}
 }

@@ -3,11 +3,19 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import PromptSchemaRegistry from "../src/libs/prompt-schema-registry.js";
 import { parseStrictJson } from "../src/libs/core-utils.js";
+import { validateJsonAgainstSchema } from "../src/libs/json-schema-utils.js";
 import {
   DEFAULT_LEARNED_SCHEMA_VERSION,
   mergeLearnedOptions,
   normalizeOptionUpdates,
 } from "../src/libs/prompt-chain-utils.js";
+
+const VALIDATION_REPORT_SCHEMA_VERSION = "prompt-chain-validation@v1";
+const DEFAULT_VALIDATION_REPORT_PATH = path.join(
+  ".miniphi",
+  "prompt-chain",
+  "validation-report.json",
+);
 
 function printUsage() {
   const lines = [
@@ -99,6 +107,20 @@ function parseArgs(argv) {
   return options;
 }
 
+function buildExcerpt(text, limit = 400) {
+  if (!text || typeof text !== "string") {
+    return null;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit)}...`;
+}
+
 async function readJsonFile(filePath, { required }) {
   if (!filePath) {
     return null;
@@ -114,6 +136,73 @@ async function readJsonFile(filePath, { required }) {
       `Unable to read JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+async function loadValidationReport(reportPath) {
+  const existing = await readJsonFile(reportPath, { required: false });
+  if (!existing || typeof existing !== "object") {
+    return {
+      schema_version: VALIDATION_REPORT_SCHEMA_VERSION,
+      updated_at: null,
+      entries: [],
+    };
+  }
+  return {
+    schema_version:
+      typeof existing.schema_version === "string" && existing.schema_version.trim()
+        ? existing.schema_version.trim()
+        : VALIDATION_REPORT_SCHEMA_VERSION,
+    updated_at:
+      typeof existing.updated_at === "string" && existing.updated_at.trim()
+        ? existing.updated_at.trim()
+        : null,
+    entries: Array.isArray(existing.entries) ? existing.entries : [],
+  };
+}
+
+async function appendValidationReport(reportPath, entry) {
+  if (!entry) {
+    return;
+  }
+  const report = await loadValidationReport(reportPath);
+  report.entries.push(entry);
+  report.updated_at = entry.timestamp ?? new Date().toISOString();
+  await fsp.mkdir(path.dirname(reportPath), { recursive: true });
+  await fsp.writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+}
+
+function buildValidationEntry({
+  schemaId,
+  stepId,
+  stopReason,
+  errors,
+  preambleDetected,
+  rawText,
+  responseFile,
+  contentFile,
+}) {
+  const normalizedErrors = Array.isArray(errors) ? errors.filter(Boolean) : [];
+  if (!stopReason && normalizedErrors.length === 0) {
+    return null;
+  }
+  const trimmedResponseFile =
+    typeof responseFile === "string" && responseFile.trim().length > 0 ? responseFile.trim() : null;
+  const trimmedContentFile =
+    typeof contentFile === "string" && contentFile.trim().length > 0 ? contentFile.trim() : null;
+  return {
+    timestamp: new Date().toISOString(),
+    schema_id: schemaId ?? null,
+    step_id: stepId ?? "unknown",
+    stop_reason: stopReason ?? "validation_error",
+    preamble_detected: Boolean(preambleDetected),
+    errors: normalizedErrors,
+    raw_length: typeof rawText === "string" ? rawText.length : 0,
+    raw_excerpt: buildExcerpt(rawText),
+    source: {
+      response_file: trimmedResponseFile,
+      content_file: trimmedContentFile,
+    },
+  };
 }
 
 function resolveStep(chain, stepId) {
@@ -260,9 +349,11 @@ async function main() {
     ? path.resolve(options.selectedFile)
     : defaultSelected;
 
+  const resolvedResponseFile = options.responseFile ? path.resolve(options.responseFile) : null;
+  const resolvedContentFile = options.contentFile ? path.resolve(options.contentFile) : null;
   const { rawText, directObject } = await loadResponseContent({
-    responseFile: options.responseFile ? path.resolve(options.responseFile) : null,
-    contentFile: options.contentFile ? path.resolve(options.contentFile) : null,
+    responseFile: resolvedResponseFile,
+    contentFile: resolvedContentFile,
   });
 
   let parsed = directObject;
@@ -279,15 +370,25 @@ async function main() {
 
   let finalResponse = null;
   let fallbackReason = null;
+  let validationErrors = null;
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     fallbackReason = preambleDetected ? "preamble_detected" : "invalid_json";
+    if (rawText) {
+      const strictValidation = validateJsonAgainstSchema(schemaEntry.definition, rawText, {
+        allowPreamble: false,
+      });
+      if (strictValidation?.errors?.length) {
+        validationErrors = strictValidation.errors;
+      }
+    }
   } else {
     const validation = registry.validate(schemaId, JSON.stringify(parsed));
     if (!validation?.valid) {
       fallbackReason = "schema_validation_failed";
       if (validation?.errors?.length) {
-        const message = validation.errors.slice(0, 6).join("; ");
+        validationErrors = validation.errors;
+        const message = validationErrors.slice(0, 6).join("; ");
         finalResponse = buildFallback({
           schemaId,
           stepId: parsed.step_id ?? step?.id ?? null,
@@ -301,15 +402,30 @@ async function main() {
   }
 
   if (!finalResponse) {
+    const fallbackNotes = preambleDetected
+      ? "Response included a non-JSON preamble; strict JSON-only output is required."
+      : validationErrors?.length
+        ? validationErrors.slice(0, 2).join("; ")
+        : null;
     finalResponse = buildFallback({
       schemaId,
       stepId: step?.id ?? null,
       stopReason: fallbackReason ?? "invalid_json",
-      notes: preambleDetected
-        ? "Response included a non-JSON preamble; strict JSON-only output is required."
-        : null,
+      notes: fallbackNotes,
     });
   }
+
+  const validationEntry = buildValidationEntry({
+    schemaId,
+    stepId: finalResponse.step_id ?? step?.id ?? null,
+    stopReason: fallbackReason,
+    errors: validationErrors,
+    preambleDetected,
+    rawText,
+    responseFile: resolvedResponseFile,
+    contentFile: resolvedContentFile,
+  });
+  await appendValidationReport(DEFAULT_VALIDATION_REPORT_PATH, validationEntry);
 
   if (options.updateLearned) {
     const updates = normalizeOptionUpdates(finalResponse.option_updates);

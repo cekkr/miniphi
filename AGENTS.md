@@ -160,6 +160,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
 - Journal step tool metadata uses `tool_calls`/`tool_definitions` so eval tooling can treat prompt exchanges and journals uniformly.
 - Analysis steps now attach prompt-exchange links when LM Studio responses are recorded via `LMStudioHandler`.
+- Prompt-chain interpreter validation errors are recorded in `.miniphi/prompt-chain/validation-report.json` for prompt-chain debugging.
 
 ### Prompt template baselines
 - `node src/index.js prompt-template --baseline truncation --task "Teach me to split the jest log" --dataset-summary "Captured 50k lines of Jest output"` prints a ready-to-send Phi prompt that reuses the log-analysis schema (including `truncation_strategy`).
