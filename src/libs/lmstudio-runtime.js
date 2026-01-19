@@ -161,19 +161,23 @@ async function createLmStudioRuntime({
     noTokenTimeoutMs,
     modelKey,
   });
-  try {
-    await manager.getModel(modelKey, {
-      contextLength,
-      gpu,
-    });
-  } catch (error) {
-    if (verbose) {
-      console.warn(
-        `[MiniPhi] Unable to preload model ${modelKey}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
+  if (process.env.MINIPHI_FORCE_REST !== "1") {
+    try {
+      await manager.getModel(modelKey, {
+        contextLength,
+        gpu,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to preload model ${modelKey}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
     }
+  } else if (verbose) {
+    console.log("[MiniPhi] Skipping model preload because MINIPHI_FORCE_REST=1.");
   }
 
   let restClient = null;

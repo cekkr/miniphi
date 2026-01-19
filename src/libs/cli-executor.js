@@ -189,10 +189,14 @@ export default class CliExecutor {
    * Normalize a command string for the current platform.
    */
   normalizeCommand(command) {
+    const home = this.isWindows ? process.env.USERPROFILE ?? "" : process.env.HOME ?? "";
+    const expanded = home
+      ? command.replace(/(^|[\s"'`])~(?=[\\/]|$)/g, `$1${home}`)
+      : command;
     if (this.isWindows) {
-      return command.replace(/~/g, process.env.USERPROFILE ?? "").replace(/\//g, "\\");
+      return expanded.replace(/\//g, "\\");
     }
-    return command.replace(/~/g, process.env.HOME ?? "").replace(/\\\\/g, "/");
+    return expanded.replace(/\\\\/g, "/");
   }
 
   /**

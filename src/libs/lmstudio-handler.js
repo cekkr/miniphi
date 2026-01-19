@@ -64,6 +64,10 @@ export class LMStudioHandler {
    * @param {import("@lmstudio/sdk").LLMLoadModelConfig} [config]
    */
   async load(config = undefined) {
+    if (process.env.MINIPHI_FORCE_REST === "1") {
+      this.model = null;
+      return;
+    }
     this.model = await this.manager.getModel(this.modelKey, {
       contextLength: DEFAULT_CONTEXT_LENGTH,
       ...(config ?? {}),
@@ -140,13 +144,6 @@ export class LMStudioHandler {
    * @returns {Promise<string>} assistant response content
    */
   async chatStream(prompt, onToken, onThink, onError, traceOptions = undefined) {
-    if (!this.model) {
-      const error = new Error("Model not loaded. Call load() before chatStream().");
-      if (onError) {
-        onError(error.message);
-      }
-      throw error;
-    }
     if (!prompt || !prompt.trim()) {
       throw new Error("Prompt is required.");
     }
@@ -189,6 +186,13 @@ export class LMStudioHandler {
       let rawFragmentCount = 0;
       let solutionTokenCount = 0;
       const useRestTransport = this._shouldUseRest(traceContext);
+      if (!this.model && !useRestTransport) {
+        const error = new Error("Model not loaded. Call load() before chatStream().");
+        if (onError) {
+          onError(error.message);
+        }
+        throw error;
+      }
       const maybeRecordSlowStart = (tokenTime, transport) => {
         if (slowStartEmitted) {
           return;
