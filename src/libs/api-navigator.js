@@ -423,6 +423,12 @@ export default class ApiNavigator {
     responsePayload.rawResponseText = responseText ?? "";
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
+    const errorInfo = errorMessage ? classifyLmStudioError(errorMessage) : null;
+    const stopReason =
+      plan?.stop_reason ??
+      errorInfo?.reason ??
+      errorMessage ??
+      null;
     try {
       const record = await this.promptRecorder.record({
         scope: "sub",
@@ -434,7 +440,9 @@ export default class ApiNavigator {
           cwd: payload?.cwd ?? null,
           workspaceType: payload?.workspace?.classification ?? null,
           promptJournalId: payload?.promptJournalId ?? null,
-          stop_reason: plan?.stop_reason ?? errorMessage ?? null,
+          stop_reason: stopReason,
+          stop_reason_code: errorInfo?.code ?? null,
+          stop_reason_detail: errorInfo?.message ?? null,
         },
         request: {
           endpoint: "/chat/completions",

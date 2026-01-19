@@ -26,6 +26,7 @@ const CONTEXT_OVERFLOW_PATTERNS = [
 const INVALID_RESPONSE_PATTERNS = [
   /schema validation/i,
   /not valid json/i,
+  /no valid json/i,
   /invalid response/i,
   /json parse/i,
 ];

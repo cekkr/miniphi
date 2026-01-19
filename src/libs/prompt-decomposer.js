@@ -175,6 +175,7 @@ export default class PromptDecomposer {
     let promptRecord = null;
     let normalizedPlan = null;
     let errorMessage = null;
+    let errorInfo = null;
 
     const attempts = [
       this._buildRequestBody(payload, { compact: false }),
@@ -245,12 +246,13 @@ export default class PromptDecomposer {
     }
 
     if (errorMessage) {
+      errorInfo = classifyLmStudioError(errorMessage);
       this._log(`[PromptDecomposer] REST failure: ${errorMessage}`);
       if (this._shouldDisable(errorMessage)) {
         this._disableDecomposer(errorMessage);
         this._log("[PromptDecomposer] Disabled after repeated failures.");
       }
-      normalizedPlan = this._fallbackPlan(errorMessage, payload);
+      normalizedPlan = this._fallbackPlan(errorMessage, payload, errorInfo);
     }
 
     if (payload.promptRecorder) {
@@ -271,7 +273,13 @@ export default class PromptDecomposer {
           command: payload.command ?? null,
           workspaceType: payload.workspace?.classification ?? null,
           promptJournalId: payload.promptJournalId ?? null,
-          stop_reason: normalizedPlan?.stopReason ?? errorMessage ?? null,
+          stop_reason:
+            normalizedPlan?.stopReason ??
+            errorInfo?.reason ??
+            errorMessage ??
+            null,
+          stop_reason_code: errorInfo?.code ?? null,
+          stop_reason_detail: errorInfo?.message ?? null,
         },
         request: {
           endpoint: "/chat/completions",
@@ -738,9 +746,11 @@ export default class PromptDecomposer {
     return isContextOverflowError(message);
   }
 
-  _fallbackPlan(message, payload) {
+  _fallbackPlan(message, payload, errorInfo = undefined) {
+    const normalizedError = errorInfo ?? classifyLmStudioError(message);
+    const stopReason = normalizedError?.reason ?? message ?? "unknown error";
     const planId = "prompt-plan-fallback";
-    const summary = `Decomposer failed (${message ?? "unknown error"})`;
+    const summary = `Decomposer failed (${message ?? stopReason})`;
     const normalized = {
       planId,
       summary,
@@ -763,7 +773,7 @@ export default class PromptDecomposer {
       schemaVersion: "prompt-plan@fallback",
       needsMoreContext: true,
       missingSnippets: ["valid prompt-plan JSON from LM Studio"],
-      stopReason: message ?? "unknown error",
+      stopReason,
     };
     return normalized;
   }

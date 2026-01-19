@@ -134,7 +134,9 @@ Status:
   used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; LM Studio bootstrap +
   compatibility checks moved into `src/libs/lmstudio-runtime.js`, and endpoint/transport resolution
   now flows through `src/libs/lmstudio-endpoints.js` with shared WS/REST base wiring. Remaining work:
-  unify error metadata payloads across handlers/analyzers and align session timeout + retry caps.
+  align error metadata payloads across handlers/analyzers (navigator/decomposer now record
+  stop-reason codes/details; invalid-response classification catches "no valid JSON") and align
+  session timeout + retry caps.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
