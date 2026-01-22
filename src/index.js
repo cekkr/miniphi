@@ -20,6 +20,7 @@ import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
+import { classifyLmStudioError } from "./libs/lmstudio-error-utils.js";
 import { resolveLmStudioEndpoints } from "./libs/lmstudio-endpoints.js";
 import { createLmStudioRuntime } from "./libs/lmstudio-runtime.js";
 import CommandAuthorizationManager, {
@@ -786,28 +787,65 @@ function isLmStudioProtocolError(error) {
   return error instanceof LMStudioProtocolError || error?.name === "LMStudioProtocolError";
 }
 
-function classifyStopReason(error) {
+function classifyStopInfo(error) {
   if (!error) {
-    return "unknown";
+    return { reason: "unknown", code: null, detail: null };
   }
   if (isLmStudioProtocolError(error)) {
-    return "lmstudio-protocol";
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      reason: "lmstudio-protocol",
+      code: "protocol",
+      detail: message,
+    };
   }
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   if (normalized.includes("denied by policy")) {
-    return "command-denied";
+    return {
+      reason: "command-denied",
+      code: "command-denied",
+      detail: message,
+    };
+  }
+  if (normalized.includes("command execution failed")) {
+    return {
+      reason: "command-failed",
+      code: "command-failed",
+      detail: message,
+    };
+  }
+  if (normalized.includes("session timeout") || normalized.includes("session-timeout")) {
+    return {
+      reason: "session-timeout",
+      code: "session-timeout",
+      detail: message,
+    };
   }
   if (normalized.includes("tokens emitted")) {
-    return "no-token-timeout";
+    return {
+      reason: "no-token-timeout",
+      code: "no-token-timeout",
+      detail: message,
+    };
   }
   if (normalized.includes("timeout")) {
-    return "timeout";
+    return { reason: "timeout", code: "timeout", detail: message };
   }
   if (normalized.includes("cancel")) {
-    return "cancelled";
+    return { reason: "cancelled", code: "cancelled", detail: message };
   }
-  return "error";
+  const errorInfo = classifyLmStudioError(message);
+  const mentionsLmStudio =
+    normalized.includes("lm studio") || normalized.includes("lmstudio");
+  if (errorInfo.code !== "rest-failure" || mentionsLmStudio) {
+    return {
+      reason: errorInfo.reason ?? "lmstudio-error",
+      code: errorInfo.code ?? "lmstudio-error",
+      detail: message,
+    };
+  }
+  return { reason: "error", code: "error", detail: message };
 }
 
 function getSessionRemainingMs(sessionDeadline) {
@@ -1931,6 +1969,8 @@ async function main() {
     let promptJournal = null;
     let promptJournalFinalized = false;
     let stopReason = null;
+    let stopReasonCode = null;
+    let stopReasonDetail = null;
     let stopStatus = null;
     let stopError = null;
   const archiveMetadata = {
@@ -2119,7 +2159,6 @@ const describeWorkspace = (dir, options = undefined) =>
         result?.analysisDiagnostics?.stopReason ??
         result?.analysisDiagnostics?.fallbackReason ??
         null;
-      const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
       const finalStatus = stopStatus ?? "completed";
       const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
       const finalError = stopError ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
@@ -2238,8 +2277,11 @@ const describeWorkspace = (dir, options = undefined) =>
     }
   } catch (error) {
     stopStatus = "failed";
-    stopReason = classifyStopReason(error);
-    stopError = error instanceof Error ? error.message : String(error);
+    const stopInfo = classifyStopInfo(error);
+    stopReason = stopInfo.reason;
+    stopReasonCode = stopInfo.code ?? null;
+    stopReasonDetail = stopInfo.detail ?? null;
+    stopError = stopInfo.detail ?? (error instanceof Error ? error.message : String(error));
     console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
     try {
@@ -2248,11 +2290,15 @@ const describeWorkspace = (dir, options = undefined) =>
           result?.analysisDiagnostics?.stopReason ??
           result?.analysisDiagnostics?.fallbackReason ??
           null;
-        const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
         const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+        const finalStopReasonCode =
+          stopReasonCode ?? result?.analysisDiagnostics?.stopReasonCode ?? null;
+        const finalStopReasonDetail =
+          stopReasonDetail ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
         await finalizePromptJournal({
           stopReason: finalStopReason,
-          stopReasonDetail: result?.analysisDiagnostics?.stopReasonDetail ?? null,
+          stopReasonCode: finalStopReasonCode,
+          stopReasonDetail: finalStopReasonDetail,
         });
       }
 
@@ -2270,6 +2316,8 @@ const describeWorkspace = (dir, options = undefined) =>
           promptId,
           status: stopStatus,
           stopReason,
+          stopReasonCode,
+          stopReasonDetail,
           error: stopError,
         });
       }
@@ -2301,11 +2349,15 @@ const describeWorkspace = (dir, options = undefined) =>
         result?.analysisDiagnostics?.stopReason ??
         result?.analysisDiagnostics?.fallbackReason ??
         null;
-      const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
       const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+      const finalStopReasonCode =
+        stopReasonCode ?? result?.analysisDiagnostics?.stopReasonCode ?? null;
+      const finalStopReasonDetail =
+        stopReasonDetail ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
       await finalizePromptJournal({
         stopReason: finalStopReason,
-        stopReasonDetail: result?.analysisDiagnostics?.stopReasonDetail ?? null,
+        stopReasonCode: finalStopReasonCode,
+        stopReasonDetail: finalStopReasonDetail,
       });
     } catch (error) {
       if (verbose) {
