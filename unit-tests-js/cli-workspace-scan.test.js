@@ -51,3 +51,37 @@ test("CLI prompt-template workspace scan skips ignored dirs and skip files", asy
     await removeTempWorkspace(workspace);
   }
 });
+
+test("CLI prompt-template --no-workspace omits workspace context block", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspace, "README.md"), "Hello workspace", "utf8");
+    await fs.writeFile(path.join(workspace, "src", "index.js"), "console.log('hi');", "utf8");
+
+    const outputPath = path.join(workspace, "prompt-template-no-workspace.txt");
+    const result = runCli(
+      [
+        "prompt-template",
+        "--baseline",
+        "truncation",
+        "--task",
+        "Skip workspace scan",
+        "--schema-id",
+        "log-analysis",
+        "--no-workspace",
+        "--output",
+        outputPath,
+      ],
+      { cwd: workspace },
+    );
+    assert.equal(result.code, 0, result.stderr);
+
+    const promptText = await fs.readFile(outputPath, "utf8");
+    assert.ok(!promptText.includes("## Workspace Insight"));
+    assert.ok(!promptText.includes("File manifest"));
+    assert.ok(!promptText.includes("README excerpt"));
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});

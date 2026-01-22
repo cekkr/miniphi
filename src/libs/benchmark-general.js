@@ -146,6 +146,7 @@ async function runGeneralPurposeBenchmark({
     executeHelper: true,
     memory: stateManager,
     globalMemory,
+    emitFeatureDisableNotice,
   });
 
   let decompositionPlan = null;
