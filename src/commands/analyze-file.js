@@ -444,6 +444,8 @@ export async function handleAnalyzeFileCommand(context) {
     attachContextRequestsToResult(result);
     if (promptJournal && result) {
       const promptExchange = result.promptExchange ?? null;
+      const toolCalls = promptExchange?.response?.tool_calls ?? null;
+      const toolDefinitions = promptExchange?.response?.tool_definitions ?? null;
       const links = promptExchange
         ? {
             promptExchangeId: promptExchange.id ?? null,
@@ -455,6 +457,8 @@ export async function handleAnalyzeFileCommand(context) {
         prompt: result.prompt,
         response: result.analysis,
         schemaId: result.schemaId ?? null,
+        toolCalls,
+        toolDefinitions,
       operations: [
         {
           type: "file-analysis",

@@ -1086,6 +1086,8 @@ export class LMStudioHandler {
               : null,
           tokensApprox,
           stream: responseSnapshot.stream ?? null,
+          tool_calls: responseSnapshot.tool_calls ?? null,
+          tool_definitions: responseSnapshot.tool_definitions ?? null,
         }
       : null;
     const requestSummary = requestSnapshot
