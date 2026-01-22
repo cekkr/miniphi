@@ -57,6 +57,7 @@ export class LMStudioHandler {
       lastWarning: null,
     };
     this.lastPromptExchange = null;
+    this.lastPerformanceSummary = null;
   }
 
   /**
@@ -728,6 +729,7 @@ export class LMStudioHandler {
     const messages = this._buildRestMessages();
     const response = await this.restClient.createChatCompletion({
       messages,
+      model: this.modelKey,
       stream: false,
       max_tokens: -1,
       ...(responseFormat ? { response_format: responseFormat } : {}),
@@ -849,6 +851,16 @@ export class LMStudioHandler {
     return exchange;
   }
 
+  getLastPerformanceSummary() {
+    return this.lastPerformanceSummary;
+  }
+
+  consumeLastPerformanceSummary() {
+    const summary = this.lastPerformanceSummary;
+    this.lastPerformanceSummary = null;
+    return summary;
+  }
+
   async getContextWindow() {
     if (!this.model || typeof this.model.getContextLength !== "function") {
       return null;
@@ -962,18 +974,21 @@ export class LMStudioHandler {
 
   async _trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {
     if (!this.performanceTracker || !requestSnapshot) {
+      this.lastPerformanceSummary = null;
       return;
     }
     try {
-      await this.performanceTracker.track({
+      const summary = await this.performanceTracker.track({
         traceContext,
         request: requestSnapshot,
         response: responseSnapshot,
         error: errorMessage ?? null,
       });
+      this.lastPerformanceSummary = summary ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptPerformanceTracker");
+      this.lastPerformanceSummary = null;
     }
   }
 

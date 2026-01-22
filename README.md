@@ -70,6 +70,17 @@ If you're running from the repo (without a global install), the equivalent entry
 node src/index.js <command> [flags...]
 ```
 
+### Adaptive routing (RL)
+
+MiniPhi can learn which local model + prompt profile performs best per prompt type and route future prompts accordingly.
+Enable the router with a model pool and it will persist a Q-table under `.miniphi/indices/prompt-router.json`.
+
+```bash
+miniphi run --cmd "npm test" --task "Analyze failures" --rl-router --rl-models "mistralai/devstral-small-2-2512,ibm/granite-4-h-tiny"
+```
+
+For prompt profiles and reward tuning, set the `rlRouter` section in `config.json` (see `config.example.json`).
+
 ## Safety and command execution
 
 miniPhi can run shell commands when you use `run` (or other workflows that execute commands). Review what it’s about to do and use the command policy flags if you want stricter gating.

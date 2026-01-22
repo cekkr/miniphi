@@ -1,6 +1,7 @@
 import path from "path";
 import LMStudioManager, { LMStudioRestClient } from "./lmstudio-api.js";
 import LMStudioHandler from "./lmstudio-handler.js";
+import AdaptiveLMStudioHandler from "./adaptive-lmstudio-handler.js";
 import PromptPerformanceTracker from "./prompt-performance-tracker.js";
 import { resolveDurationMs } from "./cli-utils.js";
 import { buildRestClientOptions } from "./lmstudio-client-options.js";
@@ -117,6 +118,7 @@ async function createLmStudioRuntime({
   isLmStudioLocal = true,
   restBaseUrl = null,
   wsBaseUrl = null,
+  routerConfig = null,
 }) {
   const clientOptions = wsBaseUrl
     ? { ...(configData?.lmStudio?.clientOptions ?? {}), baseUrl: wsBaseUrl }
@@ -154,13 +156,31 @@ async function createLmStudioRuntime({
     );
   }
   const modelKey = modelSelection?.modelKey;
-  const phi4 = new LMStudioHandler(manager, {
-    systemPrompt: resolvedSystemPrompt,
-    promptTimeoutMs,
-    schemaRegistry,
-    noTokenTimeoutMs,
-    modelKey,
-  });
+  const routerEnabled =
+    Boolean(routerConfig?.enabled) && Array.isArray(routerConfig?.models) && routerConfig.models.length > 0;
+  const routedModels = routerEnabled ? routerConfig.models : null;
+  const phi4 = routerEnabled
+    ? new AdaptiveLMStudioHandler(manager, {
+        systemPrompt: resolvedSystemPrompt,
+        promptTimeoutMs,
+        schemaRegistry,
+        noTokenTimeoutMs,
+        modelKeys: routedModels,
+        defaultModelKey: modelKey,
+        promptProfiles: routerConfig?.promptProfiles ?? null,
+        routerStatePath: routerConfig?.statePath ?? null,
+        routerConfig,
+        learnEnabled: routerConfig?.learnEnabled !== false,
+        maxSteps: routerConfig?.maxSteps,
+        saveIntervalMs: routerConfig?.saveIntervalMs,
+      })
+    : new LMStudioHandler(manager, {
+        systemPrompt: resolvedSystemPrompt,
+        promptTimeoutMs,
+        schemaRegistry,
+        noTokenTimeoutMs,
+        modelKey,
+      });
   if (process.env.MINIPHI_FORCE_REST !== "1") {
     try {
       await manager.getModel(modelKey, {

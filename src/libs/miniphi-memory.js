@@ -103,6 +103,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     this.promptTemplatesIndexFile = path.join(this.promptTemplatesDir, "index.json");
     this.fallbackCacheFile = path.join(this.indicesDir, "fallback-cache.json");
     this.promptCompositionsFile = path.join(this.indicesDir, "prompt-compositions.json");
+    this.promptRouterFile = path.join(this.indicesDir, "prompt-router.json");
 
     this.prepared = false;
     this.recomposeNarrativesCache = null;
@@ -152,6 +153,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     await this._ensureFile(this.commandLibraryFile, { entries: [] });
     await this._ensureFile(this.fallbackCacheFile, { entries: [] });
     await this._ensureFile(this.promptCompositionsFile, { entries: [] });
+    await this._ensureFile(this.promptRouterFile, { actionKeys: [], q: {} });
     await this._ensureFile(this.rootIndexFile, {
       updatedAt: new Date().toISOString(),
       children: [
@@ -172,6 +174,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
         { name: "prompt-templates", file: this._relative(this.promptTemplatesIndexFile) },
         { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
         { name: "prompt-compositions", file: this._relative(this.promptCompositionsFile) },
+        { name: "prompt-router", file: this._relative(this.promptRouterFile) },
       ],
     });
 
@@ -1331,6 +1334,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       { name: "workspace-hints", file: this._relative(this.workspaceHintsFile) },
       { name: "fallback-cache", file: this._relative(this.fallbackCacheFile) },
       { name: "prompt-compositions", file: this._relative(this.promptCompositionsFile) },
+      { name: "prompt-router", file: this._relative(this.promptRouterFile) },
     ];
     await this._writeJSON(this.rootIndexFile, root);
   }

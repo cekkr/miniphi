@@ -30,6 +30,18 @@
     "chunkSize": 2000,
     "sessionTimeoutSeconds": 1800
   },
+  "rlRouter": {
+    "enabled": false,
+    "statePath": ".miniphi/indices/prompt-router.json",
+    "models": [
+      "mistralai/devstral-small-2-2512",
+      "ibm/granite-4-h-tiny"
+    ],
+    "promptProfiles": [
+      { "id": "default", "label": "Default" },
+      { "id": "strict-json", "label": "Strict JSON", "prefix": "Reply with JSON only." }
+    ]
+  },
   "resourceMonitor": {
     "maxMemoryPercent": 85,
     "maxCpuPercent": 90,

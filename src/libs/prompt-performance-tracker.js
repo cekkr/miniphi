@@ -272,6 +272,13 @@ export default class PromptPerformanceTracker {
       workspaceType,
       workspacePath,
     });
+
+    return {
+      score,
+      followUpNeeded,
+      followUpReason,
+      evaluation,
+    };
   }
 
   /**

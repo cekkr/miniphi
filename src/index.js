@@ -445,6 +445,118 @@ function normalizeJournalStatus(value) {
   return null;
 }
 
+function parseBooleanFlag(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "yes" || normalized === "1") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "no" || normalized === "0") {
+    return false;
+  }
+  return null;
+}
+
+function parseListFlag(value) {
+  if (!value && value !== 0) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseListFlag(entry));
+  }
+  const text = value.toString().trim();
+  if (!text) {
+    return [];
+  }
+  return text
+    .split(/[,|]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function resolveRouterStatePath(rawPath, configPath) {
+  if (!rawPath || typeof rawPath !== "string") {
+    return null;
+  }
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (path.isAbsolute(trimmed)) {
+    return trimmed;
+  }
+  if (configPath) {
+    return path.resolve(path.dirname(configPath), trimmed);
+  }
+  return path.resolve(process.cwd(), trimmed);
+}
+
+function resolveRouterConfig({ options, configData, configPath, modelSelection }) {
+  const rawConfig = configData?.rlRouter ?? configData?.promptRouter ?? null;
+  const cliEnabled = parseBooleanFlag(options["rl-router"]);
+  const configEnabled =
+    typeof rawConfig?.enabled === "boolean"
+      ? rawConfig.enabled
+      : typeof rawConfig?.enable === "boolean"
+        ? rawConfig.enable
+        : null;
+  const configModels = Array.isArray(rawConfig?.models)
+    ? rawConfig.models
+    : parseListFlag(rawConfig?.models);
+  const cliModels = parseListFlag(options["rl-models"]);
+  const modelList = cliModels.length ? cliModels : configModels;
+  const hasModels = modelList.length > 0;
+  const enabled =
+    cliEnabled !== null ? cliEnabled : configEnabled !== null ? configEnabled : hasModels;
+
+  if (!enabled) {
+    return { enabled: false };
+  }
+
+  const defaultModel = modelSelection?.modelKey ?? null;
+  const models = modelList.length ? [...modelList] : defaultModel ? [defaultModel] : [];
+  if (defaultModel && !models.includes(defaultModel)) {
+    models.unshift(defaultModel);
+  }
+
+  if (!models.length) {
+    return { enabled: false };
+  }
+
+  const statePath =
+    resolveRouterStatePath(options["rl-state"], configPath) ??
+    resolveRouterStatePath(rawConfig?.statePath, configPath) ??
+    path.resolve(process.cwd(), ".miniphi", "indices", "prompt-router.json");
+
+  const learnEnabled =
+    typeof rawConfig?.learnEnabled === "boolean"
+      ? rawConfig.learnEnabled
+      : typeof rawConfig?.learn === "boolean"
+        ? rawConfig.learn
+        : true;
+
+  return {
+    enabled: true,
+    models,
+    statePath,
+    promptProfiles: rawConfig?.promptProfiles ?? null,
+    alpha: rawConfig?.alpha,
+    gamma: rawConfig?.gamma,
+    epsilon: rawConfig?.epsilon,
+    epsilonMin: rawConfig?.epsilonMin ?? rawConfig?.epsilon_min,
+    epsilonDecay: rawConfig?.epsilonDecay ?? rawConfig?.epsilon_decay,
+    reward: rawConfig?.reward ?? null,
+    learnEnabled,
+    maxSteps: rawConfig?.maxSteps,
+    saveIntervalMs: rawConfig?.saveIntervalMs,
+  };
+}
+
 // buildPlanOperations and buildNavigationOperations moved to src/libs/core-utils.js
 
 async function recordPlanStepInJournal(journal, sessionId, context = undefined) {
@@ -999,15 +1111,31 @@ async function main() {
   });
   contextLength = modelSelection.contextLength;
   const resolvedSystemPrompt = promptDefaults.system ?? modelSelection.systemPrompt ?? undefined;
-  if (verbose) {
-    const modelLabel = modelSelection.preset?.label ?? modelSelection.modelKey;
-    const aliasNote =
-      modelSelection.normalizedFromAlias && requestedModel ? ` (from ${requestedModel})` : "";
-    const clampNote = modelSelection.clampedToPreset ? " (preset cap)" : "";
-    console.log(
-      `[MiniPhi] Model ${modelLabel}${aliasNote} | Context length ${contextLength}${clampNote}`,
-    );
-  }
+    if (verbose) {
+      const modelLabel = modelSelection.preset?.label ?? modelSelection.modelKey;
+      const aliasNote =
+        modelSelection.normalizedFromAlias && requestedModel ? ` (from ${requestedModel})` : "";
+      const clampNote = modelSelection.clampedToPreset ? " (preset cap)" : "";
+      console.log(
+        `[MiniPhi] Model ${modelLabel}${aliasNote} | Context length ${contextLength}${clampNote}`,
+      );
+    }
+
+    const routerConfig = resolveRouterConfig({
+      options,
+      configData,
+      configPath,
+      modelSelection,
+    });
+    if (routerConfig?.enabled && verbose) {
+      const modelList = routerConfig.models?.join(", ") ?? "none";
+      const stateLabel = routerConfig.statePath
+        ? path.relative(process.cwd(), routerConfig.statePath) || routerConfig.statePath
+        : "none";
+      console.log(
+        `[MiniPhi] RL router enabled (models: ${modelList}; state: ${stateLabel})`,
+      );
+    }
 
   const defaultCommandTimeoutMs =
     resolveDurationMs({
@@ -1239,21 +1367,22 @@ async function main() {
   let phi4 = null;
   let performanceTracker = null;
   let scoringPhi = null;
-  const lmStudioRuntime = await createLmStudioRuntime({
-    configData,
-    promptDefaults,
-    resolvedSystemPrompt,
-    modelSelection,
-    contextLength,
-    gpu,
-    debugLm,
-    verbose,
-    schemaRegistry,
-    promptDbPath: globalMemory.promptDbPath,
-    isLmStudioLocal,
-    restBaseUrl: resolvedLmStudioBaseUrl,
-    wsBaseUrl: resolvedLmStudioWsBase,
-  });
+    const lmStudioRuntime = await createLmStudioRuntime({
+      configData,
+      promptDefaults,
+      resolvedSystemPrompt,
+      modelSelection,
+      contextLength,
+      gpu,
+      debugLm,
+      verbose,
+      schemaRegistry,
+      promptDbPath: globalMemory.promptDbPath,
+      isLmStudioLocal,
+      restBaseUrl: resolvedLmStudioBaseUrl,
+      wsBaseUrl: resolvedLmStudioWsBase,
+      routerConfig,
+    });
   phi4 = lmStudioRuntime.phi4;
   restClient = lmStudioRuntime.restClient;
   performanceTracker = lmStudioRuntime.performanceTracker;
@@ -2290,6 +2419,9 @@ Options:
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override model context length (default: model preset)
   --model <id>                 LM Studio model key or alias (mistralai/devstral-small-2-2512, ibm/granite-4-h-tiny, phi-4)
+  --rl-router                 Enable adaptive RL prompt routing (multi-model pool)
+  --rl-models <list>          Comma-separated model keys to route between
+  --rl-state <path>           Router Q-table JSON path (default: .miniphi/indices/prompt-router.json)
   --gpu <mode>                 GPU setting forwarded to LM Studio (default: auto)
   --timeout <s>                Command timeout in seconds (default: 60)
   --max-memory-percent <n>     Trigger warnings when RAM usage exceeds <n>%
