@@ -2115,10 +2115,14 @@ const describeWorkspace = (dir, options = undefined) =>
     await stopResourceMonitorIfNeeded();
 
     if (stateManager && result) {
+      const analysisStopReason =
+        result?.analysisDiagnostics?.stopReason ??
+        result?.analysisDiagnostics?.fallbackReason ??
+        null;
       const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
       const finalStatus = stopStatus ?? "completed";
-      const finalStopReason = stopReason ?? fallbackReason ?? "completed";
-      const finalError = stopError ?? null;
+      const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+      const finalError = stopError ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
       const archive = await stateManager.persistExecution({
         mode: command,
         task,
@@ -2238,9 +2242,16 @@ const describeWorkspace = (dir, options = undefined) =>
     process.exitCode = 1;
     try {
       if (result) {
+        const analysisStopReason =
+          result?.analysisDiagnostics?.stopReason ??
+          result?.analysisDiagnostics?.fallbackReason ??
+          null;
         const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
-        const finalStopReason = stopReason ?? fallbackReason ?? "completed";
-        await finalizePromptJournal({ stopReason: finalStopReason });
+        const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+        await finalizePromptJournal({
+          stopReason: finalStopReason,
+          stopReasonDetail: result?.analysisDiagnostics?.stopReasonDetail ?? null,
+        });
       }
 
       await stopResourceMonitorIfNeeded();
@@ -2284,9 +2295,16 @@ const describeWorkspace = (dir, options = undefined) =>
       }
     }
     try {
+      const analysisStopReason =
+        result?.analysisDiagnostics?.stopReason ??
+        result?.analysisDiagnostics?.fallbackReason ??
+        null;
       const fallbackReason = result?.analysisDiagnostics?.fallbackReason ?? null;
-      const finalStopReason = stopReason ?? fallbackReason ?? "completed";
-      await finalizePromptJournal({ stopReason: finalStopReason });
+      const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+      await finalizePromptJournal({
+        stopReason: finalStopReason,
+        stopReasonDetail: result?.analysisDiagnostics?.stopReasonDetail ?? null,
+      });
     } catch (error) {
       if (verbose) {
         console.warn(

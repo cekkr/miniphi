@@ -3,6 +3,10 @@ import path from "path";
 import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
 import { LMStudioProtocolError } from "./lmstudio-handler.js";
+import {
+  classifyLmStudioError,
+  normalizeLmStudioErrorMessage,
+} from "./lmstudio-error-utils.js";
 import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core-utils.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 import { MIN_LMSTUDIO_REQUEST_TIMEOUT_MS } from "./runtime-defaults.js";
@@ -206,7 +210,7 @@ export default class EfficientLogAnalyzer {
       fallbackContext.promptJournalId ??
       promptContext?.promptJournalId ??
       null;
-    const cachedFallback =
+    let cachedFallback =
       datasetHash && fallbackCache?.loadFallbackSummary
         ? await this._lookupCachedFallback(
             fallbackCache,
@@ -244,6 +248,9 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
+      stopReason: cachedFallback?.reason ?? null,
+      stopReasonCode: cachedFallback ? "cached-fallback" : null,
+      stopReasonDetail: cachedFallback?.reason ?? null,
     };
     const sanitizeOptions = {
       workspaceContext,
@@ -264,67 +271,100 @@ export default class EfficientLogAnalyzer {
         chunkCount: null,
         datasetLabel: command,
       });
+    let skipPhi = false;
     let stopHeartbeat = () => {};
     if (!cachedFallback) {
-      this._applyPromptTimeout(sessionDeadline, {
-        lineCount: lines.length,
-        tokens: compression.tokens,
-        source: "command",
-      });
-      stopHeartbeat = !streamOutput
-        ? this._startHeartbeat("Still waiting for Phi response...", devLog)
-        : () => {};
-      if (verbose) {
-        this._emitVerbosePromptPreview(prompt, compression.tokens, {
-          schemaId: traceOptions.schemaId,
-          origin: `Command "${command}"`,
-          lines: lines.length,
-        });
-      }
       try {
-        await this.phi4.chatStream(
-          prompt,
-          (token) => {
-            analysis += token;
-            if (streamOutput) {
-              process.stdout.write(token);
-            }
-          },
-          (thought) => {
-            if (verbose) {
-              console.log("\n[Reasoning Block]\n");
-              console.log(thought);
-              console.log("\n[Solution Stream]");
-            }
-          },
-          (err) => {
-            this._logDev(devLog, `Phi error: ${err}`);
-            throw new Error(`Phi-4 inference error: ${err}`);
-          },
-          traceOptions,
-        );
+        this._applyPromptTimeout(sessionDeadline, {
+          lineCount: lines.length,
+          tokens: compression.tokens,
+          source: "command",
+        });
       } catch (error) {
-        if (error instanceof LMStudioProtocolError) {
-          throw error;
-        }
+        skipPhi = true;
         usedFallback = true;
-        const reason = error instanceof Error ? error.message : String(error);
-        fallbackReason = reason;
+        const stopInfo = this._buildStopDiagnostics(error, {
+          reason: "session-timeout",
+          code: "session-timeout",
+        });
+        fallbackReason = stopInfo.reason ?? fallbackReason ?? "session-timeout";
         analysisDiagnostics.fallbackReason = fallbackReason;
+        this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
         const diag = fallbackDiagnostics();
+        const detail = stopInfo.detail ?? fallbackReason;
         console.warn(
-          `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+          `[MiniPhi] Phi analysis skipped: ${detail}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
         );
         this._logDev(
           devLog,
-          `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+          `Phi skipped (${detail}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
         );
-        analysis = this._buildFallbackAnalysis(task, reason, {
+        analysis = this._buildFallbackAnalysis(task, detail, {
           datasetHint: `${lines.length} lines captured from ${command}`,
           rerunCommand: command,
         });
-      } finally {
-        stopHeartbeat();
+      }
+      if (!skipPhi) {
+        stopHeartbeat = !streamOutput
+          ? this._startHeartbeat("Still waiting for Phi response...", devLog)
+          : () => {};
+        if (verbose) {
+          this._emitVerbosePromptPreview(prompt, compression.tokens, {
+            schemaId: traceOptions.schemaId,
+            origin: `Command "${command}"`,
+            lines: lines.length,
+          });
+        }
+        try {
+          await this.phi4.chatStream(
+            prompt,
+            (token) => {
+              analysis += token;
+              if (streamOutput) {
+                process.stdout.write(token);
+              }
+            },
+            (thought) => {
+              if (verbose) {
+                console.log("\n[Reasoning Block]\n");
+                console.log(thought);
+                console.log("\n[Solution Stream]");
+              }
+            },
+            (err) => {
+              this._logDev(devLog, `Phi error: ${err}`);
+              throw new Error(`Phi-4 inference error: ${err}`);
+            },
+            traceOptions,
+          );
+        } catch (error) {
+          if (error instanceof LMStudioProtocolError) {
+            throw error;
+          }
+          usedFallback = true;
+          const reason = error instanceof Error ? error.message : String(error);
+          const stopInfo = this._buildStopDiagnostics(reason, {
+            reason: "analysis-error",
+            code: "analysis-error",
+          });
+          fallbackReason = stopInfo.reason ?? fallbackReason ?? reason;
+          analysisDiagnostics.fallbackReason = fallbackReason;
+          this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
+          const diag = fallbackDiagnostics();
+          console.warn(
+            `[MiniPhi] Phi analysis failed: ${stopInfo.detail ?? reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+          );
+          this._logDev(
+            devLog,
+            `Phi failure (${stopInfo.detail ?? reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+          );
+          analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
+            datasetHint: `${lines.length} lines captured from ${command}`,
+            rerunCommand: command,
+          });
+        } finally {
+          stopHeartbeat();
+        }
       }
     }
 
@@ -386,6 +426,13 @@ export default class EfficientLogAnalyzer {
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
             analysisDiagnostics.fallbackReason = fallbackReason;
+            this._applyStopDiagnostics(
+              analysisDiagnostics,
+              this._buildStopDiagnostics(fallbackReason, {
+                reason: "invalid-response",
+                code: "invalid-response",
+              }),
+            );
           }
           if (!usedFallback) {
             sanitizeAnalysis();
@@ -393,17 +440,22 @@ export default class EfficientLogAnalyzer {
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
-          fallbackReason = reason;
+          const stopInfo = this._buildStopDiagnostics(reason, {
+            reason: "invalid-response",
+            code: "invalid-response",
+          });
+          fallbackReason = stopInfo.reason ?? reason;
           analysisDiagnostics.fallbackReason = fallbackReason;
+          this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
           const diag = fallbackDiagnostics();
           console.warn(
-            `[MiniPhi] ${reason}; emitting fallback summary.${diag ? ` ${diag}` : ""}`,
+            `[MiniPhi] ${stopInfo.detail ?? reason}; emitting fallback summary.${diag ? ` ${diag}` : ""}`,
           );
           this._logDev(
             devLog,
-            `${reason}; emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+            `${stopInfo.detail ?? reason}; emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
           );
-          analysis = this._buildFallbackAnalysis(task, reason, {
+          analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `${lines.length} lines captured from ${command}`,
             rerunCommand: command,
           });
@@ -636,7 +688,7 @@ export default class EfficientLogAnalyzer {
       fallbackContext.promptJournalId ??
       promptContext?.promptJournalId ??
       null;
-    const cachedFallback =
+    let cachedFallback =
       datasetHash && fallbackCache?.loadFallbackSummary
         ? await this._lookupCachedFallback(
             fallbackCache,
@@ -654,6 +706,9 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
+      stopReason: cachedFallback?.reason ?? null,
+      stopReasonCode: cachedFallback ? "cached-fallback" : null,
+      stopReasonDetail: cachedFallback?.reason ?? null,
     };
     const sanitizeOptions = {
       workspaceContext,
@@ -683,60 +738,93 @@ export default class EfficientLogAnalyzer {
       this._logDev(devLog, `Summary detail reduced by ${detailReductions} level(s) for budgeting.`);
     }
     let stopHeartbeat = () => {};
+    let skipPhi = false;
     if (!cachedFallback) {
-      this._applyPromptTimeout(sessionDeadline, {
-        lineCount: linesUsed,
-        tokens: tokensUsed,
-        source: "file",
-      });
-      stopHeartbeat = !streamOutput
-        ? this._startHeartbeat("Still waiting for Phi response...", devLog)
-        : () => {};
-      if (verbose) {
-        this._emitVerbosePromptPreview(prompt, tokensUsed, {
-          schemaId: traceOptions.schemaId,
-          origin: `Log file ${path.basename(filePath)}`,
-          lines: linesUsed,
-        });
-      }
       try {
-        await this.phi4.chatStream(
-          prompt,
-          (token) => {
-            analysis += token;
-            if (streamOutput) {
-              process.stdout.write(token);
-            }
-          },
-          undefined,
-          (err) => {
-            this._logDev(devLog, `Phi error: ${err}`);
-            throw new Error(`Phi-4 inference error: ${err}`);
-          },
-          traceOptions,
-        );
+        this._applyPromptTimeout(sessionDeadline, {
+          lineCount: linesUsed,
+          tokens: tokensUsed,
+          source: "file",
+        });
       } catch (error) {
-        if (error instanceof LMStudioProtocolError) {
-          throw error;
-        }
+        skipPhi = true;
         usedFallback = true;
-        const reason = error instanceof Error ? error.message : String(error);
-        fallbackReason = reason;
+        const stopInfo = this._buildStopDiagnostics(error, {
+          reason: "session-timeout",
+          code: "session-timeout",
+        });
+        fallbackReason = stopInfo.reason ?? fallbackReason ?? "session-timeout";
         analysisDiagnostics.fallbackReason = fallbackReason;
+        this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
         const diag = fallbackDiagnostics();
+        const detail = stopInfo.detail ?? fallbackReason;
         console.warn(
-          `[MiniPhi] Phi analysis failed: ${reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+          `[MiniPhi] Phi analysis skipped: ${detail}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
         );
         this._logDev(
           devLog,
-          `Phi failure (${reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+          `Phi skipped (${detail}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
         );
-        analysis = this._buildFallbackAnalysis(task, reason, {
+        analysis = this._buildFallbackAnalysis(task, detail, {
           datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
           rerunCommand: filePath,
         });
-      } finally {
-        stopHeartbeat();
+      }
+      if (!skipPhi) {
+        stopHeartbeat = !streamOutput
+          ? this._startHeartbeat("Still waiting for Phi response...", devLog)
+          : () => {};
+        if (verbose) {
+          this._emitVerbosePromptPreview(prompt, tokensUsed, {
+            schemaId: traceOptions.schemaId,
+            origin: `Log file ${path.basename(filePath)}`,
+            lines: linesUsed,
+          });
+        }
+        try {
+          await this.phi4.chatStream(
+            prompt,
+            (token) => {
+              analysis += token;
+              if (streamOutput) {
+                process.stdout.write(token);
+              }
+            },
+            undefined,
+            (err) => {
+              this._logDev(devLog, `Phi error: ${err}`);
+              throw new Error(`Phi-4 inference error: ${err}`);
+            },
+            traceOptions,
+          );
+        } catch (error) {
+          if (error instanceof LMStudioProtocolError) {
+            throw error;
+          }
+          usedFallback = true;
+          const reason = error instanceof Error ? error.message : String(error);
+          const stopInfo = this._buildStopDiagnostics(reason, {
+            reason: "analysis-error",
+            code: "analysis-error",
+          });
+          fallbackReason = stopInfo.reason ?? fallbackReason ?? reason;
+          analysisDiagnostics.fallbackReason = fallbackReason;
+          this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
+          const diag = fallbackDiagnostics();
+          console.warn(
+            `[MiniPhi] Phi analysis failed: ${stopInfo.detail ?? reason}. Using fallback summary.${diag ? ` ${diag}` : ""}`,
+          );
+          this._logDev(
+            devLog,
+            `Phi failure (${stopInfo.detail ?? reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
+          );
+          analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
+            datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
+            rerunCommand: filePath,
+          });
+        } finally {
+          stopHeartbeat();
+        }
       }
     } else {
       const hashPreview = datasetHash ? datasetHash.slice(0, 12) : "unknown";
@@ -806,6 +894,13 @@ export default class EfficientLogAnalyzer {
           if (usedFallback && !fallbackReason) {
             fallbackReason = "JSON salvage fallback";
             analysisDiagnostics.fallbackReason = fallbackReason;
+            this._applyStopDiagnostics(
+              analysisDiagnostics,
+              this._buildStopDiagnostics(fallbackReason, {
+                reason: "invalid-response",
+                code: "invalid-response",
+              }),
+            );
           }
           if (!usedFallback) {
             sanitizeAnalysis();
@@ -813,11 +908,16 @@ export default class EfficientLogAnalyzer {
         } else {
           usedFallback = true;
           const reason = "Phi response did not contain valid JSON";
-          fallbackReason = reason;
+          const stopInfo = this._buildStopDiagnostics(reason, {
+            reason: "invalid-response",
+            code: "invalid-response",
+          });
+          fallbackReason = stopInfo.reason ?? reason;
           analysisDiagnostics.fallbackReason = fallbackReason;
-          console.warn(`[MiniPhi] ${reason}; emitting fallback summary.`);
-          this._logDev(devLog, `${reason}; emitting fallback JSON.`);
-          analysis = this._buildFallbackAnalysis(task, reason, {
+          this._applyStopDiagnostics(analysisDiagnostics, stopInfo);
+          console.warn(`[MiniPhi] ${stopInfo.detail ?? reason}; emitting fallback summary.`);
+          this._logDev(devLog, `${stopInfo.detail ?? reason}; emitting fallback JSON.`);
+          analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
             rerunCommand: filePath,
           });
@@ -2313,6 +2413,48 @@ export default class EfficientLogAnalyzer {
     }
     return lines.join("\n");
   }
+
+  _buildStopDiagnostics(error, defaults = undefined) {
+    const detail =
+      (typeof error === "object" && error?.detail) ||
+      normalizeLmStudioErrorMessage(error) ||
+      defaults?.detail ||
+      defaults?.reason ||
+      "";
+    const normalized = detail.toLowerCase();
+    const sessionTimeoutDetected =
+      normalized.includes("session timeout") || normalized.includes("session-timeout");
+    const classified = sessionTimeoutDetected ? null : classifyLmStudioError(detail);
+    const reason =
+      defaults?.reason ??
+      (sessionTimeoutDetected ? "session-timeout" : classified?.reason) ??
+      (detail || "analysis-error");
+    const code =
+      defaults?.code ??
+      (sessionTimeoutDetected ? "session-timeout" : classified?.code) ??
+      "analysis-error";
+    return {
+      reason,
+      code,
+      detail: detail || reason,
+    };
+  }
+
+  _applyStopDiagnostics(target, info) {
+    if (!target || !info) {
+      return;
+    }
+    if (info.reason && !target.stopReason) {
+      target.stopReason = info.reason;
+    }
+    if (info.code && !target.stopReasonCode) {
+      target.stopReasonCode = info.code;
+    }
+    if (info.detail && !target.stopReasonDetail) {
+      target.stopReasonDetail = info.detail;
+    }
+  }
+
   _applyPromptTimeout(sessionDeadline, promptHints = undefined) {
     const timeout = this._computePromptTimeout(sessionDeadline, promptHints);
     this.phi4.setPromptTimeout(timeout);
