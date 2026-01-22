@@ -1,0 +1,94 @@
+{
+  "model_names": [
+    "fast",
+    "balanced",
+    "strong"
+  ],
+  "alpha": 0.2,
+  "gamma": 0.95,
+  "epsilon": 0.18797074628699678,
+  "epsilon_min": 0.05,
+  "epsilon_decay": 0.999,
+  "q": {
+    "medium|early|unknown|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 6.561023381910514
+    },
+    "medium|early|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "easy|early|unknown|none": {
+      "fast": 2.7484160000000006,
+      "balanced": 4.642097377280001,
+      "strong": 3.3184
+    },
+    "easy|early|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "hard|early|unknown|none": {
+      "fast": 1.7600000000000002,
+      "balanced": -0.6400000000000001,
+      "strong": 5.2617879345561605
+    },
+    "hard|early|fail|exception": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 2.448
+    },
+    "hard|mid|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "medium|early|fail|assertion": {
+      "fast": 0.0,
+      "balanced": 1.56,
+      "strong": 0.0
+    },
+    "medium|mid|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "easy|early|fail|syntax": {
+      "fast": 0.0,
+      "balanced": 1.56,
+      "strong": 0.0
+    },
+    "easy|mid|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "hard|early|pass|none": {
+      "fast": 0.0,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "easy|early|fail|other": {
+      "fast": 3.1680000000000006,
+      "balanced": 0.0,
+      "strong": 0.0
+    },
+    "medium|early|fail|other": {
+      "fast": 0.0,
+      "balanced": 1.56,
+      "strong": 0.0
+    },
+    "easy|early|fail|exception": {
+      "fast": 0.0,
+      "balanced": 1.56,
+      "strong": 0.0
+    },
+    "hard|early|fail|assertion": {
+      "fast": 0.0,
+      "balanced": 1.56,
+      "strong": 0.0
+    }
+  }
+}

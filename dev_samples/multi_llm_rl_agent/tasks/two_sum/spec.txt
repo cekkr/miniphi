@@ -1,0 +1,1 @@
+Implement two_sum(nums, target) -> tuple[int,int] returning indices i<j such that nums[i]+nums[j]==target. Assume exactly one solution exists.
