@@ -58,6 +58,8 @@ export default class PromptRecorder {
     await this.prepare();
     const id = exchange.id ?? randomUUID();
     const recordPath = path.join(this.recordsDir, `${id}.json`);
+    const request = this._normalizeRequest(exchange.request);
+    const response = this._normalizeResponse(exchange.response ?? null);
     const payload = {
       id,
       recordedAt: new Date().toISOString(),
@@ -66,8 +68,8 @@ export default class PromptRecorder {
       mainPromptId: exchange.mainPromptId ?? null,
       subPromptId: exchange.subPromptId ?? null,
       metadata: exchange.metadata ?? null,
-      request: exchange.request,
-      response: exchange.response ?? null,
+      request,
+      response,
       error: exchange.error ?? null,
     };
     await fs.promises.writeFile(recordPath, JSON.stringify(payload, null, 2), "utf8");
@@ -101,5 +103,46 @@ export default class PromptRecorder {
     } catch {
       return { entries: [], updatedAt: null };
     }
+  }
+
+  _normalizeRequest(request) {
+    if (!request || typeof request !== "object") {
+      return request;
+    }
+    const normalized = { ...request };
+    if (normalized.responseFormat && !normalized.response_format) {
+      normalized.response_format = normalized.responseFormat;
+    }
+    if (normalized.response_format && normalized.responseFormat) {
+      delete normalized.responseFormat;
+    }
+    if (typeof normalized.promptText === "string" && Array.isArray(normalized.messages)) {
+      const last = normalized.messages[normalized.messages.length - 1];
+      if (last?.role === "user" && typeof last.content === "string") {
+        const promptText = normalized.promptText.trim();
+        const lastText = last.content.trim();
+        if (promptText && promptText === lastText) {
+          delete normalized.promptText;
+        }
+      }
+    }
+    return normalized;
+  }
+
+  _normalizeResponse(response) {
+    if (!response || typeof response !== "object") {
+      return response;
+    }
+    const normalized = { ...response };
+    const raw =
+      typeof normalized.rawResponseText === "string" ? normalized.rawResponseText : null;
+    const text = typeof normalized.text === "string" ? normalized.text : null;
+    if (!raw && text) {
+      normalized.rawResponseText = text;
+    }
+    if (normalized.rawResponseText && text && normalized.rawResponseText === text) {
+      delete normalized.text;
+    }
+    return normalized;
   }
 }
