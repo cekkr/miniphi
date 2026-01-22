@@ -1,21 +1,23 @@
 # Hello Flow Sample
 
 This intentionally small project keeps the `recompose` benchmark deterministic while still exercising layered imports:
-
 - `src/greeter.js` handles friendly greetings/farewells.
 - `src/math.js` performs average/trend calculations.
-- The pipeline (`src/flows/pipeline.js`) orchestrates normalization and validation steps with telemetry emission.
+- Telemetry is emitted at each step (normalize, validate) via structured objects.
+- Shared utilities (`logger.js`, `memory-store.js`) support persistence and logging.
 
 ## Directories
 
-- `code/` – Source files under test (e.g., `src/index.js`).
-- `descriptions/` – Natural-language plans/narratives for recomposition.
-- `reconstructed/` – Output of the recompose harness after processing.
+- **code/** - Contains the source files for the flow.
+- **descriptions/** - Holds natural language descriptions of the code.
+- **reconstructed/** - Outputs from automated runs.
 
-## Benchmark Triggers
+## Automated Runs
 
-Run `node src/index.js` to execute the flow pipeline and validate:
-1. Greeter utilities are imported correctly.
-2. Math functions compute averages/trends accurately.
-3. Telemetry is emitted at each step (normalize → validate).
-4. No raw code is exposed in reconstructed outputs.
+To trigger an automated run without exposing raw code, use the following command:
+
+```bash
+node src/index.js
+```
+
+This will execute the pipeline and generate telemetry data.

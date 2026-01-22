@@ -1,18 +1,18 @@
 const average = (data) => {
   if (!Array.isArray(data)) return null;
-  const filtered = data.filter(d => typeof d === 'number' && !isNaN(d));
+  const filtered = data.filter(d => d != null);
   if (filtered.length === 0) return null;
-  return filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
+  const sum = filtered.reduce((acc, val) => acc + val, 0);
+  return sum / filtered.length;
 };
 
-const describeTrend = (data) => {
-  const avg = average(data);
-  if (avg === null || data.length < 2) return 'stable';
-  const first = data[0];
-  const last = data[data.length - 1];
-  if (last > first * 1.1) return 'increasing';
-  if (last < first * 0.9) return 'decreasing';
-  return 'stable';
+const describeTrend = (avg, samples) => {
+  if (samples < 2) return 'Insufficient samples';
+  if (avg === null) return 'No trend data';
+  if (avg > 0.7) return 'Strong upward trend';
+  if (avg > 0.3) return 'Moderate upward trend';
+  if (avg < -0.3) return 'Moderate downward trend';
+  return 'Stable trend';
 };
 
 module.exports = { average, describeTrend };

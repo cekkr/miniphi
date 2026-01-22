@@ -41,6 +41,7 @@ import {
   listWorkspaceFiles,
   readReadmeSnippet,
 } from "./workspace-context-utils.js";
+import { classifyLmStudioError } from "./lmstudio-error-utils.js";
 
 const TEXT_EXTENSIONS = new Set([
   ".js",
@@ -127,9 +128,12 @@ export default class RecomposeTester {
     this.sessionDir = null;
     this.sessionLabel = null;
     this.promptLogPath = null;
+    this.stepLogPath = null;
     this.editDir = null;
     this.editLogPath = null;
     this.editLogQueue = Promise.resolve();
+    this.stepLogQueue = Promise.resolve();
+    this.stepSequence = 0;
     const timeoutCandidate = Number(options.workspaceOverviewTimeoutMs);
     this.workspaceOverviewTimeoutMs =
       Number.isFinite(timeoutCandidate) && timeoutCandidate > 0
@@ -1283,19 +1287,41 @@ export default class RecomposeTester {
       schemaId: traceOptions?.schemaId ?? null,
       ...(traceOptions?.metadata ?? {}),
     };
+    const stepId = this._nextStepId();
+    const label = traceOptions?.label ?? this.promptLabel;
+    const schemaId = traceOptions?.schemaId ?? null;
     if (this.offlineFallbackActive) {
+      await this._logStepEvent({
+        stepId,
+        event: "start",
+        label,
+        schemaId,
+        timeoutMs: null,
+        metadata,
+      });
       if (this.verboseLogging) {
         console.warn(
-          `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} bypassed (offline fallback).`,
+          `[MiniPhi][Recompose][Prompt] ${label ?? "prompt"} bypassed (offline fallback).`,
         );
       }
       await this._logPromptEvent({
-        label: traceOptions?.label ?? this.promptLabel,
+        label,
         prompt,
         response: "",
         error: `${this._modelLabel()} bypassed (offline fallback)`,
         metadata: traceOptions?.metadata ?? null,
         durationMs: 0,
+      });
+      await this._logStepEvent({
+        stepId,
+        event: "finish",
+        label,
+        schemaId,
+        status: "skipped",
+        stopReason: "offline-fallback",
+        stopReasonCode: "offline-fallback",
+        durationMs: 0,
+        error: null,
       });
       return "";
     }
@@ -1311,12 +1337,26 @@ export default class RecomposeTester {
         typeof this.phi4.promptTimeoutMs === "number" ? this.phi4.promptTimeoutMs : null;
       this.phi4.setPromptTimeout(overrideTimeout);
     }
+    const timeoutMs =
+      shouldOverrideTimeout && overrideTimeout > 0
+        ? overrideTimeout
+        : typeof this.phi4?.promptTimeoutMs === "number"
+          ? this.phi4.promptTimeoutMs
+          : null;
+    await this._logStepEvent({
+      stepId,
+      event: "start",
+      label,
+      schemaId,
+      timeoutMs,
+      metadata,
+    });
     try {
       response = await this.phi4.chatStream(prompt, undefined, undefined, undefined, {
         scope: "sub",
-        label: traceOptions?.label ?? this.promptLabel,
+        label,
         metadata,
-        schemaId: traceOptions?.schemaId ?? null,
+        schemaId,
         responseFormat: traceOptions?.responseFormat ?? null,
       });
       return response;
@@ -1325,23 +1365,38 @@ export default class RecomposeTester {
       this._handlePromptFailure(err);
       if (this.verboseLogging) {
         const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} failed: ${message}`);
+        console.warn(`[MiniPhi][Recompose][Prompt] ${label ?? "prompt"} failed: ${message}`);
       }
       return "";
     } finally {
+      const durationMs = Date.now() - started;
+      const errorMessage = error instanceof Error ? error.message : error ? String(error) : null;
+      const errorInfo = error ? classifyLmStudioError(error) : null;
+      const stopReason = error ? errorInfo?.reason ?? "error" : "completed";
+      const stopReasonCode = error ? errorInfo?.code ?? null : null;
       if (this.verboseLogging) {
-        const durationMs = Date.now() - started;
         console.log(
-          `[MiniPhi][Recompose][Prompt] ${traceOptions?.label ?? "prompt"} completed in ${durationMs} ms`,
+          `[MiniPhi][Recompose][Prompt] ${label ?? "prompt"} completed in ${durationMs} ms`,
         );
       }
       await this._logPromptEvent({
-        label: traceOptions?.label ?? this.promptLabel,
+        label,
         prompt,
         response,
         error,
         metadata: traceOptions?.metadata ?? null,
-        durationMs: Date.now() - started,
+        durationMs,
+      });
+      await this._logStepEvent({
+        stepId,
+        event: "finish",
+        label,
+        schemaId,
+        status: error ? "error" : "ok",
+        stopReason,
+        stopReasonCode,
+        durationMs,
+        error: errorMessage,
       });
       if (shouldOverrideTimeout && restorePromptTimeout !== null) {
         this.phi4.setPromptTimeout(restorePromptTimeout);
@@ -1364,6 +1419,9 @@ export default class RecomposeTester {
     this.editLogPath = path.join(this.editDir, "edits.jsonl");
     this.editLogQueue = Promise.resolve();
     this.promptLogPath = path.join(this.sessionDir, "prompts.log");
+    this.stepLogPath = path.join(this.sessionDir, "step-events.jsonl");
+    this.stepLogQueue = Promise.resolve();
+    this.stepSequence = 0;
     const header = [
       `# MiniPhi Agent Prompt Log (recompose unit test)`,
       `Session: ${this.sessionLabel}`,
@@ -1371,6 +1429,11 @@ export default class RecomposeTester {
       "",
     ].join("\n");
     await fs.promises.writeFile(this.promptLogPath, `${header}`, "utf8");
+    await this._logStepEvent({
+      event: "session-start",
+      label: this.sessionLabel,
+      sessionDir: this.sessionDir,
+    });
   }
 
   async _writeSessionAsset(relativePath, content) {
@@ -1397,6 +1460,27 @@ export default class RecomposeTester {
     };
     this.editLogQueue = this.editLogQueue.then(append, append).catch(() => {});
     return this.editLogQueue;
+  }
+
+  _nextStepId() {
+    this.stepSequence += 1;
+    return this.stepSequence;
+  }
+
+  async _logStepEvent(entry) {
+    if (!this.stepLogPath) {
+      return;
+    }
+    const payload = {
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    const line = `${JSON.stringify(payload)}\n`;
+    const append = async () => {
+      await fs.promises.appendFile(this.stepLogPath, line, "utf8");
+    };
+    this.stepLogQueue = this.stepLogQueue.then(append, append).catch(() => {});
+    return this.stepLogQueue;
   }
 
   async _writeFileWithGuard({ relativePath, targetPath, content, phase, expectedHash = null }) {

@@ -1,34 +1,35 @@
-import { createLogger } from '../shared/logger.js';
-import { MemoryStore } from '../shared/persistence/memory-store.js';
-import { normalize } from './steps/normalize.js';
-import { validate } from './steps/validate.js';
+const logger = require('../shared/logger');
+const memoryStore = require('../shared/persistence/memory-store');
+const normalize = require('./steps/normalize');
+const validate = require('./steps/validate');
 
 class InsightPipeline {
   constructor() {
-    this.logger = createLogger();
-    this.store = new MemoryStore();
+    this.logger = logger;
+    this.store = memoryStore;
   }
 
-  async process(data, metadata) {
+  async run(data, config) {
+    const telemetry = { step: 'start', timestamp: Date.now(), data };
+    this.logger.log(telemetry);
+
     try {
-      // Normalize input
-      const normalizedData = normalize(data);
-      
-      // Validate normalized data
-      const validatedData = validate(normalizedData);
-      
-      // Emit telemetry
-      this.logger.log('info', 'Pipeline processed data', { metadata });
-      
-      // Persist results
-      await this.store.save(validatedData);
-      
-      return { success: true, data: validatedData };
+      const normalized = normalize(data);
+      telemetry.step = 'normalize';
+      this.logger.log(telemetry);
+
+      const validated = validate(normalized, config);
+      telemetry.step = 'validate';
+      this.logger.log(telemetry);
+
+      await this.store.save('last_result', validated);
+      return { result: validated, telemetry };
     } catch (error) {
-      this.logger.log('error', 'Pipeline failed', { error: error.message });
+      telemetry.error = error.message;
+      this.logger.log(telemetry);
       throw error;
     }
   }
 }
 
-export { InsightPipeline };
+module.exports = InsightPipeline;

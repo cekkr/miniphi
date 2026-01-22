@@ -1,24 +1,29 @@
-const { greet } = require('../../greeter');
-const { average } = require('../../math');
+const { sanitizeName } = require('../../helpers/sanitize');
+const { logTelemetry } = require('../../utils/logger');
 
-function normalize(data, metadata = {}) {
-  const { name = 'Guest', samples = [] } = data;
-  
-  if (!name || typeof name !== 'string') {
-    console.warn('Nullish or invalid name detected. Using default.');
-    return { name: 'Guest', average: null, telemetry: { warning: 'default_name_used' } };
+function normalize(input) {
+  const { name, samples } = input;
+
+  // Handle nullish names
+  if (!name || name.trim() === '') {
+    logTelemetry({ step: 'normalize', status: 'warn', message: 'Nullish name detected' });
+    return { name: 'Unknown', samples: [] };
   }
-  
-  if (samples.length < 1) {
-    console.warn('Insufficient samples provided.');
-    return { name, average: null, telemetry: { warning: 'insufficient_samples' } };
+
+  // Handle insufficient samples
+  if (!samples || samples.length < 1) {
+    logTelemetry({ step: 'normalize', status: 'warn', message: 'Insufficient samples' });
+    return { name: sanitizeName(name), samples: [] };
   }
-  
-  const avg = average(samples);
-  const result = { name, average: avg, telemetry: { processed: true } };
-  console.log(`Processed ${name} with average ${avg}`);
-  
-  return result;
+
+  // Sanitize and shape data
+  const normalized = {
+    name: sanitizeName(name),
+    samples: samples.map(sample => ({ value: sample, timestamp: Date.now() }))
+  };
+
+  logTelemetry({ step: 'normalize', status: 'success', input, output: normalized });
+  return normalized;
 }
 
 module.exports = { normalize };
