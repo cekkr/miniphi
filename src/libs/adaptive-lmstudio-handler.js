@@ -4,6 +4,7 @@ import LMStudioHandler from "./lmstudio-handler.js";
 import {
   QLearningRouter,
   buildActionKey,
+  durationBucket,
   featurizeObservation,
   normalizeToken,
   normalizeSchemaId,
@@ -112,6 +113,25 @@ function classifyErrorKind(message) {
   return "other";
 }
 
+function normalizeFlag(value) {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "unknown";
+}
+
+function resolveFollowUpNeeded(performance) {
+  if (typeof performance?.followUpNeeded === "boolean") {
+    return performance.followUpNeeded;
+  }
+  if (typeof performance?.evaluation?.follow_up_needed === "boolean") {
+    return performance.evaluation.follow_up_needed;
+  }
+  if (typeof performance?.evaluation?.needs_more_context === "boolean") {
+    return performance.evaluation.needs_more_context;
+  }
+  return null;
+}
+
 function resolveMode(traceOptions, schemaId) {
   const modeRaw = traceOptions?.metadata?.mode ?? null;
   if (modeRaw) {
@@ -163,6 +183,9 @@ export default class AdaptiveLMStudioHandler {
     this.stepCount = 0;
     this.lastStatus = "unknown";
     this.lastErrorKind = "none";
+    this.lastSchemaValid = "unknown";
+    this.lastFollowUpNeeded = "unknown";
+    this.lastDurationMs = null;
     this.sharedHistory = null;
     this.loadOptions = null;
     this.handlers = new Map();
@@ -236,6 +259,9 @@ export default class AdaptiveLMStudioHandler {
     this.stepCount = 0;
     this.lastStatus = "unknown";
     this.lastErrorKind = "none";
+    this.lastSchemaValid = "unknown";
+    this.lastFollowUpNeeded = "unknown";
+    this.lastDurationMs = null;
     this._forEachHandler((handler) => handler.clearHistory());
   }
 
@@ -333,6 +359,7 @@ export default class AdaptiveLMStudioHandler {
     const schemaId = traceOptions?.schemaId ?? traceOptions?.metadata?.schemaId ?? null;
     const mode = resolveMode(traceOptions, schemaId);
     const size = sizeBucket(prompt?.length ?? 0);
+    const scope = traceOptions?.scope === "main" ? "main" : traceOptions?.scope === "sub" ? "sub" : "unknown";
     return {
       mode,
       schemaId,
@@ -340,6 +367,10 @@ export default class AdaptiveLMStudioHandler {
       lastStatus: this.lastStatus,
       lastErrorKind: this.lastErrorKind,
       sizeBucket: size,
+      scope,
+      lastSchemaValid: this.lastSchemaValid,
+      lastFollowUpNeeded: this.lastFollowUpNeeded,
+      lastDurationBucket: durationBucket(this.lastDurationMs),
     };
   }
 
@@ -442,13 +473,21 @@ export default class AdaptiveLMStudioHandler {
     const reward = this._computeReward({
       modelKey: this.modelKey,
       errorMessage,
+      errorKind,
       performance: perfSummary,
       promptExchange,
     });
 
+    const followUpNeeded = resolveFollowUpNeeded(perfSummary);
+    const schemaValid = promptExchange?.response?.schemaValidation?.valid;
+    const durationMs = promptExchange?.response?.durationMs ?? null;
+
     this.stepCount = obs.step;
     this.lastStatus = nextStatus;
     this.lastErrorKind = errorKind;
+    this.lastSchemaValid = normalizeFlag(schemaValid);
+    this.lastFollowUpNeeded = normalizeFlag(followUpNeeded);
+    this.lastDurationMs = Number.isFinite(durationMs) ? durationMs : null;
     this.sharedHistory = handler.getHistory();
     this.lastPromptExchange = promptExchange ?? null;
     this.lastPerformanceSummary = perfSummary ?? null;
@@ -460,7 +499,7 @@ export default class AdaptiveLMStudioHandler {
     }
   }
 
-  _computeReward({ modelKey, errorMessage, performance, promptExchange }) {
+  _computeReward({ modelKey, errorMessage, errorKind, performance, promptExchange }) {
     const rewardCfg = this.router.rewardConfig ?? DEFAULT_REWARD;
     const rawCost =
       rewardCfg.modelCosts?.[modelKey] ??
@@ -479,6 +518,12 @@ export default class AdaptiveLMStudioHandler {
         ? Number(rewardCfg.failurePenalty)
         : 0;
       reward += failurePenalty;
+      if (errorKind === "schema") {
+        const schemaPenalty = Number.isFinite(Number(rewardCfg.schemaPenalty))
+          ? Number(rewardCfg.schemaPenalty)
+          : 0;
+        reward += schemaPenalty;
+      }
       return reward;
     }
 

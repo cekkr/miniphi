@@ -16,6 +16,13 @@ export function sizeBucket(chars) {
   return "large";
 }
 
+export function durationBucket(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "unknown";
+  if (ms <= 4000) return "fast";
+  if (ms <= 12000) return "medium";
+  return "slow";
+}
+
 export function normalizeToken(value, fallback = "unknown") {
   if (!value && value !== 0) {
     return fallback;
@@ -33,12 +40,27 @@ export function normalizeSchemaId(schemaId) {
 export function featurizeObservation(obs = undefined) {
   const mode = normalizeToken(obs?.mode, "unknown");
   const schemaId = normalizeSchemaId(obs?.schemaId);
+  const scope = normalizeToken(obs?.scope, "unknown");
   const step = Number.isFinite(obs?.step) ? obs.step : 0;
   const stepLabel = stepBucket(step);
   const lastStatus = normalizeToken(obs?.lastStatus, "unknown");
   const lastError = normalizeToken(obs?.lastErrorKind, "none");
   const size = normalizeToken(obs?.sizeBucket, "medium");
-  return [mode, schemaId, stepLabel, lastStatus, lastError, size].join("|");
+  const lastSchema = normalizeToken(obs?.lastSchemaValid, "unknown");
+  const lastFollowUp = normalizeToken(obs?.lastFollowUpNeeded, "unknown");
+  const lastDuration = normalizeToken(obs?.lastDurationBucket, "unknown");
+  return [
+    mode,
+    schemaId,
+    scope,
+    stepLabel,
+    lastStatus,
+    lastError,
+    size,
+    lastSchema,
+    lastFollowUp,
+    lastDuration,
+  ].join("|");
 }
 
 export function buildActionKey(modelKey, profileId) {
@@ -160,4 +182,3 @@ export class QLearningRouter {
     return this.q[state];
   }
 }
-

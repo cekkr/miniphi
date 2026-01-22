@@ -939,8 +939,15 @@ export class LMStudioHandler {
   }
 
   async _recordPromptExchange(traceContext, requestSnapshot, responseSnapshot, errorMessage = null) {
+    const summary = this._buildPromptExchangeSummary(
+      null,
+      requestSnapshot,
+      responseSnapshot,
+      errorMessage,
+    );
     if (!this.promptRecorder || !requestSnapshot) {
-      return;
+      this.lastPromptExchange = summary;
+      return summary;
     }
     try {
       const metadata = this._composeRecorderMetadata(traceContext, responseSnapshot);
@@ -962,14 +969,21 @@ export class LMStudioHandler {
           : null,
         error: errorMessage,
       });
-      this.lastPromptExchange = record ?? null;
-      return record;
+      const recordSummary = this._buildPromptExchangeSummary(
+        record,
+        requestSnapshot,
+        responseSnapshot,
+        errorMessage,
+      );
+      this.lastPromptExchange = recordSummary;
+      return recordSummary;
     } catch (error) {
       // Recording failures should not interrupt inference.
       const message = error instanceof Error ? error.message : String(error);
       process.emitWarning(message, "PromptRecorder");
+      this.lastPromptExchange = summary;
     }
-    return null;
+    return summary;
   }
 
   async _trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {
@@ -1045,6 +1059,49 @@ export class LMStudioHandler {
       base.schemaValidation = responseSnapshot.schemaValidation;
     }
     return Object.keys(base).length > 0 ? base : null;
+  }
+
+  _buildPromptExchangeSummary(record, requestSnapshot, responseSnapshot, errorMessage) {
+    if (!record && !requestSnapshot && !responseSnapshot) {
+      return null;
+    }
+    const durationMs =
+      responseSnapshot?.finishedAt && responseSnapshot?.startedAt
+        ? responseSnapshot.finishedAt - responseSnapshot.startedAt
+        : null;
+    const responseText = responseSnapshot?.text ?? "";
+    const tokensApprox =
+      responseSnapshot?.tokensApprox ?? this._approximateTokens(responseText);
+    const responseSummary = responseSnapshot
+      ? {
+          schemaId: responseSnapshot.schemaId ?? null,
+          schemaValidation: responseSnapshot.schemaValidation ?? null,
+          startedAt: responseSnapshot.startedAt ?? null,
+          finishedAt: responseSnapshot.finishedAt ?? null,
+          durationMs: Number.isFinite(durationMs) ? durationMs : null,
+          timeToFirstTokenMs: responseSnapshot.timeToFirstTokenMs ?? null,
+          responseChars:
+            typeof responseText === "string" && responseText.length > 0
+              ? responseText.length
+              : null,
+          tokensApprox,
+          stream: responseSnapshot.stream ?? null,
+        }
+      : null;
+    const requestSummary = requestSnapshot
+      ? {
+          id: requestSnapshot.id ?? null,
+          schemaId: requestSnapshot.schemaId ?? null,
+          promptChars: requestSnapshot.promptChars ?? null,
+        }
+      : null;
+    return {
+      id: record?.id ?? requestSnapshot?.id ?? null,
+      path: record?.path ?? null,
+      request: requestSummary,
+      response: responseSummary,
+      error: errorMessage ?? null,
+    };
   }
 
   _buildJsonSchemaResponseFormat(schemaDetails) {
