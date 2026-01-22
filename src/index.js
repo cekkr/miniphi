@@ -2137,6 +2137,8 @@ const describeWorkspace = (dir, options = undefined) =>
         truncationPlan: result?.truncationPlan ?? null,
         status: finalStatus,
         stopReason: finalStopReason,
+        stopReasonCode: result?.analysisDiagnostics?.stopReasonCode ?? null,
+        stopReasonDetail: result?.analysisDiagnostics?.stopReasonDetail ?? null,
         error: finalError,
       });
       if (archive && options.verbose) {

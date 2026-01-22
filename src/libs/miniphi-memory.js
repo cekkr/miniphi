@@ -251,6 +251,8 @@ export default class MiniPhiMemory extends MemoryStoreBase {
    *   promptId?: string,
    *   status?: string,
    *   stopReason?: string,
+   *   stopReasonCode?: string | null,
+   *   stopReasonDetail?: string | null,
    *   error?: string,
    *   result: {
    *     prompt: string,
@@ -299,6 +301,8 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       truncationPlan: null,
       status: payload.status ?? "completed",
       stopReason: payload.stopReason ?? null,
+      stopReasonCode: payload.stopReasonCode ?? null,
+      stopReasonDetail: payload.stopReasonDetail ?? null,
       error: payload.error ?? null,
     };
 
@@ -408,6 +412,8 @@ export default class MiniPhiMemory extends MemoryStoreBase {
    *   resourceUsage?: Record<string, any> | null,
    *   status?: string,
    *   stopReason?: string | null,
+   *   stopReasonCode?: string | null,
+   *   stopReasonDetail?: string | null,
    *   error?: string | null
    * }} payload
    */
@@ -440,6 +446,8 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       truncationPlan: null,
       status: payload.status ?? "failed",
       stopReason: payload.stopReason ?? null,
+      stopReasonCode: payload.stopReasonCode ?? null,
+      stopReasonDetail: payload.stopReasonDetail ?? null,
       error: payload.error ?? null,
     };
 
@@ -1275,6 +1283,8 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       compressedTokens: metadata.compressedTokens,
       status: metadata.status ?? null,
       stopReason: metadata.stopReason ?? null,
+      stopReasonCode: metadata.stopReasonCode ?? null,
+      stopReasonDetail: metadata.stopReasonDetail ?? null,
       path: this._relative(executionIndexFile),
     };
 

@@ -87,6 +87,7 @@ miniPhi can run shell commands when you use `run` (or other workflows that execu
 Use `--session-timeout` to cap total runtime; follow-up helpers are skipped once the budget is exhausted.
 
 Model responses are schema-validated with deterministic JSON fallbacks across analysis, planning, and navigation prompts. Non-JSON preambles are rejected under the strict parser, so the fallback payload is saved instead of salvaging mixed prose.
+Stop reasons (with a code/detail) are stored in execution archives and prompt journals; when a session budget expires before Phi responds, the analyzer emits deterministic fallback JSON instead of hanging.
 
 The deeper “JSON-only contracts”, schema rules, and contributor guardrails live in **AGENTS.md**.
 
