@@ -91,11 +91,15 @@ export class LMStudioHandler {
     this.chatHistory = [{ role: "system", content: this.systemPrompt }];
   }
 
-  setNoTokenTimeout(timeoutMs) {
-    this.noTokenTimeoutMs = normalizeLmStudioRequestTimeoutMs(
-      timeoutMs,
-      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
-    );
+  setNoTokenTimeout(timeoutMs, options = undefined) {
+    const minTimeout =
+      options?.allowShorter
+        ? Number.isFinite(options?.minTimeoutMs) && options.minTimeoutMs > 0
+          ? options.minTimeoutMs
+          : 1000
+        : MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
+    const fallback = Number.isFinite(this.noTokenTimeoutMs) ? this.noTokenTimeoutMs : minTimeout;
+    this.noTokenTimeoutMs = normalizeLmStudioRequestTimeoutMs(timeoutMs, fallback, minTimeout);
   }
 
   /**
@@ -726,6 +730,10 @@ export class LMStudioHandler {
     if (!this.restClient) {
       throw new Error(`LM Studio REST client is not configured for model ${this.modelKey}.`);
     }
+    const timeoutMs =
+      Number.isFinite(this.promptTimeoutMs) && this.promptTimeoutMs > 0
+        ? this.promptTimeoutMs
+        : null;
     const messages = this._buildRestMessages();
     const response = await this.restClient.createChatCompletion({
       messages,
@@ -733,6 +741,7 @@ export class LMStudioHandler {
       stream: false,
       max_tokens: -1,
       ...(responseFormat ? { response_format: responseFormat } : {}),
+      ...(timeoutMs ? { timeoutMs } : {}),
     });
     const choice = response?.choices?.[0];
     const text =
@@ -802,11 +811,15 @@ export class LMStudioHandler {
     return [systemPrompt, ...mutableHistory.slice(startIndex)];
   }
 
-  setPromptTimeout(timeoutMs) {
-    this.promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(
-      timeoutMs,
-      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
-    );
+  setPromptTimeout(timeoutMs, options = undefined) {
+    const minTimeout =
+      options?.allowShorter
+        ? Number.isFinite(options?.minTimeoutMs) && options.minTimeoutMs > 0
+          ? options.minTimeoutMs
+          : 1000
+        : MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
+    const fallback = Number.isFinite(this.promptTimeoutMs) ? this.promptTimeoutMs : minTimeout;
+    this.promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(timeoutMs, fallback, minTimeout);
   }
 
   getHistory() {

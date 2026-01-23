@@ -11,6 +11,9 @@ import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 import { MIN_LMSTUDIO_REQUEST_TIMEOUT_MS } from "./runtime-defaults.js";
 
+const TOKEN_CHARS_PER_TOKEN = 3;
+const MIN_SESSION_TIMEOUT_MS = 1000;
+
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
   '  "task": "repeat the task in <= 10 words",',
@@ -158,6 +161,7 @@ export default class EfficientLogAnalyzer {
     this._logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
 
     const compression = await this._compressLines(lines, summaryLevels, verbose);
+    const explicitFileLists = this._extractExplicitFileLists(task);
     const schemaId = promptContext?.schemaId ?? this.schemaId;
     const promptBudget = await this._resolvePromptBudget();
     const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
@@ -171,6 +175,7 @@ export default class EfficientLogAnalyzer {
         schemaId,
         contextBudgetTokens,
         sourceLabel: command,
+        explicitFileLists,
       },
       {
         workspaceSummary: workspaceContext?.summary ?? null,
@@ -302,6 +307,7 @@ export default class EfficientLogAnalyzer {
         analysis = this._buildFallbackAnalysis(task, detail, {
           datasetHint: `${lines.length} lines captured from ${command}`,
           rerunCommand: command,
+          explicitFileLists,
         });
       }
       if (!skipPhi) {
@@ -361,6 +367,7 @@ export default class EfficientLogAnalyzer {
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `${lines.length} lines captured from ${command}`,
             rerunCommand: command,
+            explicitFileLists,
           });
         } finally {
           stopHeartbeat();
@@ -458,6 +465,7 @@ export default class EfficientLogAnalyzer {
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `${lines.length} lines captured from ${command}`,
             rerunCommand: command,
+            explicitFileLists,
           });
         }
       }
@@ -550,6 +558,7 @@ export default class EfficientLogAnalyzer {
       fallbackCacheContext = undefined,
     } = options ?? {};
     const maxLines = options?.maxLinesPerChunk ?? 2000;
+    const explicitFileLists = this._extractExplicitFileLists(task);
     this._resetPromptExchange();
     const devLog = this._startDevLog(`file-${this._safeLabel(path.basename(filePath))}`, {
       type: "log-file",
@@ -675,6 +684,7 @@ export default class EfficientLogAnalyzer {
         lineRange: lineRange ?? null,
       },
       sourceLabel: filePath,
+      explicitFileLists,
     });
     const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
       adjustment;
@@ -768,6 +778,7 @@ export default class EfficientLogAnalyzer {
         analysis = this._buildFallbackAnalysis(task, detail, {
           datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
           rerunCommand: filePath,
+          explicitFileLists,
         });
       }
       if (!skipPhi) {
@@ -821,6 +832,7 @@ export default class EfficientLogAnalyzer {
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
             rerunCommand: filePath,
+            explicitFileLists,
           });
         } finally {
           stopHeartbeat();
@@ -920,6 +932,7 @@ export default class EfficientLogAnalyzer {
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
             datasetHint: `Summarized ${linesUsed} lines across ${chunkSummaries.length} chunks`,
             rerunCommand: filePath,
+            explicitFileLists,
           });
         }
       }
@@ -1216,10 +1229,28 @@ export default class EfficientLogAnalyzer {
       typeof metadata?.sourceLabel === "string" && metadata.sourceLabel.trim().length > 0
         ? metadata.sourceLabel.trim().slice(0, 240)
         : null;
+    const explicitFileLists =
+      Array.isArray(metadata?.explicitFileLists) && metadata.explicitFileLists.length > 0
+        ? metadata.explicitFileLists
+        : null;
     const contextSupplement = this._formatContextSupplement(extraContext, {
       maxTokens: contextBudgetTokens,
     });
     const schemaReference = this._buildSchemaReference(metadata?.schemaId);
+    const reportingRules = [
+      "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
+      "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
+      "If the dataset is descriptive or lacks actionable defects, return an empty recommended_fixes array and do not invent commands or file names.",
+      "When proposing fixes, only reference files visible in the workspace manifest or dataset source; otherwise leave files and commands empty.",
+      "If information is unavailable, set the field to null instead of fabricating a value.",
+      "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
+      "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
+    ];
+    if (explicitFileLists) {
+      reportingRules.push(
+        "If explicit_file_lists is provided, use those exact file arrays for recommended_fixes[i].files in order; do not leave files empty.",
+      );
+    }
     const payload = {
       task,
       dataset: {
@@ -1229,15 +1260,7 @@ export default class EfficientLogAnalyzer {
         approx_original_bytes: metadata.originalSize ?? "unknown",
       },
       context: contextSupplement?.trim() || null,
-      reporting_rules: [
-        "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
-        "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
-        "If the dataset is descriptive or lacks actionable defects, return an empty recommended_fixes array and do not invent commands or file names.",
-        "When proposing fixes, only reference files visible in the workspace manifest or dataset source; otherwise leave files and commands empty.",
-        "If information is unavailable, set the field to null instead of fabricating a value.",
-        "Use needs_more_context and missing_snippets when the captured data is insufficient; list only the minimal follow-up snippets/commands required.",
-        "When the dataset is truncated or you need more context, populate truncation_strategy with JSON describing how to split the remaining input (chunk goals, carryover fields, history schema, helper commands). Use null when no truncation plan is required.",
-      ],
+      reporting_rules: reportingRules,
       data: compressedContent,
     };
     if (sourceLabel) {
@@ -1245,6 +1268,9 @@ export default class EfficientLogAnalyzer {
     }
     if (metadata?.chunking) {
       payload.dataset.chunking = metadata.chunking;
+    }
+    if (explicitFileLists) {
+      payload.explicit_file_lists = explicitFileLists;
     }
 
     const request = {
@@ -1286,6 +1312,10 @@ export default class EfficientLogAnalyzer {
       typeof context?.rerunCommand === "string" && context.rerunCommand.trim().length > 0
         ? [context.rerunCommand.trim()]
         : [];
+    const explicitFileLists =
+      Array.isArray(context?.explicitFileLists) && context.explicitFileLists.length > 0
+        ? context.explicitFileLists
+        : null;
     const chunkingPlan =
       datasetHint || rerunCommands.length
         ? [
@@ -1298,6 +1328,24 @@ export default class EfficientLogAnalyzer {
           ]
         : [];
     const shouldSplit = chunkingPlan.length > 0;
+    const fallbackFixes = explicitFileLists
+      ? explicitFileLists.map((files, index) => ({
+          description:
+            index === 0
+              ? "Follow explicit file list from the task; rerun after addressing the failure reason."
+              : "Follow explicit file list from the task.",
+          files,
+          commands: index === 0 ? rerunCommands : [],
+          owner: null,
+        }))
+      : [
+          {
+            description: "Re-run MiniPhi analyzer after addressing the failure reason.",
+            files: [],
+            commands: rerunCommands,
+            owner: null,
+          },
+        ];
     const payload = {
       task: taskLabel,
       root_cause: null,
@@ -1308,14 +1356,7 @@ export default class EfficientLogAnalyzer {
           excerpt: evidenceExcerpt,
         },
       ],
-      recommended_fixes: [
-        {
-          description: "Re-run MiniPhi analyzer after addressing the failure reason.",
-          files: [],
-          commands: rerunCommands,
-          owner: null,
-        },
-      ],
+      recommended_fixes: fallbackFixes,
       next_steps: [nextStep],
       needs_more_context: Boolean(datasetHint),
       missing_snippets: datasetHint ? [datasetHint] : [],
@@ -1430,6 +1471,40 @@ export default class EfficientLogAnalyzer {
     return `"${normalized.slice(0, 77)}..."`;
   }
 
+  _extractExplicitFileLists(task) {
+    if (!task || typeof task !== "string") {
+      return [];
+    }
+    const lists = [];
+    const seen = new Set();
+    const regex = /\bfiles?\b[^[]*(\[[^\]]+\])/gi;
+    let match = null;
+    while ((match = regex.exec(task))) {
+      const raw = match[1];
+      if (!raw) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (
+          Array.isArray(parsed) &&
+          parsed.length > 0 &&
+          parsed.every((entry) => typeof entry === "string" && entry.trim())
+        ) {
+          const normalized = parsed.map((entry) => entry.trim());
+          const key = JSON.stringify(normalized);
+          if (!seen.has(key)) {
+            seen.add(key);
+            lists.push(normalized);
+          }
+        }
+      } catch {
+        // ignore invalid lists
+      }
+    }
+    return lists;
+  }
+
   async _resolvePromptBudget() {
     if (!this.phi4 || typeof this.phi4.getContextWindow !== "function") {
       return 4096;
@@ -1450,7 +1525,7 @@ export default class EfficientLogAnalyzer {
     if (!text) {
       return 0;
     }
-    return Math.max(1, Math.ceil(text.length / 4));
+    return Math.max(1, Math.ceil(text.length / TOKEN_CHARS_PER_TOKEN));
   }
 
   _buildBudgetedPrompt({
@@ -1464,6 +1539,7 @@ export default class EfficientLogAnalyzer {
     schemaId,
     chunking,
     sourceLabel,
+    explicitFileLists,
   }) {
     let detailLevel = summaryLevels;
     let chunkLimit = chunkSummaries.length;
@@ -1483,7 +1559,7 @@ export default class EfficientLogAnalyzer {
           task,
           "(no content)",
           0,
-          { compressedTokens: 1, schemaId, sourceLabel },
+          { compressedTokens: 1, schemaId, sourceLabel, explicitFileLists },
           {},
         ),
         body: "(no content)",
@@ -1546,6 +1622,7 @@ export default class EfficientLogAnalyzer {
           chunking: chunkingSummary,
           contextBudgetTokens,
           sourceLabel,
+          explicitFileLists,
         },
         extraContext,
       );
@@ -2457,7 +2534,14 @@ export default class EfficientLogAnalyzer {
 
   _applyPromptTimeout(sessionDeadline, promptHints = undefined) {
     const timeout = this._computePromptTimeout(sessionDeadline, promptHints);
-    this.phi4.setPromptTimeout(timeout);
+    const hasSessionDeadline = Boolean(sessionDeadline);
+    const timeoutOptions = hasSessionDeadline
+      ? { allowShorter: true, minTimeoutMs: MIN_SESSION_TIMEOUT_MS }
+      : undefined;
+    this.phi4.setPromptTimeout(timeout, timeoutOptions);
+    if (typeof this.phi4.setNoTokenTimeout === "function") {
+      this.phi4.setNoTokenTimeout(timeout, timeoutOptions);
+    }
   }
 
   _hashDatasetSignature(details = undefined) {
@@ -2503,6 +2587,7 @@ export default class EfficientLogAnalyzer {
     const baseTimeout = Number.isFinite(this.phi4?.promptTimeoutMs)
       ? this.phi4.promptTimeoutMs
       : null;
+    const minTimeout = sessionDeadline ? MIN_SESSION_TIMEOUT_MS : MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
     let timeout = baseTimeout ?? null;
     if (sessionDeadline) {
       const remaining = sessionDeadline - Date.now();
@@ -2522,11 +2607,11 @@ export default class EfficientLogAnalyzer {
     const tinyLog =
       (lineCount !== null && lineCount <= 20) || (tokenEstimate !== null && tokenEstimate <= 800);
     if (tinyLog) {
-      const tinyCapMs = Math.max(120000, MIN_LMSTUDIO_REQUEST_TIMEOUT_MS);
+      const tinyCapMs = Math.max(120000, minTimeout);
       timeout = timeout ? Math.min(timeout, tinyCapMs) : tinyCapMs;
     }
     if (Number.isFinite(timeout) && timeout > 0) {
-      timeout = Math.max(timeout, MIN_LMSTUDIO_REQUEST_TIMEOUT_MS);
+      timeout = Math.max(timeout, minTimeout);
     }
     return timeout;
   }

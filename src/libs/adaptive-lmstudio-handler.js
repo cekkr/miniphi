@@ -225,14 +225,14 @@ export default class AdaptiveLMStudioHandler {
     );
   }
 
-  setNoTokenTimeout(timeoutMs) {
+  setNoTokenTimeout(timeoutMs, options = undefined) {
     this.noTokenTimeoutMs = timeoutMs;
-    this._forEachHandler((handler) => handler.setNoTokenTimeout(timeoutMs));
+    this._forEachHandler((handler) => handler.setNoTokenTimeout(timeoutMs, options));
   }
 
-  setPromptTimeout(timeoutMs) {
+  setPromptTimeout(timeoutMs, options = undefined) {
     this.promptTimeoutMs = timeoutMs;
-    this._forEachHandler((handler) => handler.setPromptTimeout(timeoutMs));
+    this._forEachHandler((handler) => handler.setPromptTimeout(timeoutMs, options));
   }
 
   async load(options = undefined) {
