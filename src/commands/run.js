@@ -61,6 +61,8 @@ export async function handleRunCommand(context) {
   }
 
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const fastMode =
+    Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
   const fileRefResult = parseDirectFileReferences(task, cwd);
   const fixedReferences = fileRefResult.references;
   task = fileRefResult.cleanedTask;
@@ -87,7 +89,7 @@ export async function handleRunCommand(context) {
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
   phi4.setPromptRecorder(promptRecorder);
-  const navigator = buildNavigator(stateManager);
+  const navigator = fastMode ? null : buildNavigator(stateManager);
   workspaceContext = await describeWorkspace(cwd, {
     navigator,
     objective: task,
@@ -95,6 +97,7 @@ export async function handleRunCommand(context) {
     mode: command,
     promptId: promptGroupId,
     promptJournalId,
+    sessionDeadline,
   });
   workspaceContext = mergeFixedReferences(workspaceContext, fixedReferences);
   workspaceContext = await attachCommandLibraryToWorkspace(
@@ -170,7 +173,7 @@ export async function handleRunCommand(context) {
       }
     }
   }
-  if (!planResult && promptDecomposer) {
+  if (!planResult && promptDecomposer && !fastMode) {
     try {
       planResult = await promptDecomposer.decompose({
         objective: task,
@@ -183,6 +186,7 @@ export async function handleRunCommand(context) {
         metadata: { mode: "run" },
         resumePlan,
         planBranch,
+        sessionDeadline,
       });
       if (planResult) {
         planSource = resumePlan ? "refreshed" : "fresh";

@@ -860,6 +860,44 @@ function isSessionDeadlineExceeded(sessionDeadline) {
   return remainingMs !== null && remainingMs <= 0;
 }
 
+function createSessionTimeoutPromise(sessionDeadline, options = undefined) {
+  if (!Number.isFinite(sessionDeadline)) {
+    return { promise: null, cancel: null, remainingMs: null };
+  }
+  const remainingMs = sessionDeadline - Date.now();
+  const onTimeout = typeof options?.onTimeout === "function" ? options.onTimeout : null;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+    if (onTimeout) {
+      onTimeout();
+    }
+    const error = new Error("session-timeout: session deadline exceeded.");
+    error.name = "SessionTimeoutError";
+    return {
+      promise: Promise.reject(error),
+      cancel: null,
+      remainingMs: 0,
+    };
+  }
+  let timer = null;
+  const promise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      if (onTimeout) {
+        onTimeout();
+      }
+      const error = new Error("session-timeout: session deadline exceeded.");
+      error.name = "SessionTimeoutError";
+      reject(error);
+    }, remainingMs);
+    timer?.unref?.();
+  });
+  const cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  };
+  return { promise, cancel, remainingMs };
+}
+
 function extractLmStudioProtocolMetadata(error) {
   if (error instanceof LMStudioProtocolError && error.metadata) {
     return error.metadata;
@@ -1973,6 +2011,9 @@ async function main() {
     let stopReasonDetail = null;
     let stopStatus = null;
     let stopError = null;
+    let sessionTimeoutTriggered = false;
+    let result;
+    let workspaceContext = null;
   const archiveMetadata = {
     promptId,
     model: modelSelection.modelKey,
@@ -2055,15 +2096,13 @@ const describeWorkspace = (dir, options = undefined) =>
     focusPath: options?.focusPath ?? null,
     promptId: options?.promptId ?? null,
     promptJournalId: options?.promptJournalId ?? null,
+    sessionDeadline: options?.sessionDeadline ?? null,
     emitFeatureDisableNotice,
   });
 
-  try {
+  const runCommandFlow = async () => {
     await lmStudioRuntime.load({ contextLength, gpu });
     scoringPhi = lmStudioRuntime.scoringPhi;
-
-    let result;
-    let workspaceContext = null;
 
     const commandContext = {
       command,
@@ -2275,6 +2314,23 @@ const describeWorkspace = (dir, options = undefined) =>
         ),
       );
     }
+  };
+
+  try {
+    const timeoutGuard = createSessionTimeoutPromise(sessionDeadline, {
+      onTimeout: () => {
+        sessionTimeoutTriggered = true;
+      },
+    });
+    if (timeoutGuard.promise) {
+      try {
+        await Promise.race([runCommandFlow(), timeoutGuard.promise]);
+      } finally {
+        timeoutGuard.cancel?.();
+      }
+    } else {
+      await runCommandFlow();
+    }
   } catch (error) {
     stopStatus = "failed";
     const stopInfo = classifyStopInfo(error);
@@ -2398,6 +2454,14 @@ const describeWorkspace = (dir, options = undefined) =>
         // no-op
       }
     }
+  }
+
+  if (sessionTimeoutTriggered) {
+    process.exitCode = 1;
+    const exitTimer = setTimeout(() => {
+      process.exit(1);
+    }, 1000);
+    exitTimer?.unref?.();
   }
 }
 

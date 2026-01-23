@@ -495,6 +495,7 @@ async function generateWorkspaceSnapshot({
   focusPath = null,
   promptId = null,
   promptJournalId = null,
+  sessionDeadline = null,
   emitFeatureDisableNotice = null,
 }) {
   let scanResult = null;
@@ -722,6 +723,7 @@ async function generateWorkspaceSnapshot({
         focusPath,
         promptId,
         promptJournalId,
+        sessionDeadline,
       });
     } catch (error) {
       if (verbose) {

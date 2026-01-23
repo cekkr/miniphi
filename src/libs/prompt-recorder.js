@@ -143,6 +143,18 @@ export default class PromptRecorder {
     if (normalized.rawResponseText && text && normalized.rawResponseText === text) {
       delete normalized.text;
     }
+    if (
+      normalized.schemaId &&
+      (!normalized.schemaValidation ||
+        typeof normalized.schemaValidation.valid !== "boolean")
+    ) {
+      normalized.schemaValidation = {
+        valid: false,
+        errors: Array.isArray(normalized.schemaValidation?.errors)
+          ? normalized.schemaValidation.errors
+          : ["Schema validation missing."],
+      };
+    }
     return normalized;
   }
 }

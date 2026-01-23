@@ -450,9 +450,12 @@ export class LMStudioRestClient {
     const { timeoutMs, ...restInit } = init ?? {};
     const requestedTimeout =
       typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : this.timeoutMs;
+    const minOverride =
+      typeof timeoutMs === "number" && timeoutMs > 0 ? 1000 : undefined;
     const effectiveTimeout = normalizeLmStudioRequestTimeoutMs(
       requestedTimeout,
       this.timeoutMs,
+      minOverride,
     );
     const controller =
       typeof AbortController !== "undefined" && effectiveTimeout > 0

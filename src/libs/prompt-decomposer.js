@@ -23,6 +23,7 @@ const MAX_STEP_PREVIEW = 10;
 const COMPACT_SUMMARY_LIMIT = 800;
 const COMPACT_HINT_LIMIT = 600;
 const COMPACT_CAPABILITY_LIMIT = 400;
+const SESSION_REQUEST_CAP_MS = 120000;
 
 const PLAN_SCHEMA_ID = "prompt-plan";
 const PLAN_SCHEMA_VERSION = "prompt-plan@v1";
@@ -158,6 +159,7 @@ export default class PromptDecomposer {
    *   metadata?: Record<string, unknown> | null,
    *   resumePlan?: object | null,
    *   planBranch?: string | null,
+   *   sessionDeadline?: number | null,
    * }} payload
    */
   async decompose(payload) {
@@ -174,6 +176,7 @@ export default class PromptDecomposer {
     let responseToolDefinitions = null;
     let promptRecord = null;
     let normalizedPlan = null;
+    let schemaValidation = null;
     let errorMessage = null;
     let errorInfo = null;
 
@@ -199,6 +202,7 @@ export default class PromptDecomposer {
     const runCompletion = async (body, responseFormatOverride = undefined) => {
       const responseFormatForRun = responseFormatOverride ?? responseFormat;
       const messages = buildMessages(body);
+      const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
@@ -206,10 +210,13 @@ export default class PromptDecomposer {
           max_tokens: -1,
           response_format: responseFormatForRun,
         }),
+        requestTimeoutMs,
       );
       const message = completion?.choices?.[0]?.message ?? null;
+      const text = message?.content ?? "";
+      schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), text);
       return {
-        text: message?.content ?? "",
+        text,
         toolCalls: message?.tool_calls ?? null,
         toolDefinitions: completion?.tool_definitions ?? null,
         messages,
@@ -256,11 +263,22 @@ export default class PromptDecomposer {
     }
 
     if (payload.promptRecorder) {
+      const schemaValidationSummary = schemaValidation
+        ? {
+            valid: Boolean(schemaValidation.valid),
+            errors: Array.isArray(schemaValidation.errors)
+              ? schemaValidation.errors.slice(0, 3)
+              : null,
+            preambleDetected: Boolean(schemaValidation.preambleDetected),
+          }
+        : null;
       const responsePayload =
         normalizedPlan && typeof normalizedPlan === "object" && !Array.isArray(normalizedPlan)
           ? { ...normalizedPlan }
           : { raw: responseText };
       responsePayload.rawResponseText = responseText ?? "";
+      responsePayload.schemaValidation =
+        schemaValidationSummary ?? responsePayload.schemaValidation ?? null;
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
       promptRecord = await payload.promptRecorder.record({
@@ -424,8 +442,12 @@ export default class PromptDecomposer {
     return body;
   }
 
-  _withTimeout(promise) {
-    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
+  _withTimeout(promise, timeoutOverride = undefined) {
+    const timeoutMs =
+      Number.isFinite(timeoutOverride) && timeoutOverride > 0
+        ? timeoutOverride
+        : this.timeoutMs;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       return promise;
     }
     let timer;
@@ -433,10 +455,10 @@ export default class PromptDecomposer {
       timer = setTimeout(() => {
         reject(
           new Error(
-            `Prompt decomposition exceeded ${Math.round(this.timeoutMs / 1000)}s timeout.`,
+            `Prompt decomposition exceeded ${Math.round(timeoutMs / 1000)}s timeout.`,
           ),
         );
-      }, this.timeoutMs);
+      }, timeoutMs);
       timer?.unref?.();
     });
     return Promise.race([promise, timeoutPromise]).finally(() => {
@@ -447,6 +469,9 @@ export default class PromptDecomposer {
   }
 
   _shouldDisable(message) {
+    if (this._isSessionTimeout(message)) {
+      return false;
+    }
     return classifyLmStudioError(message).shouldDisable;
   }
 
@@ -470,13 +495,57 @@ export default class PromptDecomposer {
   }
 
   _classifyDisableReason(message) {
+    if (this._isSessionTimeout(message)) {
+      return "session-timeout";
+    }
     return classifyLmStudioError(message).reason;
+  }
+
+  _isSessionTimeout(message) {
+    if (!message || typeof message !== "string") {
+      return false;
+    }
+    const normalized = message.toLowerCase();
+    return normalized.includes("session-timeout") || normalized.includes("session timeout");
+  }
+
+  _resolveRequestTimeout(sessionDeadline) {
+    const baseTimeout =
+      Number.isFinite(this.timeoutMs) && this.timeoutMs > 0 ? this.timeoutMs : null;
+    if (!Number.isFinite(sessionDeadline)) {
+      return baseTimeout;
+    }
+    const remaining = sessionDeadline - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      throw new Error("session-timeout: session deadline exceeded.");
+    }
+    const sessionCap = Math.min(
+      Math.max(1000, Math.floor(remaining * 0.4)),
+      SESSION_REQUEST_CAP_MS,
+      remaining,
+    );
+    if (baseTimeout) {
+      return Math.min(baseTimeout, sessionCap);
+    }
+    return sessionCap;
   }
 
   _parsePlan(responseText, payload) {
     const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
     const parsed = schemaValidation?.parsed ?? null;
+    const preambleDetected = Boolean(schemaValidation?.preambleDetected);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      if (preambleDetected) {
+        this._log(
+          `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": non-JSON preamble detected.`,
+        );
+        return this._fallbackPlan(
+          "non-JSON preamble detected",
+          payload,
+          undefined,
+          { stopReason: "preamble_detected" },
+        );
+      }
       this._log(
         `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": no valid JSON found.`,
       );
@@ -746,9 +815,18 @@ export default class PromptDecomposer {
     return isContextOverflowError(message);
   }
 
-  _fallbackPlan(message, payload, errorInfo = undefined) {
+  _fallbackPlan(message, payload, errorInfo = undefined, options = undefined) {
     const normalizedError = errorInfo ?? classifyLmStudioError(message);
-    const stopReason = normalizedError?.reason ?? message ?? "unknown error";
+    const stopReasonOverride =
+      typeof options?.stopReason === "string" && options.stopReason.trim().length > 0
+        ? options.stopReason.trim()
+        : null;
+    const stopReason =
+      stopReasonOverride ??
+      (this._isSessionTimeout(message) ? "session-timeout" : null) ??
+      normalizedError?.reason ??
+      message ??
+      "unknown error";
     const planId = "prompt-plan-fallback";
     const summary = `Decomposer failed (${message ?? stopReason})`;
     const normalized = {

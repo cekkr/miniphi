@@ -18,6 +18,7 @@ const PYTHON_RUNNER_CACHE_TTL_MS = 5 * 60 * 1000;
 const PYTHON_RUNNER_CHECK_TIMEOUT_MS = 2500;
 const NAVIGATION_SCHEMA_ID = "navigation-plan";
 const NAVIGATION_SCHEMA_VERSION = "navigation-plan@v1";
+const SESSION_REQUEST_CAP_MS = 120000;
 
 const NAVIGATION_JSON_SCHEMA = {
   type: "object",
@@ -167,7 +168,8 @@ export default class ApiNavigator {
    *   executeHelper?: boolean,
    *   focusPath?: string | null,
    *   promptId?: string | null,
-   *   promptJournalId?: string | null
+   *   promptJournalId?: string | null,
+   *   sessionDeadline?: number | null
    * }} payload
    */
   async generateNavigationHints(payload = undefined) {
@@ -339,22 +341,25 @@ export default class ApiNavigator {
     let toolDefinitions = null;
     let errorMessage = null;
     let plan = null;
+    let schemaValidation = null;
     let compactTried = false;
     let promptRecord = null;
 
     const runCompletion = async (bodyPayload) => {
+      const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
       requestMessages = buildMessages(bodyPayload);
       const completion = await this.restClient.createChatCompletion({
         messages: requestMessages,
         temperature: this.temperature,
         max_tokens: -1,
         response_format: responseFormat,
-        timeoutMs: this.navigationRequestTimeoutMs,
+        timeoutMs: requestTimeoutMs,
       });
       const message = completion?.choices?.[0]?.message ?? null;
       responseText = message?.content ?? "";
       toolCalls = message?.tool_calls ?? null;
       toolDefinitions = completion?.tool_definitions ?? null;
+      schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
       return this._parsePlan(responseText);
     };
 
@@ -383,6 +388,15 @@ export default class ApiNavigator {
       }
     }
 
+    const schemaValidationSummary = schemaValidation
+      ? {
+          valid: Boolean(schemaValidation.valid),
+          errors: Array.isArray(schemaValidation.errors)
+            ? schemaValidation.errors.slice(0, 3)
+            : null,
+          preambleDetected: Boolean(schemaValidation.preambleDetected),
+        }
+      : null;
     promptRecord = await this._recordPromptExchange({
       payload,
       requestBody: body,
@@ -393,6 +407,7 @@ export default class ApiNavigator {
       toolCalls,
       toolDefinitions,
       responseFormat,
+      schemaValidation: schemaValidationSummary,
     });
 
     return {
@@ -414,6 +429,7 @@ export default class ApiNavigator {
     toolCalls,
     toolDefinitions,
     responseFormat,
+    schemaValidation,
   }) {
     if (!this.promptRecorder) {
       return null;
@@ -421,6 +437,7 @@ export default class ApiNavigator {
     const responsePayload =
       plan && typeof plan === "object" && !Array.isArray(plan) ? { ...plan } : { raw: responseText ?? "" };
     responsePayload.rawResponseText = responseText ?? "";
+    responsePayload.schemaValidation = schemaValidation ?? responsePayload.schemaValidation ?? null;
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
     const errorInfo = errorMessage ? classifyLmStudioError(errorMessage) : null;
@@ -463,6 +480,9 @@ export default class ApiNavigator {
   }
 
   _shouldDisable(message) {
+    if (this._isSessionTimeout(message)) {
+      return false;
+    }
     return classifyLmStudioError(message).shouldDisable;
   }
 
@@ -486,13 +506,33 @@ export default class ApiNavigator {
   }
 
   _classifyDisableReason(message) {
+    if (this._isSessionTimeout(message)) {
+      return "session-timeout";
+    }
     return classifyLmStudioError(message).reason;
+  }
+
+  _isSessionTimeout(message) {
+    if (!message || typeof message !== "string") {
+      return false;
+    }
+    const normalized = message.toLowerCase();
+    return normalized.includes("session-timeout") || normalized.includes("session timeout");
   }
 
   _parsePlan(raw) {
     const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), raw);
     const parsed = schemaValidation?.parsed ?? null;
+    const preambleDetected = Boolean(schemaValidation?.preambleDetected);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      if (preambleDetected) {
+        this._log(
+          "[ApiNavigator] Unable to parse navigation plan: non-JSON preamble detected.",
+        );
+        return this._buildFallbackPlan("preamble_detected", {
+          stopReason: "preamble_detected",
+        });
+      }
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return this._buildFallbackPlan("invalid response: no valid JSON found");
     }
@@ -510,6 +550,29 @@ export default class ApiNavigator {
       parsed.stop_reason = this.lastStopReason;
     }
     return parsed;
+  }
+
+  _resolveRequestTimeout(sessionDeadline) {
+    const baseTimeout =
+      Number.isFinite(this.navigationRequestTimeoutMs) && this.navigationRequestTimeoutMs > 0
+        ? this.navigationRequestTimeoutMs
+        : null;
+    if (!Number.isFinite(sessionDeadline)) {
+      return baseTimeout;
+    }
+    const remaining = sessionDeadline - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      throw new Error("session-timeout: session deadline exceeded.");
+    }
+    const sessionCap = Math.min(
+      Math.max(1000, Math.floor(remaining * 0.4)),
+      SESSION_REQUEST_CAP_MS,
+      remaining,
+    );
+    if (baseTimeout) {
+      return Math.min(baseTimeout, sessionCap);
+    }
+    return sessionCap;
   }
 
   _validatePlanShape(plan) {
@@ -550,8 +613,12 @@ export default class ApiNavigator {
     return { valid: true };
   }
 
-  _buildFallbackPlan(message) {
-    const reason = this._classifyDisableReason(message);
+  _buildFallbackPlan(message, options = undefined) {
+    const reasonOverride =
+      typeof options?.stopReason === "string" && options.stopReason.trim().length > 0
+        ? options.stopReason.trim()
+        : null;
+    const reason = reasonOverride ?? this._classifyDisableReason(message);
     this.lastStopReason = reason;
     return {
       schema_version: "navigation-plan@fallback",

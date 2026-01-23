@@ -383,6 +383,12 @@ export class LMStudioHandler {
         const finishedAt = Date.now();
         const validationResult = this._validateSchema(schemaDetails, result);
         schemaValidation = this._summarizeValidation(validationResult);
+        if (!schemaValidation && (schemaDetails?.id ?? traceContext.schemaId)) {
+          schemaValidation = {
+            valid: false,
+            errors: ["Schema validation unavailable."],
+          };
+        }
         if (validationResult && !validationResult.valid) {
           const summary = this._summarizeSchemaErrors(validationResult.errors);
           schemaFailureDetails = {

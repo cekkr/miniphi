@@ -13,6 +13,8 @@ import { MIN_LMSTUDIO_REQUEST_TIMEOUT_MS } from "./runtime-defaults.js";
 
 const TOKEN_CHARS_PER_TOKEN = 3;
 const MIN_SESSION_TIMEOUT_MS = 1000;
+const SESSION_PROMPT_CAP_MS = 120000;
+const SESSION_PROMPT_BUDGET_RATIO = 0.4;
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -259,6 +261,7 @@ export default class EfficientLogAnalyzer {
     };
     const sanitizeOptions = {
       workspaceContext,
+      explicitFileLists,
     };
     const reusedFallback = Boolean(cachedFallback);
     const responseFormat =
@@ -724,6 +727,7 @@ export default class EfficientLogAnalyzer {
       workspaceContext,
       sourceFile: filePath,
       docLike: this._isDocLikeFile(filePath),
+      explicitFileLists,
     };
     const reusedFallback = Boolean(cachedFallback);
     const responseFormat =
@@ -2071,6 +2075,9 @@ export default class EfficientLogAnalyzer {
         ? options.docLike
         : typeof options?.sourceFile === "string" && this._isDocLikeFile(options.sourceFile);
     const fileHints = this._buildAllowedFileHints(options);
+    const explicitFileLists = Array.isArray(options?.explicitFileLists)
+      ? options.explicitFileLists
+      : null;
     const sanitized = [];
     for (const entry of parsed.recommended_fixes) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -2108,6 +2115,24 @@ export default class EfficientLogAnalyzer {
         description,
         files: validFiles,
         commands,
+      });
+    }
+    if (explicitFileLists && explicitFileLists.length) {
+      sanitized.forEach((entry, index) => {
+        if (!entry || !Array.isArray(entry.files) || entry.files.length > 0) {
+          return;
+        }
+        const explicit = explicitFileLists[index];
+        if (!Array.isArray(explicit) || explicit.length === 0) {
+          return;
+        }
+        const normalized = explicit
+          .filter((file) => typeof file === "string")
+          .map((file) => file.trim())
+          .filter(Boolean);
+        if (normalized.length > 0) {
+          entry.files = normalized;
+        }
       });
     }
     parsed.recommended_fixes = sanitized;
@@ -2165,6 +2190,16 @@ export default class EfficientLogAnalyzer {
     if (Array.isArray(workspaceContext?.fixedReferences)) {
       for (const ref of workspaceContext.fixedReferences) {
         addCandidate(ref?.path ?? ref?.relative ?? ref?.label);
+      }
+    }
+    if (Array.isArray(options?.explicitFileLists)) {
+      for (const list of options.explicitFileLists) {
+        if (!Array.isArray(list)) {
+          continue;
+        }
+        for (const entry of list) {
+          addCandidate(entry);
+        }
       }
     }
     return hints;
@@ -2589,12 +2624,18 @@ export default class EfficientLogAnalyzer {
       : null;
     const minTimeout = sessionDeadline ? MIN_SESSION_TIMEOUT_MS : MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
     let timeout = baseTimeout ?? null;
+    let sessionCap = null;
     if (sessionDeadline) {
       const remaining = sessionDeadline - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) {
         throw new Error("MiniPhi session timeout exceeded before Phi-4 inference.");
       }
       timeout = timeout ? Math.min(timeout, remaining) : remaining;
+      sessionCap = Math.min(
+        Math.max(MIN_SESSION_TIMEOUT_MS, Math.floor(remaining * SESSION_PROMPT_BUDGET_RATIO)),
+        SESSION_PROMPT_CAP_MS,
+        remaining,
+      );
     }
     const lineCount =
       Number.isFinite(promptHints?.lineCount) && promptHints.lineCount >= 0
@@ -2609,6 +2650,9 @@ export default class EfficientLogAnalyzer {
     if (tinyLog) {
       const tinyCapMs = Math.max(120000, minTimeout);
       timeout = timeout ? Math.min(timeout, tinyCapMs) : tinyCapMs;
+    }
+    if (sessionCap) {
+      timeout = timeout ? Math.min(timeout, sessionCap) : sessionCap;
     }
     if (Number.isFinite(timeout) && timeout > 0) {
       timeout = Math.max(timeout, minTimeout);

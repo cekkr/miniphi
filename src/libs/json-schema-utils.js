@@ -30,28 +30,53 @@ export function validateJsonAgainstSchema(schemaDefinition, responseText, option
   }
   const sanitizeOptions = { ...(options ?? {}) };
   if (sanitizeOptions.allowPreamble === undefined) {
-    sanitizeOptions.allowPreamble = true;
+    sanitizeOptions.allowPreamble = false;
   }
   const stripped = sanitizeJsonResponseText(responseText ?? "", sanitizeOptions);
   if (!stripped) {
-    return { valid: false, errors: ["Response body was empty."] };
+    return { valid: false, errors: ["Response body was empty."], preambleDetected: false };
   }
   let parsed;
   try {
     parsed = JSON.parse(stripped);
   } catch (error) {
+    const preambleDetected = detectPreamble(responseText, sanitizeOptions, stripped);
     return {
       valid: false,
       errors: [
         `Response was not valid JSON (${error instanceof Error ? error.message : error}).`,
       ],
+      preambleDetected,
     };
   }
   const errors = validateSchemaData(schemaDefinition, parsed, "$");
   if (errors.length > 0) {
-    return { valid: false, errors, parsed };
+    return { valid: false, errors, parsed, preambleDetected: false };
   }
-  return { valid: true, parsed };
+  return { valid: true, parsed, preambleDetected: false };
+}
+
+function detectPreamble(responseText, sanitizeOptions, stripped) {
+  if (!responseText || sanitizeOptions?.allowPreamble) {
+    return false;
+  }
+  const strict = stripped ?? sanitizeJsonResponseText(responseText ?? "", {
+    ...(sanitizeOptions ?? {}),
+    allowPreamble: false,
+  });
+  const salvage = sanitizeJsonResponseText(responseText ?? "", {
+    ...(sanitizeOptions ?? {}),
+    allowPreamble: true,
+  });
+  if (!salvage || salvage === strict) {
+    return false;
+  }
+  try {
+    JSON.parse(salvage);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function validateSchemaData(schema, value, pointer) {

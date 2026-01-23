@@ -78,6 +78,8 @@ export async function handleAnalyzeFileCommand(context) {
     throw new Error(`File not found: ${filePath}`);
   }
   const analyzeCwd = path.dirname(filePath);
+  const fastMode =
+    Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
   const analyzeRefsResult = parseDirectFileReferences(task, analyzeCwd);
   const analyzeFixedReferences = analyzeRefsResult.references;
   task = analyzeRefsResult.cleanedTask;
@@ -163,7 +165,7 @@ export async function handleAnalyzeFileCommand(context) {
   }
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
-  const navigator = buildNavigator(stateManager);
+  const navigator = fastMode ? null : buildNavigator(stateManager);
   workspaceContext = await describeWorkspace(analyzeCwd, {
     navigator,
     objective: task,
@@ -173,6 +175,7 @@ export async function handleAnalyzeFileCommand(context) {
     focusPath: filePath,
     promptId: promptGroupId,
     promptJournalId,
+    sessionDeadline,
   });
   workspaceContext = mergeFixedReferences(workspaceContext, analyzeFixedReferences);
   workspaceContext = await attachCommandLibraryToWorkspace(
@@ -263,7 +266,7 @@ export async function handleAnalyzeFileCommand(context) {
       }
     }
   }
-  if (!planResult && promptDecomposer) {
+  if (!planResult && promptDecomposer && !fastMode) {
     try {
       planResult = await promptDecomposer.decompose({
         objective: task,
@@ -276,6 +279,7 @@ export async function handleAnalyzeFileCommand(context) {
         metadata: { mode: "analyze-file" },
         resumePlan,
         planBranch,
+        sessionDeadline,
       });
       if (planResult) {
         planSource = resumePlan ? "refreshed" : "fresh";

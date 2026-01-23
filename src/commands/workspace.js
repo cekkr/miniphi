@@ -19,6 +19,7 @@ export async function handleWorkspaceCommand(context) {
     phi4,
     promptDecomposer,
     globalMemory,
+    sessionDeadline,
     archiveMetadata,
     DEFAULT_TASK_DESCRIPTION,
     parseDirectFileReferences,
@@ -79,6 +80,7 @@ export async function handleWorkspaceCommand(context) {
     schemaId: "log-analysis",
     promptId: promptGroupId,
     promptJournalId,
+    sessionDeadline,
   });
   workspaceContext = mergeFixedReferences(workspaceContext, workspaceFixedReferences);
   workspaceContext = await attachCommandLibraryToWorkspace(
@@ -164,6 +166,7 @@ export async function handleWorkspaceCommand(context) {
         metadata: { mode: "workspace" },
         resumePlan,
         planBranch,
+        sessionDeadline,
       });
       if (planResult) {
         planSource = resumePlan ? "refreshed" : "fresh";
