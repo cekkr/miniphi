@@ -105,6 +105,7 @@ export async function handleWorkspaceCommand(context) {
     );
   }
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const skipNavigator = Boolean(options["no-navigator"]);
   const workspaceRefsResult = parseDirectFileReferences(task, cwd);
   const workspaceFixedReferences = workspaceRefsResult.references;
   task = workspaceRefsResult.cleanedTask;
@@ -127,7 +128,7 @@ export async function handleWorkspaceCommand(context) {
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
   phi4.setPromptRecorder(promptRecorder);
-  const navigator = buildNavigator(stateManager, promptRecorder);
+  const navigator = skipNavigator ? null : buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(cwd, {
     navigator,
     objective: task,

@@ -63,6 +63,7 @@ export async function handleRunCommand(context) {
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
   const fastMode =
     Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
+  const skipNavigator = Boolean(options["no-navigator"]);
   const fileRefResult = parseDirectFileReferences(task, cwd);
   const fixedReferences = fileRefResult.references;
   task = fileRefResult.cleanedTask;
@@ -89,7 +90,7 @@ export async function handleRunCommand(context) {
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
   phi4.setPromptRecorder(promptRecorder);
-  const navigator = fastMode ? null : buildNavigator(stateManager, promptRecorder);
+  const navigator = fastMode || skipNavigator ? null : buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(cwd, {
     navigator,
     objective: task,
@@ -342,8 +343,9 @@ export async function handleRunCommand(context) {
         finishedAt: result.finishedAt ?? null,
       });
     }
-  const navigatorActions =
-    (workspaceContext?.navigationHints?.actions ?? []).length > 0
+  const navigatorActions = skipNavigator
+    ? []
+    : (workspaceContext?.navigationHints?.actions ?? []).length > 0
       ? workspaceContext.navigationHints.actions
       : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
           command,

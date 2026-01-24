@@ -156,6 +156,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - Pass `--prompt-journal <id>` (or omit the value to reuse the auto-generated `--prompt-id`) to enable the new prompt-step journal stored under `.miniphi/prompt-exchanges/stepwise/<id>/`. Every model/API prompt, response, and downstream operation (shell commands, analyzer runs, navigator helpers) is recorded in order so another agent can audit the session before continuing.
 - Pair `--prompt-journal-status paused|completed|closed` with repeated runs to explicitly pause or finish a journal; when omitted, the journal now defaults to `paused` after the run. A common pattern is `--prompt-journal session-123 --prompt-journal-status paused` to capture the latest step, review it asynchronously, then resume with `--prompt-journal session-123 --prompt-journal-status completed`.
 - When `--session-timeout` elapses, navigator follow-ups and truncation helpers are skipped and logged with reason `session-timeout` inside the journal steps.
+- Navigator follow-ups that resolve to MiniPhi CLI entrypoints are skipped and logged with reason `cli-command` to avoid recursive CLI runs.
 - Journals coexist with `--prompt-id <id>` so you can persist the Phi chat history and the higher-level operation ledger together. The files are plain JSON so they are easy to diff, summarize, or feed back into MiniPhi as fixed references.
 - Try `npm run sample:besh-journal` to see the feature in action: it analyzes the one-file `samples/besh/bsh.c` project, records every summarization prompt, and leaves the journal paused so another agent (or you) can review it before resuming. When you need long-haul signal, wrap the command in a loop (`until npm run sample:besh-journal -- --prompt-journal-status active --verbose; do sleep 60; done`) so `.miniphi/prompt-exchanges/stepwise/` keeps accruing attempts until a clean pass lands.
 
@@ -263,7 +264,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/workspace-profiler.js`: Profiles workspace contents (code/docs/data) and optionally includes connection graphs.
 
 ### Command tour
-- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
+- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--no-navigator`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.
 - `web-research` performs DuckDuckGo Instant Answer lookups. Use positional queries or `--query`, set `--max-results`, `--provider`, `--include-raw`, `--no-save`, and optional `--note`. Results live under `.miniphi/research/`.
 - `history-notes` snapshots `.miniphi/` and optionally attaches git metadata. Use `--label`, `--history-root`, and `--no-git`.
@@ -288,6 +289,7 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 - `--truncation-chunk <priority|label>` selects which chunk goal from the saved plan should drive the follow-up run. When the plan contains a line range, MiniPhi restricts summarization to that slice automatically.
 - When resuming a truncation plan, MiniPhi now auto-runs any helper commands declared in the plan, records helper and chunk completion metadata under `.miniphi/executions/<execution-id>/truncation-progress.json`, and prints the next suggested `--truncation-chunk` selector so you can chain follow-up runs without manual bookkeeping.
 - `--session-timeout <s>` hard-stops the orchestration; the model receives the remaining budget with each prompt so runaway loops cannot hang the CLI, and follow-up helpers are skipped once the budget is exhausted.
+- `--no-navigator` disables navigator prompts and follow-up commands for run/analyze-file/workspace when you want a single-pass run.
 - When `--session-timeout` is paired with `--no-summary` and `--no-stream`, MiniPhi skips navigator/decomposer prompts to conserve the session budget (fast mode for long-running tests).
 - `--no-summary` skips the JSON footer if another system is reading stdout.
 - `MINIPHI_CONFIG=/path/config.json` is honored if you prefer environment variables over flags.

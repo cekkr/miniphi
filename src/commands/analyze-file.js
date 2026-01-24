@@ -80,6 +80,7 @@ export async function handleAnalyzeFileCommand(context) {
   const analyzeCwd = path.dirname(filePath);
   const fastMode =
     Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
+  const skipNavigator = Boolean(options["no-navigator"]);
   const analyzeRefsResult = parseDirectFileReferences(task, analyzeCwd);
   const analyzeFixedReferences = analyzeRefsResult.references;
   task = analyzeRefsResult.cleanedTask;
@@ -165,7 +166,7 @@ export async function handleAnalyzeFileCommand(context) {
   }
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
-  const navigator = fastMode ? null : buildNavigator(stateManager, promptRecorder);
+  const navigator = fastMode || skipNavigator ? null : buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(analyzeCwd, {
     navigator,
     objective: task,
@@ -533,8 +534,9 @@ export async function handleAnalyzeFileCommand(context) {
       );
     }
   }
-  const analyzeNavigatorActions =
-    (workspaceContext?.navigationHints?.actions ?? []).length > 0
+  const analyzeNavigatorActions = skipNavigator
+    ? []
+    : (workspaceContext?.navigationHints?.actions ?? []).length > 0
       ? workspaceContext.navigationHints.actions
       : (workspaceContext?.navigationHints?.focusCommands ?? []).map((command) => ({
           command,

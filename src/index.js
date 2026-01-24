@@ -1526,6 +1526,37 @@ async function main() {
     }
     return !navigatorBlocklist.some((regex) => regex.test(trimmed));
   };
+  const isNavigatorCliCommand = (command) => {
+    if (!command || typeof command !== "string") {
+      return false;
+    }
+    const trimmed = command.trim();
+    if (!trimmed) {
+      return false;
+    }
+    const tokens = trimmed.split(/\s+/);
+    const normalizedTokens = tokens.map((token) => token.replace(/^["']|["']$/g, ""));
+    const firstToken = normalizedTokens[0];
+    if (COMMANDS.has(firstToken)) {
+      return true;
+    }
+    if (firstToken === "miniphi") {
+      return true;
+    }
+    if (firstToken === "npx" && normalizedTokens[1] === "miniphi") {
+      return true;
+    }
+    if (firstToken === "node" && normalizedTokens[1]) {
+      const target = normalizedTokens[1].replace(/\\/g, "/");
+      if (target.endsWith("/src/index.js") || target.endsWith("src/index.js")) {
+        const subcommand = normalizedTokens[2] ?? null;
+        if (!subcommand || COMMANDS.has(subcommand)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
   const navigatorRequestTimeoutMs =
     resolveDurationMs({
       secondsValue:
@@ -1624,6 +1655,41 @@ async function main() {
         }
         continue;
       }
+      if (isNavigatorCliCommand(entry.command)) {
+        if (verbose) {
+          console.warn(`[MiniPhi] Navigator follow-up skipped (CLI-only): ${entry.command}`);
+        }
+        followUps.push({
+          command: entry.command,
+          skipped: true,
+          danger: entry.danger,
+          reason: "cli-command",
+        });
+        if (promptJournal && promptJournalId) {
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: `Navigator follow-up skipped: ${entry.command}`,
+            prompt: `Navigator suggested ${entry.command}`,
+            response: null,
+            status: "skipped",
+            operations: [
+              {
+                type: "command",
+                command: entry.command,
+                danger: entry.danger,
+                status: "skipped",
+                summary: "Navigator follow-up skipped (CLI-only command)",
+              },
+            ],
+            metadata: {
+              mode: "navigator-follow-up",
+              parent: baseMetadata?.parentCommand ?? null,
+              reason: "cli-command",
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+          });
+        }
+        continue;
+      }
       if (!isNavigatorCommandSafe(entry.command)) {
         if (verbose) {
           console.warn(`[MiniPhi] Navigator follow-up blocked: ${entry.command}`);
@@ -1659,12 +1725,12 @@ async function main() {
         }
         continue;
       }
-        try {
-          const followUpTask = `Navigator follow-up: ${entry.command}`;
-          const followUpResult = await analyzer.analyzeCommandOutput(entry.command, followUpTask, {
-            summaryLevels,
-            streamOutput,
-            cwd,
+      try {
+        const followUpTask = `Navigator follow-up: ${entry.command}`;
+        const followUpResult = await analyzer.analyzeCommandOutput(entry.command, followUpTask, {
+          summaryLevels,
+          streamOutput,
+          cwd,
           timeout,
           sessionDeadline,
           workspaceContext,
@@ -1684,33 +1750,33 @@ async function main() {
             },
           },
           commandDanger: entry.danger,
-            commandSource: "navigator",
-              authorizationContext: {
-                reason: entry.reason ?? "Navigator follow-up",
-                hint: entry.authorizationHint ?? null,
-              },
-            });
-          followUps.push({
-            command: entry.command,
-            danger: entry.danger,
-            analysis: followUpResult.analysis,
-              prompt: followUpResult.prompt,
-              linesAnalyzed: followUpResult.linesAnalyzed,
-              compressedTokens: followUpResult.compressedTokens,
-            });
-          if (promptJournal && promptJournalId) {
-            const promptExchange = followUpResult.promptExchange ?? null;
-            const links = promptExchange
-              ? {
-                  promptExchangeId: promptExchange.id ?? null,
-                  promptExchangePath: promptExchange.path ?? null,
-                }
-              : null;
-            await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-              label: followUpTask,
-              prompt: followUpResult.prompt,
-              response: followUpResult.analysis,
-              schemaId: followUpResult.schemaId ?? null,
+          commandSource: "navigator",
+          authorizationContext: {
+            reason: entry.reason ?? "Navigator follow-up",
+            hint: entry.authorizationHint ?? null,
+          },
+        });
+        followUps.push({
+          command: entry.command,
+          danger: entry.danger,
+          analysis: followUpResult.analysis,
+          prompt: followUpResult.prompt,
+          linesAnalyzed: followUpResult.linesAnalyzed,
+          compressedTokens: followUpResult.compressedTokens,
+        });
+        if (promptJournal && promptJournalId) {
+          const promptExchange = followUpResult.promptExchange ?? null;
+          const links = promptExchange
+            ? {
+                promptExchangeId: promptExchange.id ?? null,
+                promptExchangePath: promptExchange.path ?? null,
+              }
+            : null;
+          await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+            label: followUpTask,
+            prompt: followUpResult.prompt,
+            response: followUpResult.analysis,
+            schemaId: followUpResult.schemaId ?? null,
             operations: [
               {
                 type: "command",
@@ -1723,17 +1789,17 @@ async function main() {
             metadata: {
               mode: "navigator-follow-up",
               parent: baseMetadata?.parentCommand ?? null,
-                navigationReason: entry.reason ?? null,
-                salvage: followUpResult?.analysisDiagnostics?.salvage ?? null,
-                fallbackReason: followUpResult?.analysisDiagnostics?.fallbackReason ?? null,
-              },
-              workspaceSummary: workspaceContext?.summary ?? null,
-              links,
-              startedAt: followUpResult.startedAt ?? null,
-              finishedAt: followUpResult.finishedAt ?? null,
-            });
-          }
-        } catch (error) {
+              navigationReason: entry.reason ?? null,
+              salvage: followUpResult?.analysisDiagnostics?.salvage ?? null,
+              fallbackReason: followUpResult?.analysisDiagnostics?.fallbackReason ?? null,
+            },
+            workspaceSummary: workspaceContext?.summary ?? null,
+            links,
+            startedAt: followUpResult.startedAt ?? null,
+            finishedAt: followUpResult.finishedAt ?? null,
+          });
+        }
+      } catch (error) {
         if (isLmStudioProtocolError(error)) {
           await handleLmStudioProtocolFailure({
             error,
@@ -2614,6 +2680,7 @@ Options:
   --prompt-journal [id]        Mirror each Phi/API step + operations into .miniphi/prompt-exchanges/stepwise
   --prompt-journal-status <s>  Finalize the journal as active|paused|completed|closed (default: completed)
   --session-timeout <s>        Hard limit (seconds) for the entire MiniPhi run (optional)
+  --no-navigator               Skip navigator prompts and follow-up commands
   --debug-lm                   Print each objective + prompt when scoring is running
   --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)
   --assume-yes                 Auto-approve prompts when the policy is ask/session
