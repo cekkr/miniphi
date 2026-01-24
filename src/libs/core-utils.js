@@ -455,6 +455,40 @@ export function extractTruncationPlanFromAnalysis(analysisText) {
   };
 }
 
+export function extractSummaryFromAnalysis(analysisText) {
+  const parsed = parseStrictJsonObject(analysisText);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const summary =
+    typeof parsed.summary === "string" && parsed.summary.trim().length > 0
+      ? parsed.summary.trim()
+      : null;
+  if (summary) {
+    return summary;
+  }
+  const rootCause =
+    typeof parsed.root_cause === "string" && parsed.root_cause.trim().length > 0
+      ? parsed.root_cause.trim()
+      : null;
+  return rootCause;
+}
+
+export function extractSummaryUpdatesFromAnalysis(analysisText) {
+  const parsed = parseStrictJsonObject(analysisText);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return [];
+  }
+  const rawUpdates = parsed.summary_updates ?? parsed.summaryUpdates;
+  if (!Array.isArray(rawUpdates)) {
+    return [];
+  }
+  return rawUpdates
+    .filter((update) => typeof update === "string")
+    .map((update) => update.trim())
+    .filter(Boolean);
+}
+
 export function extractRecommendedCommandsFromAnalysis(analysisText) {
   const parsed = parseStrictJsonObject(analysisText);
   const fixes = parsed?.recommended_fixes ?? parsed?.recommendedFixes;

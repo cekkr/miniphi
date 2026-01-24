@@ -22,6 +22,18 @@
       "type": ["string", "null"],
       "description": "Concise summary of the dominant finding."
     },
+    "summary": {
+      "type": "string",
+      "description": "Natural-language final summary of the analysis (use this for info-only tasks)."
+    },
+    "summary_updates": {
+      "type": "array",
+      "description": "Short progress updates in chronological order (can be empty).",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
     "evidence": {
       "type": "array",
       "description": "Concrete log excerpts that justify the diagnosis.",

@@ -47,6 +47,8 @@ import {
   extractContextRequestsFromAnalysis,
   extractMissingSnippetsFromAnalysis,
   extractNeedsMoreContextFlag,
+  extractSummaryFromAnalysis,
+  extractSummaryUpdatesFromAnalysis,
 } from "./libs/core-utils.js";
 import { handleAnalyzeFileCommand } from "./commands/analyze-file.js";
 import { handleBenchmarkCommand } from "./commands/benchmark.js";
@@ -165,6 +167,23 @@ function displayMissingSnippets(snippets) {
   });
 }
 
+function displaySummaryUpdates(summaryUpdates) {
+  if (!Array.isArray(summaryUpdates) || summaryUpdates.length === 0) {
+    return;
+  }
+  console.log("\n[MiniPhi] Phi progress updates:");
+  summaryUpdates.forEach((update, index) => {
+    console.log(`  ${index + 1}. ${update}`);
+  });
+}
+
+function displayPhiSummary(summaryText) {
+  if (!summaryText) {
+    return;
+  }
+  console.log(`\n[MiniPhi] Phi summary: ${summaryText}`);
+}
+
 function announceNeedsMoreContext(flag, hasSnippets) {
   if (!flag) {
     return;
@@ -178,6 +197,16 @@ function announceNeedsMoreContext(flag, hasSnippets) {
 function attachContextRequestsToResult(result) {
   if (!result || typeof result !== "object") {
     return;
+  }
+  const summaryUpdates = extractSummaryUpdatesFromAnalysis(result.analysis ?? "");
+  if (summaryUpdates.length) {
+    result.summaryUpdates = summaryUpdates;
+    displaySummaryUpdates(summaryUpdates);
+  }
+  const summaryText = extractSummaryFromAnalysis(result.analysis ?? "");
+  if (summaryText) {
+    result.summary = summaryText;
+    displayPhiSummary(summaryText);
   }
   const requests = extractContextRequestsFromAnalysis(result.analysis ?? "");
   result.contextRequests = requests;
@@ -2312,6 +2341,8 @@ const describeWorkspace = (dir, options = undefined) =>
             task: result.task,
             linesAnalyzed: result.linesAnalyzed,
             compressedTokens: result.compressedTokens,
+            modelSummary: result.summary ?? null,
+            modelSummaryUpdates: result.summaryUpdates ?? null,
           },
           null,
           2,

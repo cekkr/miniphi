@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { randomUUID, createHash } from "crypto";
 import MemoryStoreBase from "./memory-store-base.js";
+import { parseStrictJsonObject } from "./core-utils.js";
 
 const DEFAULT_SEGMENT_SIZE = 2000; // characters per chunk to stay context-friendly
 
@@ -1198,6 +1199,19 @@ export default class MiniPhiMemory extends MemoryStoreBase {
   _synthesizeSummary(analysis = "") {
     if (!analysis) {
       return "";
+    }
+    const parsed = parseStrictJsonObject(analysis);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const summary =
+        typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+      if (summary) {
+        return summary;
+      }
+      const rootCause =
+        typeof parsed.root_cause === "string" ? parsed.root_cause.trim() : "";
+      if (rootCause) {
+        return rootCause;
+      }
     }
     const sentences = analysis.replace(/\r/g, "").split(/(?<=[.!?])\s+/);
     return sentences.slice(0, 3).join(" ").trim();

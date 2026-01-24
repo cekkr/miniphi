@@ -20,6 +20,8 @@ export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
   '  "task": "repeat the task in <= 10 words",',
   '  "root_cause": "concise summary or null",',
+  '  "summary": "natural-language summary of the analysis",',
+  '  "summary_updates": ["short progress update (can be empty)"],',
   '  "evidence": [',
   '    { "chunk": "Chunk 2", "line_hint": 120, "excerpt": "quoted or paraphrased line" }',
   "  ],",
@@ -1243,6 +1245,9 @@ export default class EfficientLogAnalyzer {
     const schemaReference = this._buildSchemaReference(metadata?.schemaId);
     const reportingRules = [
       "Every evidence entry must mention the chunk/section name and include an approximate line_hint; use null only if no line reference exists.",
+      "Provide summary as a short natural-language update of the overall findings; for info-only tasks, use summary as the primary answer and keep recommended_fixes empty.",
+      "Provide summary_updates as short progress updates in chronological order; keep each update terse and allow an empty array if there were no progress updates.",
+      "Place summary and summary_updates near the top of the JSON response so streaming output surfaces them early.",
       "Recommended fixes should contain concrete actions with files, commands, or owners when possible. Use empty arrays instead of omitting fields.",
       "If the dataset is descriptive or lacks actionable defects, return an empty recommended_fixes array and do not invent commands or file names.",
       "When proposing fixes, only reference files visible in the workspace manifest or dataset source; otherwise leave files and commands empty.",
@@ -1283,6 +1288,7 @@ export default class EfficientLogAnalyzer {
       response_format: "json_schema",
       instructions: [
         "Keep the response terse and within the schema; avoid extra prose or redundant fields.",
+        "Always include summary and summary_updates; summary_updates can be an empty array.",
         "Respond with raw JSON only; no code fences, no markdown, no <think> blocks, and no prose outside the JSON object.",
       ],
       payload,
@@ -1308,6 +1314,8 @@ export default class EfficientLogAnalyzer {
         ? context.datasetHint.trim()
         : null;
     const evidenceExcerpt = datasetHint ? `${normalizedReason} (${datasetHint})` : normalizedReason;
+    const summaryText = `Fallback summary: ${normalizedReason}`;
+    const summaryUpdates = ["Fallback summary emitted after Phi response was unavailable."];
     const nextStep =
       typeof context?.nextStep === "string" && context.nextStep.trim().length > 0
         ? context.nextStep.trim()
@@ -1353,6 +1361,8 @@ export default class EfficientLogAnalyzer {
     const payload = {
       task: taskLabel,
       root_cause: null,
+      summary: summaryText,
+      summary_updates: summaryUpdates,
       evidence: [
         {
           chunk: "Fallback summary",
