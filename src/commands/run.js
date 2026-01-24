@@ -89,7 +89,7 @@ export async function handleRunCommand(context) {
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
   phi4.setPromptRecorder(promptRecorder);
-  const navigator = fastMode ? null : buildNavigator(stateManager);
+  const navigator = fastMode ? null : buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(cwd, {
     navigator,
     objective: task,

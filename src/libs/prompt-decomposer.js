@@ -202,6 +202,7 @@ export default class PromptDecomposer {
     const runCompletion = async (body, responseFormatOverride = undefined) => {
       const responseFormatForRun = responseFormatOverride ?? responseFormat;
       const messages = buildMessages(body);
+      requestMessages = messages;
       const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
@@ -240,10 +241,14 @@ export default class PromptDecomposer {
         errorMessage = null;
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage && this._isContextOverflowError(errorMessage)) {
-          continue;
-        }
         if (errorMessage) {
+          const errorInfo = classifyLmStudioError(errorMessage);
+          const shouldRetry =
+            this._isContextOverflowError(errorMessage) ||
+            (errorInfo.isTimeout && !this._isSessionTimeout(errorMessage));
+          if (shouldRetry) {
+            continue;
+          }
           break;
         }
       }
@@ -319,24 +324,32 @@ export default class PromptDecomposer {
     normalizedPlan.promptExchange = promptRecord ?? null;
 
     if (payload.storage) {
-      await payload.storage.savePromptDecomposition({
-        plan: normalizedPlan.plan,
-        planId: normalizedPlan.planId,
-        summary: normalizedPlan.summary,
-        outline: normalizedPlan.outline ?? null,
-        segments: normalizedPlan.segments ?? null,
-        segmentBlock: normalizedPlan.segmentBlock ?? null,
-        recommendedTools: normalizedPlan.recommendedTools ?? null,
-        recommendationsBlock: normalizedPlan.recommendationsBlock ?? null,
-        metadata: {
-          objective: payload.objective,
-          command: payload.command ?? null,
-          workspaceType: payload.workspace?.classification?.label ?? null,
-          mainPromptId: payload.mainPromptId ?? null,
-          extra: payload.metadata ?? null,
-          planBranch: payload.planBranch ?? null,
-        },
-      });
+      try {
+        await payload.storage.savePromptDecomposition({
+          plan: normalizedPlan.plan,
+          planId: normalizedPlan.planId,
+          summary: normalizedPlan.summary,
+          outline: normalizedPlan.outline ?? null,
+          segments: normalizedPlan.segments ?? null,
+          segmentBlock: normalizedPlan.segmentBlock ?? null,
+          recommendedTools: normalizedPlan.recommendedTools ?? null,
+          recommendationsBlock: normalizedPlan.recommendationsBlock ?? null,
+          metadata: {
+            objective: payload.objective,
+            command: payload.command ?? null,
+            workspaceType: payload.workspace?.classification?.label ?? null,
+            mainPromptId: payload.mainPromptId ?? null,
+            extra: payload.metadata ?? null,
+            planBranch: payload.planBranch ?? null,
+          },
+        });
+      } catch (error) {
+        this._log(
+          `[PromptDecomposer] Unable to save prompt decomposition ${
+            normalizedPlan.planId ?? "unknown"
+          }: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
 
     return normalizedPlan;

@@ -71,7 +71,7 @@ export async function handleWorkspaceCommand(context) {
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
   phi4.setPromptRecorder(promptRecorder);
-  const navigator = buildNavigator(stateManager);
+  const navigator = buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(cwd, {
     navigator,
     objective: task,

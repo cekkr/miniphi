@@ -580,10 +580,8 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
   if (context.planResult.outline) {
     responseSegments.push(context.planResult.outline);
   }
-  const responsePayload =
-    responseSegments.length > 0
-      ? responseSegments.join("\n\n")
-      : JSON.stringify(context.planResult.plan, null, 2);
+  const responseSummary = responseSegments.length > 0 ? responseSegments.join("\n\n") : null;
+  const responsePayload = JSON.stringify(context.planResult.plan ?? {}, null, 2);
   await journal.appendStep(sessionId, {
     label: context.label ?? "prompt-plan",
     prompt: `Objective: ${context.objective ?? "workspace task"}${commandLine}`.trim(),
@@ -598,6 +596,10 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       branch: context.planResult.branch ?? null,
       source: context.planSource ?? null,
       recommendedTools: context.planResult.recommendedTools ?? [],
+      summaryBlock: responseSummary,
+      outline: context.planResult.outline ?? null,
+      segmentBlock: context.planResult.segmentBlock ?? null,
+      recommendationsBlock: context.planResult.recommendationsBlock ?? null,
     },
     tool_calls: context.planResult.toolCalls ?? null,
     tool_definitions: context.planResult.toolDefinitions ?? null,
@@ -619,16 +621,18 @@ async function recordNavigationPlanInJournal(journal, sessionId, context = undef
         promptExchangePath: promptExchange.path ?? null,
       }
     : null;
+  const responsePayload = JSON.stringify(plan.raw ?? plan ?? {}, null, 2);
   await journal.appendStep(sessionId, {
     label: context.label ?? "navigator-plan",
     prompt: `Navigator objective: ${context.objective ?? "workspace guidance"}`,
-    response: plan.block ?? JSON.stringify(plan.raw ?? {}, null, 2),
+    response: responsePayload,
     schemaId: plan.schemaId ?? null,
     status: "advisor",
     operations,
     metadata: {
       summary: plan.summary ?? null,
       helper: plan.helper ?? null,
+      summaryBlock: plan.block ?? null,
     },
     tool_calls: plan.toolCalls ?? null,
     tool_definitions: plan.toolDefinitions ?? null,
@@ -1504,7 +1508,7 @@ async function main() {
       secondsLabel: "config.prompt.navigator.timeoutSeconds",
       millisLabel: "config.prompt.navigator.timeout",
     }) ?? 60000;
-  const buildNavigator = (memoryInstance) =>
+  const buildNavigator = (memoryInstance, promptRecorderOverride = null) =>
     restClient
       ? new ApiNavigator({
           restClient,
@@ -1514,7 +1518,7 @@ async function main() {
           logger: verbose ? (message) => console.warn(message) : null,
           adapterRegistry: schemaAdapterRegistry,
           schemaRegistry,
-          promptRecorder,
+          promptRecorder: promptRecorderOverride ?? promptRecorder,
           helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
           navigationRequestTimeoutMs: navigatorRequestTimeoutMs,
         })

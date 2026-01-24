@@ -367,7 +367,7 @@ export default class ApiNavigator {
       plan = await runCompletion(body);
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
-      if (this._isContextOverflowError(errorMessage) && !compactTried) {
+      if (this._shouldRetryWithCompact(errorMessage) && !compactTried) {
         compactTried = true;
         body = buildBody(true);
         try {
@@ -984,5 +984,13 @@ export default class ApiNavigator {
 
   _isContextOverflowError(message) {
     return isContextOverflowError(message);
+  }
+
+  _shouldRetryWithCompact(message) {
+    if (!message || this._isSessionTimeout(message)) {
+      return false;
+    }
+    const errorInfo = classifyLmStudioError(message);
+    return errorInfo.isContextOverflow || errorInfo.isTimeout;
   }
 }

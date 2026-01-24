@@ -165,7 +165,7 @@ export async function handleAnalyzeFileCommand(context) {
   }
   promptRecorder = new PromptRecorder(stateManager.baseDir);
   await promptRecorder.prepare();
-  const navigator = fastMode ? null : buildNavigator(stateManager);
+  const navigator = fastMode ? null : buildNavigator(stateManager, promptRecorder);
   workspaceContext = await describeWorkspace(analyzeCwd, {
     navigator,
     objective: task,

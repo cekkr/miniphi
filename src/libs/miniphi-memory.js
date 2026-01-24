@@ -471,21 +471,28 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       return null;
     }
     await this.prepare();
-    const planId = payload.planId ?? payload.plan?.plan_id ?? randomUUID();
+    const rawPlanId = payload.planId ?? payload.plan?.plan_id ?? randomUUID();
+    const planId =
+      typeof rawPlanId === "string" && rawPlanId.trim().length
+        ? rawPlanId.trim()
+        : String(rawPlanId);
     const timestamp = new Date().toISOString();
-  const record = {
-    id: planId,
-    createdAt: timestamp,
-    summary: payload.summary ?? payload.plan?.summary ?? null,
-    outline: payload.outline ?? null,
-    segments: Array.isArray(payload.segments) ? payload.segments : null,
-    segmentBlock: payload.segmentBlock ?? null,
-    recommendedTools: Array.isArray(payload.recommendedTools) ? payload.recommendedTools : null,
-    recommendationsBlock: payload.recommendationsBlock ?? null,
-    metadata: payload.metadata ?? null,
-    plan: payload.plan,
-  };
-    const filePath = path.join(this.promptDecompositionsDir, `${planId}.json`);
+    const record = {
+      id: planId,
+      createdAt: timestamp,
+      summary: payload.summary ?? payload.plan?.summary ?? null,
+      outline: payload.outline ?? null,
+      segments: Array.isArray(payload.segments) ? payload.segments : null,
+      segmentBlock: payload.segmentBlock ?? null,
+      recommendedTools: Array.isArray(payload.recommendedTools) ? payload.recommendedTools : null,
+      recommendationsBlock: payload.recommendationsBlock ?? null,
+      metadata: payload.metadata ?? null,
+      plan: payload.plan,
+    };
+    const safeSlug = this._slugify(planId);
+    const hashSuffix = this._hashText(planId).slice(0, 8);
+    const fileName = `${safeSlug}-${hashSuffix}.json`;
+    const filePath = path.join(this.promptDecompositionsDir, fileName);
     await this._writeJSON(filePath, record);
     await this._updatePromptDecompositionIndex({
       id: planId,
