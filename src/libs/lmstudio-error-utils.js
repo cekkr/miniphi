@@ -29,6 +29,9 @@ const INVALID_RESPONSE_PATTERNS = [
   /no valid json/i,
   /invalid response/i,
   /json parse/i,
+  /empty response/i,
+  /response body was empty/i,
+  /returned an empty/i,
 ];
 
 const CONNECTION_PATTERNS = [

@@ -315,9 +315,11 @@ export class LMStudioHandler {
           responseToolCalls = restResult?.toolCalls ?? null;
           rawFragmentCount = result ? 1 : 0;
           solutionTokenCount = this._approximateTokens(result);
-          markFirstToken("rest");
-          if (onToken && result) {
-            onToken(result);
+          if (result) {
+            markFirstToken("rest");
+            if (onToken) {
+              onToken(result);
+            }
           }
         } else {
           const chat = Chat.from(this.chatHistory);
@@ -377,10 +379,6 @@ export class LMStudioHandler {
           }, () => cancelPrediction(`${this.modelKey} prompt timeout`));
         }
 
-        if (!result || !result.trim()) {
-          throw new Error(`${this.modelKey} returned an empty response.`);
-        }
-        const finishedAt = Date.now();
         const validationResult = this._validateSchema(schemaDetails, result);
         schemaValidation = this._summarizeValidation(validationResult);
         if (!schemaValidation && (schemaDetails?.id ?? traceContext.schemaId)) {
@@ -389,6 +387,25 @@ export class LMStudioHandler {
             errors: ["Schema validation unavailable."],
           };
         }
+        if (!result || !result.trim()) {
+          if (validationResult && !validationResult.valid) {
+            const summary = this._summarizeSchemaErrors(validationResult.errors);
+            schemaFailureDetails = {
+              summary,
+              schemaId: schemaDetails?.id ?? traceContext.schemaId ?? "unknown",
+            };
+          } else if (schemaDetails?.id ?? traceContext.schemaId) {
+            schemaFailureDetails = {
+              summary: "Empty response.",
+              schemaId: schemaDetails?.id ?? traceContext.schemaId ?? "unknown",
+            };
+          }
+          const emptyMessage = useRestTransport
+            ? `LM Studio REST completion returned an empty response for ${this.modelKey}.`
+            : `${this.modelKey} returned an empty response.`;
+          throw new Error(emptyMessage);
+        }
+        const finishedAt = Date.now();
         if (validationResult && !validationResult.valid) {
           const summary = this._summarizeSchemaErrors(validationResult.errors);
           schemaFailureDetails = {
@@ -755,9 +772,6 @@ export class LMStudioHandler {
       choice?.delta?.content ??
       (typeof response === "string" ? response : null) ??
       "";
-    if (!text) {
-      throw new Error(`LM Studio REST completion returned an empty response for ${this.modelKey}.`);
-    }
     return {
       text,
       toolCalls: choice?.message?.tool_calls ?? null,
