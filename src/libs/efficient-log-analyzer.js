@@ -163,56 +163,114 @@ export default class EfficientLogAnalyzer {
       console.log(`[MiniPhi] Total lines captured: ${lines.length}`);
     }
     this._logDev(devLog, `Captured ${lines.length} lines (${totalSize} bytes).`);
+    return this._analyzeDatasetLines(lines, task, {
+      summaryLevels,
+      verbose,
+      streamOutput,
+      sessionDeadline,
+      promptContext,
+      workspaceContext,
+      datasetLabel: command,
+      sourceLabel: command,
+      command,
+      originalSize: totalSize,
+      fallbackCache,
+      fallbackCacheContext,
+      devLog,
+      rerunCommand: command,
+      datasetHint: `${lines.length} lines captured from ${command}`,
+    });
+  }
 
-    const compression = await this._compressLines(lines, summaryLevels, verbose);
+  async analyzeDatasetLines(lines, task, options = undefined) {
+    const sourceLabel =
+      typeof options?.sourceLabel === "string" && options.sourceLabel.trim().length > 0
+        ? options.sourceLabel.trim()
+        : null;
+    const datasetLabel =
+      typeof options?.datasetLabel === "string" && options.datasetLabel.trim().length > 0
+        ? options.datasetLabel.trim()
+        : sourceLabel ?? "dataset";
+    this._resetPromptExchange();
+    const devLog =
+      options?.devLog ??
+      this._startDevLog(`dataset-${this._safeLabel(datasetLabel)}`, {
+        type: "dataset",
+        label: datasetLabel,
+        task,
+      });
+    return this._analyzeDatasetLines(lines, task, {
+      ...(options ?? {}),
+      datasetLabel,
+      sourceLabel: sourceLabel ?? datasetLabel,
+      devLog,
+    });
+  }
+
+  async _analyzeDatasetLines(lines, task, options = undefined) {
+    const {
+      summaryLevels = 3,
+      verbose = false,
+      streamOutput = true,
+      sessionDeadline = undefined,
+      promptContext = undefined,
+      workspaceContext = undefined,
+      datasetLabel = "dataset",
+      sourceLabel = null,
+      command = null,
+      originalSize = null,
+      fallbackCache = null,
+      fallbackCacheContext = undefined,
+      devLog = null,
+      rerunCommand = null,
+      datasetHint = null,
+    } = options ?? {};
+
+    const normalizedLines = Array.isArray(lines)
+      ? lines
+          .filter((line) => typeof line === "string")
+          .map((line) => line.trimEnd())
+          .filter((line) => line.length > 0)
+      : [];
+    if (normalizedLines.length === 0) {
+      throw new Error("No output lines captured for analysis.");
+    }
+
+    const totalSize =
+      Number.isFinite(originalSize) && originalSize > 0
+        ? originalSize
+        : Buffer.byteLength(normalizedLines.join("\n"), "utf8");
+    const compression = await this._compressLines(normalizedLines, summaryLevels, verbose);
     const explicitFileLists = this._extractExplicitFileLists(task);
     const schemaId = promptContext?.schemaId ?? this.schemaId;
     const promptBudget = await this._resolvePromptBudget();
     const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
+    const resolvedSourceLabel =
+      typeof sourceLabel === "string" && sourceLabel.trim().length > 0
+        ? sourceLabel.trim()
+        : typeof datasetLabel === "string" && datasetLabel.trim().length > 0
+          ? datasetLabel.trim()
+          : typeof command === "string" && command.trim().length > 0
+            ? command.trim()
+            : "dataset";
     const prompt = this.generateSmartPrompt(
       task,
       compression.content,
-      lines.length,
+      normalizedLines.length,
       {
         originalSize: totalSize,
         compressedTokens: compression.tokens,
         schemaId,
         contextBudgetTokens,
-        sourceLabel: command,
+        sourceLabel: resolvedSourceLabel,
         explicitFileLists,
       },
-      {
-        workspaceSummary: workspaceContext?.summary ?? null,
-        workspaceType: workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
-        workspaceHint: workspaceContext?.hintBlock ?? null,
-        workspaceDirectives: workspaceContext?.planDirectives ?? workspaceContext?.directives ?? null,
-        manifestPreview: workspaceContext?.manifestPreview ?? null,
-        readmeSnippet: workspaceContext?.readmeSnippet ?? null,
-        taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
-        taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
-        taskPlanSegmentsBlock: workspaceContext?.taskPlanSegmentsBlock ?? null,
-        taskPlanRecommendationsBlock: workspaceContext?.taskPlanRecommendationsBlock ?? null,
-        capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-        connectionSummary:
-          workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
-        connectionGraphic: workspaceContext?.connectionGraphic ?? null,
-        navigationSummary: workspaceContext?.navigationSummary ?? null,
-        navigationBlock: workspaceContext?.navigationBlock ?? null,
-        helperScript: workspaceContext?.helperScript ?? null,
-        truncationPlan: workspaceContext?.truncationPlan ?? null,
-        fixedReferences: workspaceContext?.fixedReferences ?? null,
-        indexSummaries: workspaceContext?.indexSummary ?? null,
-        benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
-        commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
-        compositionBlock: workspaceContext?.compositionBlock ?? null,
-        promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
-      },
+      this._buildWorkspacePromptContext(workspaceContext),
     );
-
     const datasetHash = this._hashDatasetSignature({
-      label: command,
+      label: datasetLabel ?? resolvedSourceLabel,
       content: compression.content,
-      lineCount: lines.length,
+      lineCount: normalizedLines.length,
     });
     const fallbackContext = fallbackCacheContext ?? {};
     const promptJournalId =
@@ -227,6 +285,7 @@ export default class EfficientLogAnalyzer {
             devLog,
           )
         : null;
+    const invocationStartedAt = Date.now();
 
     if (!cachedFallback) {
       if (verbose) {
@@ -276,19 +335,19 @@ export default class EfficientLogAnalyzer {
     const fallbackDiagnostics = () =>
       this._formatFallbackDiagnostics({
         schemaId: traceOptions.schemaId ?? null,
-        lines: lines.length,
+        lines: normalizedLines.length,
         tokens: compression.tokens,
         chunkCount: null,
-        datasetLabel: command,
+        datasetLabel: datasetLabel ?? resolvedSourceLabel,
       });
     let skipPhi = false;
     let stopHeartbeat = () => {};
     if (!cachedFallback) {
       try {
         this._applyPromptTimeout(sessionDeadline, {
-          lineCount: lines.length,
+          lineCount: normalizedLines.length,
           tokens: compression.tokens,
-          source: "command",
+          source: command ? "command" : "dataset",
         });
       } catch (error) {
         skipPhi = true;
@@ -309,9 +368,17 @@ export default class EfficientLogAnalyzer {
           devLog,
           `Phi skipped (${detail}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
         );
+        const datasetHintText =
+          typeof datasetHint === "string" && datasetHint.trim().length > 0
+            ? datasetHint.trim()
+            : null;
+        const rerunCommandText =
+          typeof rerunCommand === "string" && rerunCommand.trim().length > 0
+            ? rerunCommand.trim()
+            : null;
         analysis = this._buildFallbackAnalysis(task, detail, {
-          datasetHint: `${lines.length} lines captured from ${command}`,
-          rerunCommand: command,
+          datasetHint: datasetHintText,
+          rerunCommand: rerunCommandText,
           explicitFileLists,
         });
       }
@@ -320,10 +387,13 @@ export default class EfficientLogAnalyzer {
           ? this._startHeartbeat("Still waiting for Phi response...", devLog)
           : () => {};
         if (verbose) {
+          const originLabel = command
+            ? `Command "${command}"`
+            : `Dataset "${resolvedSourceLabel}"`;
           this._emitVerbosePromptPreview(prompt, compression.tokens, {
             schemaId: traceOptions.schemaId,
-            origin: `Command "${command}"`,
-            lines: lines.length,
+            origin: originLabel,
+            lines: normalizedLines.length,
           });
         }
         try {
@@ -369,9 +439,17 @@ export default class EfficientLogAnalyzer {
             devLog,
             `Phi failure (${stopInfo.detail ?? reason}); emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
           );
+          const datasetHintText =
+            typeof datasetHint === "string" && datasetHint.trim().length > 0
+              ? datasetHint.trim()
+              : null;
+          const rerunCommandText =
+            typeof rerunCommand === "string" && rerunCommand.trim().length > 0
+              ? rerunCommand.trim()
+              : null;
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
-            datasetHint: `${lines.length} lines captured from ${command}`,
-            rerunCommand: command,
+            datasetHint: datasetHintText,
+            rerunCommand: rerunCommandText,
             explicitFileLists,
           });
         } finally {
@@ -396,8 +474,11 @@ export default class EfficientLogAnalyzer {
         console.log("[MiniPhi] Phi response received.");
       }
       if (verbose) {
+        const originLabel = command
+          ? `Command "${command}"`
+          : `Dataset "${resolvedSourceLabel}"`;
         this._emitVerboseResponsePreview(analysis, {
-          origin: `Command "${command}"`,
+          origin: originLabel,
         });
       }
     }
@@ -423,8 +504,8 @@ export default class EfficientLogAnalyzer {
           devLog,
           schemaId: traceOptions?.schemaId ?? this.schemaId,
           task,
-          command,
-          linesAnalyzed: lines.length,
+          command: command ?? resolvedSourceLabel,
+          linesAnalyzed: normalizedLines.length,
           compression,
           traceOptions,
           fallbackDiagnosticsFn: fallbackDiagnostics,
@@ -467,9 +548,17 @@ export default class EfficientLogAnalyzer {
             devLog,
             `${stopInfo.detail ?? reason}; emitting fallback JSON.${diag ? ` ${diag}` : ""}`,
           );
+          const datasetHintText =
+            typeof datasetHint === "string" && datasetHint.trim().length > 0
+              ? datasetHint.trim()
+              : null;
+          const rerunCommandText =
+            typeof rerunCommand === "string" && rerunCommand.trim().length > 0
+              ? rerunCommand.trim()
+              : null;
           analysis = this._buildFallbackAnalysis(task, stopInfo.detail ?? reason, {
-            datasetHint: `${lines.length} lines captured from ${command}`,
-            rerunCommand: command,
+            datasetHint: datasetHintText,
+            rerunCommand: rerunCommandText,
             explicitFileLists,
           });
         }
@@ -510,14 +599,14 @@ export default class EfficientLogAnalyzer {
           promptId: traceOptions?.mainPromptId ?? null,
           promptLabel: traceOptions?.label ?? null,
           mode: fallbackContext?.mode ?? traceOptions?.metadata?.mode ?? null,
-          command,
+          command: command ?? null,
           filePath: fallbackContext?.filePath ?? null,
           task,
           analysis,
           truncationPlan,
           workspaceSummary: workspaceContext?.summary ?? null,
           reason: fallbackReason ?? "Phi fallback",
-          linesAnalyzed: lines.length,
+          linesAnalyzed: normalizedLines.length,
           compressedTokens: compression.tokens,
         },
         devLog,
@@ -532,10 +621,10 @@ export default class EfficientLogAnalyzer {
       promptExchange = this._consumePromptExchange();
     }
     return {
-      command,
+      command: command ?? null,
       task,
       prompt,
-      linesAnalyzed: lines.length,
+      linesAnalyzed: normalizedLines.length,
       compressedTokens: compression.tokens,
       compressedContent: compression.content,
       analysis,
@@ -1223,6 +1312,39 @@ export default class EfficientLogAnalyzer {
       id: resolvedId ?? "log-analysis",
       definition: null,
       text: LOG_ANALYSIS_FALLBACK_SCHEMA,
+    };
+  }
+
+  _buildWorkspacePromptContext(workspaceContext) {
+    if (!workspaceContext) {
+      return null;
+    }
+    return {
+      workspaceSummary: workspaceContext?.summary ?? null,
+      workspaceType:
+        workspaceContext?.classification?.label ?? workspaceContext?.classification?.domain ?? null,
+      workspaceHint: workspaceContext?.hintBlock ?? null,
+      workspaceDirectives: workspaceContext?.planDirectives ?? workspaceContext?.directives ?? null,
+      manifestPreview: workspaceContext?.manifestPreview ?? null,
+      readmeSnippet: workspaceContext?.readmeSnippet ?? null,
+      taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
+      taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
+      taskPlanSegmentsBlock: workspaceContext?.taskPlanSegmentsBlock ?? null,
+      taskPlanRecommendationsBlock: workspaceContext?.taskPlanRecommendationsBlock ?? null,
+      capabilitySummary: workspaceContext?.capabilitySummary ?? null,
+      connectionSummary:
+        workspaceContext?.connectionSummary ?? workspaceContext?.connections?.summary ?? null,
+      connectionGraphic: workspaceContext?.connectionGraphic ?? null,
+      navigationSummary: workspaceContext?.navigationSummary ?? null,
+      navigationBlock: workspaceContext?.navigationBlock ?? null,
+      helperScript: workspaceContext?.helperScript ?? null,
+      truncationPlan: workspaceContext?.truncationPlan ?? null,
+      fixedReferences: workspaceContext?.fixedReferences ?? null,
+      indexSummaries: workspaceContext?.indexSummary ?? null,
+      benchmarkHistory: workspaceContext?.benchmarkHistory ?? null,
+      commandLibraryBlock: workspaceContext?.commandLibraryBlock ?? null,
+      compositionBlock: workspaceContext?.compositionBlock ?? null,
+      promptTemplateBlock: workspaceContext?.promptTemplateBlock ?? null,
     };
   }
 
