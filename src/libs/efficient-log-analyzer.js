@@ -15,6 +15,49 @@ const TOKEN_CHARS_PER_TOKEN = 3;
 const MIN_SESSION_TIMEOUT_MS = 1000;
 const SESSION_PROMPT_CAP_MS = 120000;
 const SESSION_PROMPT_BUDGET_RATIO = 0.4;
+const KEYWORD_HIGHLIGHT_MAX_LINES = 12;
+const KEYWORD_HIGHLIGHT_MAX_CHARS = 160;
+const KEYWORD_HIGHLIGHT_MAX_BYTES = 2 * 1024 * 1024;
+const KEYWORD_HINT_LIMIT = 24;
+const KEYWORD_HINTS = [
+  "simd",
+  "opcode",
+  "opcodes",
+  "lane",
+  "lanes",
+  "v128",
+  "i8x16",
+  "i16x8",
+  "i32x4",
+  "i64x2",
+  "f32x4",
+  "f64x2",
+  "extract_lane",
+  "replace_lane",
+  "shuffle",
+];
+const TASK_KEYWORD_STOPWORDS = new Set([
+  "identify",
+  "missing",
+  "stubbed",
+  "implement",
+  "implements",
+  "implemented",
+  "implementation",
+  "implementations",
+  "operation",
+  "operations",
+  "analyze",
+  "analysis",
+  "file",
+  "lines",
+  "line",
+  "table",
+  "return",
+  "returns",
+  "needed",
+  "needed",
+]);
 
 export const LOG_ANALYSIS_FALLBACK_SCHEMA = [
   "{",
@@ -765,6 +808,23 @@ export default class EfficientLogAnalyzer {
       );
       return { chunk, label };
     });
+    let keywordHighlights = "";
+    try {
+      const highlights = await this._collectKeywordHighlights(filePath, {
+        task,
+        lineRange,
+        maxLines: KEYWORD_HIGHLIGHT_MAX_LINES,
+        maxChars: KEYWORD_HIGHLIGHT_MAX_CHARS,
+        maxBytes: KEYWORD_HIGHLIGHT_MAX_BYTES,
+      });
+      keywordHighlights = this._formatKeywordHighlights(highlights);
+      if (keywordHighlights) {
+        this._logDev(devLog, `Keyword highlights captured (${highlights.length} lines).`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this._logDev(devLog, `Keyword highlight scan failed: ${message}`);
+    }
     const schemaId = promptContext?.schemaId ?? this.schemaId;
     const adjustment = this._buildBudgetedPrompt({
       chunkSummaries,
@@ -781,6 +841,7 @@ export default class EfficientLogAnalyzer {
       },
       sourceLabel: filePath,
       explicitFileLists,
+      keywordHighlights,
     });
     const { prompt, body, linesUsed, tokensUsed, droppedChunks, detailLevel, detailReductions } =
       adjustment;
@@ -1253,6 +1314,153 @@ export default class EfficientLogAnalyzer {
     };
   }
 
+  _extractKeywordHints(task, options = undefined) {
+    const includeDefaults = options?.includeDefaults !== false;
+    const hints = new Set(includeDefaults ? KEYWORD_HINTS : []);
+    if (!task || typeof task !== "string") {
+      return Array.from(hints);
+    }
+    const words = task.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+    for (const word of words) {
+      if (word.length < 3) {
+        continue;
+      }
+      if (TASK_KEYWORD_STOPWORDS.has(word)) {
+        continue;
+      }
+      hints.add(word);
+      if (hints.size >= KEYWORD_HINT_LIMIT) {
+        break;
+      }
+    }
+    return Array.from(hints);
+  }
+
+  async _collectKeywordHighlights(filePath, options = undefined) {
+    if (!filePath || typeof filePath !== "string") {
+      return [];
+    }
+    const taskHints = Array.isArray(options?.hints)
+      ? options.hints
+      : this._extractKeywordHints(options?.task, { includeDefaults: false });
+    const priorityKeywords = [];
+    const keywordSet = new Set();
+    const addKeyword = (term) => {
+      if (typeof term !== "string") {
+        return;
+      }
+      const normalized = term.trim().toLowerCase();
+      if (!normalized || keywordSet.has(normalized)) {
+        return;
+      }
+      keywordSet.add(normalized);
+      priorityKeywords.push(normalized);
+    };
+    taskHints.forEach(addKeyword);
+    KEYWORD_HINTS.forEach(addKeyword);
+    if (priorityKeywords.length === 0) {
+      return [];
+    }
+    const maxLines =
+      Number.isFinite(options?.maxLines) && options.maxLines > 0
+        ? Math.floor(options.maxLines)
+        : KEYWORD_HIGHLIGHT_MAX_LINES;
+    const maxChars =
+      Number.isFinite(options?.maxChars) && options.maxChars > 0
+        ? Math.floor(options.maxChars)
+        : KEYWORD_HIGHLIGHT_MAX_CHARS;
+    const maxBytes =
+      Number.isFinite(options?.maxBytes) && options.maxBytes > 0
+        ? Math.floor(options.maxBytes)
+        : null;
+    const raw = await this._loadRawFileLines(filePath, options?.lineRange ?? null, maxBytes);
+    if (!raw || raw.tooLarge || !Array.isArray(raw.lines)) {
+      return [];
+    }
+    const perKeywordLimit = 2;
+    const hitsByKeyword = new Map();
+    const startLine = Number.isFinite(raw.startLine) ? raw.startLine : 1;
+    for (let idx = 0; idx < raw.lines.length; idx += 1) {
+      const line = raw.lines[idx];
+      if (typeof line !== "string" || line.length === 0) {
+        continue;
+      }
+      const haystack = line.toLowerCase();
+      for (const keyword of priorityKeywords) {
+        if (!haystack.includes(keyword)) {
+          continue;
+        }
+        const list = hitsByKeyword.get(keyword) ?? [];
+        if (list.length >= perKeywordLimit) {
+          continue;
+        }
+        list.push({ lineNumber: startLine + idx, text: line.trimEnd(), keyword });
+        hitsByKeyword.set(keyword, list);
+      }
+    }
+    const highlights = [];
+    const seenLines = new Set();
+    const addHighlight = (hit) => {
+      if (!hit || highlights.length >= maxLines || seenLines.has(hit.lineNumber)) {
+        return;
+      }
+      seenLines.add(hit.lineNumber);
+      let clipped = hit.text.trimEnd();
+      if (clipped.length > maxChars) {
+        const suffix = maxChars > 3 ? "..." : "";
+        const sliceLimit = Math.max(0, maxChars - suffix.length);
+        clipped = `${clipped.slice(0, sliceLimit).trimEnd()}${suffix}`;
+      }
+      highlights.push({ lineNumber: hit.lineNumber, text: clipped, keyword: hit.keyword });
+    };
+    for (const keyword of priorityKeywords) {
+      const hits = hitsByKeyword.get(keyword) ?? [];
+      if (hits.length > 0) {
+        addHighlight(hits[0]);
+      }
+      if (highlights.length >= maxLines) {
+        return highlights;
+      }
+    }
+    if (highlights.length < maxLines) {
+      const remaining = [];
+      for (const hits of hitsByKeyword.values()) {
+        for (const hit of hits) {
+          if (!seenLines.has(hit.lineNumber)) {
+            remaining.push(hit);
+          }
+        }
+      }
+      remaining.sort((a, b) => a.lineNumber - b.lineNumber);
+      for (const hit of remaining) {
+        addHighlight(hit);
+        if (highlights.length >= maxLines) {
+          break;
+        }
+      }
+    }
+    return highlights;
+  }
+
+  _formatKeywordHighlights(highlights) {
+    if (!Array.isArray(highlights) || highlights.length === 0) {
+      return "";
+    }
+    const lines = highlights
+      .filter(
+        (entry) =>
+          entry &&
+          Number.isFinite(entry.lineNumber) &&
+          typeof entry.text === "string" &&
+          entry.text.trim().length > 0,
+      )
+      .map((entry) => `L${Math.floor(entry.lineNumber)}: ${entry.text.trimEnd()}`);
+    if (lines.length === 0) {
+      return "";
+    }
+    return ["# Keyword highlights", ...lines].join("\n");
+  }
+
   formatSummary(summary, label = undefined, maxLevel = Infinity) {
     if (!summary) {
       return "";
@@ -1680,6 +1888,7 @@ export default class EfficientLogAnalyzer {
     chunking,
     sourceLabel,
     explicitFileLists,
+    keywordHighlights,
   }) {
     let detailLevel = summaryLevels;
     let chunkLimit = chunkSummaries.length;
@@ -1693,28 +1902,44 @@ export default class EfficientLogAnalyzer {
       );
     });
     const allowDetailReduction = !hasRawSummary;
+    const highlightBlock =
+      typeof keywordHighlights === "string" && keywordHighlights.trim().length > 0
+        ? keywordHighlights.trim()
+        : "";
     if (chunkLimit === 0) {
+      const fallbackBody = highlightBlock || "(no content)";
       return {
         prompt: this.generateSmartPrompt(
           task,
-          "(no content)",
+          fallbackBody,
           0,
-          { compressedTokens: 1, schemaId, sourceLabel, explicitFileLists },
+          {
+            compressedTokens: this._estimateTokens(fallbackBody),
+            schemaId,
+            sourceLabel,
+            explicitFileLists,
+          },
           {},
         ),
-        body: "(no content)",
+        body: fallbackBody,
         linesUsed: 0,
-        tokensUsed: 1,
+        tokensUsed: this._estimateTokens(fallbackBody),
       };
     }
     let droppedChunks = 0;
     const startingDetail = detailLevel;
     let attempts = 0;
     let composed;
+    let composedText = "";
     let prompt;
     let tokens;
     while (attempts < 20) {
       composed = this._composeChunkSummaries(chunkSummaries, chunkLimit, detailLevel);
+      composedText = highlightBlock
+        ? composed.text
+          ? `${highlightBlock}\n\n${composed.text}`
+          : highlightBlock
+        : composed.text;
       const chunkingSummary = this._buildChunkingSummary({
         chunkSummaries,
         limit: chunkLimit,
@@ -1753,10 +1978,10 @@ export default class EfficientLogAnalyzer {
       const contextBudgetTokens = Math.max(64, Math.floor(promptBudget * contextRatio));
       prompt = this.generateSmartPrompt(
         task,
-        composed.text,
+        composedText,
         lineCount,
         {
-          compressedTokens: this._estimateTokens(composed.text),
+          compressedTokens: this._estimateTokens(composedText),
           originalSize: totalLines * 4,
           schemaId,
           chunking: chunkingSummary,
@@ -1817,7 +2042,7 @@ export default class EfficientLogAnalyzer {
     }
     return {
       prompt,
-      body: composed?.text ?? "",
+      body: composedText || composed?.text || "",
       linesUsed: composed?.lines ?? totalLines,
       tokensUsed: tokens,
       droppedChunks,

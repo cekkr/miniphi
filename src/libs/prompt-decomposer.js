@@ -18,7 +18,8 @@ import {
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_TIMEOUT_MS = MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
+const DEFAULT_TIMEOUT_MS = 120000;
+const MIN_DECOMPOSER_TIMEOUT_MS = 1000;
 const MAX_STEP_PREVIEW = 10;
 const COMPACT_SUMMARY_LIMIT = 800;
 const COMPACT_HINT_LIMIT = 600;
@@ -113,6 +114,7 @@ export default class PromptDecomposer {
     this.timeoutMs = normalizeLmStudioRequestTimeoutMs(
       requestedTimeout,
       DEFAULT_TIMEOUT_MS,
+      MIN_DECOMPOSER_TIMEOUT_MS,
     );
     this.disabled = false;
     this.disableNotice = null;

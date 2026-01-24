@@ -11,6 +11,8 @@ import {
 } from "./runtime-defaults.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
+const DEFAULT_NAVIGATION_TIMEOUT_MS = 120000;
+const MIN_NAVIGATION_TIMEOUT_MS = 1000;
 const HELPER_TIMEOUT_MS = 20000;
 const HELPER_SILENCE_TIMEOUT_MS = 12000;
 const OUTPUT_PREVIEW_LIMIT = 420;
@@ -149,7 +151,8 @@ export default class ApiNavigator {
         : null;
     this.navigationRequestTimeoutMs = normalizeLmStudioRequestTimeoutMs(
       navigationTimeoutMs,
-      MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
+      DEFAULT_NAVIGATION_TIMEOUT_MS,
+      MIN_NAVIGATION_TIMEOUT_MS,
     );
     this.lastStopReason = null;
   }
