@@ -397,26 +397,28 @@ export default class EfficientLogAnalyzer {
           });
         }
         try {
-          await this.phi4.chatStream(
-            prompt,
-            (token) => {
-              analysis += token;
-              if (streamOutput) {
-                process.stdout.write(token);
-              }
-            },
-            (thought) => {
-              if (verbose) {
-                console.log("\n[Reasoning Block]\n");
-                console.log(thought);
-                console.log("\n[Solution Stream]");
-              }
-            },
-            (err) => {
-              this._logDev(devLog, `Phi error: ${err}`);
-              throw new Error(`Phi-4 inference error: ${err}`);
-            },
-            traceOptions,
+          await this._withSessionTimeout(sessionDeadline, () =>
+            this.phi4.chatStream(
+              prompt,
+              (token) => {
+                analysis += token;
+                if (streamOutput) {
+                  process.stdout.write(token);
+                }
+              },
+              (thought) => {
+                if (verbose) {
+                  console.log("\n[Reasoning Block]\n");
+                  console.log(thought);
+                  console.log("\n[Solution Stream]");
+                }
+              },
+              (err) => {
+                this._logDev(devLog, `Phi error: ${err}`);
+                throw new Error(`Phi-4 inference error: ${err}`);
+              },
+              traceOptions,
+            ),
           );
         } catch (error) {
           if (error instanceof LMStudioProtocolError) {
@@ -888,20 +890,22 @@ export default class EfficientLogAnalyzer {
           });
         }
         try {
-          await this.phi4.chatStream(
-            prompt,
-            (token) => {
-              analysis += token;
-              if (streamOutput) {
-                process.stdout.write(token);
-              }
-            },
-            undefined,
-            (err) => {
-              this._logDev(devLog, `Phi error: ${err}`);
-              throw new Error(`Phi-4 inference error: ${err}`);
-            },
-            traceOptions,
+          await this._withSessionTimeout(sessionDeadline, () =>
+            this.phi4.chatStream(
+              prompt,
+              (token) => {
+                analysis += token;
+                if (streamOutput) {
+                  process.stdout.write(token);
+                }
+              },
+              undefined,
+              (err) => {
+                this._logDev(devLog, `Phi error: ${err}`);
+                throw new Error(`Phi-4 inference error: ${err}`);
+              },
+              traceOptions,
+            ),
           );
         } catch (error) {
           if (error instanceof LMStudioProtocolError) {
@@ -2709,6 +2713,28 @@ export default class EfficientLogAnalyzer {
     if (typeof this.phi4.setNoTokenTimeout === "function") {
       this.phi4.setNoTokenTimeout(timeout, timeoutOptions);
     }
+  }
+
+  _withSessionTimeout(sessionDeadline, task) {
+    if (!Number.isFinite(sessionDeadline)) {
+      return task();
+    }
+    const remaining = sessionDeadline - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      return Promise.reject(new Error("session-timeout: session deadline exceeded."));
+    }
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error("session-timeout: session deadline exceeded."));
+      }, remaining);
+      timer?.unref?.();
+    });
+    return Promise.race([task(), timeoutPromise]).finally(() => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    });
   }
 
   _hashDatasetSignature(details = undefined) {

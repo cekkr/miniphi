@@ -162,6 +162,7 @@ export class LMStudioHandler {
     let schemaRetryCount = 0;
     let hangRetryCount = 0;
     let restFallbackUsed = false;
+    let transportOverride = null;
     let heartbeatTimer = null;
     let lastErrorMessage = null;
     while (attempt < maxAttempts) {
@@ -169,6 +170,9 @@ export class LMStudioHandler {
       this.chatHistory.push({ role: "user", content: currentPrompt });
 
       const traceContext = this._buildTraceContext(traceOptions);
+      if (transportOverride) {
+        traceContext.transport = transportOverride;
+      }
       const schemaDetails = this._resolveSchema(traceContext);
       const requestedResponseFormat =
         traceContext.responseFormat ?? this._buildJsonSchemaResponseFormat(schemaDetails) ?? null;
@@ -477,6 +481,7 @@ export class LMStudioHandler {
           restFallbackUsed = true;
           attempt += 1;
           this.preferRestTransport = false;
+          transportOverride = "ws";
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "rest-fallback",
             severity: "warn",
@@ -499,10 +504,12 @@ export class LMStudioHandler {
           if (useRestTransport) {
             // REST stalled; flip to WS transport for the retry.
             this.preferRestTransport = false;
+            transportOverride = "ws";
           } else if (this.restClient) {
             // WS stalled; flip to REST transport if available.
             this.preferRestTransport = true;
             transport = "ws->rest";
+            transportOverride = "rest";
           }
           this._recordPromptEvent(traceContext, requestSnapshot, {
             eventType: "stream-retry",
@@ -539,6 +546,7 @@ export class LMStudioHandler {
             attempt += 1;
             currentPrompt = basePrompt;
             this.preferRestTransport = true;
+            transportOverride = "rest";
             continue;
           }
           throw new LMStudioProtocolError(
