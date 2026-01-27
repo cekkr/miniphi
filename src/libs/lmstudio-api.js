@@ -1,6 +1,7 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { createRequire } from "module";
 import { DEFAULT_MODEL_KEY } from "./model-presets.js";
+import { classifyLmStudioError } from "./lmstudio-error-utils.js";
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -609,6 +610,23 @@ export class LMStudioRestClient {
       return;
     }
     try {
+      if (payload?.error && typeof payload.error === "object") {
+        const message = payload.error.message ?? null;
+        if (message && !payload.error.code) {
+          const classified = classifyLmStudioError(message);
+          payload.error.code = classified.code ?? null;
+          payload.error.reason = classified.reason ?? null;
+          payload.error.flags = {
+            timeout: classified.isTimeout,
+            connection: classified.isConnection,
+            network: classified.isNetwork,
+            invalidResponse: classified.isInvalidResponse,
+            protocol: classified.isProtocol,
+            contextOverflow: classified.isContextOverflow,
+            streamHang: classified.isStreamingHang,
+          };
+        }
+      }
       const context =
         this.executionContext && typeof this.executionContext === "object"
           ? this.executionContext

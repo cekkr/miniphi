@@ -5,7 +5,11 @@ import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
-import { isProtocolWarningError, isStreamingHangError } from "./lmstudio-error-utils.js";
+import {
+  classifyLmStudioError,
+  isProtocolWarningError,
+  isStreamingHangError,
+} from "./lmstudio-error-utils.js";
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -1107,12 +1111,30 @@ export class LMStudioHandler {
       if (this.executionContext && typeof this.executionContext === "object") {
         metadata.execution = this.executionContext;
       }
+      let errorPayload = null;
+      if (errorMessage) {
+        const classified = classifyLmStudioError(errorMessage);
+        errorPayload = {
+          message: errorMessage,
+          code: classified.code ?? null,
+          reason: classified.reason ?? null,
+          flags: {
+            timeout: classified.isTimeout,
+            connection: classified.isConnection,
+            network: classified.isNetwork,
+            invalidResponse: classified.isInvalidResponse,
+            protocol: classified.isProtocol,
+            contextOverflow: classified.isContextOverflow,
+            streamHang: classified.isStreamingHang,
+          },
+        };
+      }
       await this.executionRegister.record({
         type: "lmstudio.chat",
         transport: traceContext?.transport ?? null,
         request: requestSnapshot ?? null,
         response: responseSnapshot ?? null,
-        error: errorMessage ? { message: errorMessage } : null,
+        error: errorPayload,
         metadata: Object.keys(metadata).length ? metadata : null,
         links: promptExchange
           ? {
