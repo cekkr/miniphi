@@ -140,4 +140,4 @@ This time, use miniphi step-by-step flow to check every time how a complex task 
 
 Other pre-cooked "continue" prompt:
 [AGENTS.md](AGENTS.md) 
-Continue with various [ROADMAP.md](ROADMAP.md) implementations and [OPTIMIZATIONS.md](OPTIMIZATIONS.md) to apply to src/ miniphi code, then execute and improve unit tests (always executing miniphi as external program to test its effectiveness over samples/ available). LM Studio APIs are listening locally http://127.0.0.1:1234 for real time testing
+Continue with various [ROADMAP.md](ROADMAP.md) implementations and [OPTIMIZATIONS.md](OPTIMIZATIONS.md) to apply to src/ miniphi code, then execute and improve unit tests (always executing miniphi as external program to test its effectiveness over samples/ available). LM Studio APIs are listening locally http://127.0.0.1:1234 for real time testing, analyzing and correcting LM Studio calls step by step.
