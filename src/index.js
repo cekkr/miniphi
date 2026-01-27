@@ -2301,6 +2301,7 @@ const describeWorkspace = (dir, options = undefined) =>
       const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
       const finalError = stopError ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
       const archive = await stateManager.persistExecution({
+        executionId: archiveMetadata.executionId ?? null,
         mode: command,
         task,
         command: archiveMetadata.command,
@@ -2462,6 +2463,7 @@ const describeWorkspace = (dir, options = undefined) =>
       await stopResourceMonitorIfNeeded();
       if (stateManager) {
         await stateManager.persistExecutionStop({
+          executionId: archiveMetadata.executionId ?? null,
           mode: command,
           task,
           command: archiveMetadata.command,

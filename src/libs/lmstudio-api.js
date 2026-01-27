@@ -246,12 +246,24 @@ export class LMStudioRestClient {
     this.defaultModel = options?.defaultModel ?? DEFAULT_MODEL_KEY;
     this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
     this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
+    this.executionRegister = options?.executionRegister ?? null;
+    this.executionContext = options?.executionContext ?? null;
 
     if (!this.fetchImpl) {
       throw new Error(
         "Global fetch implementation not found. Provide options.fetchImpl when constructing LMStudioRestClient.",
       );
     }
+  }
+
+  /**
+   * Attaches or clears the task execution register.
+   * @param {import("./task-execution-register.js").default | null} register
+   * @param {Record<string, any>} [context]
+   */
+  setExecutionRegister(register, context = undefined) {
+    this.executionRegister = register ?? null;
+    this.executionContext = context ?? null;
   }
 
   /**
@@ -465,19 +477,28 @@ export class LMStudioRestClient {
       controller && effectiveTimeout > 0
         ? setTimeout(() => controller.abort(), effectiveTimeout)
         : undefined;
+    const startedAt = Date.now();
+    let recorded = false;
+    const requestHeaders = {
+      Accept: "application/json",
+      ...(restInit.headers ?? {}),
+    };
+    const requestSnapshot = this._buildRequestSnapshot(
+      url,
+      { ...restInit, headers: requestHeaders },
+      effectiveTimeout,
+    );
 
     try {
       const response = await this.fetchImpl(url, {
         ...restInit,
-        headers: {
-          Accept: "application/json",
-          ...(restInit.headers ?? {}),
-        },
+        headers: requestHeaders,
         signal: controller?.signal,
       });
 
       const raw = await response.text();
       const data = this._parseJson(raw);
+      const finishedAt = Date.now();
 
       if (!response.ok) {
         const message = data?.error?.message ?? data?.error ?? raw ?? "Unknown error";
@@ -486,21 +507,125 @@ export class LMStudioRestClient {
         );
         error.status = response.status;
         error.body = data ?? raw;
+        await this._recordExecutionEvent({
+          type: "lmstudio.rest",
+          request: requestSnapshot,
+          response: {
+            status: response.status,
+            statusText: response.statusText,
+            body: data ?? raw ?? null,
+            rawText: raw ?? null,
+          },
+          error: { message: error.message },
+          metadata: {
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt - startedAt,
+          },
+        });
+        recorded = true;
         throw error;
       }
 
+      await this._recordExecutionEvent({
+        type: "lmstudio.rest",
+        request: requestSnapshot,
+        response: {
+          status: response.status,
+          statusText: response.statusText,
+          body: data ?? raw ?? null,
+          rawText: raw ?? null,
+        },
+        metadata: {
+          startedAt,
+          finishedAt,
+          durationMs: finishedAt - startedAt,
+        },
+      });
+      recorded = true;
       return data ?? raw;
     } catch (error) {
+      if (recorded) {
+        throw error;
+      }
+      const finishedAt = Date.now();
       if (error.name === "AbortError") {
+        await this._recordExecutionEvent({
+          type: "lmstudio.rest",
+          request: requestSnapshot,
+          response: null,
+          error: {
+            message: `LM Studio REST request timed out waiting for a response after ${effectiveTimeout}ms (url: ${url}).`,
+          },
+          metadata: {
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt - startedAt,
+          },
+        });
         throw new Error(
           `LM Studio REST request timed out waiting for a response after ${effectiveTimeout}ms (url: ${url}).`,
         );
       }
+      await this._recordExecutionEvent({
+        type: "lmstudio.rest",
+        request: requestSnapshot,
+        response: null,
+        error: {
+          message: error instanceof Error ? error.message : String(error ?? "Unknown error"),
+        },
+        metadata: {
+          startedAt,
+          finishedAt,
+          durationMs: finishedAt - startedAt,
+        },
+      });
       throw error;
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
+    }
+  }
+
+  _buildRequestSnapshot(url, init, timeoutMs) {
+    if (!url) {
+      return null;
+    }
+    const headers = init?.headers ?? null;
+    const body = typeof init?.body === "string" ? init.body : init?.body ?? null;
+    return {
+      url,
+      method: init?.method ?? "GET",
+      headers,
+      body,
+      timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : null,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  async _recordExecutionEvent(payload) {
+    if (!this.executionRegister || typeof this.executionRegister.record !== "function") {
+      return;
+    }
+    try {
+      const context =
+        this.executionContext && typeof this.executionContext === "object"
+          ? this.executionContext
+          : null;
+      if (context) {
+        const base =
+          payload?.metadata && typeof payload.metadata === "object"
+            ? { ...payload.metadata }
+            : {};
+        base.execution = context;
+        payload.metadata = base;
+      }
+      if (payload) {
+        await this.executionRegister.record(payload);
+      }
+    } catch {
+      // Ignore execution register failures to avoid breaking LM Studio calls.
     }
   }
 

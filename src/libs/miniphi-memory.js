@@ -250,6 +250,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
    *   summaryLevels?: number,
    *   contextLength?: number,
    *   promptId?: string,
+   *   executionId?: string,
    *   status?: string,
    *   stopReason?: string,
    *   stopReasonCode?: string | null,
@@ -272,10 +273,18 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     await this.prepare();
 
     const timestamp = new Date().toISOString();
-    const executionId = randomUUID();
+    const executionId = payload.executionId ?? randomUUID();
     const executionDir = path.join(this.executionsDir, executionId);
     const segmentsDir = path.join(executionDir, "segments");
     await fs.promises.mkdir(segmentsDir, { recursive: true });
+    const taskExecutionFile = path.join(executionDir, "task-execution.json");
+    let taskExecutionRegister = null;
+    try {
+      await fs.promises.access(taskExecutionFile, fs.constants.F_OK);
+      taskExecutionRegister = this._relative(taskExecutionFile);
+    } catch {
+      taskExecutionRegister = null;
+    }
 
    const metadata = {
       id: executionId,
@@ -300,6 +309,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
       truncationPlan: null,
+      taskExecutionRegister,
       status: payload.status ?? "completed",
       stopReason: payload.stopReason ?? null,
       stopReasonCode: payload.stopReasonCode ?? null,
@@ -388,6 +398,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
         compression: this._relative(compressionFile),
         segments: segments.map((segment) => segment.file),
         truncationPlan: metadata.truncationPlan,
+        taskExecution: metadata.taskExecutionRegister,
       },
     });
 
@@ -410,6 +421,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
    *   summaryLevels?: number,
    *   contextLength?: number,
    *   promptId?: string,
+   *   executionId?: string,
    *   resourceUsage?: Record<string, any> | null,
    *   status?: string,
    *   stopReason?: string | null,
@@ -425,9 +437,17 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     await this.prepare();
 
     const timestamp = new Date().toISOString();
-    const executionId = randomUUID();
+    const executionId = payload.executionId ?? randomUUID();
     const executionDir = path.join(this.executionsDir, executionId);
     await fs.promises.mkdir(executionDir, { recursive: true });
+    const taskExecutionFile = path.join(executionDir, "task-execution.json");
+    let taskExecutionRegister = null;
+    try {
+      await fs.promises.access(taskExecutionFile, fs.constants.F_OK);
+      taskExecutionRegister = this._relative(taskExecutionFile);
+    } catch {
+      taskExecutionRegister = null;
+    }
 
     const metadata = {
       id: executionId,
@@ -445,6 +465,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       promptId: payload.promptId ?? null,
       createdAt: timestamp,
       truncationPlan: null,
+      taskExecutionRegister,
       status: payload.status ?? "failed",
       stopReason: payload.stopReason ?? null,
       stopReasonCode: payload.stopReasonCode ?? null,
@@ -460,6 +481,7 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       createdAt: timestamp,
       files: {
         metadata: this._relative(metadataFile),
+        taskExecution: metadata.taskExecutionRegister,
       },
     });
 

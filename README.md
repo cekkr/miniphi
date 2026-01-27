@@ -99,7 +99,7 @@ For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluato
 
 miniPhi stores reproducible artifacts in two places:
 
-- **Project-local:** `.miniphi/` (executions, prompt exchanges, helper scripts, reports, recompose edit logs/rollbacks)
+- **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, helper scripts, reports, recompose edit logs/rollbacks)
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
 If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.

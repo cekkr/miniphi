@@ -167,6 +167,8 @@ export default class AdaptiveLMStudioHandler {
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.restClient = options?.restClient ?? null;
     this.preferRestTransport = Boolean(options?.preferRestTransport);
+    this.executionRegister = null;
+    this.executionContext = null;
     this.learnEnabled = options?.learnEnabled !== false;
     this.maxSteps =
       Number.isFinite(options?.maxSteps) && options.maxSteps > 0
@@ -204,6 +206,16 @@ export default class AdaptiveLMStudioHandler {
 
   setPromptRecorder(recorder) {
     this._forEachHandler((handler) => handler.setPromptRecorder(recorder));
+  }
+
+  setExecutionRegister(register, context = undefined) {
+    this.executionRegister = register ?? null;
+    this.executionContext = context ?? null;
+    this._forEachHandler((handler) => {
+      if (typeof handler.setExecutionRegister === "function") {
+        handler.setExecutionRegister(this.executionRegister, this.executionContext);
+      }
+    });
   }
 
   setPerformanceTracker(tracker) {
@@ -607,6 +619,9 @@ export default class AdaptiveLMStudioHandler {
       });
       if (this.restClient) {
         handler.setRestClient(this.restClient, { preferRestTransport: this.preferRestTransport });
+      }
+      if (this.executionRegister && typeof handler.setExecutionRegister === "function") {
+        handler.setExecutionRegister(this.executionRegister, this.executionContext);
       }
       this.handlers.set(modelKey, handler);
     }

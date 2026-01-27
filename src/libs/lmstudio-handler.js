@@ -52,6 +52,8 @@ export class LMStudioHandler {
     this.performanceTracker = options?.performanceTracker ?? null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.noTokenTimeoutMs = options?.noTokenTimeoutMs ?? null;
+    this.executionRegister = options?.executionRegister ?? null;
+    this.executionContext = options?.executionContext ?? null;
     this.protocolGate = {
       wsDisabled: false,
       lastWarning: null,
@@ -108,6 +110,16 @@ export class LMStudioHandler {
    */
   setPromptRecorder(recorder) {
     this.promptRecorder = recorder ?? null;
+  }
+
+  /**
+   * Allows downstream callers to attach the task execution register.
+   * @param {import("./task-execution-register.js").default | null} register
+   * @param {Record<string, any>} [context]
+   */
+  setExecutionRegister(register, context = undefined) {
+    this.executionRegister = register ?? null;
+    this.executionContext = context ?? null;
   }
 
   /**
@@ -195,6 +207,7 @@ export class LMStudioHandler {
       let rawFragmentCount = 0;
       let solutionTokenCount = 0;
       const useRestTransport = this._shouldUseRest(traceContext);
+      traceContext.transport = useRestTransport ? "rest" : "ws";
       if (!this.model && !useRestTransport) {
         const error = new Error("Model not loaded. Call load() before chatStream().");
         if (onError) {
@@ -442,7 +455,18 @@ export class LMStudioHandler {
           tool_calls: responseToolCalls ?? null,
           tool_definitions: traceContext?.toolDefinitions ?? null,
         };
-        await this._recordPromptExchange(traceContext, requestSnapshot, responseSnapshot);
+        const promptExchange = await this._recordPromptExchange(
+          traceContext,
+          requestSnapshot,
+          responseSnapshot,
+        );
+        await this._recordTaskExecution(
+          traceContext,
+          requestSnapshot,
+          responseSnapshot,
+          null,
+          promptExchange,
+        );
         if (heartbeatTimer) {
           clearTimeout(heartbeatTimer);
           heartbeatTimer = null;
@@ -575,7 +599,7 @@ export class LMStudioHandler {
             errorForThrow = callbackError;
           }
         }
-        await this._recordPromptExchange(
+        const promptExchange = await this._recordPromptExchange(
           traceContext,
           requestSnapshot,
           {
@@ -595,6 +619,28 @@ export class LMStudioHandler {
             tool_definitions: traceContext?.toolDefinitions ?? null,
           },
           message,
+        );
+        await this._recordTaskExecution(
+          traceContext,
+          requestSnapshot,
+          {
+            text: result,
+            rawResponseText: result,
+            reasoning: capturedThoughts,
+            startedAt,
+            finishedAt,
+            timeToFirstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null,
+            stream: {
+              rawFragments: rawFragmentCount,
+              solutionTokens: solutionTokenCount,
+            },
+            schemaId: schemaDetails?.id ?? null,
+            schemaValidation,
+            tool_calls: responseToolCalls ?? null,
+            tool_definitions: traceContext?.toolDefinitions ?? null,
+          },
+          message,
+          promptExchange,
         );
         await this._trackPromptPerformance(
           traceContext,
@@ -1025,6 +1071,59 @@ export class LMStudioHandler {
       this.lastPromptExchange = summary;
     }
     return summary;
+  }
+
+  async _recordTaskExecution(
+    traceContext,
+    requestSnapshot,
+    responseSnapshot,
+    errorMessage,
+    promptExchange,
+  ) {
+    if (!this.executionRegister || !requestSnapshot) {
+      return;
+    }
+    try {
+      const durationMs =
+        responseSnapshot?.finishedAt && responseSnapshot?.startedAt
+          ? responseSnapshot.finishedAt - responseSnapshot.startedAt
+          : null;
+      const trace = {
+        scope: traceContext?.scope ?? null,
+        label: traceContext?.label ?? null,
+        mainPromptId: traceContext?.mainPromptId ?? null,
+        subPromptId: traceContext?.subPromptId ?? null,
+        schemaId: traceContext?.schemaId ?? null,
+      };
+      const extraMetadata =
+        traceContext?.metadata && typeof traceContext.metadata === "object"
+          ? traceContext.metadata
+          : null;
+      const metadata = {
+        trace,
+        durationMs,
+        ...(extraMetadata ?? {}),
+      };
+      if (this.executionContext && typeof this.executionContext === "object") {
+        metadata.execution = this.executionContext;
+      }
+      await this.executionRegister.record({
+        type: "lmstudio.chat",
+        transport: traceContext?.transport ?? null,
+        request: requestSnapshot ?? null,
+        response: responseSnapshot ?? null,
+        error: errorMessage ? { message: errorMessage } : null,
+        metadata: Object.keys(metadata).length ? metadata : null,
+        links: promptExchange
+          ? {
+              promptExchangeId: promptExchange.id ?? null,
+              promptExchangePath: promptExchange.path ?? null,
+            }
+          : null,
+      });
+    } catch {
+      // Ignore register failures to avoid interrupting prompt execution.
+    }
   }
 
   async _trackPromptPerformance(traceContext, requestSnapshot, responseSnapshot, errorMessage) {

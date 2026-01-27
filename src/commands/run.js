@@ -1,8 +1,10 @@
 import path from "path";
+import { randomUUID } from "crypto";
 import MiniPhiMemory from "../libs/miniphi-memory.js";
 import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
 import { normalizeDangerLevel } from "../libs/core-utils.js";
+import TaskExecutionRegister from "../libs/task-execution-register.js";
 
 export async function handleRunCommand(context) {
   const {
@@ -74,6 +76,39 @@ export async function handleRunCommand(context) {
   archiveMetadata.cwd = cwd;
   stateManager = new MiniPhiMemory(cwd);
   await stateManager.prepare();
+  const executionId = archiveMetadata.executionId ?? randomUUID();
+  archiveMetadata.executionId = executionId;
+  const executionRegister = new TaskExecutionRegister(stateManager.baseDir);
+  await executionRegister.openSession(executionId, {
+    mode: "run",
+    task,
+    command: cmd,
+    cwd,
+    promptId: promptGroupId,
+    promptJournalId: promptJournalId ?? null,
+    model: archiveMetadata.model ?? null,
+    contextLength: archiveMetadata.contextLength ?? null,
+  });
+  if (typeof phi4?.setExecutionRegister === "function") {
+    phi4.setExecutionRegister(executionRegister, {
+      executionId,
+      mode: "run",
+      command: cmd,
+      cwd,
+      promptId: promptGroupId,
+      promptJournalId: promptJournalId ?? null,
+    });
+  }
+  if (restClient && typeof restClient.setExecutionRegister === "function") {
+    restClient.setExecutionRegister(executionRegister, {
+      executionId,
+      mode: "run",
+      command: cmd,
+      cwd,
+      promptId: promptGroupId,
+      promptJournalId: promptJournalId ?? null,
+    });
+  }
   await recordLmStudioStatusSnapshot(restClient, stateManager, {
     label: "run",
     verbose,

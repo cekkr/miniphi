@@ -52,7 +52,7 @@ When you add or change CLI behavior:
 ## Runtime posture
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
 - CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, and helper/command-library browsers.
-- Audit trails live in `.miniphi/` (`executions/`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
+- Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
 - Transport failover is automatic (REST -> WS) after timeouts; timeouts and max-retry settings are configurable via CLI flags or `config*.json` (profiles supported).
 - Capability inventory + command-policy (`ask|session|allow|deny`) should be surfaced in prompts so commands and helpers match the host environment.
 
@@ -164,6 +164,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - PromptRecorder is the canonical exchange log under `.miniphi/prompt-exchanges/` and stores the full request payload, raw response text, `tool_calls`, and `tool_definitions`.
 - PromptRecorder canonicalizes exchange payloads to reduce duplication: `request.response_format` is the canonical response format key, `promptText` is omitted when it matches the last user message, and `response.text` is omitted when it matches `rawResponseText` (which remains the full response text).
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
+- TaskExecutionRegister writes `executions/<id>/task-execution.json` with every LM Studio API request/response plus links to prompt exchanges so you can pause, fix prompt/schema issues, and resume from the last good call.
 - Plan/navigation journal steps now store the raw JSON payload in `response`; any human-readable block moves into `metadata.summaryBlock` for quick scanning without losing schema fidelity.
 - Journal step tool metadata uses `tool_calls`/`tool_definitions` so eval tooling can treat prompt exchanges and journals uniformly.
 - Analysis steps now attach prompt-exchange links when LM Studio responses are recorded via `LMStudioHandler`.
@@ -186,7 +187,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ### What ships today
 - **Layered LM Studio runtime.** `LMStudioManager` performs JIT model loading and `/api/v0` diagnostics, `LMStudioHandler` streams reasoning while enforcing JSON schema contracts, and `EfficientLogAnalyzer` + `PythonLogSummarizer` compress live command output or saved files before the model thinks.
 - **CLI entrypoints + default workflow.** `node src/index.js run --cmd "npm test" --task "Analyze failures"` is the canonical loop, while `analyze-file`, `web-research`, `history-notes`, `cache-prune`, `recompose`, and `benchmark recompose|analyze|plan scaffold` cover file replay, research snapshots, `.miniphi` audits, pruning, recomposition, and benchmark sweeps.
-- **Persistent `.miniphi/` workspace.** `miniPhiMemory` snapshots each run under `executions/<id>/`, stores `prompt.json`, `analysis.json`, helper scripts, TODO queues, and mirrors every sub-prompt as JSON inside `.miniphi/prompt-exchanges/` and `.miniphi/helpers/`. Prompt exchange records retain response text, `tool_calls`, `tool_definitions`, and the `promptJournalId` link.
+- **Persistent `.miniphi/` workspace.** `miniPhiMemory` snapshots each run under `executions/<id>/`, stores `prompt.json`, `analysis.json`, `task-execution.json` (LM Studio request/response register), helper scripts, TODO queues, and mirrors every sub-prompt as JSON inside `.miniphi/prompt-exchanges/` and `.miniphi/helpers/`. Prompt exchange records retain response text, `tool_calls`, `tool_definitions`, and the `promptJournalId` link.
 - **Schema registry + enforcement.** `PromptSchemaRegistry` injects schema blocks from `docs/prompts/*.schema.json` into every model call (main prompts, scoring prompts, decomposers) and rejects invalid responses before they touch history storage.
 - **Workspace context analyzers.** `WorkspaceProfiler`, `FileConnectionAnalyzer`, and `CapabilityInventory` scan the repository, render ASCII connection graphs, capture package/repo scripts plus `.bin` tools, and feed those hints into every prompt so Phi knows which capabilities already exist.
 - **ApiNavigator helper loops.** Navigation prompts can request single-use Node.js or Python helpers, execute them immediately, and archive the code plus stdout/stderr artifacts under `.miniphi/helpers/` for later runs. Use `node src/index.js helpers --limit 6` to inspect those artifacts (and `--run <id> [--version <n>]` with optional `--stdin/--stdin-file` and `--helper-timeout/--helper-silence-timeout` to replay them safely).
@@ -250,6 +251,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/prompt-schema-registry.js`: Loads schemas from `docs/prompts/`, builds instruction blocks, validates responses.
 - `src/libs/prompt-step-journal.js`: Stepwise prompt journal manager for `.miniphi/prompt-exchanges/stepwise/`.
 - `src/libs/prompt-template-baselines.js`: Builds baseline prompts for truncation and log-analysis workflows.
+- `src/libs/task-execution-register.js`: Records per-execution LM Studio API request/response pairs under `executions/<id>/task-execution.json`.
 - `src/libs/python-log-summarizer.js`: Runs the Python summarizer and chunks line-based inputs.
 - `src/libs/recompose-harness.js`: Recompose harness setup and LM Studio availability checks.
 - `src/libs/recompose-benchmark-runner.js`: Runs recompose benchmark series and writes reports/logs.
@@ -297,7 +299,7 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 
 ### Hidden `.miniphi` workspace
 miniPhi always writes to the nearest `.miniphi/` directory (creating one if it does not exist):
-- `executions/<id>/` contains `execution.json`, `prompt.json`, `analysis.json`, compression chunks, and any generated log segments.
+- `executions/<id>/` contains `execution.json`, `prompt.json`, `analysis.json`, `task-execution.json` (LM Studio request/response register), compression chunks, and any generated log segments.
 - `prompt-exchanges/` captures every model request, including decompositions (`prompt-exchanges/decompositions/`) and sub-prompts, as JSON.
 - `prompt-exchanges/stepwise/<session>/` hosts the new prompt journals so you can replay each API call + resulting operation step-by-step (useful for AI oversight or handoffs).
 - `prompt-exchanges/templates/` is the catalog of baseline prompts generated by `prompt-template`; each entry records the rendered prompt, dataset hints, and helper focus so you can replay truncation strategies without re-authoring them.
