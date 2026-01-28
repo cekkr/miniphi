@@ -477,7 +477,13 @@ export function extractSummaryFromAnalysis(analysisText) {
 export function extractSummaryUpdatesFromAnalysis(analysisText) {
   const parsed = parseStrictJsonObject(analysisText);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return [];
+    return null;
+  }
+  const hasUpdatesField =
+    Object.prototype.hasOwnProperty.call(parsed, "summary_updates") ||
+    Object.prototype.hasOwnProperty.call(parsed, "summaryUpdates");
+  if (!hasUpdatesField) {
+    return null;
   }
   const rawUpdates = parsed.summary_updates ?? parsed.summaryUpdates;
   if (!Array.isArray(rawUpdates)) {

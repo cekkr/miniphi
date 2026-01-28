@@ -199,8 +199,10 @@ function attachContextRequestsToResult(result) {
     return;
   }
   const summaryUpdates = extractSummaryUpdatesFromAnalysis(result.analysis ?? "");
-  if (summaryUpdates.length) {
+  if (summaryUpdates !== null) {
     result.summaryUpdates = summaryUpdates;
+  }
+  if (summaryUpdates && summaryUpdates.length) {
     displaySummaryUpdates(summaryUpdates);
   }
   const summaryText = extractSummaryFromAnalysis(result.analysis ?? "");
