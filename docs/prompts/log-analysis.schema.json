@@ -6,6 +6,8 @@
   "required": [
     "task",
     "root_cause",
+    "summary",
+    "summary_updates",
     "evidence",
     "recommended_fixes",
     "next_steps",
