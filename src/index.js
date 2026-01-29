@@ -43,6 +43,7 @@ import {
   formatPlanRecommendationsBlock,
   buildNavigationOperations,
   buildResourceConfig,
+  shouldForceFastMode,
   extractRecommendedCommandsFromAnalysis,
   extractContextRequestsFromAnalysis,
   extractMissingSnippetsFromAnalysis,
@@ -50,6 +51,10 @@ import {
   extractSummaryFromAnalysis,
   extractSummaryUpdatesFromAnalysis,
 } from "./libs/core-utils.js";
+import {
+  DEFAULT_PROMPT_TIMEOUT_MS,
+  normalizeLmStudioRequestTimeoutMs,
+} from "./libs/runtime-defaults.js";
 import { handleAnalyzeFileCommand } from "./commands/analyze-file.js";
 import { handleBenchmarkCommand } from "./commands/benchmark.js";
 import { handleCachePruneCommand } from "./commands/cache-prune.js";
@@ -1166,6 +1171,17 @@ async function main() {
   const promptDefaults = configData.prompt ?? configData.lmStudio?.prompt ?? {};
   const pythonScriptPath =
     options["python-script"] ?? configData.pythonScript ?? defaults.pythonScript;
+  const resolvedPromptTimeoutMs =
+    resolveDurationMs({
+      secondsValue: promptDefaults.timeoutSeconds ?? promptDefaults.timeout,
+      secondsLabel: "config.prompt.timeoutSeconds",
+      millisValue: promptDefaults.timeoutMs,
+      millisLabel: "config.prompt.timeoutMs",
+    }) ?? DEFAULT_PROMPT_TIMEOUT_MS;
+  const promptTimeoutMs = normalizeLmStudioRequestTimeoutMs(
+    resolvedPromptTimeoutMs,
+    DEFAULT_PROMPT_TIMEOUT_MS,
+  );
 
   const flagPolicy = typeof options["command-policy"] === "string" ? options["command-policy"] : null;
   const configPolicy = configData.commandPolicy ?? defaults.commandPolicy ?? null;
@@ -1354,6 +1370,18 @@ async function main() {
     }) ?? defaultSessionTimeoutMs;
   const runStart = Date.now();
   const sessionDeadline = sessionTimeoutMs ? runStart + sessionTimeoutMs : null;
+  const autoFastMode = shouldForceFastMode({
+    sessionTimeoutMs,
+    promptTimeoutMs,
+    mode: command,
+  });
+  if (autoFastMode) {
+    const sessionSeconds = Math.round(sessionTimeoutMs / 1000);
+    const promptSeconds = Math.round(promptTimeoutMs / 1000);
+    console.warn(
+      `[MiniPhi] Session timeout ${sessionSeconds}s <= prompt timeout ${promptSeconds}s; skipping planner/navigator to preserve analysis time.`,
+    );
+  }
 
   const chunkSize =
     parseNumericSetting(options["chunk-size"], "--chunk-size") ??
@@ -2228,6 +2256,7 @@ const describeWorkspace = (dir, options = undefined) =>
       streamOutput,
       timeout,
       sessionDeadline,
+      forceFastMode: autoFastMode,
       chunkSize,
       resumeTruncationId,
       truncationChunkSelector,

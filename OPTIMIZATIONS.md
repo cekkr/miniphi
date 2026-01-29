@@ -143,7 +143,8 @@ Status:
   align error metadata payloads across handlers/analyzers (navigator/decomposer now record
   stop-reason codes/details; invalid-response classification catches "no valid JSON") and align
   session timeout + retry caps. Model load failures due to LM Studio resource guardrails now
-  fall back to REST-only when available (WS disabled).
+  fall back to REST-only when available (WS disabled). Session timeout guardrails now auto-skip
+  planner/navigator prompts when the session budget is at or below the prompt timeout.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

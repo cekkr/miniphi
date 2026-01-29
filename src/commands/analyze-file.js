@@ -61,6 +61,7 @@ export async function handleAnalyzeFileCommand(context) {
     handleLmStudioProtocolFailure,
     attachContextRequestsToResult,
     isLmStudioProtocolError,
+    forceFastMode,
   } = context;
 
   let task = taskInput;
@@ -81,8 +82,9 @@ export async function handleAnalyzeFileCommand(context) {
   }
   const analyzeCwd = path.dirname(filePath);
   const fastMode =
-    Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
-  const skipNavigator = Boolean(options["no-navigator"]);
+    Boolean(forceFastMode) ||
+    (Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]));
+  const skipNavigator = Boolean(options["no-navigator"]) || Boolean(forceFastMode);
   const analyzeRefsResult = parseDirectFileReferences(task, analyzeCwd);
   const analyzeFixedReferences = analyzeRefsResult.references;
   task = analyzeRefsResult.cleanedTask;

@@ -91,6 +91,7 @@ export async function handleWorkspaceCommand(context) {
     attachContextRequestsToResult,
     handleLmStudioProtocolFailure,
     isLmStudioProtocolError,
+    forceFastMode,
   } = context;
 
   let task = taskInput;
@@ -105,7 +106,8 @@ export async function handleWorkspaceCommand(context) {
     );
   }
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-  const skipNavigator = Boolean(options["no-navigator"]);
+  const fastMode = Boolean(forceFastMode);
+  const skipNavigator = Boolean(options["no-navigator"]) || fastMode;
   const workspaceRefsResult = parseDirectFileReferences(task, cwd);
   const workspaceFixedReferences = workspaceRefsResult.references;
   task = workspaceRefsResult.cleanedTask;
@@ -210,7 +212,7 @@ export async function handleWorkspaceCommand(context) {
       }
     }
   }
-  if (!planResult && promptDecomposer) {
+  if (!planResult && promptDecomposer && !fastMode) {
     try {
       planResult = await promptDecomposer.decompose({
         objective: task,

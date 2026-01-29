@@ -61,6 +61,8 @@ Slices (do in order):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260116d --prompt-journal-status paused --no-stream --session-timeout 300` trimmed the context supplement budget (20%) instead of dropping summary level.
    - Live analyze-file rerun (2026-01-29):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260129b --prompt-journal-status paused --no-stream --session-timeout 900 --no-navigator --resume-truncation 7ddf165f-070f-4910-9971-df2cd0a45f12` returned a valid JSON summary and completed the truncation plan (1/1).
+   - Live analyze-file run (2026-01-29):
+     - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260129c --prompt-journal-status paused --no-stream --session-timeout 300` succeeded after auto-skipping planner/navigator due to the low session timeout.
    - Note: short `--session-timeout` values (<= 300s) can starve the final analysis prompt after planner/navigator overhead on this host; prefer >= 900s or add `--no-navigator` for time-boxed runs.
    - Live bash prompt tests (2026-01-16):
      - `node --test unit-tests-js/cli-bash-advanced.test.js` passed against `samples/bash`; tests isolate `.miniphi` roots and use a temp config with `prompt.timeoutSeconds=120` to avoid LM Studio timeouts (runtime ~9 min).

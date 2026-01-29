@@ -85,6 +85,7 @@ For prompt profiles and reward tuning, set the `rlRouter` section in `config.jso
 
 miniPhi can run shell commands when you use `run` (or other workflows that execute commands). Review what it’s about to do and use the command policy flags if you want stricter gating.
 Use `--session-timeout` to cap total runtime; follow-up helpers are skipped once the budget is exhausted.
+When `--session-timeout` is at or below the prompt timeout, MiniPhi auto-skips planner/navigator prompts to preserve analysis time.
 Use `--no-navigator` to skip navigator prompts and follow-up commands when you want a single-pass run.
 Navigator follow-ups skip MiniPhi CLI entrypoints to avoid recursive runs.
 

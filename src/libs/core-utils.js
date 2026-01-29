@@ -14,6 +14,20 @@ export function normalizeDangerLevel(value) {
   return "mid";
 }
 
+export function shouldForceFastMode({ sessionTimeoutMs, promptTimeoutMs, mode } = {}) {
+  if (!Number.isFinite(sessionTimeoutMs) || sessionTimeoutMs <= 0) {
+    return false;
+  }
+  if (!Number.isFinite(promptTimeoutMs) || promptTimeoutMs <= 0) {
+    return false;
+  }
+  const normalizedMode = typeof mode === "string" ? mode.trim().toLowerCase() : null;
+  if (normalizedMode && !["run", "analyze-file", "workspace"].includes(normalizedMode)) {
+    return false;
+  }
+  return sessionTimeoutMs <= promptTimeoutMs;
+}
+
 export function mergeFixedReferences(context, references) {
   if (!Array.isArray(references) || references.length === 0) {
     return context;

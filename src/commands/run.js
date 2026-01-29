@@ -48,6 +48,7 @@ export async function handleRunCommand(context) {
     handleLmStudioProtocolFailure,
     attachContextRequestsToResult,
     isLmStudioProtocolError,
+    forceFastMode,
   } = context;
 
   let task = taskInput;
@@ -64,8 +65,9 @@ export async function handleRunCommand(context) {
 
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
   const fastMode =
-    Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]);
-  const skipNavigator = Boolean(options["no-navigator"]);
+    Boolean(forceFastMode) ||
+    (Boolean(sessionDeadline) && !streamOutput && Boolean(options["no-summary"]));
+  const skipNavigator = Boolean(options["no-navigator"]) || Boolean(forceFastMode);
   const fileRefResult = parseDirectFileReferences(task, cwd);
   const fixedReferences = fileRefResult.references;
   task = fileRefResult.cleanedTask;
