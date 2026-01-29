@@ -84,6 +84,34 @@ export function validateSchemaData(schema, value, pointer) {
     return [];
   }
   const errors = [];
+  if (Array.isArray(schema.oneOf)) {
+    const candidates = schema.oneOf;
+    const matched = candidates.some((candidate) => {
+      const result = validateSchemaData(candidate, value, pointer);
+      return result.length === 0;
+    });
+    if (!matched) {
+      errors.push(`${pointer}: no oneOf schema matched.`);
+    }
+    return errors;
+  }
+  if (Array.isArray(schema.anyOf)) {
+    const candidates = schema.anyOf;
+    const matched = candidates.some((candidate) => {
+      const result = validateSchemaData(candidate, value, pointer);
+      return result.length === 0;
+    });
+    if (!matched) {
+      errors.push(`${pointer}: no anyOf schema matched.`);
+    }
+    return errors;
+  }
+  if (Array.isArray(schema.allOf)) {
+    for (const candidate of schema.allOf) {
+      errors.push(...validateSchemaData(candidate, value, pointer));
+    }
+    return errors;
+  }
   const expectedTypes = normalizeTypes(schema.type);
   if (expectedTypes.length > 0 && !expectedTypes.some((type) => matchesType(type, value))) {
     errors.push(
@@ -93,6 +121,9 @@ export function validateSchemaData(schema, value, pointer) {
   }
   if (schema.enum && Array.isArray(schema.enum) && !schema.enum.includes(value)) {
     errors.push(`${pointer}: value "${value}" is not in enum [${schema.enum.join(", ")}]`);
+  }
+  if (value === null && expectedTypes.includes("null")) {
+    return errors;
   }
   if (isObjectSchema(schema)) {
     const obj = value ?? {};

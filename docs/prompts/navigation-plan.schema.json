@@ -49,18 +49,23 @@
       }
     },
     "helper_script": {
-      "type": ["object", "null"],
       "description": "Use null unless you provide both language and code. Do not emit empty objects.",
-      "additionalProperties": false,
-      "required": ["language", "code"],
-      "properties": {
-        "language": { "type": "string", "enum": ["node", "python"] },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "code": { "type": "string" },
-        "stdin": { "type": ["string", "null"] },
-        "notes": { "type": ["string", "null"] }
-      }
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["language", "code"],
+          "properties": {
+            "language": { "type": "string", "enum": ["node", "python"] },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "code": { "type": "string" },
+            "stdin": { "type": ["string", "null"] },
+            "notes": { "type": ["string", "null"] }
+          }
+        }
+      ]
     },
     "notes": { "type": ["string", "null"] },
     "stop_reason": { "type": ["string", "null"] }
