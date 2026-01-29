@@ -4,7 +4,12 @@ import {
   buildJsonSchemaResponseFormat,
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
-import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
+import {
+  buildStopReasonInfo,
+  classifyLmStudioError,
+  isContextOverflowError,
+  isSessionTimeoutMessage,
+} from "./lmstudio-error-utils.js";
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -443,12 +448,10 @@ export default class ApiNavigator {
     responsePayload.schemaValidation = schemaValidation ?? responsePayload.schemaValidation ?? null;
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
-    const errorInfo = errorMessage ? classifyLmStudioError(errorMessage) : null;
-    const stopReason =
-      plan?.stop_reason ??
-      errorInfo?.reason ??
-      errorMessage ??
-      null;
+    const stopInfo = buildStopReasonInfo({
+      error: errorMessage,
+      fallbackReason: plan?.stop_reason ?? null,
+    });
     try {
       const record = await this.promptRecorder.record({
         scope: "sub",
@@ -460,9 +463,9 @@ export default class ApiNavigator {
           cwd: payload?.cwd ?? null,
           workspaceType: payload?.workspace?.classification ?? null,
           promptJournalId: payload?.promptJournalId ?? null,
-          stop_reason: stopReason,
-          stop_reason_code: errorInfo?.code ?? null,
-          stop_reason_detail: errorInfo?.message ?? null,
+          stop_reason: stopInfo.reason,
+          stop_reason_code: stopInfo.code,
+          stop_reason_detail: stopInfo.detail,
         },
         request: {
           endpoint: "/chat/completions",
@@ -516,11 +519,7 @@ export default class ApiNavigator {
   }
 
   _isSessionTimeout(message) {
-    if (!message || typeof message !== "string") {
-      return false;
-    }
-    const normalized = message.toLowerCase();
-    return normalized.includes("session-timeout") || normalized.includes("session timeout");
+    return isSessionTimeoutMessage(message);
   }
 
   _parsePlan(raw) {

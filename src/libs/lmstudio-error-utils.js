@@ -46,6 +46,7 @@ const CONNECTION_PATTERNS = [
 ];
 
 const NETWORK_PATTERNS = [/network/i];
+const SESSION_TIMEOUT_PATTERNS = [/session[- ]timeout/i, /session deadline exceeded/i];
 
 function matchesAny(patterns, value) {
   if (!value) {
@@ -65,6 +66,11 @@ export function normalizeLmStudioErrorMessage(error) {
     return error.message || String(error);
   }
   return String(error);
+}
+
+export function isSessionTimeoutMessage(error) {
+  const message = normalizeLmStudioErrorMessage(error);
+  return matchesAny(SESSION_TIMEOUT_PATTERNS, message);
 }
 
 export function classifyLmStudioError(error) {
@@ -111,6 +117,32 @@ export function classifyLmStudioError(error) {
     isContextOverflow,
     isStreamingHang,
     shouldDisable: isTimeout || isConnection || isNetwork,
+  };
+}
+
+export function buildStopReasonInfo(options = {}) {
+  const message = normalizeLmStudioErrorMessage(options.error);
+  const sessionTimeout = isSessionTimeoutMessage(message);
+  const classified = message ? classifyLmStudioError(message) : null;
+  const reason =
+    options.fallbackReason ??
+    (sessionTimeout ? "session-timeout" : classified?.reason) ??
+    (message || null);
+  const code =
+    options.fallbackCode ??
+    (sessionTimeout ? "session-timeout" : classified?.code) ??
+    null;
+  const detail =
+    options.fallbackDetail ??
+    (sessionTimeout ? message || "session-timeout" : classified?.message ?? message) ??
+    null;
+  return {
+    reason,
+    code,
+    detail,
+    classified,
+    message,
+    sessionTimeout,
   };
 }
 

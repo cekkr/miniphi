@@ -9,7 +9,12 @@ import {
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
-import { classifyLmStudioError, isContextOverflowError } from "./lmstudio-error-utils.js";
+import {
+  buildStopReasonInfo,
+  classifyLmStudioError,
+  isContextOverflowError,
+  isSessionTimeoutMessage,
+} from "./lmstudio-error-utils.js";
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -288,6 +293,10 @@ export default class PromptDecomposer {
         schemaValidationSummary ?? responsePayload.schemaValidation ?? null;
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
+      const stopInfo = buildStopReasonInfo({
+        error: errorMessage,
+        fallbackReason: normalizedPlan?.stopReason ?? null,
+      });
       promptRecord = await payload.promptRecorder.record({
         scope: "sub",
         label: "prompt-decomposition",
@@ -298,13 +307,9 @@ export default class PromptDecomposer {
           command: payload.command ?? null,
           workspaceType: payload.workspace?.classification ?? null,
           promptJournalId: payload.promptJournalId ?? null,
-          stop_reason:
-            normalizedPlan?.stopReason ??
-            errorInfo?.reason ??
-            errorMessage ??
-            null,
-          stop_reason_code: errorInfo?.code ?? null,
-          stop_reason_detail: errorInfo?.message ?? null,
+          stop_reason: stopInfo.reason,
+          stop_reason_code: stopInfo.code,
+          stop_reason_detail: stopInfo.detail,
         },
         request: {
           endpoint: "/chat/completions",
@@ -517,11 +522,7 @@ export default class PromptDecomposer {
   }
 
   _isSessionTimeout(message) {
-    if (!message || typeof message !== "string") {
-      return false;
-    }
-    const normalized = message.toLowerCase();
-    return normalized.includes("session-timeout") || normalized.includes("session timeout");
+    return isSessionTimeoutMessage(message);
   }
 
   _resolveRequestTimeout(sessionDeadline) {

@@ -119,7 +119,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ## Reference docs
 - `ROADMAP.md` for the long-lived milestone plan and exit criteria.
 - `README.md` for overview/CLI quickstart; `docs/miniphi-cli-implementation.md` for architecture and compression heuristics.
-- `docs/NodeJS LM Studio API Integration.md` + `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` for SDK/REST behavior.
+- `docs/NodeJS LM Studio API Integration.md` + `docs/APIs/lmstudio-docs/1_developer/` for SDK/REST behavior (REST + OpenAI-compat).
 - `scripts/lmstudio-json-debug.js` + `scripts/lmstudio-json-series.js` for fast LM Studio sanity checks.
 - `scripts/prompt-composer.js` + `scripts/prompt-interpret.js` for prompt-chain JSON request/response iteration (see `samples/prompt-chain/`).
 - `scripts/local-eval-report.js` for local JSON/tool-call coverage reports over `.miniphi/prompt-exchanges/`.
@@ -321,7 +321,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `ROADMAP.md` tracks the long-lived milestone plan and explicit exit criteria.
 - `docs/NodeJS LM Studio API Integration.md` explains how the LM Studio SDK and REST layers fit together.
 - `docs/miniphi-cli-implementation.md` walks through compression heuristics, pipelines, and architectural decisions.
-- `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the offline reference consumed by `LMStudioRestClient`.
+- `docs/APIs/lmstudio-docs/1_developer/` contains the current LM Studio developer docs; `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the archived offline snapshot.
 - `scripts/lmstudio-json-debug.js` is a small REST runner that prints the raw LM Studio completion + the parsed JSON object (useful for debugging system prompts / schema enforcement outside the CLI).
 - `scripts/lmstudio-json-series.js` runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy of `samples/get-started/code` (use `npm run sample:lmstudio-json-series`).
 - `scripts/prompt-composer.js` renders JSON-only prompt payloads from a prompt-chain definition (with option selections + templates) and can send them to LM Studio for rapid prompt iteration.
