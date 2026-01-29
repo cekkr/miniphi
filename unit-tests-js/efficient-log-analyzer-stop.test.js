@@ -29,6 +29,10 @@ class FakePhi {
     this.promptTimeoutMs = ms;
   }
 
+  setNoTokenTimeout(ms) {
+    this.noTokenTimeoutMs = ms;
+  }
+
   async getContextWindow() {
     return 4096;
   }
@@ -67,4 +71,42 @@ test("analyzeCommandOutput reports session-timeout stop reason without Phi call"
   assert.ok(result.analysis && typeof result.analysis === "string");
   assert.equal(phi.chatCalls, 0);
   assert.ok(cli.calls >= 1);
+});
+
+test("analyzeDatasetLines reports invalid-response stop reason on non-JSON output", async () => {
+  class FakeInvalidPhi {
+    constructor() {
+      this.chatCalls = 0;
+    }
+
+    setPromptTimeout() {}
+
+    setNoTokenTimeout() {}
+
+    async getContextWindow() {
+      return 4096;
+    }
+
+    async chatStream(_prompt, onToken) {
+      this.chatCalls += 1;
+      if (onToken) {
+        onToken("not-json");
+      }
+    }
+  }
+
+  const phi = new FakeInvalidPhi();
+  const cli = new FakeCli(["ok"]);
+  const summarizer = new FakeSummarizer();
+  const analyzer = new EfficientLogAnalyzer(phi, cli, summarizer);
+
+  const result = await analyzer.analyzeDatasetLines(["line one", "line two"], "invalid json", {
+    streamOutput: false,
+  });
+
+  assert.equal(result.analysisDiagnostics.stopReason, "invalid-response");
+  assert.equal(result.analysisDiagnostics.stopReasonCode, "invalid-response");
+  assert.ok(result.analysisDiagnostics.stopReasonDetail);
+  assert.ok(result.analysis && typeof result.analysis === "string");
+  assert.ok(phi.chatCalls >= 2);
 });

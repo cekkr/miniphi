@@ -73,12 +73,35 @@ export class LMStudioHandler {
   async load(config = undefined) {
     if (process.env.MINIPHI_FORCE_REST === "1") {
       this.model = null;
+      if (this.protocolGate) {
+        this.protocolGate.wsDisabled = true;
+        this.protocolGate.lastWarning = "MINIPHI_FORCE_REST=1";
+      }
       return;
     }
-    this.model = await this.manager.getModel(this.modelKey, {
-      contextLength: DEFAULT_CONTEXT_LENGTH,
-      ...(config ?? {}),
-    });
+    try {
+      this.model = await this.manager.getModel(this.modelKey, {
+        contextLength: DEFAULT_CONTEXT_LENGTH,
+        ...(config ?? {}),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const lower = message.toLowerCase();
+      const isResourceGuard =
+        lower.includes("insufficient system resources") ||
+        lower.includes("model loading was stopped") ||
+        lower.includes("guardrail");
+      if (this.restClient && isResourceGuard) {
+        this.model = null;
+        if (this.protocolGate) {
+          this.protocolGate.wsDisabled = true;
+          this.protocolGate.lastWarning = message;
+        }
+        this.preferRestTransport = true;
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

@@ -3,10 +3,7 @@ import path from "path";
 import { createHash } from "crypto";
 import StreamAnalyzer from "./stream-analyzer.js";
 import { LMStudioProtocolError } from "./lmstudio-handler.js";
-import {
-  classifyLmStudioError,
-  normalizeLmStudioErrorMessage,
-} from "./lmstudio-error-utils.js";
+import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
 import { extractTruncationPlanFromAnalysis, parseStrictJsonObject } from "./core-utils.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 import { MIN_LMSTUDIO_REQUEST_TIMEOUT_MS } from "./runtime-defaults.js";
@@ -2888,28 +2885,24 @@ export default class EfficientLogAnalyzer {
   }
 
   _buildStopDiagnostics(error, defaults = undefined) {
+    const stopInfo = buildStopReasonInfo({
+      error,
+      fallbackReason: defaults?.reason,
+      fallbackCode: defaults?.code,
+      fallbackDetail: defaults?.detail,
+    });
+    const reason = stopInfo.reason ?? defaults?.reason ?? "analysis-error";
+    const code = stopInfo.code ?? defaults?.code ?? "analysis-error";
     const detail =
-      (typeof error === "object" && error?.detail) ||
-      normalizeLmStudioErrorMessage(error) ||
-      defaults?.detail ||
-      defaults?.reason ||
-      "";
-    const normalized = detail.toLowerCase();
-    const sessionTimeoutDetected =
-      normalized.includes("session timeout") || normalized.includes("session-timeout");
-    const classified = sessionTimeoutDetected ? null : classifyLmStudioError(detail);
-    const reason =
+      stopInfo.detail ??
+      stopInfo.message ??
+      defaults?.detail ??
       defaults?.reason ??
-      (sessionTimeoutDetected ? "session-timeout" : classified?.reason) ??
-      (detail || "analysis-error");
-    const code =
-      defaults?.code ??
-      (sessionTimeoutDetected ? "session-timeout" : classified?.code) ??
-      "analysis-error";
+      reason;
     return {
       reason,
       code,
-      detail: detail || reason,
+      detail,
     };
   }
 

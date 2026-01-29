@@ -142,7 +142,8 @@ Status:
   now flows through `src/libs/lmstudio-endpoints.js` with shared WS/REST base wiring. Remaining work:
   align error metadata payloads across handlers/analyzers (navigator/decomposer now record
   stop-reason codes/details; invalid-response classification catches "no valid JSON") and align
-  session timeout + retry caps.
+  session timeout + retry caps. Model load failures due to LM Studio resource guardrails now
+  fall back to REST-only when available (WS disabled).
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
