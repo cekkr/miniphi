@@ -365,6 +365,21 @@ test(
       assert.ok(helper, "Navigator helper script missing.");
       assert.equal(helper.language, "node");
       assert.ok(helper.run, "Navigator helper did not execute.");
+      const summaryStep = steps.find((step) => step.label === "workspace-summary");
+      assert.ok(summaryStep, "Workspace summary step missing from prompt journal.");
+      assert.ok(summaryStep.metadata, "Workspace summary metadata missing.");
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(summaryStep.metadata, "stopReason"),
+        "Workspace summary metadata missing stopReason.",
+      );
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(summaryStep.metadata, "stopReasonCode"),
+        "Workspace summary metadata missing stopReasonCode.",
+      );
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(summaryStep.metadata, "stopReasonDetail"),
+        "Workspace summary metadata missing stopReasonDetail.",
+      );
       const stderrPath = helper.run.stderr
         ? path.join(miniPhiRoot, helper.run.stderr)
         : null;

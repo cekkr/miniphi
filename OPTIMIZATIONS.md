@@ -125,6 +125,8 @@ Status:
   PromptRecorder now canonicalizes request/response fields (`response_format`, `rawResponseText`,
   `promptText`) to trim duplicate payloads; remaining work is to decide how to further compact
   prompt/response data across recorder and journals without losing eval coverage.
+  Analysis steps now record stop-reason fields (reason/code/detail) from analysis diagnostics so
+  session timeouts and invalid-response fallbacks are visible in stepwise journals.
 
 ### P1 - LM Studio transport and error taxonomy
 

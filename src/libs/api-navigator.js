@@ -244,9 +244,6 @@ export default class ApiNavigator {
     const normalizedPlan = this.adapterRegistry
       ? this.adapterRegistry.normalizeResponse("api-navigator", schemaVersion, base)
       : base;
-    if (this.lastStopReason && !normalizedPlan.stop_reason) {
-      normalizedPlan.stop_reason = this.lastStopReason;
-    }
     if (typeof normalizedPlan.needs_more_context !== "boolean") {
       normalizedPlan.needs_more_context = false;
     }
@@ -548,9 +545,7 @@ export default class ApiNavigator {
       this._log(`[ApiNavigator] Invalid navigation plan: ${planValidation.error}`);
       return this._buildFallbackPlan(`invalid response: ${planValidation.error}`);
     }
-    if (!parsed.stop_reason && this.lastStopReason) {
-      parsed.stop_reason = this.lastStopReason;
-    }
+    this.lastStopReason = null;
     return parsed;
   }
 
