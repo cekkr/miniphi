@@ -1,0 +1,6 @@
+// Offline stub generated for framework/cwd.bsh
+// Narrative excerpt: # Overview The CWD Framework (cwd.bsh) provides essential directory operations for the B[e]SH shell. It relies on a C library (bsh_fs_utils.so) aliased as 'BSH_FS_UTILS_LIB_ALIAS' to perform filesyste
+function framework_cwd_bshStub() {
+  throw new Error("Offline stub executed for framework/cwd.bsh");
+}
+module.exports = framework_cwd_bshStub;

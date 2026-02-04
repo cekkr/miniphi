@@ -1,0 +1,6 @@
+// Offline stub generated for examples/evalExample.bsh
+// Narrative excerpt: ## Overview # Example of Dynamic Command Construction The script demonstrates how to build and execute commands dynamically using string interpolation. It starts by defining a base command (echo) and 
+function examples_evalExample_bshStub() {
+  throw new Error("Offline stub executed for examples/evalExample.bsh");
+}
+module.exports = examples_evalExample_bshStub;

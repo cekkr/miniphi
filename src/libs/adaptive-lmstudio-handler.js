@@ -371,6 +371,13 @@ export default class AdaptiveLMStudioHandler {
     const schemaId = traceOptions?.schemaId ?? traceOptions?.metadata?.schemaId ?? null;
     const mode = resolveMode(traceOptions, schemaId);
     const size = sizeBucket(prompt?.length ?? 0);
+    const metadata = traceOptions?.metadata ?? {};
+    const workspaceType =
+      metadata.workspaceType ?? metadata.workspace?.type ?? metadata.workspace?.label ?? null;
+    const taskType =
+      metadata.taskType ?? metadata.intent ?? metadata.taskIntent ?? metadata.task_kind ?? null;
+    const subContext =
+      metadata.subContext ?? metadata.step ?? metadata.stage ?? metadata.sub_context ?? null;
     const scope = traceOptions?.scope === "main" ? "main" : traceOptions?.scope === "sub" ? "sub" : "unknown";
     return {
       mode,
@@ -380,6 +387,9 @@ export default class AdaptiveLMStudioHandler {
       lastErrorKind: this.lastErrorKind,
       sizeBucket: size,
       scope,
+      workspaceType,
+      taskType,
+      subContext,
       lastSchemaValid: this.lastSchemaValid,
       lastFollowUpNeeded: this.lastFollowUpNeeded,
       lastDurationBucket: durationBucket(this.lastDurationMs),

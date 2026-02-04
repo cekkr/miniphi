@@ -1,0 +1,71 @@
+# Basic [extensible] Shell (B[e]SH)
+# Research Exploration
+## Overview
+Welcome to the repository for the Basic [extensible] Shell, or B[e]SH.
+This project represents a research exploration into creating an extensible shell
+with dynamic expression parsing and script-defined operators.
+
+## Build Artifacts
+# C Compilation Outputs
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.map
+*.sym
+*.pdb
+*.idb
+*.ncb
+*.opt
+*.ilk
+*.lib
+*.d
+*.su
+*.cxx
+*.ii
+*.slo
+*.la
+*.lo
+*.deps/
+
+# IDE/Editor Metadata
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*.session
+*.cache/
+*.user
+*.perspective
+*.pydevproject
+*.markdowntoolbar/
+
+# Kernel Module Side Effects
+*.ko
+*.mod.c
+*.mod.o
+*.mod.order
+*.mod.symvers
+Modules.symvers
+
+# Precompiled Headers
+*.gch
+*.pch
+*.h.gch
+*.h.pch
+
+# Linker Artifacts
+*.lds
+*.ldscript
+*.link
+*.lnk
+*.res
+*.rc
+*.manifest
+
+# Debug Symbols
+*.debug

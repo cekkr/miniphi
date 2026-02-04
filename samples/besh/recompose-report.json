@@ -1,0 +1,518 @@
+{
+  "direction": "roundtrip",
+  "sampleDir": "samples/besh",
+  "codeDir": "samples/besh",
+  "descriptionsDir": "samples/besh/descriptions",
+  "outputDir": "samples/besh/reconstructed",
+  "steps": [
+    {
+      "phase": "code-to-markdown",
+      "durationMs": 523,
+      "discovered": 21,
+      "converted": 21,
+      "skipped": 0,
+      "cacheHits": 15,
+      "unchanged": 0,
+      "concurrency": 1,
+      "descriptionsDir": "samples/besh/descriptions"
+    },
+    {
+      "phase": "markdown-to-code",
+      "durationMs": 852,
+      "processed": 21,
+      "converted": 21,
+      "skipped": 0,
+      "unchanged": 0,
+      "outputDir": "samples/besh/reconstructed",
+      "warnings": []
+    },
+    {
+      "phase": "repair",
+      "attempted": 21,
+      "repaired": 0,
+      "skipped": [
+        {
+          "path": "README.md",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "descriptions/README.md.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/README.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": ".bshrc",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": ".gitignore",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "bsh.c",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "compile.sh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "examples/basicExample.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "examples/enhancedNumbers.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "examples/evalExample.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "examples/strNumExamples.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/c_compiler.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/core_operators.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/cwd.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/extension/inline_if.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/extension/property_squares.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/number.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/string.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "framework/type.bsh",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "groupFramework.py",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "guides/addToVSCode.md",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "LICENSE",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "TooBad.md",
+          "reason": "Generated code matched the existing candidate; no write needed."
+        },
+        {
+          "path": "descriptions/.bshrc.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/.gitignore.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/bsh.c.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/compile.sh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/examples/basicExample.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/examples/enhancedNumbers.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/examples/evalExample.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/examples/strNumExamples.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/c_compiler.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/core_operators.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/cwd.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/extension/inline_if.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/extension/property_squares.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/number.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/string.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/framework/type.bsh.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/groupFramework.py.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/guides/addToVSCode.md.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/LICENSE.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "descriptions/TooBad.md.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/.bshrc",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/.gitignore",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/bsh.c",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/compile.sh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/examples/basicExample.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/examples/enhancedNumbers.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/examples/evalExample.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/examples/strNumExamples.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/c_compiler.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/core_operators.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/cwd.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/extension/inline_if.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/extension/property_squares.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/number.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/string.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/framework/type.bsh",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/groupFramework.py",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/guides/addToVSCode.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/LICENSE",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        },
+        {
+          "path": "reconstructed/TooBad.md",
+          "reason": "No blueprint cached for this file during markdown-to-code."
+        }
+      ],
+      "initialMismatches": 21,
+      "initialMissing": 42,
+      "durationMs": 207
+    },
+    {
+      "phase": "comparison",
+      "durationMs": 24,
+      "matches": 0,
+      "mismatches": [
+        {
+          "path": ".bshrc",
+          "baselineHash": "63e2fc4e581b7360fb61d6779d2da2d106144f17f290c25ca78a73961b4cdff1",
+          "candidateHash": "e555a1ef622d51b84c1d7b14a33b1f2e804d67fade8800786297f56b97765f4d"
+        },
+        {
+          "path": ".gitignore",
+          "baselineHash": "cd5a7d3494808bb5deade011eae1bffd4fdec0e335091459e2b67b770a755c91",
+          "candidateHash": "8d3960d00e34e76924e69b7a06e114e1369da3d3134478af9372b4a39c92e167"
+        },
+        {
+          "path": "bsh.c",
+          "baselineHash": "5dcd55c6b2f057eaad4613e5dc9dc87e496695501cf9e9575a937d93c9ee3bee",
+          "candidateHash": "6942afd3d170eed522f310608eb4c70f40ee361ee9c49bd324f663a130055a72"
+        },
+        {
+          "path": "compile.sh",
+          "baselineHash": "c8f5f0c0ac2de795bed8d833653f5c0f30bfe2124bd39b625b2bcd15a9567bb1",
+          "candidateHash": "1feefbbf207026fef3e6fa3877cd04c1589a6bcb56689a30da26a2cd47826d28"
+        },
+        {
+          "path": "examples/basicExample.bsh",
+          "baselineHash": "7127ff08b3789ffe5715bb9e09cabba250990c8bb558a4759ae3e00bf9b123be",
+          "candidateHash": "a59a41cf295985031936749f86cdbe29cc4dc2a2b1ddc1a127d9f6f37322e772"
+        },
+        {
+          "path": "examples/enhancedNumbers.bsh",
+          "baselineHash": "c60a113a8eae385f2c793027d4a85f6028fc9d7327ab99399b6618792049528d",
+          "candidateHash": "9d7c9cd6cf3a76fdc95c4ac50857cc6cb288ff526a9b990820a8ca5834d3944d"
+        },
+        {
+          "path": "examples/evalExample.bsh",
+          "baselineHash": "daa9e6003ffb6718ff3045f39a7a3a8cd235a2eeffad0092b6f4c43c0aa36745",
+          "candidateHash": "0780b947aca72b9bc11d4cf6f4da5d3d6046353445428b0e3e782f388c0f7b97"
+        },
+        {
+          "path": "examples/strNumExamples.bsh",
+          "baselineHash": "c7c8eb961ccc9a7be16053c5d04d41bb25e639d3b31bebdb22bed35175fd1300",
+          "candidateHash": "92fb9d7f12766b62c4f39ac4c20b235f0cd9712b85b5896da707ad649c424674"
+        },
+        {
+          "path": "framework/c_compiler.bsh",
+          "baselineHash": "e52201bdc64b55aa2cc22be5d7ba020ff25cfc99b57de1dd1392df0219698285",
+          "candidateHash": "d27e4b1216f40cab3f2eaae20418648ec9e4d1917679434a35d5c8516ec7d25a"
+        },
+        {
+          "path": "framework/core_operators.bsh",
+          "baselineHash": "a5a97863a328de9eec91195ace345f201966158c52819eb314dc439496c47929",
+          "candidateHash": "b68f181123c8ffc237876c7d8b725f11405142281233fea381402658743cd595"
+        },
+        {
+          "path": "framework/cwd.bsh",
+          "baselineHash": "5b62025592e380eced9fa72c3b4f57a6948827528e1f2518bdd3e92b46c0a904",
+          "candidateHash": "c0fc092df0a02e307a25b76de8bfa27b8f41b92748dac6e076a02ed2c50409ef"
+        },
+        {
+          "path": "framework/extension/inline_if.bsh",
+          "baselineHash": "ebbf94ce3a63dfe5218d97c362b28310a8a6a3cae393142ccb830a2c9101a2a3",
+          "candidateHash": "80d9b9ee1395b6e87a4bdfa28756b8dbfbfa77324dcc055cd76dae4f2690b4b8"
+        },
+        {
+          "path": "framework/extension/property_squares.bsh",
+          "baselineHash": "62349bc7f059af03b1c0b0e91e7f1e4c6e85b5c08c5339b6595b5d250b2e2665",
+          "candidateHash": "002390d175c8b767d0f9eeeda9a8711a29706c74f0b2909e373952c4dd93c84c"
+        },
+        {
+          "path": "framework/number.bsh",
+          "baselineHash": "463aa39b24d874fb397b05176d60032a2da1be4a5e097554069f69fc0e2653d8",
+          "candidateHash": "a90ef5e449f86f349cc28b0babc42ab54a024c9d4717e9c86e5bc4a23c6150e9"
+        },
+        {
+          "path": "framework/string.bsh",
+          "baselineHash": "9425e620be7732add14bc9cafcfce554e43ed8a6e6a8ee025bdbcd3728d40bfb",
+          "candidateHash": "0f982c4a554c89e9bc5710e4f5a552c84a02d7a268ddc3b01cca24546cf38cc5"
+        },
+        {
+          "path": "framework/type.bsh",
+          "baselineHash": "db7401ea52fd0191c17f5dec0eeb9d3a601601d9f3a28705628e067efeb9afba",
+          "candidateHash": "6a290d14b0d515cbb9c71fb821277013599edfec77b02963cc94f20931791a7a"
+        },
+        {
+          "path": "groupFramework.py",
+          "baselineHash": "97ce519c66142009d4b7a3e5f85f492fe86861d857d6a056b14dd186da5b54d4",
+          "candidateHash": "1b401fc48ee3f6ff5aea13ee2b57f9ca8073acfac09a415191fdf7a1494c8c82"
+        },
+        {
+          "path": "guides/addToVSCode.md",
+          "baselineHash": "3f15b9ede210d168e6a1c1080dfd3dd4a55137f7cbf61451cf68391cae9290ce",
+          "candidateHash": "ee0954b7af9c9e2725eb8a4e2056728138c320232ae3e7bea74942e6389ec5da"
+        },
+        {
+          "path": "LICENSE",
+          "baselineHash": "d5b6839f03ed2793a032a1c50206015e66b59830e3ffc3a85591114f766480b0",
+          "candidateHash": "e536ea8d1973c0fc9ed4d77b14872e74fe532b5fe57941b3f174cf9185c5dee4"
+        },
+        {
+          "path": "README.md",
+          "baselineHash": "d98986d81b94c1227c24dfa8e89df355c3bf27800b3e8042cd7e15e31dfadf67",
+          "candidateHash": "bbeacbf86752b81f37c6a17086ac2c1520f6e91a9d9f9c46feb8ddf282f21d03"
+        },
+        {
+          "path": "TooBad.md",
+          "baselineHash": "f2d08b7c1d24d8d47b5b8c6bd0bcb2a9fb5f35358e4e589b1021d8eb2ba2e085",
+          "candidateHash": "eac3008e9879c342c0522fcd3919433e4e22386fac24a757f626598cd37fc0f5"
+        }
+      ],
+      "missing": [
+        "descriptions/.bshrc.md",
+        "descriptions/.gitignore.md",
+        "descriptions/bsh.c.md",
+        "descriptions/compile.sh.md",
+        "descriptions/examples/basicExample.bsh.md",
+        "descriptions/examples/enhancedNumbers.bsh.md",
+        "descriptions/examples/evalExample.bsh.md",
+        "descriptions/examples/strNumExamples.bsh.md",
+        "descriptions/framework/c_compiler.bsh.md",
+        "descriptions/framework/core_operators.bsh.md",
+        "descriptions/framework/cwd.bsh.md",
+        "descriptions/framework/extension/inline_if.bsh.md",
+        "descriptions/framework/extension/property_squares.bsh.md",
+        "descriptions/framework/number.bsh.md",
+        "descriptions/framework/string.bsh.md",
+        "descriptions/framework/type.bsh.md",
+        "descriptions/groupFramework.py.md",
+        "descriptions/guides/addToVSCode.md.md",
+        "descriptions/LICENSE.md",
+        "descriptions/README.md.md",
+        "descriptions/TooBad.md.md",
+        "reconstructed/.bshrc",
+        "reconstructed/.gitignore",
+        "reconstructed/bsh.c",
+        "reconstructed/compile.sh",
+        "reconstructed/examples/basicExample.bsh",
+        "reconstructed/examples/enhancedNumbers.bsh",
+        "reconstructed/examples/evalExample.bsh",
+        "reconstructed/examples/strNumExamples.bsh",
+        "reconstructed/framework/c_compiler.bsh",
+        "reconstructed/framework/core_operators.bsh",
+        "reconstructed/framework/cwd.bsh",
+        "reconstructed/framework/extension/inline_if.bsh",
+        "reconstructed/framework/extension/property_squares.bsh",
+        "reconstructed/framework/number.bsh",
+        "reconstructed/framework/string.bsh",
+        "reconstructed/framework/type.bsh",
+        "reconstructed/groupFramework.py",
+        "reconstructed/guides/addToVSCode.md",
+        "reconstructed/LICENSE",
+        "reconstructed/README.md",
+        "reconstructed/TooBad.md"
+      ],
+      "extras": []
+    }
+  ],
+  "sessionDir": ".miniphi/recompose/2026-02-03T17-11-02-559Z-recompose",
+  "promptLog": ".miniphi/recompose/2026-02-03T17-11-02-559Z-recompose/prompts.log",
+  "editDir": ".miniphi/recompose/2026-02-03T17-11-02-559Z-recompose/edits",
+  "editLog": ".miniphi/recompose/2026-02-03T17-11-02-559Z-recompose/edits/edits.jsonl",
+  "workspaceContext": {
+    "kind": "code",
+    "summary": "## Architecture Rhythm\n\nThe workspace contains approximately 21 source files organized into flows, shared helpers, and entry points. Each module collaborates via explicit imports and emphasizes deterministic behavior for recomposition.\n\n## Supporting Cast\n\nNarratives rely on greeters, math utilities, validation steps, and in-memory persistence to keep analytics repeatable. Representative files: README.md, TooBad.md, guides/addToVSCode.md, bsh.c, .bshrc, LICENSE.\n\n## Risk Notes\n\nFocus on keeping descriptions high level: no direct code blocks, only references to behaviors and data lifecycles. Use the story-driven approach to recreate functionality instead of copying syntax.",
+    "sourceDir": "samples/besh",
+    "purpose": "Recompose runs as a natural-language unit test of the MiniPhi agent (via src/index.js) rather than a standalone code-only harness.",
+    "metadata": {
+      "sampleDir": "C:\\Sources\\GitHub\\miniphi\\samples\\besh",
+      "sampleName": "besh",
+      "readmeSnippet": "# Basic [extensible] Shell (B[e]SH) ![BeSH guy](https://github.com/cekkr/besh/blob/main/assets/eGuy.png?raw=true) # Research Exploration ## Overview Welcome to the repository for the Basic [extensible] Shell, or B[e]SH. This project represe",
+      "plan": null,
+      "manifest": [
+        {
+          "path": ".bshrc",
+          "bytes": 14403
+        },
+        {
+          "path": ".gitignore",
+          "bytes": 551
+        },
+        {
+          "path": "bsh.c",
+          "bytes": 223959
+        },
+        {
+          "path": "compile.sh",
+          "bytes": 75
+        },
+        {
+          "path": "descriptions/.bshrc.md",
+          "bytes": 3018
+        },
+        {
+          "path": "descriptions/.gitignore.md",
+          "bytes": 1030
+        },
+        {
+          "path": "descriptions/bsh.c.md",
+          "bytes": 1092
+        },
+        {
+          "path": "descriptions/compile.sh.md",
+          "bytes": 767
+        },
+        {
+          "path": "descriptions/examples/basicExample.bsh.md",
+          "bytes": 4326
+        },
+        {
+          "path": "descriptions/examples/enhancedNumbers.bsh.md",
+          "bytes": 1213
+        },
+        {
+          "path": "descriptions/examples/evalExample.bsh.md",
+          "bytes": 929
+        },
+        {
+          "path": "descriptions/examples/strNumExamples.bsh.md",
+          "bytes": 1410
+        }
+      ]
+    }
+  },
+  "sessionLabel": "recompose",
+  "generatedAt": "2026-02-03T17:11:04.276Z",
+  "promptLogExport": "samples/besh/recompose-report.prompts.log"
+}

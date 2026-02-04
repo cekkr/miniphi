@@ -1,0 +1,6 @@
+// Offline stub generated for framework/string.bsh
+// Narrative excerpt: # String Framework Overview The string framework (string.bsh) extends the B[e]SH shell with string manipulation utilities. It relies on a C library (BSH_STRING_LIB_ALIAS) for core operations but inclu
+function framework_string_bshStub() {
+  throw new Error("Offline stub executed for framework/string.bsh");
+}
+module.exports = framework_string_bshStub;

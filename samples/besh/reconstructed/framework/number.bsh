@@ -1,0 +1,6 @@
+// Offline stub generated for framework/number.bsh
+// Narrative excerpt: # Number Framework Overview The number.bsh framework extends B[e]SH with mathematical operations and comparisons. It acts as a bridge between shell scripts and the C-based math library (bshmath). ## C
+function framework_number_bshStub() {
+  throw new Error("Offline stub executed for framework/number.bsh");
+}
+module.exports = framework_number_bshStub;

@@ -1,0 +1,6 @@
+// Offline stub generated for framework/core_operators.bsh
+// Narrative excerpt: # Core Operators Framework This file defines the standard operator symbols and their corresponding BSH handlers. It serves as the central registry for how operators behave in expressions, including pr
+function framework_core_operators_bshStub() {
+  throw new Error("Offline stub executed for framework/core_operators.bsh");
+}
+module.exports = framework_core_operators_bshStub;

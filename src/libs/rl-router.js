@@ -40,6 +40,9 @@ export function normalizeSchemaId(schemaId) {
 export function featurizeObservation(obs = undefined) {
   const mode = normalizeToken(obs?.mode, "unknown");
   const schemaId = normalizeSchemaId(obs?.schemaId);
+  const workspaceType = normalizeToken(obs?.workspaceType, "unknown");
+  const taskType = normalizeToken(obs?.taskType, "unknown");
+  const subContext = normalizeToken(obs?.subContext, "none");
   const scope = normalizeToken(obs?.scope, "unknown");
   const step = Number.isFinite(obs?.step) ? obs.step : 0;
   const stepLabel = stepBucket(step);
@@ -52,6 +55,9 @@ export function featurizeObservation(obs = undefined) {
   return [
     mode,
     schemaId,
+    workspaceType,
+    taskType,
+    subContext,
     scope,
     stepLabel,
     lastStatus,

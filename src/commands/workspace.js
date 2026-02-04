@@ -2,6 +2,7 @@ import path from "path";
 import MiniPhiMemory from "../libs/miniphi-memory.js";
 import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
+import { classifyTaskIntent } from "../libs/model-selector.js";
 
 function buildWorkspaceSummaryDataset(task, workspaceContext, planResult) {
   const lines = [];
@@ -290,6 +291,11 @@ export async function handleWorkspaceCommand(context) {
     const datasetLines = buildWorkspaceSummaryDataset(task, workspaceContext, planResult);
     if (datasetLines.length) {
       try {
+        const taskIntent = classifyTaskIntent({
+          task,
+          mode: "workspace",
+          workspaceContext,
+        });
         summaryResult = await analyzer.analyzeDatasetLines(datasetLines, task, {
           summaryLevels,
           streamOutput,
@@ -304,6 +310,7 @@ export async function handleWorkspaceCommand(context) {
               mode: "workspace",
               cwd,
               promptJournalId: promptJournalId ?? null,
+              taskType: taskIntent.intent,
               workspaceType:
                 workspaceContext?.classification?.domain ??
                 workspaceContext?.classification?.label ??

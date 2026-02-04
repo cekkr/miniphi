@@ -116,8 +116,15 @@ Exit criteria:
 
 Focus areas:
 - Prompt decomposition resume improvements and branch selection hygiene.
-- Helper script lifecycle (versioning, replay, and output summarization).
 - Evaluation harness for prompt/response quality (JSON validity, tool-call accuracy, task adherence, token metrics).
+- Nitpick evaluation harness (writer/critic loops, blind browsing sources, and context-aware model selection).
+
+Nitpick exit criteria:
+- `miniphi nitpick --task "<long-form task>" --rounds 2` completes with JSON-only plan/draft/critique/revision steps and stores a session under `.miniphi/nitpick/`.
+- `miniphi nitpick --blind --task "<long-form task>"` captures research + web snapshots under `.miniphi/research/` + `.miniphi/web/` and produces a final draft using cited sources.
+
+Deferred (lower priority while nitpick + blind browsing harden):
+- Helper script lifecycle (versioning, replay, and output summarization).
 
 ### v0.3 Distribution and sustainability
 Objective: prepare MiniPhi for wider distribution and long-term maintenance.

@@ -1,0 +1,6 @@
+// Offline stub generated for examples/enhancedNumbers.bsh
+// Narrative excerpt: # Overview The script demonstrates enhanced numeric handling in B[e]SH, showcasing improved tokenizer support for unquoted numbers (integers and floats), including negative values. ## Numeric Operatio
+function examples_enhancedNumbers_bshStub() {
+  throw new Error("Offline stub executed for examples/enhancedNumbers.bsh");
+}
+module.exports = examples_enhancedNumbers_bshStub;

@@ -1,0 +1,6 @@
+// Offline stub generated for framework/extension/inline_if.bsh
+// Narrative excerpt: ## Overview # Overview The inline_if.bsh extension introduces a ternary-like conditional assignment mechanism to the B[e]SH shell. It allows scripts to assign values based on a condition without tradi
+function framework_extension_inline_if_bshStub() {
+  throw new Error("Offline stub executed for framework/extension/inline_if.bsh");
+}
+module.exports = framework_extension_inline_if_bshStub;

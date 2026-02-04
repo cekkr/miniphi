@@ -48,5 +48,24 @@
     "maxVramPercent": 80,
     "sampleIntervalMs": 5000
   },
+  "webBrowse": {
+    "timeoutMs": 30000,
+    "waitUntil": "domcontentloaded",
+    "maxChars": 20000,
+    "blockResources": true
+  },
+  "nitpick": {
+    "writerModel": "microsoft/phi-4-reasoning-plus",
+    "criticModel": "ibm/granite-4-h-tiny",
+    "rounds": 2,
+    "targetWords": 1200,
+    "blind": false,
+    "maxResults": 5,
+    "maxSources": 6,
+    "maxSourceChars": 1800,
+    "researchRounds": 1,
+    "provider": "duckduckgo",
+    "browserTimeoutMs": 30000
+  },
   "pythonScript": "./log_summarizer.py"
 }

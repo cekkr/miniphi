@@ -1,0 +1,6 @@
+// Offline stub generated for framework/extension/property_squares.bsh
+// Narrative excerpt: # Overview The script simulates square bracket property access for objects in the B[e]SH shell. It provides two core functions to get and set properties dynamically using mangled variable names. ## Co
+function framework_extension_property_squares_bshStub() {
+  throw new Error("Offline stub executed for framework/extension/property_squares.bsh");
+}
+module.exports = framework_extension_property_squares_bshStub;

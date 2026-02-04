@@ -5,6 +5,7 @@ import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
 import { normalizeDangerLevel } from "../libs/core-utils.js";
 import TaskExecutionRegister from "../libs/task-execution-register.js";
+import { classifyTaskIntent } from "../libs/model-selector.js";
 
 export async function handleRunCommand(context) {
   const {
@@ -273,6 +274,12 @@ export async function handleRunCommand(context) {
   }
   await initializeResourceMonitor(`run:${cmd}`, stateManager?.resourceUsageFile ?? null);
   try {
+    const taskIntent = classifyTaskIntent({
+      task,
+      mode: "run",
+      workspaceContext,
+      command: cmd,
+    });
     result = await analyzer.analyzeCommandOutput(cmd, task, {
       summaryLevels,
       verbose,
@@ -290,6 +297,7 @@ export async function handleRunCommand(context) {
           command: cmd,
           cwd,
           promptJournalId: promptJournalId ?? null,
+          taskType: taskIntent.intent,
           workspaceType:
             workspaceContext?.classification?.domain ??
             workspaceContext?.classification?.label ??

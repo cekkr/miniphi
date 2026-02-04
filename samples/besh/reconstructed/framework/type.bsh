@@ -1,0 +1,6 @@
+// Offline stub generated for framework/type.bsh
+// Narrative excerpt: ## Purpose The file framework/type.bsh operates as a text module with roughly 27 lines. It focuses on orchestration and light data shaping. ## Key Elements - Dependencies: internal-only helpers. - Pub
+function framework_type_bshStub() {
+  throw new Error("Offline stub executed for framework/type.bsh");
+}
+module.exports = framework_type_bshStub;

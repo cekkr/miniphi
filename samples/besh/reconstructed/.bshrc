@@ -1,0 +1,47 @@
+#!/usr/bin/env bsh
+# .bshrc - B[e]SH Shell Initialization Script
+
+# Set prompt
+PS1='bsh-ng$ '
+
+# Define keywords
+defkeyword defkeyword
+defkeyword defunc
+defkeyword function
+
+# Import essential frameworks
+import c_compiler.bsh
+type.bsh
+core_operators.bsh
+
+# Compile embedded C math library
+if [ -z "$BSH_MATH_C_LIB_SOURCE" ]; then
+    echo "Error: BSH_MATH_C_LIB_SOURCE not set" >&2
+    exit 1
+fi
+
+# Compile the C source
+c_compiler compile $BSH_MATH_C_LIB_SOURCE bshmath
+
+# Validate inputs and handle edge cases
+def bsh_division_by_zero() {
+    if [ "$2" -eq 0 ]; then
+        echo "Error: Division by zero" >&2
+        return 1
+    fi
+}
+
+# Ensure type safety for operations
+def bsh_is_integer() {
+    case $1 in
+        *[!0-9]*) false ;;
+        *) true ;;
+    esac
+}
+
+def bsh_is_float() {
+    case $1 in
+        *.* ) true ;;
+        *) false ;;
+    esac
+}

@@ -72,16 +72,19 @@ import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
+import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
 import { handleWebResearch } from "./commands/web-research.js";
+import { handleWebBrowse } from "./commands/web-browse.js";
 import { handleWorkspaceCommand } from "./commands/workspace.js";
 
 const COMMANDS = new Set([
   "run",
   "analyze-file",
   "web-research",
+  "web-browse",
   "history-notes",
   "recompose",
   "benchmark",
@@ -90,6 +93,7 @@ const COMMANDS = new Set([
   "command-library",
   "helpers",
   "cache-prune",
+  "nitpick",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -1265,6 +1269,11 @@ async function main() {
     return;
   }
 
+  if (command === "web-browse") {
+    await handleWebBrowse({ options, positionals, verbose, configData });
+    return;
+  }
+
   if (command === "history-notes") {
     await handleHistoryNotes({ options, verbose });
     return;
@@ -2083,6 +2092,7 @@ const describeWorkspace = (dir, options = undefined) =>
       promptJournalStatus,
       planBranch,
       refreshPlan,
+      configData,
       defaults,
       verbose,
       restClient,
@@ -2090,6 +2100,13 @@ const describeWorkspace = (dir, options = undefined) =>
       analyzer,
       globalMemory,
       promptDecomposer,
+      schemaRegistry,
+      systemPrompt: resolvedSystemPrompt,
+      contextLength,
+      gpu,
+      lmStudioManager: lmStudioRuntime.manager ?? null,
+      performanceTracker,
+      routerConfig,
       summaryLevels,
       streamOutput,
       timeout,
@@ -2143,6 +2160,11 @@ const describeWorkspace = (dir, options = undefined) =>
       promptRecorder = commandContext.promptRecorder;
       promptJournal = commandContext.promptJournal;
       workspaceContext = commandContext.workspaceContext;
+      return;
+    }
+
+    if (command === "nitpick") {
+      await handleNitpickCommand(commandContext);
       return;
     }
 
@@ -2508,7 +2530,9 @@ Usage:
   node src/index.js run --cmd "npm test" --task "Analyze failures"
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js web-research "phi-4 roadmap" --max-results 5
+  node src/index.js web-browse --url "https://example.com" --max-chars 4000
   node src/index.js history-notes --label "post benchmark"
+  node src/index.js nitpick --task "Write 2000 words about X" --writer-model phi-4 --critic-model granite-4-h-tiny
   node src/index.js command-library --limit 10
   node src/index.js helpers --limit 6
   node src/index.js cache-prune --dry-run
@@ -2602,6 +2626,41 @@ Web research:
   --include-raw                Persist raw provider payload into the saved snapshot
   --no-save                    Do not store the research snapshot under .miniphi/research
   --note <text>                Optional annotation attached to the research snapshot
+
+Web browse:
+  --url <text>                 URL to open (can be repeated or passed as positional)
+  --url-file <path>            File containing newline-delimited URLs
+  --timeout <s>                Page navigation timeout in seconds
+  --timeout-ms <ms>            Page navigation timeout in milliseconds
+  --wait-ms <ms>               Additional wait after navigation
+  --wait-selector <css>        Wait for selector before extracting text
+  --wait-until <event>         domcontentloaded | networkidle0 | networkidle2
+  --selector <css>             Extract text from a specific selector instead of body
+  --max-chars <n>              Max characters to keep from the page text
+  --include-html               Persist full HTML into snapshots
+  --screenshot                 Capture a full-page screenshot
+  --screenshot-dir <path>      Directory for screenshots (default: .miniphi/web/screenshots)
+  --headful                    Launch the browser in headful mode
+  --block-resources <bool>     Block images/fonts/media (default: true)
+  --no-save                    Do not store the web snapshot under .miniphi/web
+
+Nitpick tests:
+  --writer-model <id>          Writer model key (defaults to intent-based selection)
+  --critic-model <id>          Critic model key (defaults to intent-based selection)
+  --model-pool <list>          Comma-separated model pool to choose from
+  --rounds <n>                 Number of critique/revision rounds (default: 2)
+  --target-words <n>           Target word count (default: 1200)
+  --blind                      Disable model prior knowledge and require web sources
+  --research-rounds <n>        Max research refresh cycles when critiques request queries
+  --max-results <n>            Max search results per query (default: 5)
+  --max-sources <n>            Max web pages to fetch (default: 6)
+  --max-source-chars <n>       Max characters to keep per source
+  --provider <name>            Research provider for blind mode (default: duckduckgo)
+  --browser-timeout <s>        Browser fetch timeout (seconds)
+  --browser-timeout-ms <ms>    Browser fetch timeout (milliseconds)
+  --output <path>              Write the final draft to a file
+  --print                      Print the final draft to stdout
+  --no-save                    Skip saving research/web snapshots
 
 History notes:
   --history-root <path>        Override the directory used to locate .miniphi (default: cwd)

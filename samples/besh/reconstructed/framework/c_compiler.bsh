@@ -1,0 +1,6 @@
+// Offline stub generated for framework/c_compiler.bsh
+// Narrative excerpt: # Overview The C Compiler Framework (c_compiler.bsh) enables dynamic compilation of C code into shared libraries within the B[e]SH environment. It abstracts compiler discovery, source generation, and 
+function framework_c_compiler_bshStub() {
+  throw new Error("Offline stub executed for framework/c_compiler.bsh");
+}
+module.exports = framework_c_compiler_bshStub;

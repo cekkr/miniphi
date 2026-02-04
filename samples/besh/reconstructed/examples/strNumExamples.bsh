@@ -1,0 +1,6 @@
+// Offline stub generated for examples/strNumExamples.bsh
+// Narrative excerpt: # Overview This script demonstrates the number.bsh and string.bsh libraries by performing arithmetic operations, comparisons, and string manipulations. ## Numeric Operations The script initializes num
+function examples_strNumExamples_bshStub() {
+  throw new Error("Offline stub executed for examples/strNumExamples.bsh");
+}
+module.exports = examples_strNumExamples_bshStub;

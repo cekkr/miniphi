@@ -5,6 +5,7 @@ import MiniPhiMemory from "../libs/miniphi-memory.js";
 import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
 import TaskExecutionRegister from "../libs/task-execution-register.js";
+import { classifyTaskIntent } from "../libs/model-selector.js";
 
 export async function handleAnalyzeFileCommand(context) {
   const {
@@ -416,6 +417,12 @@ export async function handleAnalyzeFileCommand(context) {
     }
   }
   try {
+    const taskIntent = classifyTaskIntent({
+      task,
+      mode: "analyze-file",
+      workspaceContext,
+      command: filePath,
+    });
     result = await analyzer.analyzeLogFile(filePath, task, {
       summaryLevels,
       streamOutput,
@@ -432,6 +439,7 @@ export async function handleAnalyzeFileCommand(context) {
           filePath,
           cwd: analyzeCwd,
           promptJournalId: promptJournalId ?? null,
+          taskType: taskIntent.intent,
           workspaceType:
             workspaceContext?.classification?.domain ??
             workspaceContext?.classification?.label ??

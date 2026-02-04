@@ -70,7 +70,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     this.historyDir = path.join(this.baseDir, "history");
     this.sessionsDir = path.join(this.baseDir, "prompt-sessions");
     this.researchDir = path.join(this.baseDir, "research");
+    this.webDir = path.join(this.baseDir, "web");
     this.historyNotesDir = path.join(this.baseDir, "history-notes");
+    this.nitpickDir = path.join(this.baseDir, "nitpick");
     this.promptExchangesDir = path.join(this.baseDir, "prompt-exchanges");
     this.promptDecompositionsDir = path.join(this.promptExchangesDir, "decompositions");
     this.promptStepJournalDir = path.join(this.promptExchangesDir, "stepwise");
@@ -90,7 +92,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     this.lmStudioStatusFile = path.join(this.healthDir, "lmstudio-status.json");
     this.promptSessionsIndexFile = path.join(this.indicesDir, "prompt-sessions-index.json");
     this.researchIndexFile = path.join(this.indicesDir, "research-index.json");
+    this.webIndexFile = path.join(this.indicesDir, "web-index.json");
     this.historyNotesIndexFile = path.join(this.indicesDir, "history-notes-index.json");
+    this.nitpickIndexFile = path.join(this.indicesDir, "nitpick-index.json");
     this.benchmarkHistoryFile = path.join(this.historyDir, "benchmarks.json");
     this.recomposeCacheDir = path.join(this.baseDir, "recompose-cache");
     this.recomposeNarrativesFile = path.join(this.recomposeCacheDir, "narratives.json");
@@ -124,7 +128,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     await fs.promises.mkdir(this.sessionsDir, { recursive: true });
     await fs.promises.mkdir(this.historyDir, { recursive: true });
     await fs.promises.mkdir(this.researchDir, { recursive: true });
+    await fs.promises.mkdir(this.webDir, { recursive: true });
     await fs.promises.mkdir(this.historyNotesDir, { recursive: true });
+    await fs.promises.mkdir(this.nitpickDir, { recursive: true });
     await fs.promises.mkdir(this.recomposeCacheDir, { recursive: true });
     await fs.promises.mkdir(this.promptExchangesDir, { recursive: true });
     await fs.promises.mkdir(this.promptDecompositionsDir, { recursive: true });
@@ -143,7 +149,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     await this._ensureFile(this.lmStudioStatusFile, { entries: [] });
     await this._ensureFile(this.promptSessionsIndexFile, { entries: [] });
     await this._ensureFile(this.researchIndexFile, { entries: [] });
+    await this._ensureFile(this.webIndexFile, { entries: [] });
     await this._ensureFile(this.historyNotesIndexFile, { entries: [] });
+    await this._ensureFile(this.nitpickIndexFile, { entries: [] });
     await this._ensureFile(this.benchmarkHistoryFile, { entries: [] });
     await this._ensureFile(this.recomposeNarrativesFile, { entries: {}, order: [] });
     await this._ensureFile(this.promptDecompositionIndexFile, { entries: [] });
@@ -166,7 +174,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
         { name: "lmstudio-status", file: this._relative(this.lmStudioStatusFile) },
         { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
         { name: "research", file: this._relative(this.researchIndexFile) },
+        { name: "web", file: this._relative(this.webIndexFile) },
         { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },
+        { name: "nitpick", file: this._relative(this.nitpickIndexFile) },
         { name: "benchmarks", file: this._relative(this.benchmarkHistoryFile) },
         { name: "prompt-decompositions", file: this._relative(this.promptDecompositionIndexFile) },
         { name: "helpers", file: this._relative(this.helperScriptsIndexFile) },
@@ -1377,7 +1387,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       { name: "lmstudio-status", file: this._relative(this.lmStudioStatusFile) },
       { name: "prompt-sessions", file: this._relative(this.promptSessionsIndexFile) },
       { name: "research", file: this._relative(this.researchIndexFile) },
+      { name: "web", file: this._relative(this.webIndexFile) },
       { name: "history-notes", file: this._relative(this.historyNotesIndexFile) },
+      { name: "nitpick", file: this._relative(this.nitpickIndexFile) },
       { name: "benchmarks", file: this._relative(this.benchmarkHistoryFile) },
       { name: "prompt-decompositions", file: this._relative(this.promptDecompositionIndexFile) },
       { name: "helpers", file: this._relative(this.helperScriptsIndexFile) },
@@ -1688,6 +1700,33 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     return { path: jsonPath, id: normalized.id };
   }
 
+  async saveWebSnapshot(snapshot) {
+    if (!snapshot || !snapshot.url) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = snapshot.savedAt ?? new Date().toISOString();
+    const normalized = {
+      ...snapshot,
+      id: snapshot.id ?? randomUUID(),
+      savedAt: timestamp,
+    };
+    const slug = this._slugify(normalized.title ?? normalized.url ?? "web");
+    const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
+    const jsonPath = path.join(this.webDir, `${baseName}.json`);
+    await this._writeJSON(jsonPath, normalized);
+    await this._upsertIndexEntry(this.webIndexFile, {
+      id: normalized.id,
+      url: normalized.url,
+      title: normalized.title ?? null,
+      savedAt: normalized.savedAt,
+      status: normalized.status ?? null,
+      file: this._relative(jsonPath),
+    });
+    await this._updateRootIndex();
+    return { path: jsonPath, id: normalized.id };
+  }
+
   async saveHistoryNote(note, markdownContent) {
     if (!note) {
       return null;
@@ -1717,6 +1756,44 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       markdown: markdownPath ? this._relative(markdownPath) : null,
     });
     return { jsonPath, markdownPath, id: normalized.id };
+  }
+
+  async saveNitpickSession(session) {
+    if (!session || !session.task) {
+      return null;
+    }
+    await this.prepare();
+    const timestamp = session.createdAt ?? new Date().toISOString();
+    const id = session.id ?? randomUUID();
+    const slug = this._slugify(session.label ?? session.task ?? "nitpick");
+    const baseName = `${timestamp.replace(/[:.]/g, "-")}-${slug}`;
+    const sessionDir = path.join(this.nitpickDir, baseName);
+    await fs.promises.mkdir(sessionDir, { recursive: true });
+    const sessionPath = path.join(sessionDir, "session.json");
+    const finalTextPath =
+      typeof session.finalText === "string" && session.finalText.trim().length > 0
+        ? path.join(sessionDir, "final.txt")
+        : null;
+    const payload = {
+      ...session,
+      id,
+      createdAt: timestamp,
+      finalTextPath: finalTextPath ? this._relative(finalTextPath) : null,
+    };
+    await this._writeJSON(sessionPath, payload);
+    if (finalTextPath) {
+      await fs.promises.writeFile(finalTextPath, session.finalText, "utf8");
+    }
+    await this._upsertIndexEntry(this.nitpickIndexFile, {
+      id,
+      task: session.task,
+      mode: session.mode ?? null,
+      createdAt: timestamp,
+      models: session.models ?? null,
+      file: this._relative(sessionPath),
+    });
+    await this._updateRootIndex();
+    return { path: sessionPath, id, finalTextPath };
   }
 
   async loadLatestHistoryNote() {

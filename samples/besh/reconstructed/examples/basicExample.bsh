@@ -1,0 +1,6 @@
+// Offline stub generated for examples/basicExample.bsh
+// Narrative excerpt: # Loop Implementations in MySh Example Script This script demonstrates various loop constructs within the MySh shell environment, focusing on extensibility and practical usage. ## Core Loop Function: 
+function examples_basicExample_bshStub() {
+  throw new Error("Offline stub executed for examples/basicExample.bsh");
+}
+module.exports = examples_basicExample_bshStub;

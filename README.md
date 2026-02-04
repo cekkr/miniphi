@@ -12,6 +12,8 @@ miniPhi is a workspace-aware assistant: it scans the current folder (your repo),
 - **Log triage:** summarize failing test runs, crashes, CI output, benchmark traces, and long CLI transcripts.
 - **Change planning:** produce step-by-step plans grounded in the actual workspace layout.
 - **Drafting edits:** propose patches, refactors, docs updates, or helper scripts based on the repo snapshot.
+- **Nitpicking loops:** pit two local models against each other to improve long-form drafts.
+- **Web snapshots (optional):** capture page text via headless browsing for blind fact-finding.
 
 > miniPhi is intentionally **local-first**. It’s not a hosted chatbot: you run LM Studio and you own the artifacts it writes.
 
@@ -64,6 +66,18 @@ Analyze an existing file (log or text file already on disk):
 miniphi analyze-file --file ./logs/output.log --task "Summarize the recurring crash"
 ```
 
+Capture a web page into a local snapshot:
+
+```bash
+miniphi web-browse --url "https://example.com" --max-chars 4000
+```
+
+Run a writer/critic nitpicking loop (optional blind mode uses web sources):
+
+```bash
+miniphi nitpick --task "Write a 2000-word brief on X" --rounds 2
+```
+
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
 ```bash
@@ -101,6 +115,7 @@ For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluato
 miniPhi stores reproducible artifacts in two places:
 
 - **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, helper scripts, reports, recompose edit logs/rollbacks)
+- **Project-local (extra):** `.miniphi/web/` for browser snapshots and `.miniphi/nitpick/` for writer/critic sessions
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
 If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
@@ -115,6 +130,10 @@ These are the commands most people start with:
   Execute a command and analyze the output.
 - `miniphi analyze-file --file <path> --task "<objective>"`  
   Analyze a log or text file.
+- `miniphi web-browse --url "<https://example.com>"`  
+  Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
+- `miniphi nitpick --task "<long-form writing task>"`  
+  Run a writer/critic loop (optionally blind with web sources) and store the session under `.miniphi/nitpick/`.
 - `miniphi helpers` / `miniphi command-library`  
   Inspect saved helper scripts and recommended commands.
 - `miniphi cache-prune`  

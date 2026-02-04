@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi nitpick draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task",
+    "role",
+    "content",
+    "word_count_estimate",
+    "summary",
+    "needs_more_context",
+    "missing_snippets",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "task": { "type": "string" },
+    "role": { "type": "string", "enum": ["writer", "critic"] },
+    "stage": { "type": "string", "enum": ["draft", "revision", "final"] },
+    "content": { "type": "string" },
+    "word_count_estimate": { "type": "integer", "minimum": 0 },
+    "summary": { "type": "string" },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "claim"],
+        "properties": {
+          "source_id": { "type": "string" },
+          "claim": { "type": "string" },
+          "excerpt": { "type": "string" }
+        }
+      }
+    },
+    "sources_used": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "needs_more_context": { "type": "boolean" },
+    "missing_snippets": { "type": "array", "items": { "type": "string" } },
+    "stop_reason": { "type": "string" },
+    "stop_reason_code": { "type": ["string", "null"] },
+    "stop_reason_detail": { "type": ["string", "null"] }
+  }
+}
