@@ -69,6 +69,8 @@ Slices (do in order):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260203a --prompt-journal-status paused --no-stream --session-timeout 900 --no-navigator` returned a non-fallback JSON summary; stepwise journal metadata shows stop_reason fields were null.
    - Live analyze-file run (2026-02-03, navigator enabled):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260203b --prompt-journal-status paused --no-stream --session-timeout 900` returned a non-fallback JSON summary with planner/navigator active; stepwise journal metadata shows stop_reason fields were null.
+   - LM Studio health gate (2026-02-06):
+     - `node src/index.js lmstudio-health --timeout 10 --json` confirms REST connectivity (falls back to `/models` when `/status` is unsupported) and the run pipeline now probes LM Studio before prompting; use `--no-health` to skip or force WS transport in config.
    - Note: short `--session-timeout` values (<= 300s) can starve the final analysis prompt after planner/navigator overhead on this host; prefer >= 900s or add `--no-navigator` for time-boxed runs.
    - Live bash prompt tests (2026-01-16):
      - `node --test unit-tests-js/cli-bash-advanced.test.js` passed against `samples/bash`; tests isolate `.miniphi` roots and use a temp config with `prompt.timeoutSeconds=120` to avoid LM Studio timeouts (runtime ~9 min).

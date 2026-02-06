@@ -9,6 +9,7 @@
       "timeoutMs": 300000
     },
     "health": {
+      "enabled": true,
       "timeoutMs": 10000
     },
     "prompt": {

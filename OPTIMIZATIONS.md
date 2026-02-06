@@ -146,7 +146,9 @@ Status:
   stop-reason codes/details; invalid-response classification catches "no valid JSON") and align
   session timeout + retry caps. Model load failures due to LM Studio resource guardrails now
   fall back to REST-only when available (WS disabled). Session timeout guardrails now auto-skip
-  planner/navigator prompts when the session budget is at or below the prompt timeout.
+  planner/navigator prompts when the session budget is at or below the prompt timeout. A REST
+  health gate now probes LM Studio before prompting (skips when transport is forced to WS) and
+  persists stop reasons if the probe fails.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

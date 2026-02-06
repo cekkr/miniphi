@@ -34,6 +34,7 @@ When you add or change CLI behavior:
 - JSON-first prompts are mandatory: embed a schema id from `docs/prompts/*.schema.json`, set `response_format=json_schema`, and validate every response before using it.
 - Keep context manageable by decomposing tasks; cap recursion, retries, and helper runtimes, and persist resumable plans in `.miniphi/`.
 - LM Studio health and capability inventory must gate prompts; helper scripts live under `.miniphi/` with timeouts and audit trails.
+- Health gate defaults to REST probes; set `lmStudio.health.enabled=false` or pass `--no-health` to skip (auto-skips when transport is forced to WS).
 - Benchmarks and recomposition runs are treated as runtime validation, not side projects.
 - Roadmap slices close only when proven by a real `miniphi` run that applies JSON-backed edits and records a stop reason.
 

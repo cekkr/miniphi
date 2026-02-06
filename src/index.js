@@ -55,6 +55,7 @@ import {
   DEFAULT_PROMPT_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
 } from "./libs/runtime-defaults.js";
+import { resolveLmStudioTransportPreference } from "./libs/lmstudio-transport.js";
 import {
   buildLineRangeFromChunk,
   buildTruncationChunkKey,
@@ -72,7 +73,7 @@ import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
-import { handleLmStudioHealthCommand } from "./commands/lmstudio-health.js";
+import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
 import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
@@ -675,6 +676,17 @@ function classifyStopInfo(error) {
   if (!error) {
     return { reason: "unknown", code: null, detail: null };
   }
+  if (typeof error === "object") {
+    const reason = error.stopReason ?? error.stop_reason ?? null;
+    if (reason) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        reason,
+        code: error.stopReasonCode ?? error.stop_reason_code ?? null,
+        detail: error.stopReasonDetail ?? error.stop_reason_detail ?? message ?? null,
+      };
+    }
+  }
   if (isLmStudioProtocolError(error)) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -1253,6 +1265,7 @@ async function main() {
   const resolvedLmStudioBaseUrl = lmStudioEndpoints?.restBaseUrl ?? null;
   const resolvedLmStudioWsBase = lmStudioEndpoints?.wsBaseUrl ?? null;
   const isLmStudioLocal = lmStudioEndpoints?.isLocal ?? true;
+  const transportPreference = resolveLmStudioTransportPreference(configData);
   const resourceMonitorForcedDisabled = !isLmStudioLocal;
   if (resourceMonitorForcedDisabled && verbose) {
     const endpointLabel = resolvedLmStudioBaseUrl ?? "unknown";
@@ -1265,6 +1278,36 @@ async function main() {
     schemaDir: path.join(PROJECT_ROOT, "docs", "prompts"),
   });
   let restClient = null;
+
+  const healthConfig = configData?.lmStudio?.health ?? {};
+  const healthEnabledConfig = parseBooleanFlag(healthConfig.enabled ?? healthConfig.enable);
+  const healthDisabledFlag = parseBooleanFlag(options["no-health"]);
+  let healthGateEnabled =
+    healthDisabledFlag === true
+      ? false
+      : healthEnabledConfig !== null
+        ? healthEnabledConfig
+        : true;
+  if (transportPreference.mode === "ws" && !transportPreference.forceRest) {
+    if (healthGateEnabled && verbose) {
+      console.warn(
+        "[MiniPhi] LM Studio health gate skipped because transport is set to WS.",
+      );
+    }
+    healthGateEnabled = false;
+  }
+  const resolvedHealthTimeoutMs =
+    resolveDurationMs({
+      secondsValue: healthConfig.timeoutSeconds ?? healthConfig.timeout,
+      secondsLabel: "config.lmStudio.health.timeoutSeconds",
+      millisValue: healthConfig.timeoutMs,
+      millisLabel: "config.lmStudio.health.timeoutMs",
+    }) ?? 10000;
+  const healthGate = {
+    enabled: healthGateEnabled,
+    timeoutMs: resolvedHealthTimeoutMs,
+    label: healthConfig.label ?? "health-gate",
+  };
 
   if (command === "web-research") {
     await handleWebResearch({ options, positionals, verbose });
@@ -2090,6 +2133,49 @@ const describeWorkspace = (dir, options = undefined) =>
   });
 
   const runCommandFlow = async () => {
+    if (healthGate.enabled) {
+      const healthCwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+      const healthMemory = new MiniPhiMemory(healthCwd);
+      await healthMemory.prepare();
+      const healthResult = await probeLmStudioHealth({
+        configData,
+        modelSelection,
+        restBaseUrl: resolvedLmStudioBaseUrl,
+        timeoutMs: healthGate.timeoutMs,
+      });
+      await healthMemory.recordLmStudioStatus(healthResult.snapshot, {
+        label: healthGate.label,
+      });
+      if (healthResult.warning && verbose) {
+        console.warn(`[MiniPhi] LM Studio health warning: ${healthResult.warning}`);
+      }
+      if (!healthResult.ok) {
+        const reason = healthResult.stopInfo?.reason ?? "lmstudio-health";
+        const detail =
+          healthResult.stopInfo?.detail ?? healthResult.snapshot.error ?? "Unknown error";
+        const healthError = new Error(`LM Studio health check failed (${reason}): ${detail}`);
+        healthError.stopReason = reason;
+        healthError.stopReasonCode = healthResult.stopInfo?.code ?? null;
+        healthError.stopReasonDetail = detail;
+        await healthMemory.persistExecutionStop({
+          mode: command,
+          task,
+          command: typeof options.cmd === "string" ? options.cmd : null,
+          filePath: typeof options.file === "string" ? options.file : null,
+          cwd: healthCwd,
+          summaryLevels,
+          contextLength,
+          promptId,
+          status: "failed",
+          stopReason: healthError.stopReason,
+          stopReasonCode: healthError.stopReasonCode,
+          stopReasonDetail: healthError.stopReasonDetail,
+          error: healthError.message,
+        });
+        throw healthError;
+      }
+    }
+
     await lmStudioRuntime.load({ contextLength, gpu });
     scoringPhi = lmStudioRuntime.scoringPhi;
 
@@ -2583,6 +2669,7 @@ Options:
   --verbose                    Print progress details
   --no-stream                  Disable live streaming of model output
   --no-summary                 Skip JSON summary footer
+  --no-health                  Skip the LM Studio health gate before prompting
   --prompt-id <id>             Attach/continue a prompt session (persists LM history)
   --plan-branch <id>           Focus a saved decomposition branch when reusing --prompt-id
   --refresh-plan               Force a fresh plan even if one exists for the prompt session

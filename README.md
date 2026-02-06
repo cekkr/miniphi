@@ -112,6 +112,7 @@ Use `--session-timeout` to cap total runtime; follow-up helpers are skipped once
 When `--session-timeout` is at or below the prompt timeout, MiniPhi auto-skips planner/navigator prompts to preserve analysis time.
 Use `--no-navigator` to skip navigator prompts and follow-up commands when you want a single-pass run.
 Navigator follow-ups skip MiniPhi CLI entrypoints to avoid recursive runs.
+MiniPhi runs a fast LM Studio REST health gate before prompting; disable it with `--no-health` if you intentionally rely on WS-only setups.
 
 Model responses are schema-validated with deterministic JSON fallbacks across analysis, planning, and navigation prompts. Non-JSON preambles are rejected under the strict parser, so the fallback payload is saved instead of salvaging mixed prose.
 Stop reasons (with a code/detail) are stored in execution archives and prompt journals; when a session budget expires before Phi responds, the analyzer emits deterministic fallback JSON instead of hanging.
