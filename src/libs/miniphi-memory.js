@@ -235,6 +235,11 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       baseUrl: snapshot.baseUrl ?? null,
       transport: snapshot.transport ?? null,
       status: snapshot.status ?? snapshot,
+      stopReason: snapshot.stopReason ?? null,
+      stopReasonCode: snapshot.stopReasonCode ?? null,
+      stopReasonDetail: snapshot.stopReasonDetail ?? null,
+      warning: snapshot.warning ?? null,
+      error: snapshot.error ?? null,
     };
     const history = await this._readJSON(this.lmStudioStatusFile, { entries: [] });
     const entries = Array.isArray(history.entries) ? history.entries : [];

@@ -162,6 +162,26 @@ export class LMStudioHandler {
   }
 
   /**
+   * Adjusts transport preferences (e.g., force REST-only execution).
+   * @param {{ preferRestTransport?: boolean, forceRest?: boolean, reason?: string }} [options]
+   */
+  setTransportPreference(options = undefined) {
+    if (!options || typeof options !== "object") {
+      return;
+    }
+    if (typeof options.preferRestTransport === "boolean") {
+      this.preferRestTransport = options.preferRestTransport;
+    }
+    if (options.forceRest) {
+      this.preferRestTransport = true;
+      if (this.protocolGate) {
+        this.protocolGate.wsDisabled = true;
+        this.protocolGate.lastWarning = options.reason ?? "transport=rest";
+      }
+    }
+  }
+
+  /**
    * Enables or disables the prompt performance tracker.
    * @param {import("./prompt-performance-tracker.js").default | null} tracker
    */

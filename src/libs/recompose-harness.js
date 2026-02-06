@@ -8,6 +8,7 @@ import PromptPerformanceTracker from "./prompt-performance-tracker.js";
 import RecomposeTester from "./recompose-tester.js";
 import { resolveDurationMs } from "./cli-utils.js";
 import { buildRestClientOptions } from "./lmstudio-client-options.js";
+import { resolveLmStudioTransportPreference } from "./lmstudio-transport.js";
 import {
   DEFAULT_PROMPT_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -71,6 +72,23 @@ async function createRecomposeHarness({
 }) {
   let phi4 = null;
   let manager = null;
+  const transportPreference = resolveLmStudioTransportPreference(configData);
+  const forceRestTransport = transportPreference.forceRest;
+  const transportLockedToWs = transportPreference.mode === "ws";
+  let preferRest = Boolean(preferRestTransport);
+  if (!transportLockedToWs && transportPreference.preferRest) {
+    preferRest = true;
+  }
+  if (forceRestTransport) {
+    preferRest = true;
+  }
+  let effectiveRestClient = restClient;
+  if (!effectiveRestClient) {
+    const restOptions = buildRestClientOptions(configData, { modelKey, contextLength });
+    if (restOptions) {
+      effectiveRestClient = new LMStudioRestClient(restOptions);
+    }
+  }
   if (recomposeMode === "live") {
     manager = new LMStudioManager(configData.lmStudio?.clientOptions);
     const baseTimeoutMs =
@@ -90,11 +108,20 @@ async function createRecomposeHarness({
       schemaRegistry,
       modelKey,
     });
-    if (restClient) {
-      phi4.setRestClient(restClient, { preferRestTransport });
+    if (effectiveRestClient) {
+      phi4.setRestClient(effectiveRestClient, { preferRestTransport: preferRest });
     }
-    const loadOptions = { contextLength, gpu };
-    await phi4.load(loadOptions);
+    if (forceRestTransport && typeof phi4.setTransportPreference === "function") {
+      phi4.setTransportPreference({
+        forceRest: true,
+        preferRestTransport: true,
+        reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+      });
+    }
+    if (!forceRestTransport) {
+      const loadOptions = { contextLength, gpu };
+      await phi4.load(loadOptions);
+    }
   }
   const memory = new MiniPhiMemory(process.cwd());
   await memory.prepare();

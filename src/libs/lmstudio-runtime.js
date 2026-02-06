@@ -5,6 +5,7 @@ import AdaptiveLMStudioHandler from "./adaptive-lmstudio-handler.js";
 import PromptPerformanceTracker from "./prompt-performance-tracker.js";
 import { resolveDurationMs } from "./cli-utils.js";
 import { buildRestClientOptions } from "./lmstudio-client-options.js";
+import { resolveLmStudioTransportPreference } from "./lmstudio-transport.js";
 import {
   DEFAULT_NO_TOKEN_TIMEOUT_MS,
   DEFAULT_PROMPT_TIMEOUT_MS,
@@ -120,6 +121,9 @@ async function createLmStudioRuntime({
   wsBaseUrl = null,
   routerConfig = null,
 }) {
+  const transportPreference = resolveLmStudioTransportPreference(configData);
+  const forceRestTransport = transportPreference.forceRest;
+  const transportLockedToWs = transportPreference.mode === "ws";
   const clientOptions = wsBaseUrl
     ? { ...(configData?.lmStudio?.clientOptions ?? {}), baseUrl: wsBaseUrl }
     : configData?.lmStudio?.clientOptions;
@@ -151,8 +155,11 @@ async function createLmStudioRuntime({
     const noTokenSeconds = Math.round(noTokenTimeoutMs / 1000);
     const restLabel = restBaseUrl ?? "n/a";
     const wsLabel = wsBaseUrl ?? "default";
+    const transportLabel = forceRestTransport
+      ? "rest (forced)"
+      : transportPreference.mode ?? "auto";
     console.log(
-      `[MiniPhi] Prompt timeout ${promptSeconds}s | No-token timeout ${noTokenSeconds}s | LM Studio WS ${wsLabel} | REST ${restLabel}`,
+      `[MiniPhi] Prompt timeout ${promptSeconds}s | No-token timeout ${noTokenSeconds}s | LM Studio transport ${transportLabel} | WS ${wsLabel} | REST ${restLabel}`,
     );
   }
   const modelKey = modelSelection?.modelKey;
@@ -181,7 +188,14 @@ async function createLmStudioRuntime({
         noTokenTimeoutMs,
         modelKey,
       });
-  if (process.env.MINIPHI_FORCE_REST !== "1") {
+  if (forceRestTransport && typeof phi4.setTransportPreference === "function") {
+    phi4.setTransportPreference({
+      forceRest: true,
+      preferRestTransport: true,
+      reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+    });
+  }
+  if (!forceRestTransport) {
     try {
       await manager.getModel(modelKey, {
         contextLength,
@@ -197,27 +211,46 @@ async function createLmStudioRuntime({
       }
     }
   } else if (verbose) {
-    console.log("[MiniPhi] Skipping model preload because MINIPHI_FORCE_REST=1.");
+    console.log("[MiniPhi] Skipping model preload because REST transport is forced.");
   }
 
   let restClient = null;
+  let restInitError = null;
   let lmStudioCompatibility = { ok: true, preferRest: !isLmStudioLocal };
   let preferRestTransport = !isLmStudioLocal;
+  if (transportLockedToWs) {
+    preferRestTransport = false;
+  } else if (transportPreference.preferRest) {
+    preferRestTransport = true;
+  }
   try {
     const restOverrides = restBaseUrl ? { baseUrl: restBaseUrl } : undefined;
     restClient = new LMStudioRestClient(
       buildRestClientOptions(configData, modelSelection, restOverrides),
     );
     lmStudioCompatibility = await checkLmStudioCompatibility(restClient, manager, { verbose });
-    if (typeof lmStudioCompatibility?.preferRest === "boolean") {
-      preferRestTransport = lmStudioCompatibility.preferRest;
+    if (!transportLockedToWs && typeof lmStudioCompatibility?.preferRest === "boolean") {
+      preferRestTransport = lmStudioCompatibility.preferRest || preferRestTransport;
     }
   } catch (error) {
+    restInitError = error;
     if (verbose) {
       console.warn(
         `[MiniPhi] LM Studio REST client disabled: ${error instanceof Error ? error.message : error}`,
       );
     }
+  }
+  if (forceRestTransport && !restClient) {
+    const message =
+      restInitError instanceof Error ? restInitError.message : String(restInitError ?? "");
+    throw new Error(
+      `REST transport forced but LM Studio REST client is unavailable${
+        message ? `: ${message}` : "."
+      }`,
+    );
+  }
+  if (forceRestTransport) {
+    preferRestTransport = true;
   }
   if (restClient) {
     phi4.setRestClient(restClient, { preferRestTransport });
@@ -257,10 +290,18 @@ async function createLmStudioRuntime({
     scoringPhi: null,
     async load(options = undefined) {
       const loadGpu = typeof options?.gpu === "undefined" ? gpu : options.gpu;
-      await phi4.load({
-        contextLength: options?.contextLength ?? contextLength,
-        gpu: loadGpu,
-      });
+      if (forceRestTransport && typeof phi4.setTransportPreference === "function") {
+        phi4.setTransportPreference({
+          forceRest: true,
+          preferRestTransport: true,
+          reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+        });
+      } else {
+        await phi4.load({
+          contextLength: options?.contextLength ?? contextLength,
+          gpu: loadGpu,
+        });
+      }
       if (performanceTracker && debugLm) {
         let scoringPhi = new LMStudioHandler(manager, {
           systemPrompt: PROMPT_SCORING_SYSTEM_PROMPT,
@@ -271,12 +312,23 @@ async function createLmStudioRuntime({
         if (restClient) {
           scoringPhi.setRestClient(restClient, { preferRestTransport });
         }
+        if (forceRestTransport && typeof scoringPhi.setTransportPreference === "function") {
+          scoringPhi.setTransportPreference({
+            forceRest: true,
+            preferRestTransport: true,
+            reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+          });
+        }
         try {
           const scoringContextLength = Math.min(
             options?.contextLength ?? contextLength,
             8192,
           );
-          await scoringPhi.load({ contextLength: scoringContextLength, gpu: loadGpu });
+          if (!forceRestTransport) {
+            await scoringPhi.load({ contextLength: scoringContextLength, gpu: loadGpu });
+          } else if (verbose) {
+            console.log("[MiniPhi] Prompt scoring evaluator using REST transport.");
+          }
           performanceTracker.setSemanticEvaluator(async (evaluationPrompt, parentTrace) => {
             scoringPhi.clearHistory();
             return scoringPhi.chatStream(

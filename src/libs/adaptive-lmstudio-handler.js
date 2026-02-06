@@ -167,6 +167,7 @@ export default class AdaptiveLMStudioHandler {
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.restClient = options?.restClient ?? null;
     this.preferRestTransport = Boolean(options?.preferRestTransport);
+    this.transportPreference = null;
     this.executionRegister = null;
     this.executionContext = null;
     this.learnEnabled = options?.learnEnabled !== false;
@@ -235,6 +236,23 @@ export default class AdaptiveLMStudioHandler {
     this._forEachHandler((handler) =>
       handler.setRestClient(restClient, { preferRestTransport: this.preferRestTransport }),
     );
+  }
+
+  setTransportPreference(options = undefined) {
+    if (!options || typeof options !== "object") {
+      return;
+    }
+    this.transportPreference = { ...(this.transportPreference ?? {}), ...options };
+    if (typeof options.preferRestTransport === "boolean") {
+      this.preferRestTransport = options.preferRestTransport;
+    }
+    this._forEachHandler((handler) => {
+      if (typeof handler.setTransportPreference === "function") {
+        handler.setTransportPreference(options);
+      } else if (typeof options.preferRestTransport === "boolean") {
+        handler.preferRestTransport = options.preferRestTransport;
+      }
+    });
   }
 
   setNoTokenTimeout(timeoutMs, options = undefined) {
@@ -629,6 +647,9 @@ export default class AdaptiveLMStudioHandler {
       });
       if (this.restClient) {
         handler.setRestClient(this.restClient, { preferRestTransport: this.preferRestTransport });
+      }
+      if (this.transportPreference && typeof handler.setTransportPreference === "function") {
+        handler.setTransportPreference(this.transportPreference);
       }
       if (this.executionRegister && typeof handler.setExecutionRegister === "function") {
         handler.setExecutionRegister(this.executionRegister, this.executionContext);

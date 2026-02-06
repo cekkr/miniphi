@@ -11,6 +11,7 @@ import WebBrowser from "../libs/web-browser.js";
 import { parseStrictJsonObject } from "../libs/core-utils.js";
 import { parseNumericSetting, resolveDurationMs } from "../libs/cli-utils.js";
 import { classifyTaskIntent, selectNitpickModels } from "../libs/model-selector.js";
+import { resolveLmStudioTransportPreference } from "../libs/lmstudio-transport.js";
 
 const DEFAULT_ROUNDS = 2;
 const DEFAULT_TARGET_WORDS = 1200;
@@ -461,6 +462,7 @@ export async function handleNitpickCommand(context) {
     schemaRegistry,
     modelKey: criticModel,
   });
+  const transportPreference = resolveLmStudioTransportPreference(configData);
   writer.setPromptRecorder(promptRecorder);
   critic.setPromptRecorder(promptRecorder);
   if (performanceTracker) {
@@ -468,8 +470,25 @@ export async function handleNitpickCommand(context) {
     critic.setPerformanceTracker(performanceTracker);
   }
   if (restClient) {
-    writer.setRestClient(restClient);
-    critic.setRestClient(restClient);
+    writer.setRestClient(restClient, { preferRestTransport: transportPreference.preferRest });
+    critic.setRestClient(restClient, { preferRestTransport: transportPreference.preferRest });
+  }
+  if (transportPreference.forceRest && typeof writer.setTransportPreference === "function") {
+    writer.setTransportPreference({
+      forceRest: true,
+      preferRestTransport: true,
+      reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+    });
+  }
+  if (transportPreference.forceRest && typeof critic.setTransportPreference === "function") {
+    critic.setTransportPreference({
+      forceRest: true,
+      preferRestTransport: true,
+      reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
+    });
+  }
+  if (transportPreference.forceRest && !restClient) {
+    throw new Error("REST transport forced but LM Studio REST client is unavailable.");
   }
 
   const executionId = archiveMetadata.executionId ?? randomUUID();
@@ -509,9 +528,13 @@ export async function handleNitpickCommand(context) {
     });
   }
 
-  await writer.load({ contextLength, gpu });
-  if (criticModel !== writerModel) {
-    await critic.load({ contextLength, gpu });
+  if (!transportPreference.forceRest) {
+    await writer.load({ contextLength, gpu });
+    if (criticModel !== writerModel) {
+      await critic.load({ contextLength, gpu });
+    }
+  } else if (verbose) {
+    console.log("[MiniPhi][Nitpick] REST transport forced; skipping model preload.");
   }
 
   const steps = [];

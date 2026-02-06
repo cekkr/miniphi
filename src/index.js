@@ -72,6 +72,7 @@ import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
+import { handleLmStudioHealthCommand } from "./commands/lmstudio-health.js";
 import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
@@ -83,6 +84,7 @@ import { handleWorkspaceCommand } from "./commands/workspace.js";
 const COMMANDS = new Set([
   "run",
   "analyze-file",
+  "lmstudio-health",
   "web-research",
   "web-browse",
   "history-notes",
@@ -1291,6 +1293,17 @@ async function main() {
 
   if (command === "cache-prune") {
     await handleCachePruneCommand({ options, verbose, configData });
+    return;
+  }
+
+  if (command === "lmstudio-health") {
+    await handleLmStudioHealthCommand({
+      options,
+      verbose,
+      configData,
+      modelSelection,
+      restBaseUrl: resolvedLmStudioBaseUrl,
+    });
     return;
   }
 
@@ -2529,6 +2542,7 @@ function printHelp() {
 Usage:
   node src/index.js run --cmd "npm test" --task "Analyze failures"
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
+  node src/index.js lmstudio-health --timeout 10
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js web-browse --url "https://example.com" --max-chars 4000
   node src/index.js history-notes --label "post benchmark"
@@ -2626,6 +2640,12 @@ Web research:
   --include-raw                Persist raw provider payload into the saved snapshot
   --no-save                    Do not store the research snapshot under .miniphi/research
   --note <text>                Optional annotation attached to the research snapshot
+
+LM Studio health:
+  --timeout <s>                REST probe timeout in seconds (default: config.lmStudio.health.timeoutMs or prompt timeout)
+  --timeout-ms <ms>            REST probe timeout in milliseconds
+  --label <text>               Optional label stored with the health snapshot
+  --no-save                    Do not store the health snapshot under .miniphi/health
 
 Web browse:
   --url <text>                 URL to open (can be repeated or passed as positional)

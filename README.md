@@ -25,6 +25,8 @@ miniPhi is a workspace-aware assistant: it scans the current folder (your repo),
 - A model loaded in LM Studio  
   Defaults/presets typically include `mistralai/devstral-small-2-2512` or `mistralai/devstral-small-2507` (you can switch via `--model` or config).
 
+MiniPhi defaults to REST transport (`lmStudio.transport: "rest"`). Switch to WebSocket by overriding the setting in `config.json`.
+
 ## Install (from source)
 
 ```bash
@@ -64,6 +66,12 @@ Analyze an existing file (log or text file already on disk):
 
 ```bash
 miniphi analyze-file --file ./logs/output.log --task "Summarize the recurring crash"
+```
+
+Run a fast LM Studio health check (REST probe with clear stop reason):
+
+```bash
+miniphi lmstudio-health --timeout 10
 ```
 
 Capture a web page into a local snapshot:
@@ -130,6 +138,8 @@ These are the commands most people start with:
   Execute a command and analyze the output.
 - `miniphi analyze-file --file <path> --task "<objective>"`  
   Analyze a log or text file.
+- `miniphi lmstudio-health`  
+  Fast REST probe with stop reasons stored under `.miniphi/health/`.
 - `miniphi web-browse --url "<https://example.com>"`  
   Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
 - `miniphi nitpick --task "<long-form writing task>"`  
