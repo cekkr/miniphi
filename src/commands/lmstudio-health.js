@@ -150,6 +150,7 @@ export async function handleLmStudioHealthCommand({
   const contextLength = extractContextLength(status);
   const gpu = extractGpu(status);
   const modelCount = countModels(modelsFallback);
+  const jsonOutput = Boolean(options.json);
 
   if (ok) {
     const baseLabel = snapshot.baseUrl ?? "unknown";
@@ -160,19 +161,43 @@ export async function handleLmStudioHealthCommand({
       Number.isFinite(modelCount) ? `models=${modelCount}` : null,
     ].filter(Boolean);
     const statusLine = statusBits.length ? ` (${statusBits.join(" | ")})` : "";
-    console.log(`[MiniPhi][Health] LM Studio REST OK: ${baseLabel}${statusLine}`);
-    if (warning) {
-      console.warn(`[MiniPhi][Health] Warning: ${warning}`);
+    if (!jsonOutput) {
+      console.log(`[MiniPhi][Health] LM Studio REST OK: ${baseLabel}${statusLine}`);
+      if (warning) {
+        console.warn(`[MiniPhi][Health] Warning: ${warning}`);
+      }
     }
   } else {
     const reason = stopInfo?.reason ?? "lmstudio-health";
     const detail = stopInfo?.detail ?? snapshot.error ?? "Unknown error";
-    console.error(`[MiniPhi][Health] LM Studio REST failed (${reason}): ${detail}`);
+    if (!jsonOutput) {
+      console.error(`[MiniPhi][Health] LM Studio REST failed (${reason}): ${detail}`);
+    }
     process.exitCode = 1;
   }
 
   if (record?.path && verbose) {
     const rel = path.relative(process.cwd(), record.path) || record.path;
     console.log(`[MiniPhi][Health] Snapshot saved to ${rel}`);
+  }
+
+  if (jsonOutput) {
+    const payload = {
+      ok,
+      base_url: snapshot.baseUrl ?? null,
+      transport: snapshot.transport ?? "rest",
+      model: model ?? null,
+      context_length: contextLength ?? null,
+      gpu: gpu ?? null,
+      model_count: Number.isFinite(modelCount) ? modelCount : null,
+      warning: warning ?? null,
+      stop_reason: stopInfo?.reason ?? (ok ? null : "lmstudio-health"),
+      stop_reason_code: stopInfo?.code ?? null,
+      stop_reason_detail: stopInfo?.detail ?? null,
+      error: snapshot.error ?? null,
+      recorded_at: record?.entry?.recordedAt ?? null,
+      snapshot_path: record?.path ?? null,
+    };
+    console.log(JSON.stringify(payload, null, 2));
   }
 }

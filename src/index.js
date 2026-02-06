@@ -2645,6 +2645,7 @@ LM Studio health:
   --timeout <s>                REST probe timeout in seconds (default: config.lmStudio.health.timeoutMs or prompt timeout)
   --timeout-ms <ms>            REST probe timeout in milliseconds
   --label <text>               Optional label stored with the health snapshot
+  --json                       Print a JSON summary for CI-friendly checks
   --no-save                    Do not store the health snapshot under .miniphi/health
 
 Web browse:

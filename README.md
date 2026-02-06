@@ -74,6 +74,8 @@ Run a fast LM Studio health check (REST probe with clear stop reason):
 miniphi lmstudio-health --timeout 10
 ```
 
+For CI-friendly checks, add `--json` to emit a machine-readable summary.
+
 Capture a web page into a local snapshot:
 
 ```bash
