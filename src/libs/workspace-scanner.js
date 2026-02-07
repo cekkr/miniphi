@@ -18,6 +18,8 @@ const DEFAULT_IGNORED_DIRS = new Set([
 ]);
 
 const DEFAULT_SKIP_FILES = new Set([".gitkeep"]);
+const CACHE_KIND_SYNC = "sync";
+const CACHE_KIND_ASYNC = "async";
 
 function normalizeScanSet(values) {
   if (!values) {
@@ -67,6 +69,52 @@ function resolveScanOptions(options = undefined) {
   };
 }
 
+function createWorkspaceScanCache() {
+  return {
+    sync: new Map(),
+    async: new Map(),
+  };
+}
+
+function resolveCacheStore(scanCache, kind) {
+  if (!scanCache) {
+    return null;
+  }
+  if (scanCache instanceof Map) {
+    return scanCache;
+  }
+  if (typeof scanCache !== "object") {
+    return null;
+  }
+  const key = kind === CACHE_KIND_ASYNC ? "async" : "sync";
+  if (!(scanCache[key] instanceof Map)) {
+    scanCache[key] = new Map();
+  }
+  return scanCache[key];
+}
+
+function hasCompatibleScanResult(scanResult, root) {
+  return Boolean(
+    scanResult?.root &&
+      path.resolve(scanResult.root) === root &&
+      Array.isArray(scanResult.entries),
+  );
+}
+
+function buildWorkspaceScanCacheKey(baseDir, options = undefined) {
+  const root = baseDir ? path.resolve(baseDir) : "";
+  const resolved = resolveScanOptions(options);
+  const ignored = Array.from(resolved.ignoredDirs).sort();
+  return JSON.stringify({
+    root,
+    ignored,
+    maxDepth: resolved.maxDepth,
+    maxEntries: resolved.maxEntries,
+    includeFiles: resolved.includeFiles,
+    includeDirectories: resolved.includeDirectories,
+  });
+}
+
 export function scanWorkspaceSync(baseDir, options = undefined) {
   const resolvedRoot = baseDir ? path.resolve(baseDir) : null;
   const resolvedOptions = resolveScanOptions(options);
@@ -102,6 +150,7 @@ export function scanWorkspaceSync(baseDir, options = undefined) {
     let dirents = [];
     try {
       dirents = fs.readdirSync(current.dir, { withFileTypes: true });
+      dirents.sort((a, b) => a.name.localeCompare(b.name));
     } catch {
       continue;
     }
@@ -158,6 +207,60 @@ export async function scanWorkspace(baseDir, options = undefined) {
   return scanWorkspaceSync(baseDir, options);
 }
 
+export function resolveWorkspaceScanSync(baseDir, options = undefined) {
+  const root = baseDir ? path.resolve(baseDir) : null;
+  if (!root) {
+    return scanWorkspaceSync(baseDir, options);
+  }
+  if (hasCompatibleScanResult(options?.scanResult, root)) {
+    return options.scanResult;
+  }
+  const cacheKey = buildWorkspaceScanCacheKey(root, options);
+  const syncCache = resolveCacheStore(options?.scanCache, CACHE_KIND_SYNC);
+  if (syncCache?.has(cacheKey)) {
+    return syncCache.get(cacheKey);
+  }
+  const result = scanWorkspaceSync(root, options);
+  if (syncCache) {
+    syncCache.set(cacheKey, result);
+  }
+  return result;
+}
+
+export async function resolveWorkspaceScan(baseDir, options = undefined) {
+  const root = baseDir ? path.resolve(baseDir) : null;
+  if (!root) {
+    return scanWorkspace(baseDir, options);
+  }
+  if (hasCompatibleScanResult(options?.scanResult, root)) {
+    return options.scanResult;
+  }
+  const cacheKey = buildWorkspaceScanCacheKey(root, options);
+  const syncCache = resolveCacheStore(options?.scanCache, CACHE_KIND_SYNC);
+  if (syncCache?.has(cacheKey)) {
+    return syncCache.get(cacheKey);
+  }
+  const asyncCache = resolveCacheStore(options?.scanCache, CACHE_KIND_ASYNC);
+  if (asyncCache?.has(cacheKey)) {
+    return asyncCache.get(cacheKey);
+  }
+  const pending = scanWorkspace(root, options);
+  if (asyncCache) {
+    asyncCache.set(cacheKey, pending);
+  }
+  try {
+    const result = await pending;
+    if (syncCache) {
+      syncCache.set(cacheKey, result);
+    }
+    return result;
+  } finally {
+    if (asyncCache) {
+      asyncCache.delete(cacheKey);
+    }
+  }
+}
+
 export function filterWorkspaceFiles(files, options = undefined) {
   if (!Array.isArray(files)) {
     return [];
@@ -174,4 +277,9 @@ export function filterWorkspaceFiles(files, options = undefined) {
   return filtered;
 }
 
-export { DEFAULT_IGNORED_DIRS, DEFAULT_SKIP_FILES, normalizeScanSet };
+export {
+  DEFAULT_IGNORED_DIRS,
+  DEFAULT_SKIP_FILES,
+  createWorkspaceScanCache,
+  normalizeScanSet,
+};

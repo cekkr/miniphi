@@ -4,7 +4,7 @@ import {
   DEFAULT_IGNORED_DIRS,
   DEFAULT_SKIP_FILES,
   filterWorkspaceFiles,
-  scanWorkspace,
+  resolveWorkspaceScan,
 } from "./workspace-scanner.js";
 
 export async function listWorkspaceFiles(baseDir, options = undefined) {
@@ -13,10 +13,11 @@ export async function listWorkspaceFiles(baseDir, options = undefined) {
   }
   const scanResult =
     options?.scanResult ??
-    (await scanWorkspace(baseDir, {
+    (await resolveWorkspaceScan(baseDir, {
       ignoredDirs: options?.ignoredDirs ?? DEFAULT_IGNORED_DIRS,
       maxDepth: options?.maxDepth,
       maxEntries: options?.maxEntries,
+      scanCache: options?.scanCache,
     }));
   return filterWorkspaceFiles(scanResult.files, {
     skipFiles: options?.skipFiles ?? DEFAULT_SKIP_FILES,

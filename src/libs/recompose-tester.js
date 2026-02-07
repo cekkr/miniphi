@@ -42,6 +42,7 @@ import {
   readReadmeSnippet,
 } from "./workspace-context-utils.js";
 import { classifyLmStudioError } from "./lmstudio-error-utils.js";
+import { createWorkspaceScanCache } from "./workspace-scanner.js";
 
 const TEXT_EXTENSIONS = new Set([
   ".js",
@@ -118,6 +119,7 @@ export default class RecomposeTester {
         ? options.promptFailureBudget
         : 1;
     this.workspaceContext = null;
+    this.workspaceScanCache = createWorkspaceScanCache();
     this.sampleMetadata = null;
     this.baselineSignatures = new Map();
     this.fileBlueprints = new Map();
@@ -198,6 +200,7 @@ export default class RecomposeTester {
     this.descriptionFiles = null;
     this.fileBlueprints.clear();
     this.baselineSignatures = new Map();
+    this.workspaceScanCache = createWorkspaceScanCache();
     await this._loadSampleMetadata(sampleDir, { codeDir, descriptionsDir });
 
     if (["code-to-markdown", "roundtrip"].includes(direction)) {
@@ -279,7 +282,10 @@ export default class RecomposeTester {
 
   async codeToMarkdown({ sourceDir, targetDir }) {
     const start = Date.now();
-    const files = await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs });
+    const files = await listWorkspaceFiles(sourceDir, {
+      ignoredDirs: this.ignoredDirs,
+      scanCache: this.workspaceScanCache,
+    });
     this.codeDir = sourceDir;
     this.codeFiles = files;
     const workspaceSummary = await this._ensureWorkspaceSummaryFromCode(sourceDir, files);
@@ -355,7 +361,12 @@ export default class RecomposeTester {
 
   async markdownToCode({ sourceDir, targetDir }) {
     const start = Date.now();
-    const files = (await listWorkspaceFiles(sourceDir, { ignoredDirs: this.ignoredDirs })).filter((file) =>
+    const files = (
+      await listWorkspaceFiles(sourceDir, {
+        ignoredDirs: this.ignoredDirs,
+        scanCache: this.workspaceScanCache,
+      })
+    ).filter((file) =>
       file.toLowerCase().endsWith(".md"),
     );
     this.descriptionDir = sourceDir;
@@ -424,8 +435,14 @@ export default class RecomposeTester {
 
   async compareDirectories({ baselineDir, candidateDir }) {
     const start = Date.now();
-    const baselineFiles = await listWorkspaceFiles(baselineDir, { ignoredDirs: this.ignoredDirs });
-    const candidateFiles = await listWorkspaceFiles(candidateDir, { ignoredDirs: this.ignoredDirs });
+    const baselineFiles = await listWorkspaceFiles(baselineDir, {
+      ignoredDirs: this.ignoredDirs,
+      scanCache: this.workspaceScanCache,
+    });
+    const candidateFiles = await listWorkspaceFiles(candidateDir, {
+      ignoredDirs: this.ignoredDirs,
+      scanCache: this.workspaceScanCache,
+    });
 
     const baselineMap = new Map(baselineFiles.map((rel) => [rel, path.join(baselineDir, rel)]));
     const candidateMap = new Map(candidateFiles.map((rel) => [rel, path.join(candidateDir, rel)]));
@@ -1107,7 +1124,10 @@ export default class RecomposeTester {
     } catch {
       return;
     }
-    const files = await listWorkspaceFiles(codeDir, { ignoredDirs: this.ignoredDirs });
+    const files = await listWorkspaceFiles(codeDir, {
+      ignoredDirs: this.ignoredDirs,
+      scanCache: this.workspaceScanCache,
+    });
     for (const relativePath of files) {
       const absolute = path.join(codeDir, relativePath);
       if (await this._isBinary(absolute)) {
@@ -2019,7 +2039,11 @@ export default class RecomposeTester {
     });
     const plan = await this._readSamplePlan(sampleDir);
     const manifestResult = codeDir
-      ? await collectManifestSummary(codeDir, { ignoredDirs: this.ignoredDirs, limit: 12 })
+      ? await collectManifestSummary(codeDir, {
+          ignoredDirs: this.ignoredDirs,
+          limit: 12,
+          scanCache: this.workspaceScanCache,
+        })
       : { manifest: [] };
     this.sampleMetadata = {
       sampleDir,

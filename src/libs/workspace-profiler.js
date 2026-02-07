@@ -4,7 +4,7 @@ import FileConnectionAnalyzer from "./file-connection-analyzer.js";
 import {
   DEFAULT_IGNORED_DIRS,
   normalizeScanSet,
-  scanWorkspaceSync,
+  resolveWorkspaceScanSync,
 } from "./workspace-scanner.js";
 
 const CODE_EXTENSIONS = new Set([
@@ -103,7 +103,7 @@ export default class WorkspaceProfiler {
     if (!fs.existsSync(root)) {
       throw new Error(`Workspace root not found: ${root}`);
     }
-    const scanResult = this._resolveScan(root, options?.scanResult);
+    const scanResult = this._resolveScan(root, options);
     const { stats, highlights } = this._summarizeScan(scanResult);
     const classification = this._classify(stats);
     const summary = this._formatSummary(root, stats, highlights, classification);
@@ -133,11 +133,12 @@ export default class WorkspaceProfiler {
     };
   }
 
-  _resolveScan(root, scanResult) {
-    if (scanResult?.root && path.resolve(scanResult.root) === root && Array.isArray(scanResult.entries)) {
-      return scanResult;
-    }
-    return scanWorkspaceSync(root, { ignoredDirs: this.ignoredDirs });
+  _resolveScan(root, options = undefined) {
+    return resolveWorkspaceScanSync(root, {
+      ignoredDirs: this.ignoredDirs,
+      scanResult: options?.scanResult,
+      scanCache: options?.scanCache,
+    });
   }
 
   _summarizeScan(scanResult) {

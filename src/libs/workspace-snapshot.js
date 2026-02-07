@@ -7,7 +7,7 @@ import {
   buildPromptTemplateBlock,
   buildPromptCompositionBlock,
 } from "./workspace-context-utils.js";
-import { scanWorkspace } from "./workspace-scanner.js";
+import { createWorkspaceScanCache, resolveWorkspaceScan } from "./workspace-scanner.js";
 import {
   extractLmStudioContextLength,
   extractLmStudioGpu,
@@ -493,9 +493,11 @@ async function generateWorkspaceSnapshot({
   emitFeatureDisableNotice = null,
 }) {
   let scanResult = null;
+  const scanCache = createWorkspaceScanCache();
   try {
-    scanResult = await scanWorkspace(rootDir, {
+    scanResult = await resolveWorkspaceScan(rootDir, {
       ignoredDirs: workspaceProfiler?.ignoredDirs ?? undefined,
+      scanCache,
     });
   } catch (error) {
     if (verbose) {
@@ -507,7 +509,7 @@ async function generateWorkspaceSnapshot({
 
   let profile;
   try {
-    profile = workspaceProfiler.describe(rootDir, { scanResult });
+    profile = workspaceProfiler.describe(rootDir, { scanResult, scanCache });
   } catch (error) {
     if (verbose) {
       console.warn(
@@ -520,6 +522,7 @@ async function generateWorkspaceSnapshot({
   const manifestResult = await collectManifestSummary(rootDir, {
     limit: 10,
     scanResult,
+    scanCache,
   }).catch((error) => {
     if (verbose) {
       console.warn(

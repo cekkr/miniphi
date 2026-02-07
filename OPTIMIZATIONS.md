@@ -27,9 +27,9 @@ These are the main areas where duplication or confusion is likely to slow develo
 
 - CLI orchestration is monolithic: `src/index.js` handles parsing, setup, execution, logging, and
   post-processing for all commands, creating repeated patterns and a single large change surface.
-- Workspace scanning is duplicated: `src/libs/workspace-profiler.js` and
-  `src/libs/workspace-context-utils.js` both traverse the filesystem with overlapping ignore rules
-  and manifest logic.
+- Workspace scanning was duplicated across `workspace-profiler` and
+  `workspace-context-utils`; the shared cache layer is now in place, but we still need to keep all
+  call sites on the same resolver path.
 - Prompt logging overlaps: `src/libs/prompt-recorder.js` and
   `src/libs/prompt-step-journal.js` both persist prompt/response data with similar metadata but
   different shapes, risking divergence.
@@ -107,6 +107,24 @@ Exit criteria:
 - `WorkspaceProfiler` and `workspace-context-utils` share a common scanning/cache layer.
 - A single scan populates manifests, stats, and ignored directories for all commands.
 - Workspace profiling output remains identical (aside from stable ordering).
+
+Status:
+- In progress. `src/libs/workspace-scanner.js` now exposes
+  `createWorkspaceScanCache()`, `resolveWorkspaceScan()`, and `resolveWorkspaceScanSync()` so
+  async/sync callers share one cache key contract and one traversal implementation.
+- `workspace-context-utils`, `workspace-profiler`, `workspace-snapshot`, and
+  `recompose-tester` now thread the same `scanCache` object so list + manifest + profile calls can
+  reuse one scan result during the run.
+- Directory entries are now name-sorted in `workspace-scanner` to keep manifest ordering stable and
+  deterministic.
+- New regression coverage:
+  `node --test unit-tests-js/workspace-scan-cache.test.js unit-tests-js/cli-workspace-scan.test.js unit-tests-js/cli-smoke.test.js`
+  plus full `npm test` (`40/40` passing).
+- Live proof runs:
+  `node src/index.js workspace --task "Audit this repo workspace and report top optimization targets with file references." --prompt-journal p1-workspace-cache-20260207-133119 --prompt-journal-status paused --no-stream --session-timeout 600`
+  recorded deterministic fallback stop metadata (`analysis-error`, context overflow),
+  and `node ..\\..\\src\\index.js workspace --task "Audit this sample workspace and summarize key files." --prompt-journal p1-workspace-cache-sample-20260207-133119 --prompt-journal-status paused --no-stream --session-timeout 600`
+  completed with non-fallback JSON and null stop reason fields.
 
 ### P1 - Prompt logging consolidation
 
