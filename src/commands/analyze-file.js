@@ -423,6 +423,11 @@ export async function handleAnalyzeFileCommand(context) {
       workspaceContext,
       command: filePath,
     });
+    const planSubContext = workspaceContext?.taskPlanFocusBranch
+      ? `plan-${workspaceContext.taskPlanFocusBranch}`
+      : workspaceContext?.taskPlanBranch
+        ? `plan-${workspaceContext.taskPlanBranch}`
+        : "analyze-main";
     result = await analyzer.analyzeLogFile(filePath, task, {
       summaryLevels,
       streamOutput,
@@ -436,6 +441,7 @@ export async function handleAnalyzeFileCommand(context) {
         mainPromptId: promptGroupId,
         metadata: {
           mode: "analyze-file",
+          subContext: planSubContext,
           filePath,
           cwd: analyzeCwd,
           promptJournalId: promptJournalId ?? null,
@@ -454,6 +460,10 @@ export async function handleAnalyzeFileCommand(context) {
           taskPlanId: planResult?.planId ?? null,
           taskPlanOutline: planResult?.outline ?? null,
           taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+          taskPlanFocusBranch: workspaceContext?.taskPlanFocusBranch ?? null,
+          taskPlanFocusReason: workspaceContext?.taskPlanFocusReason ?? null,
+          taskPlanFocusSegmentBlock: workspaceContext?.taskPlanFocusSegmentBlock ?? null,
+          taskPlanNextSubpromptBranch: workspaceContext?.taskPlanNextSubpromptBranch ?? null,
           taskPlanSource: workspaceContext?.taskPlanSource ?? null,
           workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
           workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,

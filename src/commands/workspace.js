@@ -61,6 +61,18 @@ function buildCompactWorkspaceSummaryContext(workspaceContext, planResult = unde
       planResult?.outline ?? workspaceContext.taskPlanOutline,
       900,
     ),
+    taskPlanFocusBranch:
+      planResult?.focusBranch ??
+      workspaceContext.taskPlanFocusBranch ??
+      workspaceContext.taskPlanBranch ??
+      null,
+    taskPlanFocusReason: planResult?.focusReason ?? workspaceContext.taskPlanFocusReason ?? null,
+    taskPlanFocusSegmentBlock: truncateText(
+      planResult?.focusSegmentBlock ?? workspaceContext.taskPlanFocusSegmentBlock,
+      900,
+    ),
+    taskPlanNextSubpromptBranch:
+      planResult?.nextSubpromptBranch ?? workspaceContext.taskPlanNextSubpromptBranch ?? null,
     capabilitySummary: truncateText(workspaceContext.capabilitySummary, 520),
     navigationSummary: truncateText(workspaceContext.navigationSummary, 360),
     navigationBlock: truncateText(workspaceContext.navigationBlock, 640),
@@ -128,6 +140,17 @@ function buildWorkspaceSummaryDataset(task, workspaceContext, planResult, option
   if (planResult?.outline ?? workspaceContext?.taskPlanOutline) {
     lines.push("Plan outline:");
     pushLines(planResult?.outline ?? workspaceContext?.taskPlanOutline, 900);
+  }
+  if (workspaceContext?.taskPlanFocusSegmentBlock) {
+    const branchLabel = workspaceContext.taskPlanFocusBranch ?? "auto";
+    lines.push(`Plan focus (${branchLabel}):`);
+    pushLines(workspaceContext.taskPlanFocusSegmentBlock, 900);
+  }
+  if (workspaceContext?.taskPlanNextSubpromptBranch) {
+    pushLines(
+      `Next suggested sub-prompt branch: ${workspaceContext.taskPlanNextSubpromptBranch}`,
+      180,
+    );
   }
   if (workspaceContext?.navigationBlock ?? workspaceContext?.navigationSummary) {
     lines.push("Navigation summary:");
@@ -414,6 +437,11 @@ export async function handleWorkspaceCommand(context) {
           mode: "workspace",
           workspaceContext: summaryWorkspaceContext,
         });
+        const planSubContext = summaryWorkspaceContext?.taskPlanFocusBranch
+          ? `plan-${summaryWorkspaceContext.taskPlanFocusBranch}`
+          : summaryWorkspaceContext?.taskPlanBranch
+            ? `plan-${summaryWorkspaceContext.taskPlanBranch}`
+            : "workspace-summary";
         summaryResult = await analyzer.analyzeDatasetLines(datasetLines, task, {
           summaryLevels,
           streamOutput,
@@ -428,6 +456,7 @@ export async function handleWorkspaceCommand(context) {
             mainPromptId: promptGroupId,
             metadata: {
               mode: "workspace",
+              subContext: planSubContext,
               cwd,
               promptJournalId: promptJournalId ?? null,
               taskType: taskIntent.intent,
@@ -445,6 +474,12 @@ export async function handleWorkspaceCommand(context) {
               taskPlanId: planResult?.planId ?? null,
               taskPlanOutline: planResult?.outline ?? null,
               taskPlanBranch: summaryWorkspaceContext?.taskPlanBranch ?? null,
+              taskPlanFocusBranch: summaryWorkspaceContext?.taskPlanFocusBranch ?? null,
+              taskPlanFocusReason: summaryWorkspaceContext?.taskPlanFocusReason ?? null,
+              taskPlanFocusSegmentBlock:
+                summaryWorkspaceContext?.taskPlanFocusSegmentBlock ?? null,
+              taskPlanNextSubpromptBranch:
+                summaryWorkspaceContext?.taskPlanNextSubpromptBranch ?? null,
               taskPlanSource: summaryWorkspaceContext?.taskPlanSource ?? null,
               workspaceConnections: summaryWorkspaceContext?.connections?.hotspots ?? null,
               workspaceConnectionGraph: summaryWorkspaceContext?.connectionGraphic ?? null,

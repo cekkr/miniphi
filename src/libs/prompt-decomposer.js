@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import {
   buildPlanSegments,
+  buildFocusedPlanSegments,
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
 } from "./core-utils.js";
@@ -339,6 +340,13 @@ export default class PromptDecomposer {
           outline: normalizedPlan.outline ?? null,
           segments: normalizedPlan.segments ?? null,
           segmentBlock: normalizedPlan.segmentBlock ?? null,
+          focusBranch: normalizedPlan.focusBranch ?? null,
+          focusReason: normalizedPlan.focusReason ?? null,
+          focusMatchedRequestedBranch: normalizedPlan.focusMatchedRequestedBranch ?? false,
+          focusSegments: normalizedPlan.focusSegments ?? null,
+          focusSegmentBlock: normalizedPlan.focusSegmentBlock ?? null,
+          nextSubpromptBranch: normalizedPlan.nextSubpromptBranch ?? null,
+          availableSubpromptBranches: normalizedPlan.availableSubpromptBranches ?? null,
           recommendedTools: normalizedPlan.recommendedTools ?? null,
           recommendationsBlock: normalizedPlan.recommendationsBlock ?? null,
           metadata: {
@@ -365,6 +373,7 @@ export default class PromptDecomposer {
   _buildRequestBody(payload, { compact = false, minimal = false } = {}) {
     const commandAnalysis = this._analyzeCommand(payload.command);
     const resume = this._buildResumeContext(payload);
+    const focusHint = this._buildFocusHint(payload);
     const classification = payload.workspace?.classification ?? null;
     const cachedWorkspace =
       minimal ? null : this._buildCachedWorkspaceHint(payload.workspace?.cachedHints, compact);
@@ -418,6 +427,7 @@ export default class PromptDecomposer {
       },
       expectations: {
         recursive: true,
+        nested_subprompts: true,
         captureTools: true,
         jsonOnly: true,
         stripPreambles: true,
@@ -429,6 +439,14 @@ export default class PromptDecomposer {
     }
     if (resume) {
       body.resume = resume;
+    }
+    if (focusHint) {
+      body.focus = focusHint;
+      body.expectations.focusBranch = focusHint.branch ?? payload.planBranch ?? null;
+      body.expectations.focusReason = focusHint.reason ?? null;
+      body.expectations.nextSubpromptBranch = focusHint.next_subprompt_branch ?? null;
+    } else if (payload.planBranch) {
+      body.expectations.focusBranch = payload.planBranch;
     }
     if (body.workspace.cached_hint && body.workspace.hint === body.workspace.cached_hint) {
       body.workspace.cached_hint = null;
@@ -591,6 +609,11 @@ export default class PromptDecomposer {
 
     const segments = buildPlanSegments(parsed, { limit: 36 });
     const segmentBlock = formatPlanSegmentsBlock(segments, { limit: 14 });
+    const focus = buildFocusedPlanSegments(segments, {
+      branch: payload.planBranch ?? focus.branch ?? null,
+      limit: 10,
+      sourceLimit: 36,
+    });
     const recommendedTools = Array.isArray(parsed.recommended_tools)
       ? parsed.recommended_tools
           .map((tool) => (typeof tool === "string" ? tool.trim() : ""))
@@ -616,6 +639,13 @@ export default class PromptDecomposer {
       branch: payload.planBranch ?? null,
       segments,
       segmentBlock,
+      focusBranch: focus.branch ?? null,
+      focusReason: focus.reason ?? null,
+      focusMatchedRequestedBranch: focus.matchedRequestedBranch ?? false,
+      focusSegments: focus.segments ?? [],
+      focusSegmentBlock: focus.block ?? null,
+      nextSubpromptBranch: focus.nextSubpromptBranch ?? null,
+      availableSubpromptBranches: focus.availableSubpromptBranches ?? [],
       recommendedTools,
       recommendationsBlock,
       schemaVersion,
@@ -708,12 +738,52 @@ export default class PromptDecomposer {
           has_children: Array.isArray(step?.children) && step.children.length > 0,
         }))
       : null;
+    const focusHint = this._buildFocusHint(payload);
     return {
       prompt_id: promptId,
       branch: branch || null,
       previous_plan_id: planId,
       outline: this._formatOutline(planPayload?.steps ?? null, 0, [], "", 24),
       preview_steps: planPreview,
+      focus_branch: focusHint?.branch ?? branch ?? null,
+      focus_reason: focusHint?.reason ?? null,
+      focus_steps: focusHint?.steps ?? null,
+      next_subprompt_branch: focusHint?.next_subprompt_branch ?? null,
+    };
+  }
+
+  _buildFocusHint(payload) {
+    const planCandidate = payload?.resumePlan?.plan ?? payload?.resumePlan ?? null;
+    const focus = buildFocusedPlanSegments(planCandidate, {
+      branch: payload?.planBranch ?? null,
+      limit: 8,
+      sourceLimit: 48,
+    });
+    if (!focus || !focus.branch || !Array.isArray(focus.segments) || focus.segments.length === 0) {
+      if (payload?.planBranch) {
+        return {
+          branch: payload.planBranch,
+          reason: "requested-branch",
+          matched_requested_branch: false,
+          steps: null,
+          next_subprompt_branch: null,
+          available_subprompt_branches: [],
+        };
+      }
+      return null;
+    }
+    const steps = focus.segments.slice(0, 8).map((segment) => ({
+      id: segment?.id ?? null,
+      title: segment?.title ?? null,
+      requires_subprompt: Boolean(segment?.requiresSubprompt),
+    }));
+    return {
+      branch: focus.branch,
+      reason: focus.reason ?? null,
+      matched_requested_branch: focus.matchedRequestedBranch ?? false,
+      steps,
+      next_subprompt_branch: focus.nextSubpromptBranch ?? null,
+      available_subprompt_branches: focus.availableSubpromptBranches ?? [],
     };
   }
 
@@ -862,6 +932,13 @@ export default class PromptDecomposer {
       branch: payload.planBranch ?? null,
       segments: [],
       segmentBlock: null,
+      focusBranch: null,
+      focusReason: null,
+      focusMatchedRequestedBranch: false,
+      focusSegments: [],
+      focusSegmentBlock: null,
+      nextSubpromptBranch: null,
+      availableSubpromptBranches: [],
       recommendedTools: [],
       recommendationsBlock: null,
       schemaVersion: "prompt-plan@fallback",

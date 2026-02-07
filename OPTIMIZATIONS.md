@@ -190,10 +190,26 @@ Status:
 - Workspace-summary analysis now applies conservative compaction defaults and a hard prompt budget
   cap (`2200` tokens) with dataset-mode truncation fallback, mitigating `n_keep >= n_ctx` failures
   when LM Studio reports incomplete context metadata for 4k runtime profiles.
+- Nested decomposition context now threads branch-focused sub-prompt hints end-to-end:
+  `core-utils` adds `buildFocusedPlanSegments()`, PromptDecomposer emits deterministic `focus`
+  blocks (`focusBranch`, `focusReason`, `nextSubpromptBranch`), and run/analyze/workspace prompt
+  metadata now sets `subContext` plus task-plan focus fields so model routing can select profiles
+  using task + branch context.
+- Prompt decomposition records persisted under `.miniphi/prompt-exchanges/decompositions/` and
+  stepwise journals now include focus metadata (`focusBranch`, `focusSegmentBlock`,
+  `nextSubpromptBranch`) for resumable nested follow-ups.
+- Regression coverage added:
+  `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js`
+  plus full `npm test` (`47/47` passing).
 - Live proof run:
   `node src/index.js workspace --task "Audit this repo workspace and report top optimization targets with file references." --prompt-journal p1-overflow-fix-20260207-215410 --prompt-journal-status paused --no-stream --session-timeout 600`
   completed without fallback; step artifact records compaction metadata under
   `.miniphi/prompt-exchanges/stepwise/p1-overflow-fix-20260207-215410/steps/step-001.json`.
+- Live proof run:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file and prioritize nested sub-prompts for follow-up checks." --summary-levels 1 --prompt-id p1-nested-focus-20260207 --prompt-journal p1-nested-focus-20260207 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 900 --plan-branch 1`
+  completed with non-fallback JSON and branch-focused plan context recorded in
+  `.miniphi/prompt-exchanges/stepwise/p1-nested-focus-20260207/steps/step-001.json` and
+  `.miniphi/prompt-exchanges/2d6c14c6-fd64-436e-81f2-6b80db419c28.json`.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

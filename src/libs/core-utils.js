@@ -112,6 +112,181 @@ export function buildPlanSegments(plan, options = undefined) {
   return segments;
 }
 
+function normalizePlanStepId(stepId) {
+  if (typeof stepId !== "string") {
+    return null;
+  }
+  const normalized = stepId.trim();
+  if (!normalized) {
+    return null;
+  }
+  const valid = normalized
+    .split(".")
+    .every((token) => token.length > 0 && /^[0-9]+$/.test(token));
+  return valid ? normalized : null;
+}
+
+function collectStepBranchPrefixes(stepId) {
+  const normalized = normalizePlanStepId(stepId);
+  if (!normalized) {
+    return [];
+  }
+  const parts = normalized.split(".");
+  const prefixes = [];
+  for (let index = 1; index <= parts.length; index += 1) {
+    prefixes.push(parts.slice(0, index).join("."));
+  }
+  return prefixes;
+}
+
+function isSameStepOrDescendant(stepId, branchId) {
+  const step = normalizePlanStepId(stepId);
+  const branch = normalizePlanStepId(branchId);
+  if (!step || !branch) {
+    return false;
+  }
+  return step === branch || step.startsWith(`${branch}.`);
+}
+
+function isSameStepOrAncestor(stepId, branchId) {
+  const step = normalizePlanStepId(stepId);
+  const branch = normalizePlanStepId(branchId);
+  if (!step || !branch) {
+    return false;
+  }
+  return step === branch || branch.startsWith(`${step}.`);
+}
+
+function resolveRequestedBranchId(requestedBranch, segments) {
+  const normalized = normalizePlanStepId(requestedBranch);
+  if (!normalized) {
+    return null;
+  }
+  const available = new Set(
+    segments
+      .map((segment) => normalizePlanStepId(segment?.id))
+      .filter(Boolean),
+  );
+  if (available.has(normalized)) {
+    return normalized;
+  }
+  const prefixes = collectStepBranchPrefixes(normalized).reverse();
+  for (const candidate of prefixes) {
+    if (available.has(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function inferDefaultBranchId(segments) {
+  const firstSubprompt = segments.find((segment) => Boolean(segment?.requiresSubprompt));
+  if (firstSubprompt?.id) {
+    return normalizePlanStepId(firstSubprompt.id);
+  }
+  const firstSegment = segments.find((segment) => Boolean(segment?.id));
+  return normalizePlanStepId(firstSegment?.id ?? null);
+}
+
+export function buildFocusedPlanSegments(planOrSegments, options = undefined) {
+  const sourceLimit = Math.max(1, Number(options?.sourceLimit) || 36);
+  const limit = Math.max(1, Number(options?.limit) || 10);
+  const requestedBranch = normalizePlanStepId(options?.branch ?? null);
+  const segments = Array.isArray(planOrSegments)
+    ? planOrSegments
+        .map((segment) =>
+          segment && typeof segment === "object" ? { ...segment } : null,
+        )
+        .filter(Boolean)
+    : buildPlanSegments(planOrSegments, { limit: sourceLimit });
+  if (!segments.length) {
+    return {
+      branch: null,
+      requestedBranch,
+      matchedRequestedBranch: false,
+      reason: "no-segments",
+      nextSubpromptBranch: null,
+      availableSubpromptBranches: [],
+      segments: [],
+      block: null,
+    };
+  }
+
+  const resolvedRequestedBranch = resolveRequestedBranchId(requestedBranch, segments);
+  let branch = resolvedRequestedBranch;
+  let reason = resolvedRequestedBranch
+    ? resolvedRequestedBranch === requestedBranch
+      ? "requested-branch"
+      : "requested-parent-branch"
+    : null;
+  if (!branch) {
+    branch = inferDefaultBranchId(segments);
+    reason = branch ? "auto-subprompt-branch" : "first-segment";
+  }
+
+  const focused = [];
+  const seen = new Set();
+  if (branch) {
+    for (const segment of segments) {
+      const stepId = normalizePlanStepId(segment?.id);
+      if (!stepId) {
+        continue;
+      }
+      if (!isSameStepOrDescendant(stepId, branch) && !isSameStepOrAncestor(stepId, branch)) {
+        continue;
+      }
+      if (seen.has(stepId)) {
+        continue;
+      }
+      focused.push(segment);
+      seen.add(stepId);
+      if (focused.length >= limit) {
+        break;
+      }
+    }
+  }
+  if (!focused.length) {
+    for (const segment of segments) {
+      const stepId = normalizePlanStepId(segment?.id);
+      if (!stepId || seen.has(stepId)) {
+        continue;
+      }
+      focused.push(segment);
+      seen.add(stepId);
+      if (focused.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  const availableSubpromptBranches = segments
+    .filter((segment) => Boolean(segment?.requiresSubprompt))
+    .map((segment) => normalizePlanStepId(segment?.id))
+    .filter(Boolean)
+    .slice(0, 12);
+  const nextSubpromptBranch =
+    focused
+      .map((segment) => normalizePlanStepId(segment?.id))
+      .find((stepId) =>
+        Boolean(stepId) &&
+        availableSubpromptBranches.includes(stepId) &&
+        stepId !== branch,
+      ) ??
+    availableSubpromptBranches.find((stepId) => stepId !== branch) ??
+    null;
+
+  return {
+    branch,
+    requestedBranch,
+    matchedRequestedBranch: Boolean(requestedBranch && resolvedRequestedBranch === requestedBranch),
+    reason,
+    nextSubpromptBranch,
+    availableSubpromptBranches,
+    segments: focused,
+    block: formatPlanSegmentsBlock(focused, { limit }),
+  };
+}
+
 export function formatPlanSegmentsBlock(segments, options = undefined) {
   if (!Array.isArray(segments) || segments.length === 0) {
     return null;

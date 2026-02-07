@@ -39,6 +39,7 @@ import {
   mergeFixedReferences,
   buildPlanOperations,
   buildPlanSegments,
+  buildFocusedPlanSegments,
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
   buildNavigationOperations,
@@ -476,6 +477,11 @@ async function recordPlanStepInJournal(journal, sessionId, context = undefined) 
       summary: context.planResult.summary ?? null,
       mode: context.mode ?? null,
       branch: context.planResult.branch ?? null,
+      focusBranch: context.planResult.focusBranch ?? null,
+      focusReason: context.planResult.focusReason ?? null,
+      focusMatchedRequestedBranch: Boolean(context.planResult.focusMatchedRequestedBranch),
+      focusSegmentBlock: context.planResult.focusSegmentBlock ?? null,
+      nextSubpromptBranch: context.planResult.nextSubpromptBranch ?? null,
       source: context.planSource ?? null,
       recommendedTools: context.planResult.recommendedTools ?? [],
       summaryBlock: responseSummary,
@@ -572,6 +578,15 @@ function normalizePlanRecord(planRecord, branch = null) {
     branch: branch || null,
     segments: Array.isArray(planRecord.segments) ? planRecord.segments : null,
     segmentBlock: planRecord.segmentBlock ?? null,
+    focusBranch: planRecord.focusBranch ?? null,
+    focusReason: planRecord.focusReason ?? null,
+    focusMatchedRequestedBranch: Boolean(planRecord.focusMatchedRequestedBranch),
+    focusSegments: Array.isArray(planRecord.focusSegments) ? planRecord.focusSegments : null,
+    focusSegmentBlock: planRecord.focusSegmentBlock ?? null,
+    nextSubpromptBranch: planRecord.nextSubpromptBranch ?? null,
+    availableSubpromptBranches: Array.isArray(planRecord.availableSubpromptBranches)
+      ? planRecord.availableSubpromptBranches
+      : null,
     recommendedTools: Array.isArray(planRecord.recommendedTools) ? planRecord.recommendedTools : null,
     recommendationsBlock: planRecord.recommendationsBlock ?? null,
     schemaId: "prompt-plan",
@@ -590,6 +605,32 @@ function enrichPlanResult(planResult) {
   if (!planResult.segmentBlock) {
     planResult.segmentBlock =
       formatPlanSegmentsBlock(planResult.segments, { limit: 16 }) ?? null;
+  }
+  const focus = buildFocusedPlanSegments(planResult.segments, {
+    branch: planResult.focusBranch ?? planResult.branch ?? null,
+    limit: 10,
+    sourceLimit: 48,
+  });
+  if (!planResult.focusBranch) {
+    planResult.focusBranch = focus.branch ?? null;
+  }
+  if (!planResult.focusReason) {
+    planResult.focusReason = focus.reason ?? null;
+  }
+  if (!Array.isArray(planResult.focusSegments) || planResult.focusSegments.length === 0) {
+    planResult.focusSegments = focus.segments ?? [];
+  }
+  if (!planResult.focusSegmentBlock) {
+    planResult.focusSegmentBlock = focus.block ?? null;
+  }
+  if (!planResult.nextSubpromptBranch) {
+    planResult.nextSubpromptBranch = focus.nextSubpromptBranch ?? null;
+  }
+  if (!Array.isArray(planResult.availableSubpromptBranches)) {
+    planResult.availableSubpromptBranches = focus.availableSubpromptBranches ?? [];
+  }
+  if (!planResult.focusMatchedRequestedBranch) {
+    planResult.focusMatchedRequestedBranch = Boolean(focus.matchedRequestedBranch);
   }
   if (!Array.isArray(planResult.recommendedTools)) {
     planResult.recommendedTools = Array.isArray(planResult.plan.recommended_tools)
@@ -619,6 +660,13 @@ function applyPlanResultToWorkspace(workspaceContext, planResult, planBranch = n
     taskPlanSource: planSource ?? null,
     taskPlanSegments: enriched.segments ?? null,
     taskPlanSegmentsBlock: enriched.segmentBlock ?? null,
+    taskPlanFocusBranch: enriched.focusBranch ?? null,
+    taskPlanFocusReason: enriched.focusReason ?? null,
+    taskPlanFocusMatchedRequestedBranch: Boolean(enriched.focusMatchedRequestedBranch),
+    taskPlanFocusSegments: enriched.focusSegments ?? null,
+    taskPlanFocusSegmentBlock: enriched.focusSegmentBlock ?? null,
+    taskPlanNextSubpromptBranch: enriched.nextSubpromptBranch ?? null,
+    taskPlanAvailableSubpromptBranches: enriched.availableSubpromptBranches ?? [],
     taskPlanRecommendations: enriched.recommendedTools ?? [],
     taskPlanRecommendationsBlock: enriched.recommendationsBlock ?? null,
   };
@@ -631,6 +679,11 @@ function logPlanContext(planResult, label = "[MiniPhi][Plan]") {
   const enriched = enrichPlanResult(planResult);
   if (enriched.segmentBlock) {
     console.log(`${label} Segments:\n${enriched.segmentBlock}`);
+  }
+  if (enriched.focusSegmentBlock) {
+    console.log(
+      `${label} Focus (${enriched.focusBranch ?? "auto"} | ${enriched.focusReason ?? "unspecified"}):\n${enriched.focusSegmentBlock}`,
+    );
   }
   if (enriched.recommendationsBlock) {
     console.log(`${label} ${enriched.recommendationsBlock}`);

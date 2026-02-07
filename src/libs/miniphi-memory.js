@@ -522,6 +522,15 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       outline: payload.outline ?? null,
       segments: Array.isArray(payload.segments) ? payload.segments : null,
       segmentBlock: payload.segmentBlock ?? null,
+      focusBranch: payload.focusBranch ?? null,
+      focusReason: payload.focusReason ?? null,
+      focusMatchedRequestedBranch: Boolean(payload.focusMatchedRequestedBranch),
+      focusSegments: Array.isArray(payload.focusSegments) ? payload.focusSegments : null,
+      focusSegmentBlock: payload.focusSegmentBlock ?? null,
+      nextSubpromptBranch: payload.nextSubpromptBranch ?? null,
+      availableSubpromptBranches: Array.isArray(payload.availableSubpromptBranches)
+        ? payload.availableSubpromptBranches
+        : null,
       recommendedTools: Array.isArray(payload.recommendedTools) ? payload.recommendedTools : null,
       recommendationsBlock: payload.recommendationsBlock ?? null,
       metadata: payload.metadata ?? null,

@@ -280,6 +280,11 @@ export async function handleRunCommand(context) {
       workspaceContext,
       command: cmd,
     });
+    const planSubContext = workspaceContext?.taskPlanFocusBranch
+      ? `plan-${workspaceContext.taskPlanFocusBranch}`
+      : workspaceContext?.taskPlanBranch
+        ? `plan-${workspaceContext.taskPlanBranch}`
+        : "run-main";
     result = await analyzer.analyzeCommandOutput(cmd, task, {
       summaryLevels,
       verbose,
@@ -294,6 +299,7 @@ export async function handleRunCommand(context) {
         mainPromptId: promptGroupId,
         metadata: {
           mode: "run",
+          subContext: planSubContext,
           command: cmd,
           cwd,
           promptJournalId: promptJournalId ?? null,
@@ -312,6 +318,10 @@ export async function handleRunCommand(context) {
           taskPlanId: planResult?.planId ?? null,
           taskPlanOutline: planResult?.outline ?? null,
           taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
+          taskPlanFocusBranch: workspaceContext?.taskPlanFocusBranch ?? null,
+          taskPlanFocusReason: workspaceContext?.taskPlanFocusReason ?? null,
+          taskPlanFocusSegmentBlock: workspaceContext?.taskPlanFocusSegmentBlock ?? null,
+          taskPlanNextSubpromptBranch: workspaceContext?.taskPlanNextSubpromptBranch ?? null,
           taskPlanSource: workspaceContext?.taskPlanSource ?? null,
           workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
           workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,

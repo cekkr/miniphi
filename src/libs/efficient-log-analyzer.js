@@ -1557,6 +1557,10 @@ export default class EfficientLogAnalyzer {
       taskPlanSummary: workspaceContext?.taskPlanSummary ?? null,
       taskPlanOutline: workspaceContext?.taskPlanOutline ?? null,
       taskPlanSegmentsBlock: workspaceContext?.taskPlanSegmentsBlock ?? null,
+      taskPlanFocusBranch: workspaceContext?.taskPlanFocusBranch ?? null,
+      taskPlanFocusReason: workspaceContext?.taskPlanFocusReason ?? null,
+      taskPlanFocusSegmentBlock: workspaceContext?.taskPlanFocusSegmentBlock ?? null,
+      taskPlanNextSubpromptBranch: workspaceContext?.taskPlanNextSubpromptBranch ?? null,
       taskPlanRecommendationsBlock: workspaceContext?.taskPlanRecommendationsBlock ?? null,
       capabilitySummary: workspaceContext?.capabilitySummary ?? null,
       connectionSummary:
@@ -2702,6 +2706,16 @@ export default class EfficientLogAnalyzer {
     }
     if (extraContext.taskPlanSegmentsBlock) {
       lines.push(`Task plan segments:\n${extraContext.taskPlanSegmentsBlock}`);
+    }
+    if (extraContext.taskPlanFocusSegmentBlock) {
+      const branchLabel = extraContext.taskPlanFocusBranch ?? "auto";
+      const reasonLabel = extraContext.taskPlanFocusReason ?? "unspecified";
+      lines.push(
+        `Task plan focus (${branchLabel} | ${reasonLabel}):\n${extraContext.taskPlanFocusSegmentBlock}`,
+      );
+    }
+    if (extraContext.taskPlanNextSubpromptBranch) {
+      lines.push(`Next suggested sub-prompt branch: ${extraContext.taskPlanNextSubpromptBranch}`);
     }
     if (extraContext.taskPlanRecommendationsBlock) {
       lines.push(extraContext.taskPlanRecommendationsBlock);

@@ -68,6 +68,8 @@ Analyze an existing file (log or text file already on disk):
 miniphi analyze-file --file ./logs/output.log --task "Summarize the recurring crash"
 ```
 
+For decomposition-driven workflows, pair `--prompt-id` with `--plan-branch <step-id>` to focus nested sub-prompts and carry that branch focus into downstream analysis context.
+
 Run a fast LM Studio health check (REST probe with clear stop reason):
 
 ```bash

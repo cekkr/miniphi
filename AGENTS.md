@@ -94,7 +94,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - AdaptiveLMStudioHandler + QLearningRouter: optional RL routing across model pools and prompt profiles; state persists under `.miniphi/indices/prompt-router.json` via `rlRouter`.
 - PromptSchemaRegistry / SchemaAdapterRegistry: load schemas from `docs/prompts/*.schema.json`, inject schema ids, adapt versions.
 - json-schema-utils: shared response_format builder + schema validator across LM Studio calls (run/analyze/navigator/decomposer).
-- PromptDecomposer + ApiNavigator: plan branches, propose commands/helpers, execute safe helpers, feed outputs back into prompts.
+- PromptDecomposer + ApiNavigator: plan branches, emit branch-focused nested sub-prompt hints (`focusBranch`, `focusSegmentBlock`, `nextSubpromptBranch`), propose commands/helpers, execute safe helpers, feed outputs back into prompts.
 - PromptStepJournal / PromptRecorder / PromptPerformanceTracker: persist per-step exchanges under `.miniphi/prompt-exchanges/` with telemetry.
 - EfficientLogAnalyzer + PythonLogSummarizer: compress outputs, honor `needs_more_context` and truncation plans; store hints in `.miniphi/executions/<id>/analysis.json`.
 - WorkspaceProfiler / CapabilityInventory / FileConnectionAnalyzer: cache repo shape + available commands, feed into prompts, and attach ASCII graphs or capability snapshots.
@@ -114,6 +114,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node src/index.js lmstudio-health --timeout 10` for a quick REST probe before long-running runs.
 - `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` to capture JSON/tool-call coverage from prompt exchanges.
+- `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js` to validate nested plan branch selection and decomposition focus hints.
 - `node --test unit-tests-js/cli-bash-advanced.test.js` to run live bash sample prompts (requires LM Studio; long-running).
 - `node --test unit-tests-js/romeo-miniphi-flow.test.js` (exercise EfficientLogAnalyzer file flow with stubbed Phi and chunked summaries).
 
@@ -295,7 +296,7 @@ Every command accepts `--config <path>` (falls back to searching upward for `con
 ### Frequently used flags
 - `--task` describes what the model should do with the log or command output. If omitted, it defaults to `"Provide a precise technical analysis"` from `config.example.json`.
 - `--prompt-id <id>` or `--config defaults.promptId` let you resume a chat session; transcripts are written to `.miniphi/prompt-sessions/<id>.json`.
-- `--plan-branch <step-id>` focuses a saved plan branch (paired with `--prompt-id`) instead of recomputing the decomposition; add `--refresh-plan` to force a new plan even when one is cached.
+- `--plan-branch <step-id>` focuses a saved plan branch (paired with `--prompt-id`) instead of recomputing the decomposition; MiniPhi now propagates the focused segment block into downstream analysis metadata (`subContext`, `taskPlanFocus*`) so routing can pick models/profiles by nested branch context. Add `--refresh-plan` to force a new plan even when one is cached.
 - `--prompt-journal [id]` mirrors every prompt + downstream operation into `.miniphi/prompt-exchanges/stepwise/<id>/`; combine with `--prompt-journal-status paused|completed|closed` to pause/resume journals explicitly.
 - `--python-script <path>` overrides the bundled `log_summarizer.py` (miniPhi will auto-detect `python3`, `python`, or `py`).
 - `--resume-truncation <execution-id>` replays the truncation plan saved for a previous analyze-file run; use it as soon as the CLI tells you a plan was captured.
