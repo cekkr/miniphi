@@ -8,6 +8,11 @@ import {
   buildPromptCompositionBlock,
 } from "./workspace-context-utils.js";
 import { scanWorkspace } from "./workspace-scanner.js";
+import {
+  extractLmStudioContextLength,
+  extractLmStudioGpu,
+  extractLmStudioModel,
+} from "./lmstudio-status-utils.js";
 
 function formatCommandLibraryBlock(entries, limit = 6) {
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -439,20 +444,9 @@ async function recordLmStudioStatusSnapshot(restClient, memory, options = undefi
     };
     const record = await memory.recordLmStudioStatus(snapshot, { label: options?.label ?? null });
     if (options?.verbose) {
-      const model =
-        status?.loaded_model ??
-        status?.model ??
-        status?.model_key ??
-        status?.modelKey ??
-        status?.defaultModel ??
-        null;
-      const contextLength =
-        status?.context_length ??
-        status?.contextLength ??
-        status?.context_length_limit ??
-        status?.context_length_max ??
-        null;
-      const gpu = status?.gpu ?? status?.device ?? status?.hardware ?? null;
+      const model = extractLmStudioModel(status);
+      const contextLength = extractLmStudioContextLength(status);
+      const gpu = extractLmStudioGpu(status);
       const relPath = record?.path ? path.relative(process.cwd(), record.path) : null;
       console.log(
         `[MiniPhi] LM Studio status: model=${model ?? "unknown"} ctx=${

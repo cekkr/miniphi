@@ -16,6 +16,7 @@ test("PromptRecorder normalizes response_format and tool metadata", async () => 
         messages: [{ role: "user", content: "Hello" }],
         promptText: "Hello",
         responseFormat: { type: "json_schema", json_schema: { name: "demo", schema: {} } },
+        toolDefinitions: [{ name: "request-tool" }],
       },
       response: {
         text: "{\"ok\":true}",
@@ -29,6 +30,8 @@ test("PromptRecorder normalizes response_format and tool metadata", async () => 
     assert.ok(payload.request.response_format);
     assert.equal(payload.request.responseFormat, undefined);
     assert.equal(payload.request.promptText, undefined);
+    assert.ok(Array.isArray(payload.request.tool_definitions));
+    assert.equal(payload.request.toolDefinitions, undefined);
     assert.ok(payload.response);
     assert.ok(Array.isArray(payload.response.tool_calls));
     assert.ok(Array.isArray(payload.response.tool_definitions));

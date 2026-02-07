@@ -126,7 +126,8 @@ Status:
   `promptText`) to trim duplicate payloads; remaining work is to decide how to further compact
   prompt/response data across recorder and journals without losing eval coverage. PromptRecorder
   now normalizes `tool_calls`/`tool_definitions` from camelCase response payloads so evaluator
-  tooling sees consistent shapes.
+  tooling sees consistent shapes and now applies the same canonicalization for request-side
+  `tool_definitions`.
   Analysis steps now record stop-reason fields (reason/code/detail) from analysis diagnostics so
   session timeouts and invalid-response fallbacks are visible in stepwise journals.
 
@@ -152,7 +153,9 @@ Status:
   health gate now probes LM Studio before prompting (skips when transport is forced to WS) and
   persists stop reasons if the probe fails; when /status reports a smaller context length, the
   run now clamps the prompt context length and updates the REST client default to reduce
-  context-overflow failures.
+  context-overflow failures. Status field parsing is now centralized in
+  `src/libs/lmstudio-status-utils.js` and reused by health probes, workspace status snapshots,
+  and runtime compatibility checks.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

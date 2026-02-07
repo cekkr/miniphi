@@ -73,6 +73,12 @@ Slices (do in order):
      - `node src/index.js lmstudio-health --timeout 10 --json` confirms REST connectivity (falls back to `/models` when `/status` is unsupported) and the run pipeline now probes LM Studio before prompting; use `--no-health` to skip or force WS transport in config.
    - Live analyze-file run (2026-02-06):
      - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 0 --prompt-journal live-romeo-json-20260206b --prompt-journal-status paused --no-stream --session-timeout 600 --no-navigator` returned a non-fallback JSON summary after prompt budget compaction; health gate now clamps context length when `/status` reports a smaller limit.
+   - LM Studio health probe (2026-02-07):
+     - `node src/index.js lmstudio-health --timeout 10 --json` returned `ok: true` with `/status` unsupported warning and `model_count: 8`, confirming deterministic fallback to `/models`.
+   - Live analyze-file run (2026-02-07, truncation continuity):
+     - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260207-runtime-clamp --prompt-journal-status paused --no-stream --session-timeout 900 --resume-truncation 6a00b878-59e6-400b-838a-9e4539745213` resumed and re-completed truncation progress (`1/1` chunk); main analysis returned non-fallback JSON.
+   - Live analyze-file run (2026-02-07, strict parse + retry):
+     - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-20260207-runtime-clamp-nonav --prompt-journal-status paused --no-stream --session-timeout 900 --no-navigator` completed with schema-only retry success and recorded `needs_more_context`/`missing_snippets`.
    - Note: short `--session-timeout` values (<= 300s) can starve the final analysis prompt after planner/navigator overhead on this host; prefer >= 900s or add `--no-navigator` for time-boxed runs.
    - Live bash prompt tests (2026-01-16):
      - `node --test unit-tests-js/cli-bash-advanced.test.js` passed against `samples/bash`; tests isolate `.miniphi` roots and use a temp config with `prompt.timeoutSeconds=120` to avoid LM Studio timeouts (runtime ~9 min).
@@ -84,6 +90,10 @@ Slices (do in order):
      - `npm test` passed (includes updated navigation schema prompt-template checks).
    - Unit test update (2026-02-06):
      - `node --test unit-tests-js/prompt-recorder.test.js` passed (normalizes response_format + tool_calls/tool_definitions in prompt exchanges).
+   - Unit test update (2026-02-07):
+     - `node --test unit-tests-js/lmstudio-health.test.js unit-tests-js/lmstudio-status-utils.test.js unit-tests-js/prompt-recorder.test.js` passed (health probe fallback + status parsing + request/response tool metadata canonicalization).
+   - Unit test sweep (2026-02-07):
+     - `npm test` passed (`38/38`), including new `lmstudio-health` and `lmstudio-status-utils` coverage.
    - Live workspace stepwise run (2026-01-24):
      - `node src/index.js workspace --task "Audit JSON-first enforcement across run/analyze-file/workspace/decomposer/navigator; verify stop_reason + tool_calls logging; propose fixes + doc updates" --prompt-journal devstral-step-20260123a --prompt-journal-status paused --model mistralai/devstral-small-2-2512 --no-stream --session-timeout 300` fell back after navigator/decomposer timeouts; stepwise journal captured fallback JSON with stop_reason `timeout`.
    - Live workspace stepwise run (2026-01-24):

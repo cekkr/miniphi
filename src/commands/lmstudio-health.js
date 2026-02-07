@@ -4,62 +4,13 @@ import { resolveDurationMs } from "../libs/cli-utils.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildStopReasonInfo } from "../libs/lmstudio-error-utils.js";
-
-function extractStatusPayload(status) {
-  if (!status || typeof status !== "object") {
-    return null;
-  }
-  return status.status ?? status;
-}
-
-function extractModel(status) {
-  const payload = extractStatusPayload(status);
-  return (
-    payload?.loaded_model ??
-    payload?.model ??
-    payload?.model_key ??
-    payload?.modelKey ??
-    payload?.defaultModel ??
-    null
-  );
-}
-
-export function extractContextLength(status) {
-  const payload = extractStatusPayload(status);
-  return (
-    payload?.context_length ??
-    payload?.contextLength ??
-    payload?.context_length_limit ??
-    payload?.context_length_max ??
-    null
-  );
-}
-
-function extractGpu(status) {
-  const payload = extractStatusPayload(status);
-  return payload?.gpu ?? payload?.device ?? payload?.hardware ?? null;
-}
-
-function countModels(payload) {
-  if (!payload) {
-    return null;
-  }
-  if (Array.isArray(payload)) {
-    return payload.length;
-  }
-  if (Array.isArray(payload.data)) {
-    return payload.data.length;
-  }
-  if (Array.isArray(payload.models)) {
-    return payload.models.length;
-  }
-  return null;
-}
-
-function isStatusEndpointUnsupported(status) {
-  const error = status?.error ?? status?.status?.error ?? null;
-  return typeof error === "string" && /unexpected endpoint/i.test(error);
-}
+import {
+  countLmStudioModels,
+  extractLmStudioContextLength,
+  extractLmStudioGpu,
+  extractLmStudioModel,
+  isLmStudioStatusEndpointUnsupported,
+} from "../libs/lmstudio-status-utils.js";
 
 export async function probeLmStudioHealth({
   configData,
@@ -87,7 +38,7 @@ export async function probeLmStudioHealth({
 
   try {
     status = await restClient.getStatus();
-    if (status?.ok === false && isStatusEndpointUnsupported(status)) {
+    if (status?.ok === false && isLmStudioStatusEndpointUnsupported(status)) {
       warning = status.error ?? "Status endpoint unsupported";
       try {
         modelsFallback = await restClient.listModels();
@@ -173,10 +124,10 @@ export async function handleLmStudioHealthCommand({
     record = await memory.recordLmStudioStatus(health.snapshot, { label: label ?? "health-check" });
   }
 
-  const model = extractModel(health.status);
-  const contextLength = extractContextLength(health.status);
-  const gpu = extractGpu(health.status);
-  const modelCount = countModels(health.modelsFallback);
+  const model = extractLmStudioModel(health.status);
+  const contextLength = extractLmStudioContextLength(health.status);
+  const gpu = extractLmStudioGpu(health.status);
+  const modelCount = countLmStudioModels(health.modelsFallback);
   const jsonOutput = Boolean(options.json);
 
   if (health.ok) {

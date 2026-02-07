@@ -56,6 +56,7 @@ import {
   normalizeLmStudioRequestTimeoutMs,
 } from "./libs/runtime-defaults.js";
 import { resolveLmStudioTransportPreference } from "./libs/lmstudio-transport.js";
+import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import {
   buildLineRangeFromChunk,
   buildTruncationChunkKey,
@@ -73,11 +74,7 @@ import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
-import {
-  extractContextLength,
-  handleLmStudioHealthCommand,
-  probeLmStudioHealth,
-} from "./commands/lmstudio-health.js";
+import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
 import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
@@ -1419,6 +1416,7 @@ async function main() {
       resolvedSystemPrompt,
       modelSelection,
       contextLength,
+      contextLengthExplicit,
       gpu,
       debugLm,
       verbose,
@@ -1429,6 +1427,13 @@ async function main() {
       wsBaseUrl: resolvedLmStudioWsBase,
       routerConfig,
     });
+  if (
+    Number.isFinite(lmStudioRuntime?.resolvedContextLength) &&
+    lmStudioRuntime.resolvedContextLength > 0
+  ) {
+    contextLength = lmStudioRuntime.resolvedContextLength;
+    modelSelection.contextLength = lmStudioRuntime.resolvedContextLength;
+  }
   phi4 = lmStudioRuntime.phi4;
   restClient = lmStudioRuntime.restClient;
   performanceTracker = lmStudioRuntime.performanceTracker;
@@ -2178,7 +2183,7 @@ const describeWorkspace = (dir, options = undefined) =>
         });
         throw healthError;
       }
-      const healthContextLength = extractContextLength(healthResult.status);
+      const healthContextLength = extractLmStudioContextLength(healthResult.status);
       if (
         Number.isFinite(healthContextLength) &&
         healthContextLength > 0 &&

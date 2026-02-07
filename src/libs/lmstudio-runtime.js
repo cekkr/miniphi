@@ -6,6 +6,7 @@ import PromptPerformanceTracker from "./prompt-performance-tracker.js";
 import { resolveDurationMs } from "./cli-utils.js";
 import { buildRestClientOptions } from "./lmstudio-client-options.js";
 import { resolveLmStudioTransportPreference } from "./lmstudio-transport.js";
+import { extractLmStudioContextLength } from "./lmstudio-status-utils.js";
 import {
   DEFAULT_NO_TOKEN_TIMEOUT_MS,
   DEFAULT_PROMPT_TIMEOUT_MS,
@@ -26,6 +27,7 @@ async function checkLmStudioCompatibility(restClient, manager, options = undefin
     ok: true,
     reason: null,
     serverVersion: null,
+    statusContextLength: null,
     sdkVersion: typeof manager?.getSdkVersion === "function" ? manager.getSdkVersion() : null,
     preferRest: false,
   };
@@ -35,6 +37,7 @@ async function checkLmStudioCompatibility(restClient, manager, options = undefin
   let statusPayload = null;
   try {
     statusPayload = await restClient.getStatus();
+    result.statusContextLength = extractLmStudioContextLength(statusPayload);
     result.serverVersion =
       statusPayload?.version ??
       statusPayload?.status?.version ??
@@ -111,6 +114,7 @@ async function createLmStudioRuntime({
   resolvedSystemPrompt,
   modelSelection,
   contextLength,
+  contextLengthExplicit = false,
   gpu,
   debugLm,
   verbose,
@@ -195,24 +199,6 @@ async function createLmStudioRuntime({
       reason: transportPreference.reason ?? "config.lmStudio.transport=rest",
     });
   }
-  if (!forceRestTransport) {
-    try {
-      await manager.getModel(modelKey, {
-        contextLength,
-        gpu,
-      });
-    } catch (error) {
-      if (verbose) {
-        console.warn(
-          `[MiniPhi] Unable to preload model ${modelKey}: ${
-            error instanceof Error ? error.message : error
-          }`,
-        );
-      }
-    }
-  } else if (verbose) {
-    console.log("[MiniPhi] Skipping model preload because REST transport is forced.");
-  }
 
   let restClient = null;
   let restInitError = null;
@@ -252,8 +238,43 @@ async function createLmStudioRuntime({
   if (forceRestTransport) {
     preferRestTransport = true;
   }
+  let resolvedContextLength = contextLength;
+  if (
+    Number.isFinite(lmStudioCompatibility?.statusContextLength) &&
+    lmStudioCompatibility.statusContextLength > 0 &&
+    !contextLengthExplicit &&
+    resolvedContextLength > lmStudioCompatibility.statusContextLength
+  ) {
+    resolvedContextLength = lmStudioCompatibility.statusContextLength;
+    if (verbose) {
+      console.log(
+        `[MiniPhi] Runtime clamp: LM Studio reports context length ${resolvedContextLength}.`,
+      );
+    }
+  }
   if (restClient) {
+    if (typeof restClient.setDefaultModel === "function") {
+      restClient.setDefaultModel(modelKey, resolvedContextLength);
+    }
     phi4.setRestClient(restClient, { preferRestTransport });
+  }
+  if (!forceRestTransport) {
+    try {
+      await manager.getModel(modelKey, {
+        contextLength: resolvedContextLength,
+        gpu,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Unable to preload model ${modelKey}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  } else if (verbose) {
+    console.log("[MiniPhi] Skipping model preload because REST transport is forced.");
   }
 
   let performanceTracker = null;
@@ -286,10 +307,19 @@ async function createLmStudioRuntime({
     manager,
     phi4,
     restClient,
+    resolvedContextLength,
     performanceTracker,
     scoringPhi: null,
     async load(options = undefined) {
       const loadGpu = typeof options?.gpu === "undefined" ? gpu : options.gpu;
+      const requestedContextLength = options?.contextLength ?? resolvedContextLength;
+      const loadContextLength =
+        Number.isFinite(lmStudioCompatibility?.statusContextLength) &&
+        lmStudioCompatibility.statusContextLength > 0 &&
+        !contextLengthExplicit &&
+        requestedContextLength > lmStudioCompatibility.statusContextLength
+          ? lmStudioCompatibility.statusContextLength
+          : requestedContextLength;
       if (forceRestTransport && typeof phi4.setTransportPreference === "function") {
         phi4.setTransportPreference({
           forceRest: true,
@@ -298,7 +328,7 @@ async function createLmStudioRuntime({
         });
       } else {
         await phi4.load({
-          contextLength: options?.contextLength ?? contextLength,
+          contextLength: loadContextLength,
           gpu: loadGpu,
         });
       }
@@ -321,7 +351,7 @@ async function createLmStudioRuntime({
         }
         try {
           const scoringContextLength = Math.min(
-            options?.contextLength ?? contextLength,
+            loadContextLength,
             8192,
           );
           if (!forceRestTransport) {

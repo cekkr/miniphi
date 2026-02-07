@@ -126,6 +126,12 @@ export default class PromptRecorder {
         }
       }
     }
+    if (!normalized.tool_definitions && Array.isArray(normalized.toolDefinitions)) {
+      normalized.tool_definitions = normalized.toolDefinitions;
+    }
+    if (normalized.tool_definitions && normalized.toolDefinitions) {
+      delete normalized.toolDefinitions;
+    }
     return normalized;
   }
 
