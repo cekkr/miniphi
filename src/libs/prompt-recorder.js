@@ -134,6 +134,12 @@ export default class PromptRecorder {
       return response;
     }
     const normalized = { ...response };
+    if (!normalized.tool_calls && Array.isArray(normalized.toolCalls)) {
+      normalized.tool_calls = normalized.toolCalls;
+    }
+    if (!normalized.tool_definitions && Array.isArray(normalized.toolDefinitions)) {
+      normalized.tool_definitions = normalized.toolDefinitions;
+    }
     const raw =
       typeof normalized.rawResponseText === "string" ? normalized.rawResponseText : null;
     const text = typeof normalized.text === "string" ? normalized.text : null;
@@ -154,6 +160,12 @@ export default class PromptRecorder {
           ? normalized.schemaValidation.errors
           : ["Schema validation missing."],
       };
+    }
+    if (normalized.tool_calls && normalized.toolCalls) {
+      delete normalized.toolCalls;
+    }
+    if (normalized.tool_definitions && normalized.toolDefinitions) {
+      delete normalized.toolDefinitions;
     }
     return normalized;
   }

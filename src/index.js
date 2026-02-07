@@ -73,7 +73,11 @@ import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
-import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
+import {
+  extractContextLength,
+  handleLmStudioHealthCommand,
+  probeLmStudioHealth,
+} from "./commands/lmstudio-health.js";
 import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
@@ -2173,6 +2177,24 @@ const describeWorkspace = (dir, options = undefined) =>
           error: healthError.message,
         });
         throw healthError;
+      }
+      const healthContextLength = extractContextLength(healthResult.status);
+      if (
+        Number.isFinite(healthContextLength) &&
+        healthContextLength > 0 &&
+        !contextLengthExplicit &&
+        contextLength > healthContextLength
+      ) {
+        if (verbose) {
+          console.log(
+            `[MiniPhi] LM Studio reports context length ${healthContextLength}; clamping from ${contextLength}.`,
+          );
+        }
+        contextLength = healthContextLength;
+        modelSelection.contextLength = healthContextLength;
+        if (restClient?.setDefaultModel) {
+          restClient.setDefaultModel(modelSelection.modelKey, healthContextLength);
+        }
       }
     }
 

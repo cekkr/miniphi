@@ -24,7 +24,7 @@ function extractModel(status) {
   );
 }
 
-function extractContextLength(status) {
+export function extractContextLength(status) {
   const payload = extractStatusPayload(status);
   return (
     payload?.context_length ??

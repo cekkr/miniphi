@@ -124,7 +124,9 @@ Status:
   responses (human-readable blocks move to metadata) so stepwise audits match schema fidelity.
   PromptRecorder now canonicalizes request/response fields (`response_format`, `rawResponseText`,
   `promptText`) to trim duplicate payloads; remaining work is to decide how to further compact
-  prompt/response data across recorder and journals without losing eval coverage.
+  prompt/response data across recorder and journals without losing eval coverage. PromptRecorder
+  now normalizes `tool_calls`/`tool_definitions` from camelCase response payloads so evaluator
+  tooling sees consistent shapes.
   Analysis steps now record stop-reason fields (reason/code/detail) from analysis diagnostics so
   session timeouts and invalid-response fallbacks are visible in stepwise journals.
 
@@ -148,7 +150,9 @@ Status:
   fall back to REST-only when available (WS disabled). Session timeout guardrails now auto-skip
   planner/navigator prompts when the session budget is at or below the prompt timeout. A REST
   health gate now probes LM Studio before prompting (skips when transport is forced to WS) and
-  persists stop reasons if the probe fails.
+  persists stop reasons if the probe fails; when /status reports a smaller context length, the
+  run now clamps the prompt context length and updates the REST client default to reduce
+  context-overflow failures.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
