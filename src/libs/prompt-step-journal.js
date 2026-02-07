@@ -1,5 +1,9 @@
 import fs from "fs";
 import path from "path";
+import {
+  normalizeJournalResponseValue,
+  normalizeToolMetadataPayload,
+} from "./prompt-log-normalizer.js";
 
 const DEFAULT_INDEX = { entries: [] };
 const VALID_STATUS = new Set(["active", "paused", "completed", "closed"]);
@@ -118,20 +122,19 @@ export default class PromptStepJournal {
     const stepFile = path.join(stepsDir, fileName);
     const startedAt = this._normalizeDate(payload.startedAt);
     const finishedAt = this._normalizeDate(payload.finishedAt);
-    const toolCalls = payload.tool_calls ?? payload.toolCalls ?? null;
-    const toolDefinitions = payload.tool_definitions ?? payload.toolDefinitions ?? null;
+    const toolMetadata = normalizeToolMetadataPayload(payload);
     const entry = {
       id: `${session.id}#${sequence}`,
       sequence,
       label: payload.label ?? `step-${sequence}`,
       prompt: payload.prompt ?? null,
-      response: payload.response ?? null,
+      response: normalizeJournalResponseValue(payload.response),
       schemaId: payload.schemaId ?? null,
       status: payload.status ?? "recorded",
       operations: Array.isArray(payload.operations) ? payload.operations : [],
       metadata: payload.metadata ?? null,
-      tool_calls: toolCalls,
-      tool_definitions: toolDefinitions,
+      tool_calls: toolMetadata.tool_calls,
+      tool_definitions: toolMetadata.tool_definitions,
       workspaceSummary: payload.workspaceSummary ?? null,
       links: payload.links ?? null,
       startedAt,

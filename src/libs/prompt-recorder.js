@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import {
+  normalizePromptRequestPayload,
+  normalizePromptResponsePayload,
+} from "./prompt-log-normalizer.js";
 
 const DEFAULT_HISTORY_LIMIT = 200;
 
@@ -106,73 +110,10 @@ export default class PromptRecorder {
   }
 
   _normalizeRequest(request) {
-    if (!request || typeof request !== "object") {
-      return request;
-    }
-    const normalized = { ...request };
-    if (normalized.responseFormat && !normalized.response_format) {
-      normalized.response_format = normalized.responseFormat;
-    }
-    if (normalized.response_format && normalized.responseFormat) {
-      delete normalized.responseFormat;
-    }
-    if (typeof normalized.promptText === "string" && Array.isArray(normalized.messages)) {
-      const last = normalized.messages[normalized.messages.length - 1];
-      if (last?.role === "user" && typeof last.content === "string") {
-        const promptText = normalized.promptText.trim();
-        const lastText = last.content.trim();
-        if (promptText && promptText === lastText) {
-          delete normalized.promptText;
-        }
-      }
-    }
-    if (!normalized.tool_definitions && Array.isArray(normalized.toolDefinitions)) {
-      normalized.tool_definitions = normalized.toolDefinitions;
-    }
-    if (normalized.tool_definitions && normalized.toolDefinitions) {
-      delete normalized.toolDefinitions;
-    }
-    return normalized;
+    return normalizePromptRequestPayload(request);
   }
 
   _normalizeResponse(response) {
-    if (!response || typeof response !== "object") {
-      return response;
-    }
-    const normalized = { ...response };
-    if (!normalized.tool_calls && Array.isArray(normalized.toolCalls)) {
-      normalized.tool_calls = normalized.toolCalls;
-    }
-    if (!normalized.tool_definitions && Array.isArray(normalized.toolDefinitions)) {
-      normalized.tool_definitions = normalized.toolDefinitions;
-    }
-    const raw =
-      typeof normalized.rawResponseText === "string" ? normalized.rawResponseText : null;
-    const text = typeof normalized.text === "string" ? normalized.text : null;
-    if (!raw && text) {
-      normalized.rawResponseText = text;
-    }
-    if (normalized.rawResponseText && text && normalized.rawResponseText === text) {
-      delete normalized.text;
-    }
-    if (
-      normalized.schemaId &&
-      (!normalized.schemaValidation ||
-        typeof normalized.schemaValidation.valid !== "boolean")
-    ) {
-      normalized.schemaValidation = {
-        valid: false,
-        errors: Array.isArray(normalized.schemaValidation?.errors)
-          ? normalized.schemaValidation.errors
-          : ["Schema validation missing."],
-      };
-    }
-    if (normalized.tool_calls && normalized.toolCalls) {
-      delete normalized.toolCalls;
-    }
-    if (normalized.tool_definitions && normalized.toolDefinitions) {
-      delete normalized.toolDefinitions;
-    }
-    return normalized;
+    return normalizePromptResponsePayload(response);
   }
 }

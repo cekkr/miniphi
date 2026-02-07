@@ -49,6 +49,7 @@ When you add or change CLI behavior:
 - When requesting `missing_snippets`, prefer repo-relative file paths (for example: `src/index.js`) so recompose can auto-fetch context.
 - EfficientLogAnalyzer normalizes missing `needs_more_context`/`missing_snippets` to defaults when the model omits them.
 - Log-analysis responses include `summary` (final natural-language update) and `summary_updates` (chronological progress updates); keep them near the top of the JSON to surface during streaming output.
+- Workspace-summary log-analysis prompts now use compact workspace context plus a conservative prompt budget cap (`2200` tokens) to avoid 4k-context overflow regressions when LM Studio status metadata is incomplete.
 
 ## Runtime posture
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
@@ -168,6 +169,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ### Prompt logging contract
 - PromptRecorder is the canonical exchange log under `.miniphi/prompt-exchanges/` and stores the full request payload, raw response text, `tool_calls`, and `tool_definitions`.
 - PromptRecorder canonicalizes exchange payloads to reduce duplication: `request.response_format` is the canonical response format key, `promptText` is omitted when it matches the last user message, and `response.text` is omitted when it matches `rawResponseText` (which remains the full response text).
+- Prompt logging canonicalization is shared through `src/libs/prompt-log-normalizer.js`; both PromptRecorder and PromptStepJournal consume the same tool/request/response normalization helpers.
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
 - TaskExecutionRegister writes `executions/<id>/task-execution.json` with every LM Studio API request/response plus links to prompt exchanges so you can pause, fix prompt/schema issues, and resume from the last good call.
 - Plan/navigation journal steps now store the raw JSON payload in `response`; any human-readable block moves into `metadata.summaryBlock` for quick scanning without losing schema fidelity.

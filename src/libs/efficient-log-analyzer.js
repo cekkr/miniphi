@@ -264,6 +264,8 @@ export default class EfficientLogAnalyzer {
       devLog = null,
       rerunCommand = null,
       datasetHint = null,
+      promptBudgetCapTokens = null,
+      contextBudgetRatio = null,
     } = options ?? {};
 
     const normalizedLines = Array.isArray(lines)
@@ -283,8 +285,15 @@ export default class EfficientLogAnalyzer {
     const compression = await this._compressLines(normalizedLines, summaryLevels, verbose);
     const explicitFileLists = this._extractExplicitFileLists(task);
     const schemaId = promptContext?.schemaId ?? this.schemaId;
-    const promptBudget = await this._resolvePromptBudget();
-    const contextBudgetTokens = Math.max(128, Math.floor(promptBudget * 0.3));
+    const promptBudget = await this._resolvePromptBudget({
+      maxTokens: promptBudgetCapTokens,
+    });
+    const ratioValue = Number(contextBudgetRatio);
+    const effectiveContextRatio =
+      Number.isFinite(ratioValue) && ratioValue > 0
+        ? Math.max(0.05, Math.min(0.5, ratioValue))
+        : 0.3;
+    const contextBudgetTokens = Math.max(96, Math.floor(promptBudget * effectiveContextRatio));
     const resolvedSourceLabel =
       typeof sourceLabel === "string" && sourceLabel.trim().length > 0
         ? sourceLabel.trim()
@@ -293,7 +302,7 @@ export default class EfficientLogAnalyzer {
           : typeof command === "string" && command.trim().length > 0
             ? command.trim()
             : "dataset";
-    const prompt = this.generateSmartPrompt(
+    let prompt = this.generateSmartPrompt(
       task,
       compression.content,
       normalizedLines.length,
@@ -307,6 +316,15 @@ export default class EfficientLogAnalyzer {
       },
       this._buildWorkspacePromptContext(workspaceContext),
     );
+    const promptTokens = this._estimateTokens(prompt);
+    if (promptTokens > promptBudget) {
+      const truncated = this._truncateToBudget(prompt, promptBudget);
+      prompt = truncated.prompt;
+      this._logDev(
+        devLog,
+        `Prompt truncated in dataset mode (${truncated.tokens}/${promptBudget} tokens).`,
+      );
+    }
     const datasetHash = this._hashDatasetSignature({
       label: datasetLabel ?? resolvedSourceLabel,
       content: compression.content,
@@ -1850,20 +1868,29 @@ export default class EfficientLogAnalyzer {
     return lists;
   }
 
-  async _resolvePromptBudget() {
+  async _resolvePromptBudget(options = undefined) {
+    let budget = 4096;
     if (!this.phi4 || typeof this.phi4.getContextWindow !== "function") {
-      return 4096;
+      const cap = Number(options?.maxTokens);
+      if (Number.isFinite(cap) && cap > 0) {
+        budget = Math.min(budget, Math.floor(cap));
+      }
+      return Math.max(768, budget);
     }
     try {
       const window = await this.phi4.getContextWindow();
       const normalized = Number(window);
       if (Number.isFinite(normalized) && normalized > 0) {
-        return Math.max(1024, normalized - 1024);
+        budget = Math.max(1024, normalized - 1024);
       }
     } catch {
-      // ignore errors and fall through
+      // ignore errors and use fallback
     }
-    return 4096;
+    const cap = Number(options?.maxTokens);
+    if (Number.isFinite(cap) && cap > 0) {
+      budget = Math.min(budget, Math.floor(cap));
+    }
+    return Math.max(768, budget);
   }
 
   _estimateTokens(text) {

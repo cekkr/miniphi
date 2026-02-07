@@ -148,6 +148,19 @@ Status:
   `tool_definitions`.
   Analysis steps now record stop-reason fields (reason/code/detail) from analysis diagnostics so
   session timeouts and invalid-response fallbacks are visible in stepwise journals.
+- Prompt logging normalization now shares a single utility module (`src/libs/prompt-log-normalizer.js`)
+  used by both `PromptRecorder` and `PromptStepJournal`, so request/response/tool metadata
+  canonicalization happens in one place.
+- Step journals now normalize object responses before persistence, ensuring deterministic JSON text
+  snapshots and canonical `tool_calls`/`tool_definitions` fields even when callers pass camelCase
+  payloads.
+- Regression coverage added:
+  `node --test unit-tests-js/prompt-step-journal.test.js unit-tests-js/prompt-recorder.test.js`.
+- Live proof run:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for prompt logging proof" --summary-levels 0 --prompt-journal p1-logging-proof-20260207-215410 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
+  produced canonical prompt exchange fields in `.miniphi/prompt-exchanges/9a7c2d51-8457-4b50-bf32-033cc610286a.json`
+  and canonical journal tool metadata in
+  `.miniphi/prompt-exchanges/stepwise/p1-logging-proof-20260207-215410/steps/step-001.json`.
 
 ### P1 - LM Studio transport and error taxonomy
 
@@ -174,6 +187,13 @@ Status:
   context-overflow failures. Status field parsing is now centralized in
   `src/libs/lmstudio-status-utils.js` and reused by health probes, workspace status snapshots,
   and runtime compatibility checks.
+- Workspace-summary analysis now applies conservative compaction defaults and a hard prompt budget
+  cap (`2200` tokens) with dataset-mode truncation fallback, mitigating `n_keep >= n_ctx` failures
+  when LM Studio reports incomplete context metadata for 4k runtime profiles.
+- Live proof run:
+  `node src/index.js workspace --task "Audit this repo workspace and report top optimization targets with file references." --prompt-journal p1-overflow-fix-20260207-215410 --prompt-journal-status paused --no-stream --session-timeout 600`
+  completed without fallback; step artifact records compaction metadata under
+  `.miniphi/prompt-exchanges/stepwise/p1-overflow-fix-20260207-215410/steps/step-001.json`.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

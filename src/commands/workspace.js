@@ -4,53 +4,160 @@ import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
 import { classifyTaskIntent } from "../libs/model-selector.js";
 
-function buildWorkspaceSummaryDataset(task, workspaceContext, planResult) {
+const WORKSPACE_SUMMARY_PROMPT_BUDGET_CAP_TOKENS = 2200;
+const WORKSPACE_SUMMARY_CONTEXT_BUDGET_RATIO = 0.18;
+const WORKSPACE_SUMMARY_MAX_DATASET_LINES = 120;
+
+function truncateText(text, maxChars) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const limit = Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : null;
+  if (!limit || trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit)}...`;
+}
+
+function buildCompactWorkspaceSummaryContext(workspaceContext, planResult = undefined) {
+  if (!workspaceContext || typeof workspaceContext !== "object") {
+    return workspaceContext ?? null;
+  }
+  const manifestPreview = Array.isArray(workspaceContext.manifestPreview)
+    ? workspaceContext.manifestPreview.slice(0, 5).map((entry) => ({
+        path: entry?.path ?? null,
+        bytes: Number.isFinite(entry?.bytes) ? entry.bytes : null,
+      }))
+    : [];
+  const fixedReferences = Array.isArray(workspaceContext.fixedReferences)
+    ? workspaceContext.fixedReferences.slice(0, 3).map((entry) => ({
+        path: entry?.path ?? null,
+        relative: entry?.relative ?? null,
+        bytes: Number.isFinite(entry?.bytes) ? entry.bytes : null,
+        hash:
+          typeof entry?.hash === "string" && entry.hash.length
+            ? entry.hash.slice(0, 16)
+            : null,
+        error: entry?.error ?? null,
+      }))
+    : [];
+  return {
+    root: workspaceContext.root ?? null,
+    summary: truncateText(workspaceContext.summary, 1600),
+    classification: workspaceContext.classification ?? null,
+    hintBlock: truncateText(workspaceContext.hintBlock, 900),
+    planDirectives: truncateText(workspaceContext.planDirectives, 320),
+    manifestPreview,
+    readmeSnippet: truncateText(workspaceContext.readmeSnippet, 520),
+    taskPlanSummary: truncateText(
+      planResult?.summary ?? workspaceContext.taskPlanSummary,
+      520,
+    ),
+    taskPlanOutline: truncateText(
+      planResult?.outline ?? workspaceContext.taskPlanOutline,
+      900,
+    ),
+    capabilitySummary: truncateText(workspaceContext.capabilitySummary, 520),
+    navigationSummary: truncateText(workspaceContext.navigationSummary, 360),
+    navigationBlock: truncateText(workspaceContext.navigationBlock, 640),
+    helperScript: workspaceContext.helperScript
+      ? {
+          language: workspaceContext.helperScript.language ?? null,
+          description: truncateText(workspaceContext.helperScript.description, 180),
+          path: workspaceContext.helperScript.path ?? null,
+        }
+      : null,
+    fixedReferences,
+  };
+}
+
+function buildWorkspaceSummaryDataset(task, workspaceContext, planResult, options = undefined) {
+  const maxLines =
+    Number.isFinite(options?.maxLines) && options.maxLines > 0
+      ? Math.floor(options.maxLines)
+      : WORKSPACE_SUMMARY_MAX_DATASET_LINES;
   const lines = [];
+  const pushLines = (text, maxChars = undefined) => {
+    const normalized = truncateText(text, maxChars);
+    if (!normalized) {
+      return;
+    }
+    for (const line of normalized.split(/\r?\n/)) {
+      if (lines.length >= maxLines) {
+        return;
+      }
+      const cleaned = line.trimEnd();
+      if (cleaned) {
+        lines.push(cleaned);
+      }
+    }
+  };
   if (task) {
-    lines.push(`Task: ${task}`);
+    pushLines(`Task: ${task}`, 320);
   }
   if (workspaceContext?.summary) {
     lines.push("Workspace summary:");
-    lines.push(workspaceContext.summary);
+    pushLines(workspaceContext.summary, 1600);
   }
   if (workspaceContext?.hintBlock) {
     lines.push("Workspace hints:");
-    lines.push(workspaceContext.hintBlock);
+    pushLines(workspaceContext.hintBlock, 900);
   }
   if (workspaceContext?.planDirectives) {
-    lines.push(`Workspace directives: ${workspaceContext.planDirectives}`);
+    pushLines(`Workspace directives: ${workspaceContext.planDirectives}`, 320);
   }
   if (Array.isArray(workspaceContext?.manifestPreview) && workspaceContext.manifestPreview.length) {
     lines.push("Manifest preview:");
-    workspaceContext.manifestPreview.slice(0, 8).forEach((entry) => {
+    workspaceContext.manifestPreview.slice(0, 5).forEach((entry) => {
       if (!entry) {
         return;
       }
       const bytes =
         Number.isFinite(entry.bytes) && entry.bytes >= 0 ? `${entry.bytes} bytes` : "size unknown";
-      lines.push(`- ${entry.path} (${bytes})`);
+      pushLines(`- ${entry.path} (${bytes})`, 240);
     });
   }
   if (workspaceContext?.readmeSnippet) {
     lines.push("README excerpt:");
-    lines.push(workspaceContext.readmeSnippet);
+    pushLines(workspaceContext.readmeSnippet, 520);
   }
-  if (planResult?.outline) {
+  if (planResult?.outline ?? workspaceContext?.taskPlanOutline) {
     lines.push("Plan outline:");
-    lines.push(planResult.outline);
+    pushLines(planResult?.outline ?? workspaceContext?.taskPlanOutline, 900);
   }
-  if (workspaceContext?.navigationBlock) {
+  if (workspaceContext?.navigationBlock ?? workspaceContext?.navigationSummary) {
     lines.push("Navigation summary:");
-    lines.push(workspaceContext.navigationBlock);
+    pushLines(workspaceContext?.navigationBlock ?? workspaceContext?.navigationSummary, 640);
   }
   if (workspaceContext?.capabilitySummary) {
     lines.push("Capabilities:");
-    lines.push(workspaceContext.capabilitySummary);
+    pushLines(workspaceContext.capabilitySummary, 520);
   }
-  return lines
-    .flatMap((line) => line.split(/\r?\n/))
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0);
+  const deduped = [];
+  const seen = new Set();
+  for (const line of lines) {
+    const normalized = line.trimEnd();
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    deduped.push(normalized);
+    seen.add(key);
+    if (deduped.length >= maxLines) {
+      break;
+    }
+  }
+  if (deduped.length >= maxLines) {
+    deduped[maxLines - 1] = `${deduped[maxLines - 1]} [dataset trimmed]`;
+  }
+  return deduped;
 }
 
 export async function handleWorkspaceCommand(context) {
@@ -288,20 +395,33 @@ export async function handleWorkspaceCommand(context) {
 
   let summaryResult = null;
   if (analyzer) {
-    const datasetLines = buildWorkspaceSummaryDataset(task, workspaceContext, planResult);
+    const summaryWorkspaceContext = buildCompactWorkspaceSummaryContext(
+      workspaceContext,
+      planResult,
+    );
+    const datasetLines = buildWorkspaceSummaryDataset(
+      task,
+      summaryWorkspaceContext,
+      planResult,
+      {
+        maxLines: WORKSPACE_SUMMARY_MAX_DATASET_LINES,
+      },
+    );
     if (datasetLines.length) {
       try {
         const taskIntent = classifyTaskIntent({
           task,
           mode: "workspace",
-          workspaceContext,
+          workspaceContext: summaryWorkspaceContext,
         });
         summaryResult = await analyzer.analyzeDatasetLines(datasetLines, task, {
           summaryLevels,
           streamOutput,
           verbose,
           sessionDeadline,
-          workspaceContext,
+          workspaceContext: summaryWorkspaceContext,
+          promptBudgetCapTokens: WORKSPACE_SUMMARY_PROMPT_BUDGET_CAP_TOKENS,
+          contextBudgetRatio: WORKSPACE_SUMMARY_CONTEXT_BUDGET_RATIO,
           promptContext: {
             scope: "workspace-summary",
             label: task,
@@ -312,27 +432,27 @@ export async function handleWorkspaceCommand(context) {
               promptJournalId: promptJournalId ?? null,
               taskType: taskIntent.intent,
               workspaceType:
-                workspaceContext?.classification?.domain ??
-                workspaceContext?.classification?.label ??
+                summaryWorkspaceContext?.classification?.domain ??
+                summaryWorkspaceContext?.classification?.label ??
                 null,
-              workspaceSummary: workspaceContext?.summary ?? null,
-              workspaceHint: workspaceContext?.hintBlock ?? null,
-              workspaceDirectives: workspaceContext?.planDirectives ?? null,
-              workspaceManifest: (workspaceContext?.manifestPreview ?? [])
+              workspaceSummary: summaryWorkspaceContext?.summary ?? null,
+              workspaceHint: summaryWorkspaceContext?.hintBlock ?? null,
+              workspaceDirectives: summaryWorkspaceContext?.planDirectives ?? null,
+              workspaceManifest: (summaryWorkspaceContext?.manifestPreview ?? [])
                 .slice(0, 5)
                 .map((entry) => entry.path),
-              workspaceReadmeSnippet: workspaceContext?.readmeSnippet ?? null,
+              workspaceReadmeSnippet: summaryWorkspaceContext?.readmeSnippet ?? null,
               taskPlanId: planResult?.planId ?? null,
               taskPlanOutline: planResult?.outline ?? null,
-              taskPlanBranch: workspaceContext?.taskPlanBranch ?? null,
-              taskPlanSource: workspaceContext?.taskPlanSource ?? null,
-              workspaceConnections: workspaceContext?.connections?.hotspots ?? null,
-              workspaceConnectionGraph: workspaceContext?.connectionGraphic ?? null,
-              capabilitySummary: workspaceContext?.capabilitySummary ?? null,
-              capabilities: workspaceContext?.capabilityDetails ?? null,
-              navigationSummary: workspaceContext?.navigationSummary ?? null,
-              navigationBlock: workspaceContext?.navigationBlock ?? null,
-              helperScript: workspaceContext?.helperScript ?? null,
+              taskPlanBranch: summaryWorkspaceContext?.taskPlanBranch ?? null,
+              taskPlanSource: summaryWorkspaceContext?.taskPlanSource ?? null,
+              workspaceConnections: summaryWorkspaceContext?.connections?.hotspots ?? null,
+              workspaceConnectionGraph: summaryWorkspaceContext?.connectionGraphic ?? null,
+              capabilitySummary: summaryWorkspaceContext?.capabilitySummary ?? null,
+              capabilities: summaryWorkspaceContext?.capabilityDetails ?? null,
+              navigationSummary: summaryWorkspaceContext?.navigationSummary ?? null,
+              navigationBlock: summaryWorkspaceContext?.navigationBlock ?? null,
+              helperScript: summaryWorkspaceContext?.helperScript ?? null,
             },
           },
           datasetLabel: "workspace-summary",
