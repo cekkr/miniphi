@@ -36,7 +36,18 @@ function toRelativeOrAbsolute(targetPath) {
   return relative && !relative.startsWith("..") ? relative : targetPath;
 }
 
-function printHumanSummary(summary, verbose) {
+function buildParseErrorReportEntries(targets) {
+  const entries = [];
+  for (const target of targets) {
+    for (const file of target.parseErrorFiles ?? []) {
+      const absolutePath = path.join(target.baseDir, file);
+      entries.push(toRelativeOrAbsolute(absolutePath));
+    }
+  }
+  return entries;
+}
+
+function printHumanSummary(summary, verbose, parseErrorReport) {
   const mode = summary.dryRun ? "dry run" : "complete";
   console.log(
     `[MiniPhi] Stop-reason migration ${mode}: ${summary.targets.length} target${
@@ -60,6 +71,12 @@ function printHumanSummary(summary, verbose) {
         );
       }
     }
+    if (parseErrorReport && target.parseErrorFiles.length) {
+      console.log(`[MiniPhi] ${label}: malformed JSON files (${target.parseErrorFiles.length}):`);
+      for (const file of target.parseErrorFiles) {
+        console.log(`[MiniPhi]   - ${toRelativeOrAbsolute(path.join(target.baseDir, file))}`);
+      }
+    }
   }
 }
 
@@ -67,6 +84,8 @@ export async function handleMigrateStopReasonsCommand({ options, verbose }) {
   const rootHint = options["history-root"] ?? options.cwd ?? process.cwd();
   const dryRun = Boolean(options["dry-run"]);
   const includeGlobal = Boolean(options["include-global"]);
+  const strict = Boolean(options.strict);
+  const parseErrorReport = Boolean(options["parse-error-report"]);
 
   const targets = [];
   const localDir = await findNearestMiniPhiDir(path.resolve(rootHint));
@@ -88,12 +107,21 @@ export async function handleMigrateStopReasonsCommand({ options, verbose }) {
 
   const results = [];
   for (const baseDir of targets) {
-    const result = await migrateStopReasonArtifacts({ baseDir, dryRun });
+    const result = await migrateStopReasonArtifacts({
+      baseDir,
+      dryRun,
+      failFastOnParseError: strict,
+    });
     results.push(result);
+    if (strict && result.parseErrors > 0) {
+      break;
+    }
   }
 
+  const parseErrorFiles = buildParseErrorReportEntries(results);
   const summary = {
     dryRun,
+    strict,
     targets: results,
     totals: {
       filesScanned: results.reduce((sum, entry) => sum + entry.filesScanned, 0),
@@ -104,12 +132,16 @@ export async function handleMigrateStopReasonsCommand({ options, verbose }) {
       readErrors: results.reduce((sum, entry) => sum + entry.readErrors, 0),
       writeErrors: results.reduce((sum, entry) => sum + entry.writeErrors, 0),
     },
+    parseErrorFiles: parseErrorReport ? parseErrorFiles : undefined,
   };
 
   if (options.json) {
     console.log(JSON.stringify(summary, null, 2));
   } else {
-    printHumanSummary(summary, verbose);
+    printHumanSummary(summary, verbose, parseErrorReport);
+    if (parseErrorReport && !parseErrorFiles.length) {
+      console.log("[MiniPhi] No malformed JSON files detected.");
+    }
   }
 
   if (summary.totals.writeErrors > 0) {
@@ -119,5 +151,11 @@ export async function handleMigrateStopReasonsCommand({ options, verbose }) {
       }.`,
     );
   }
+  if (strict && summary.totals.parseErrors > 0) {
+    throw new Error(
+      `Stop-reason migration strict mode failed: encountered ${summary.totals.parseErrors} JSON parse error${
+        summary.totals.parseErrors === 1 ? "" : "s"
+      }.`,
+    );
+  }
 }
-

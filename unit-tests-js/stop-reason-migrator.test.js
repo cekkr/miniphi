@@ -74,3 +74,31 @@ test("migrateStopReasonArtifacts normalizes legacy stop reason fields", async ()
   }
 });
 
+test("migrateStopReasonArtifacts reports malformed JSON paths and supports parse fail-fast", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "miniphi-stop-migrator-parse-"));
+  try {
+    const miniPhiRoot = path.join(root, ".miniphi");
+    await fs.mkdir(path.join(miniPhiRoot, "indices"), { recursive: true });
+    await fs.writeFile(path.join(miniPhiRoot, "indices", "01-bad.json"), "{ bad json", "utf8");
+    await fs.writeFile(path.join(miniPhiRoot, "indices", "02-bad.json"), "{ also bad", "utf8");
+    await fs.writeFile(
+      path.join(miniPhiRoot, "indices", "03-good.json"),
+      `${JSON.stringify({ status: "ok" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const fullScan = await migrateStopReasonArtifacts({ baseDir: miniPhiRoot, dryRun: true });
+    assert.equal(fullScan.parseErrors, 2);
+    assert.deepEqual(fullScan.parseErrorFiles, ["indices/01-bad.json", "indices/02-bad.json"]);
+
+    const strictScan = await migrateStopReasonArtifacts({
+      baseDir: miniPhiRoot,
+      dryRun: true,
+      failFastOnParseError: true,
+    });
+    assert.equal(strictScan.parseErrors, 1);
+    assert.deepEqual(strictScan.parseErrorFiles, ["indices/01-bad.json"]);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

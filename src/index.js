@@ -2907,6 +2907,8 @@ Stop reason migration:
   --history-root <path>        Override the starting directory used to locate .miniphi (default: cwd)
   --include-global             Also migrate ~/.miniphi when present
   --dry-run                    Report normalization changes without writing files
+  --strict                     Fail fast when malformed JSON is detected (CI mode)
+  --parse-error-report         List malformed JSON paths in command output
   --json                       Output JSON summary instead of human-readable text
 
 Recompose benchmarks:

@@ -84,6 +84,12 @@ Normalize historical stop-reason fields in existing `.miniphi` artifacts:
 miniphi migrate-stop-reasons
 ```
 
+For CI, use strict mode and emit malformed JSON paths directly:
+
+```bash
+miniphi migrate-stop-reasons --strict --parse-error-report --json
+```
+
 Capture a web page into a local snapshot:
 
 ```bash
@@ -160,7 +166,7 @@ These are the commands most people start with:
 - `miniphi cache-prune`  
   Trim older `.miniphi/` artifacts using retention defaults or `--retain-*` overrides.
 - `miniphi migrate-stop-reasons`  
-  One-shot normalization pass for historical stop reason fields in existing `.miniphi` JSON artifacts (`--dry-run` and `--json` supported).
+  One-shot normalization pass for historical stop reason fields in existing `.miniphi` JSON artifacts (`--dry-run`, `--strict`, `--parse-error-report`, and `--json` supported).
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
 

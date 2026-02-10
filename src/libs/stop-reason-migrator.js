@@ -154,6 +154,7 @@ export async function migrateStopReasonArtifacts(options = {}) {
     throw new Error("migrateStopReasonArtifacts requires a baseDir.");
   }
   const dryRun = Boolean(options.dryRun);
+  const failFastOnParseError = Boolean(options.failFastOnParseError);
   const files = await collectJsonFiles(baseDir);
   const result = {
     baseDir,
@@ -166,10 +167,12 @@ export async function migrateStopReasonArtifacts(options = {}) {
     readErrors: 0,
     writeErrors: 0,
     changedFiles: [],
+    parseErrorFiles: [],
   };
 
   for (const filePath of files) {
     result.filesScanned += 1;
+    const relativePath = path.relative(baseDir, filePath).replace(/\\/g, "/");
     let raw = "";
     try {
       raw = await fs.promises.readFile(filePath, "utf8");
@@ -182,6 +185,10 @@ export async function migrateStopReasonArtifacts(options = {}) {
       payload = JSON.parse(raw);
     } catch {
       result.parseErrors += 1;
+      result.parseErrorFiles.push(relativePath);
+      if (failFastOnParseError) {
+        break;
+      }
       continue;
     }
 
@@ -194,7 +201,6 @@ export async function migrateStopReasonArtifacts(options = {}) {
     result.filesChanged += 1;
     result.objectsUpdated += fileStats.objectsUpdated;
     result.fieldsUpdated += fileStats.fieldsUpdated;
-    const relativePath = path.relative(baseDir, filePath).replace(/\\/g, "/");
     result.changedFiles.push(relativePath);
 
     if (dryRun) {
@@ -209,4 +215,3 @@ export async function migrateStopReasonArtifacts(options = {}) {
 
   return result;
 }
-

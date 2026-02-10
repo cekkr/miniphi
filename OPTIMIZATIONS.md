@@ -254,11 +254,11 @@ Status:
   `lmstudio-protocol`, `command-denied`, and `no-token-timeout` now normalize to canonical codes.
 - One-shot historical normalization command:
   `migrate-stop-reasons` now scans existing `.miniphi/**/*.json` artifacts and rewrites legacy
-  stop reason aliases in-place (`--dry-run` + `--json` supported, optional `--include-global` for
-  `~/.miniphi`).
+  stop reason aliases in-place (`--dry-run`, `--json`, `--strict`, and `--parse-error-report`
+  supported, optional `--include-global` for `~/.miniphi`).
 - Regression coverage:
   `node --test unit-tests-js/miniphi-memory-stop-reason.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/prompt-step-journal.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js unit-tests-js/stop-reason-migrator.test.js unit-tests-js/cli-migrate-stop-reasons.test.js`
-  plus full `npm test` (`66/66` passing).
+  plus full `npm test` (`69/69` passing).
 - Live proof runs:
   `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for stop reason canonicalization proof" --summary-levels 0 --prompt-journal p1-stop-reason-canonical-20260210-045239 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
   and
@@ -271,6 +271,9 @@ Status:
   `node src/index.js migrate-stop-reasons --json`
   migrated historical local artifacts in one pass (`filesScanned: 1157`, `filesChanged: 142`,
   `fieldsUpdated: 308`, `writeErrors: 0`).
+  `node src/index.js migrate-stop-reasons --history-root . --dry-run --strict --parse-error-report --json`
+  now fails fast for CI when malformed JSON exists and reports the exact malformed path list in
+  `parseErrorFiles`.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
