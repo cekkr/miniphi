@@ -1,7 +1,7 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { createRequire } from "module";
 import { DEFAULT_MODEL_KEY } from "./model-presets.js";
-import { classifyLmStudioError } from "./lmstudio-error-utils.js";
+import { buildStopReasonInfo, classifyLmStudioError } from "./lmstudio-error-utils.js";
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
@@ -314,8 +314,9 @@ export class LMStudioRestClient {
           // ignore fallback failures to preserve the original error context
         }
       }
+      const fallbackRecovered = Boolean(fallback);
       return {
-        ok: !unsupported,
+        ok: unsupported ? false : fallbackRecovered,
         statusCode,
         error: message,
         fallback,
@@ -614,8 +615,13 @@ export class LMStudioRestClient {
         const message = payload.error.message ?? null;
         if (message && !payload.error.code) {
           const classified = classifyLmStudioError(message);
+          const stopInfo = buildStopReasonInfo({ error: message });
           payload.error.code = classified.code ?? null;
           payload.error.reason = classified.reason ?? null;
+          payload.error.reasonLabel = classified.reasonLabel ?? stopInfo.reasonLabel ?? null;
+          payload.error.stop_reason = stopInfo.reason ?? null;
+          payload.error.stop_reason_code = stopInfo.code ?? null;
+          payload.error.stop_reason_detail = stopInfo.detail ?? null;
           payload.error.flags = {
             timeout: classified.isTimeout,
             connection: classified.isConnection,

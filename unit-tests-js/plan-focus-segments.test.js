@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildFocusedPlanSegments } from "../src/libs/core-utils.js";
+import {
+  applyRequestedPlanBranchFocus,
+  buildFocusedPlanSegments,
+} from "../src/libs/core-utils.js";
 
 function buildPlan() {
   return {
@@ -99,4 +102,26 @@ test("buildFocusedPlanSegments auto-selects first subprompt branch when none is 
   assert.equal(focus.branch, "1.2");
   assert.equal(focus.reason, "auto-subprompt-branch");
   assert.deepEqual(focus.availableSubpromptBranches, ["1.2", "3"]);
+});
+
+test("applyRequestedPlanBranchFocus overrides persisted focus state on branch resume", () => {
+  const planResult = {
+    branch: "1",
+    focusBranch: "1",
+    focusReason: "requested-branch",
+    focusMatchedRequestedBranch: true,
+    focusSegments: [{ id: "1" }],
+    focusSegmentBlock: "- 1. root",
+    nextSubpromptBranch: "1.2",
+    availableSubpromptBranches: ["1.2", "3"],
+  };
+  applyRequestedPlanBranchFocus(planResult, "1.3");
+  assert.equal(planResult.branch, "1.3");
+  assert.equal(planResult.focusBranch, "1.3");
+  assert.equal(planResult.focusReason, null);
+  assert.equal(planResult.focusMatchedRequestedBranch, false);
+  assert.equal(planResult.focusSegments, null);
+  assert.equal(planResult.focusSegmentBlock, null);
+  assert.equal(planResult.nextSubpromptBranch, null);
+  assert.equal(planResult.availableSubpromptBranches, null);
 });

@@ -187,6 +187,16 @@ Status:
   context-overflow failures. Status field parsing is now centralized in
   `src/libs/lmstudio-status-utils.js` and reused by health probes, workspace status snapshots,
   and runtime compatibility checks.
+- Stop-reason taxonomy now normalizes to canonical codes (`rest-failure`, `connection`,
+  `timeout`, `network`, `invalid-response`, `protocol`, `context-overflow`,
+  `session-timeout`) with human labels via `lmstudio-error-utils`.
+- LM Studio execution telemetry now includes normalized `reasonLabel` plus
+  `stop_reason`/`stop_reason_code`/`stop_reason_detail` in both `LMStudioHandler` task events and
+  `LMStudioRestClient` request events, aligning analyzer/navigator/decomposer stop metadata.
+- Session-capped request timeout math is now shared by `api-navigator` and
+  `prompt-decomposer` through `resolveSessionCappedTimeoutMs` in `runtime-defaults`.
+- `LMStudioRestClient.getStatus()` now reports `ok: false` when both `/status` and `/models`
+  fail, avoiding false healthy snapshots on connection failures.
 - Workspace-summary analysis now applies conservative compaction defaults and a hard prompt budget
   cap (`2200` tokens) with dataset-mode truncation fallback, mitigating `n_keep >= n_ctx` failures
   when LM Studio reports incomplete context metadata for 4k runtime profiles.
@@ -201,6 +211,9 @@ Status:
 - Regression coverage added:
   `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js`
   plus full `npm test` (`47/47` passing).
+- Regression coverage added:
+  `node --test unit-tests-js/lmstudio-api-status.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/runtime-defaults.test.js`
+  plus full `npm test` (`56/56` passing).
 - Live proof run:
   `node src/index.js workspace --task "Audit this repo workspace and report top optimization targets with file references." --prompt-journal p1-overflow-fix-20260207-215410 --prompt-journal-status paused --no-stream --session-timeout 600`
   completed without fallback; step artifact records compaction metadata under
@@ -210,6 +223,15 @@ Status:
   completed with non-fallback JSON and branch-focused plan context recorded in
   `.miniphi/prompt-exchanges/stepwise/p1-nested-focus-20260207/steps/step-001.json` and
   `.miniphi/prompt-exchanges/2d6c14c6-fd64-436e-81f2-6b80db419c28.json`.
+- Live proof run:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file and prioritize nested sub-prompts for follow-up checks." --summary-levels 1 --prompt-id p1-nested-focus-20260207 --prompt-journal p1-nested-focus-20260207 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 900 --plan-branch 1.3`
+  resumed the cached decomposition with branch focus continuity (`branch: 1.3`,
+  `focusBranch: 1.3`, `focusReason: requested-branch`) in
+  `.miniphi/prompt-exchanges/stepwise/p1-nested-focus-20260207/steps/step-005.json`.
+- Live proof run:
+  `node src/index.js lmstudio-health --config <temp-config-with-lmStudio.rest.baseUrl=http://127.0.0.1:1> --timeout 2 --json`
+  now reports deterministic failure payload (`ok: false`, `stop_reason: rest-failure`,
+  `stop_reason_code: rest-failure`) instead of a false healthy status when REST is unreachable.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

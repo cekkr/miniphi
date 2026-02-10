@@ -126,6 +126,14 @@ function normalizePlanStepId(stepId) {
   return valid ? normalized : null;
 }
 
+function normalizePlanBranchId(branch) {
+  if (typeof branch !== "string") {
+    return null;
+  }
+  const trimmed = branch.trim();
+  return trimmed.length ? trimmed : null;
+}
+
 function collectStepBranchPrefixes(stepId) {
   const normalized = normalizePlanStepId(stepId);
   if (!normalized) {
@@ -285,6 +293,28 @@ export function buildFocusedPlanSegments(planOrSegments, options = undefined) {
     segments: focused,
     block: formatPlanSegmentsBlock(focused, { limit }),
   };
+}
+
+export function applyRequestedPlanBranchFocus(planResult, requestedBranch) {
+  if (!planResult || typeof planResult !== "object") {
+    return planResult;
+  }
+  const branch = normalizePlanBranchId(requestedBranch);
+  if (!branch) {
+    return planResult;
+  }
+  planResult.branch = branch;
+  if (planResult.focusBranch === branch) {
+    return planResult;
+  }
+  planResult.focusBranch = branch;
+  planResult.focusReason = null;
+  planResult.focusMatchedRequestedBranch = false;
+  planResult.focusSegments = null;
+  planResult.focusSegmentBlock = null;
+  planResult.nextSubpromptBranch = null;
+  planResult.availableSubpromptBranches = null;
+  return planResult;
 }
 
 export function formatPlanSegmentsBlock(segments, options = undefined) {

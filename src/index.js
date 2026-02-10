@@ -20,7 +20,10 @@ import PromptDecomposer from "./libs/prompt-decomposer.js";
 import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
-import { classifyLmStudioError } from "./libs/lmstudio-error-utils.js";
+import {
+  classifyLmStudioError,
+  getLmStudioStopReasonLabel,
+} from "./libs/lmstudio-error-utils.js";
 import { resolveLmStudioEndpoints } from "./libs/lmstudio-endpoints.js";
 import { createLmStudioRuntime } from "./libs/lmstudio-runtime.js";
 import CommandAuthorizationManager, {
@@ -40,6 +43,7 @@ import {
   buildPlanOperations,
   buildPlanSegments,
   buildFocusedPlanSegments,
+  applyRequestedPlanBranchFocus,
   formatPlanSegmentsBlock,
   formatPlanRecommendationsBlock,
   buildNavigationOperations,
@@ -592,6 +596,7 @@ function normalizePlanRecord(planRecord, branch = null) {
     schemaId: "prompt-plan",
     schemaVersion: planPayload.schema_version ?? null,
   };
+  applyRequestedPlanBranchFocus(normalized, branch);
   return enrichPlanResult(normalized);
 }
 
@@ -928,7 +933,7 @@ function emitFeatureDisableNotice(label, notice) {
   if (!notice) {
     return;
   }
-  const reasonLabel = notice.reason ?? "REST failure";
+  const reasonLabel = getLmStudioStopReasonLabel(notice.reason) ?? notice.reason ?? "REST failure";
   const detail = notice.message ? ` (${notice.message})` : "";
   console.warn(
     `[MiniPhi] ${label} disabled after ${reasonLabel}${detail}. Re-run your command once LM Studio recovers or restart MiniPhi to re-enable it.`,

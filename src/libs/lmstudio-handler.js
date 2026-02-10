@@ -6,6 +6,7 @@ import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 import {
+  buildStopReasonInfo,
   classifyLmStudioError,
   isProtocolWarningError,
   isStreamingHangError,
@@ -1157,10 +1158,15 @@ export class LMStudioHandler {
       let errorPayload = null;
       if (errorMessage) {
         const classified = classifyLmStudioError(errorMessage);
+        const stopInfo = buildStopReasonInfo({ error: errorMessage });
         errorPayload = {
           message: errorMessage,
           code: classified.code ?? null,
           reason: classified.reason ?? null,
+          reasonLabel: classified.reasonLabel ?? stopInfo.reasonLabel ?? null,
+          stop_reason: stopInfo.reason ?? null,
+          stop_reason_code: stopInfo.code ?? null,
+          stop_reason_detail: stopInfo.detail ?? null,
           flags: {
             timeout: classified.isTimeout,
             connection: classified.isConnection,

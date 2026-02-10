@@ -13,6 +13,7 @@ import {
 import {
   MIN_LMSTUDIO_REQUEST_TIMEOUT_MS,
   normalizeLmStudioRequestTimeoutMs,
+  resolveSessionCappedTimeoutMs,
 } from "./runtime-defaults.js";
 
 const DEFAULT_TEMPERATURE = 0.15;
@@ -554,22 +555,13 @@ export default class ApiNavigator {
       Number.isFinite(this.navigationRequestTimeoutMs) && this.navigationRequestTimeoutMs > 0
         ? this.navigationRequestTimeoutMs
         : null;
-    if (!Number.isFinite(sessionDeadline)) {
-      return baseTimeout;
-    }
-    const remaining = sessionDeadline - Date.now();
-    if (!Number.isFinite(remaining) || remaining <= 0) {
-      throw new Error("session-timeout: session deadline exceeded.");
-    }
-    const sessionCap = Math.min(
-      Math.max(1000, Math.floor(remaining * 0.4)),
-      SESSION_REQUEST_CAP_MS,
-      remaining,
-    );
-    if (baseTimeout) {
-      return Math.min(baseTimeout, sessionCap);
-    }
-    return sessionCap;
+    return resolveSessionCappedTimeoutMs({
+      baseTimeoutMs: baseTimeout,
+      sessionDeadline,
+      budgetRatio: 0.4,
+      capMs: SESSION_REQUEST_CAP_MS,
+      minTimeoutMs: 1000,
+    });
   }
 
   _validatePlanShape(plan) {

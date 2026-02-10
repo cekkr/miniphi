@@ -47,6 +47,34 @@ const CONNECTION_PATTERNS = [
 
 const NETWORK_PATTERNS = [/network/i];
 const SESSION_TIMEOUT_PATTERNS = [/session[- ]timeout/i, /session deadline exceeded/i];
+const STOP_REASON_LABELS = new Map([
+  ["rest-failure", "REST failure"],
+  ["connection", "Connection error"],
+  ["timeout", "Timeout"],
+  ["network", "Network error"],
+  ["invalid-response", "Invalid response"],
+  ["protocol", "Protocol error"],
+  ["context-overflow", "Context overflow"],
+  ["session-timeout", "Session timeout"],
+  ["analysis-error", "Analysis error"],
+  ["cached-fallback", "Cached fallback"],
+  ["preamble_detected", "Preamble detected"],
+  ["preamble-detected", "Preamble detected"],
+]);
+
+const STOP_REASON_ALIASES = new Map([
+  ["rest failure", "rest-failure"],
+  ["connection error", "connection"],
+  ["network error", "network"],
+  ["invalid response", "invalid-response"],
+  ["protocol warning", "protocol"],
+  ["protocol-error", "protocol"],
+  ["context overflow", "context-overflow"],
+  ["session timeout", "session-timeout"],
+  ["analysis error", "analysis-error"],
+  ["cached fallback", "cached-fallback"],
+  ["preamble detected", "preamble_detected"],
+]);
 
 function matchesAny(patterns, value) {
   if (!value) {
@@ -68,6 +96,26 @@ export function normalizeLmStudioErrorMessage(error) {
   return String(error);
 }
 
+export function normalizeStopReasonCode(value) {
+  if (!value && value !== 0) {
+    return null;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  const compact = normalized.replace(/[_\s]+/g, "-");
+  return STOP_REASON_ALIASES.get(normalized) ?? STOP_REASON_ALIASES.get(compact) ?? compact;
+}
+
+export function getLmStudioStopReasonLabel(value) {
+  const normalized = normalizeStopReasonCode(value);
+  if (!normalized) {
+    return null;
+  }
+  return STOP_REASON_LABELS.get(normalized) ?? normalized;
+}
+
 export function isSessionTimeoutMessage(error) {
   const message = normalizeLmStudioErrorMessage(error);
   return matchesAny(SESSION_TIMEOUT_PATTERNS, message);
@@ -84,31 +132,27 @@ export function classifyLmStudioError(error) {
   const isNetwork = matchesAny(NETWORK_PATTERNS, message);
 
   let code = "rest-failure";
-  let reason = "REST failure";
   if (isConnection) {
     code = "connection";
-    reason = "connection error";
   } else if (isTimeout) {
     code = "timeout";
-    reason = "timeout";
   } else if (isNetwork) {
     code = "network";
-    reason = "network error";
   } else if (isInvalidResponse) {
     code = "invalid-response";
-    reason = "invalid-response";
   } else if (isProtocol) {
     code = "protocol";
-    reason = "protocol";
   } else if (isContextOverflow) {
     code = "context-overflow";
-    reason = "context-overflow";
   }
+  const reason = code;
+  const reasonLabel = getLmStudioStopReasonLabel(code) ?? "REST failure";
 
   return {
     message,
     code,
     reason,
+    reasonLabel,
     isTimeout,
     isConnection,
     isNetwork,
@@ -124,13 +168,23 @@ export function buildStopReasonInfo(options = {}) {
   const message = normalizeLmStudioErrorMessage(options.error);
   const sessionTimeout = isSessionTimeoutMessage(message);
   const classified = message ? classifyLmStudioError(message) : null;
+  const normalizedFallbackReason = normalizeStopReasonCode(options.fallbackReason);
+  const normalizedFallbackCode = normalizeStopReasonCode(options.fallbackCode);
   const reason =
-    options.fallbackReason ??
+    normalizedFallbackReason ??
     (sessionTimeout ? "session-timeout" : classified?.reason) ??
+    normalizeStopReasonCode(message) ??
     (message || null);
   const code =
-    options.fallbackCode ??
+    normalizedFallbackCode ??
+    normalizedFallbackReason ??
     (sessionTimeout ? "session-timeout" : classified?.code) ??
+    normalizeStopReasonCode(reason) ??
+    null;
+  const reasonLabel =
+    options.fallbackReasonLabel ??
+    getLmStudioStopReasonLabel(code ?? reason) ??
+    classified?.reasonLabel ??
     null;
   const detail =
     options.fallbackDetail ??
@@ -139,6 +193,7 @@ export function buildStopReasonInfo(options = {}) {
   return {
     reason,
     code,
+    reasonLabel,
     detail,
     classified,
     message,
