@@ -42,3 +42,37 @@ test("PromptRecorder normalizes response_format and tool metadata", async () => 
     await fs.rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("PromptRecorder normalizes legacy stop reason aliases", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "miniphi-recorder-stop-"));
+  try {
+    const recorder = new PromptRecorder(workspace);
+    const record = await recorder.record({
+      scope: "sub",
+      label: "recorder-stop-test",
+      request: {
+        messages: [{ role: "user", content: "Stop reason test" }],
+      },
+      response: {
+        text: "{\"ok\":false}",
+        stop_reason: "partial-fallback",
+        stop_reason_code: "fallback",
+        stop_reason_detail: "legacy fallback marker",
+      },
+      error: {
+        message: "legacy fallback marker",
+        stop_reason: "partial-fallback",
+        stop_reason_code: "fallback",
+      },
+    });
+    const payload = JSON.parse(await fs.readFile(record.path, "utf8"));
+    assert.equal(payload.response.stop_reason, "analysis-error");
+    assert.equal(payload.response.stop_reason_code, "analysis-error");
+    assert.equal(payload.response.stop_reason_detail, "legacy fallback marker");
+    assert.equal(payload.error.stop_reason, "analysis-error");
+    assert.equal(payload.error.stop_reason_code, "analysis-error");
+    assert.equal(payload.error.stop_reason_detail, "legacy fallback marker");
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});

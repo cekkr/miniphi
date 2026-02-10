@@ -8,6 +8,7 @@
 - Roadmap items need explicit exit criteria; if a new item is added, remove or defer a lower-priority one.
 - Prevent infinite loops: cap recursive prompts and retries, enforce helper timeouts, and persist a clear stop reason in `.miniphi/`.
 - Stop reasons now include code/detail (for example: `session-timeout`, `invalid-response`) and the analyzer emits deterministic fallback JSON when the session budget expires before Phi responds.
+- Persisted `.miniphi` writers normalize legacy stop-reason aliases to canonical taxonomy values (`stopReason` + `stopReasonCode`) and clear success markers (for example `completed`) to null.
 - Do not change generic libraries just to satisfy a narrow unit test; use tests to improve MiniPhi behavior instead of editing test intent or broad utilities.
 - Avoid writing placeholder notes into docs; only record optional notes in `.miniphi/history/forgotten-notes.md` when `--forgotten-note` is supplied.
 - Use `OPTIMIZATIONS.md` as the high-priority optimization roadmap; avoid isolated changes to `src/libs/efficient-log-analyzer.js` unless the issue is log-analysis-specific and review the full `src/` pipeline (`src/index.js`, `lmstudio-handler`, `prompt-*`, `workspace-*`, `miniphi-memory`, `cli-executor`) before proposing edits.
@@ -113,6 +114,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
 - `node src/index.js lmstudio-health --timeout 10` for a quick REST probe before long-running runs.
 - `node --test unit-tests-js/lmstudio-api-status.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/runtime-defaults.test.js` to validate transport/error taxonomy and session-capped timeout normalization.
+- `node --test unit-tests-js/cli-implicit-run.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/miniphi-memory-stop-reason.test.js` to validate implicit run routing plus canonical stop-reason persistence across execution writers.
 - `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` to capture JSON/tool-call coverage from prompt exchanges.
 - `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js` to validate nested plan branch selection and decomposition focus hints.
@@ -174,6 +176,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - Prompt logging canonicalization is shared through `src/libs/prompt-log-normalizer.js`; both PromptRecorder and PromptStepJournal consume the same tool/request/response normalization helpers.
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
 - TaskExecutionRegister writes `executions/<id>/task-execution.json` with every LM Studio API request/response plus links to prompt exchanges so you can pause, fix prompt/schema issues, and resume from the last good call.
+- TaskExecutionRegister now normalizes persisted `error.stop_reason` / `error.stop_reason_code` / `error.stop_reason_detail` via the shared prompt log normalizer so execution logs match prompt-exchange taxonomy.
 - Plan/navigation journal steps now store the raw JSON payload in `response`; any human-readable block moves into `metadata.summaryBlock` for quick scanning without losing schema fidelity.
 - Journal step tool metadata uses `tool_calls`/`tool_definitions` so eval tooling can treat prompt exchanges and journals uniformly.
 - Analysis steps now attach prompt-exchange links when LM Studio responses are recorded via `LMStudioHandler`.

@@ -21,6 +21,7 @@ import PromptSchemaRegistry from "./libs/prompt-schema-registry.js";
 import CapabilityInventory from "./libs/capability-inventory.js";
 import ApiNavigator from "./libs/api-navigator.js";
 import {
+  buildStopReasonInfo,
   classifyLmStudioError,
   getLmStudioStopReasonLabel,
 } from "./libs/lmstudio-error-utils.js";
@@ -733,74 +734,96 @@ function isLmStudioProtocolError(error) {
 
 function classifyStopInfo(error) {
   if (!error) {
-    return { reason: "unknown", code: null, detail: null };
+    return { reason: null, code: null, detail: null };
   }
   if (typeof error === "object") {
     const reason = error.stopReason ?? error.stop_reason ?? null;
     if (reason) {
       const message = error instanceof Error ? error.message : String(error);
-      return {
-        reason,
-        code: error.stopReasonCode ?? error.stop_reason_code ?? null,
-        detail: error.stopReasonDetail ?? error.stop_reason_detail ?? message ?? null,
-      };
+      return buildStopReasonInfo({
+        error: error.stopReasonDetail ?? error.stop_reason_detail ?? message ?? null,
+        fallbackReason: reason,
+        fallbackCode: error.stopReasonCode ?? error.stop_reason_code ?? null,
+        fallbackDetail: error.stopReasonDetail ?? error.stop_reason_detail ?? message ?? null,
+      });
     }
   }
   if (isLmStudioProtocolError(error)) {
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      reason: "lmstudio-protocol",
-      code: "protocol",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "protocol",
+      fallbackCode: "protocol",
+      fallbackDetail: message,
+    });
   }
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   if (normalized.includes("denied by policy")) {
-    return {
-      reason: "command-denied",
-      code: "command-denied",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "command-denied",
+      fallbackCode: "command-denied",
+      fallbackDetail: message,
+    });
   }
   if (normalized.includes("command execution failed")) {
-    return {
-      reason: "command-failed",
-      code: "command-failed",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "command-failed",
+      fallbackCode: "command-failed",
+      fallbackDetail: message,
+    });
   }
   if (normalized.includes("session timeout") || normalized.includes("session-timeout")) {
-    return {
-      reason: "session-timeout",
-      code: "session-timeout",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "session-timeout",
+      fallbackCode: "session-timeout",
+      fallbackDetail: message,
+    });
   }
   if (normalized.includes("tokens emitted")) {
-    return {
-      reason: "no-token-timeout",
-      code: "no-token-timeout",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "no-token-timeout",
+      fallbackCode: "no-token-timeout",
+      fallbackDetail: message,
+    });
   }
   if (normalized.includes("timeout")) {
-    return { reason: "timeout", code: "timeout", detail: message };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "timeout",
+      fallbackCode: "timeout",
+      fallbackDetail: message,
+    });
   }
   if (normalized.includes("cancel")) {
-    return { reason: "cancelled", code: "cancelled", detail: message };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: "cancelled",
+      fallbackCode: "cancelled",
+      fallbackDetail: message,
+    });
   }
   const errorInfo = classifyLmStudioError(message);
   const mentionsLmStudio =
     normalized.includes("lm studio") || normalized.includes("lmstudio");
   if (errorInfo.code !== "rest-failure" || mentionsLmStudio) {
-    return {
-      reason: errorInfo.reason ?? "lmstudio-error",
-      code: errorInfo.code ?? "lmstudio-error",
-      detail: message,
-    };
+    return buildStopReasonInfo({
+      error: message,
+      fallbackReason: errorInfo.reason ?? null,
+      fallbackCode: errorInfo.code ?? null,
+      fallbackDetail: message,
+    });
   }
-  return { reason: "error", code: "error", detail: message };
+  return buildStopReasonInfo({
+    error: message,
+    fallbackReason: "analysis-error",
+    fallbackCode: "analysis-error",
+    fallbackDetail: message,
+  });
 }
 
 function getSessionRemainingMs(sessionDeadline) {
@@ -2217,7 +2240,7 @@ const describeWorkspace = (dir, options = undefined) =>
         console.warn(`[MiniPhi] LM Studio health warning: ${healthResult.warning}`);
       }
       if (!healthResult.ok) {
-        const reason = healthResult.stopInfo?.reason ?? "lmstudio-health";
+        const reason = healthResult.stopInfo?.reason ?? "rest-failure";
         const detail =
           healthResult.stopInfo?.detail ?? healthResult.snapshot.error ?? "Unknown error";
         const healthError = new Error(`LM Studio health check failed (${reason}): ${detail}`);
@@ -2373,7 +2396,7 @@ const describeWorkspace = (dir, options = undefined) =>
         result?.analysisDiagnostics?.fallbackReason ??
         null;
       const finalStatus = stopStatus ?? "completed";
-      const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+      const finalStopReason = stopReason ?? analysisStopReason ?? null;
       const finalError = stopError ?? result?.analysisDiagnostics?.stopReasonDetail ?? null;
       const archive = await stateManager.persistExecution({
         executionId: archiveMetadata.executionId ?? null,
@@ -2523,7 +2546,7 @@ const describeWorkspace = (dir, options = undefined) =>
           result?.analysisDiagnostics?.stopReason ??
           result?.analysisDiagnostics?.fallbackReason ??
           null;
-        const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+        const finalStopReason = stopReason ?? analysisStopReason ?? null;
         const finalStopReasonCode =
           stopReasonCode ?? result?.analysisDiagnostics?.stopReasonCode ?? null;
         const finalStopReasonDetail =
@@ -2583,7 +2606,7 @@ const describeWorkspace = (dir, options = undefined) =>
         result?.analysisDiagnostics?.stopReason ??
         result?.analysisDiagnostics?.fallbackReason ??
         null;
-      const finalStopReason = stopReason ?? analysisStopReason ?? "completed";
+      const finalStopReason = stopReason ?? analysisStopReason ?? null;
       const finalStopReasonCode =
         stopReasonCode ?? result?.analysisDiagnostics?.stopReasonCode ?? null;
       const finalStopReasonDetail =

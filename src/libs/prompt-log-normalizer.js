@@ -1,3 +1,5 @@
+import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
+
 function selectArrayValue(...candidates) {
   for (const value of candidates) {
     if (Array.isArray(value)) {
@@ -18,6 +20,88 @@ export function normalizeToolMetadataPayload(payload = undefined) {
     tool_calls: selectArrayValue(payload.tool_calls, payload.toolCalls),
     tool_definitions: selectArrayValue(payload.tool_definitions, payload.toolDefinitions),
   };
+}
+
+function normalizeStopReasonPayload(payload = undefined) {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+  const rawReason = payload.stop_reason ?? payload.stopReason ?? null;
+  const rawCode = payload.stop_reason_code ?? payload.stopReasonCode ?? null;
+  const rawDetail = payload.stop_reason_detail ?? payload.stopReasonDetail ?? null;
+  if (!rawReason && !rawCode && !rawDetail) {
+    delete payload.stopReason;
+    delete payload.stopReasonCode;
+    delete payload.stopReasonDetail;
+    return payload;
+  }
+  const stopInfo = buildStopReasonInfo({
+    error: rawDetail,
+    fallbackReason: rawReason,
+    fallbackCode: rawCode,
+    fallbackDetail: rawDetail,
+  });
+  payload.stop_reason = stopInfo.reason ?? null;
+  payload.stop_reason_code = stopInfo.code ?? null;
+  payload.stop_reason_detail = stopInfo.detail ?? null;
+  delete payload.stopReason;
+  delete payload.stopReasonCode;
+  delete payload.stopReasonDetail;
+  return payload;
+}
+
+export function normalizePromptErrorPayload(error = undefined) {
+  if (error === null || error === undefined) {
+    return null;
+  }
+  if (typeof error === "string") {
+    const trimmed = error.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const stopInfo = buildStopReasonInfo({
+      error: trimmed,
+      fallbackDetail: trimmed,
+    });
+    return {
+      message: trimmed,
+      reason: stopInfo.reason ?? null,
+      code: stopInfo.code ?? null,
+      reasonLabel: stopInfo.reasonLabel ?? null,
+      stop_reason: stopInfo.reason ?? null,
+      stop_reason_code: stopInfo.code ?? null,
+      stop_reason_detail: stopInfo.detail ?? null,
+    };
+  }
+  if (typeof error !== "object" || Array.isArray(error)) {
+    return {
+      message: String(error),
+    };
+  }
+  const normalized = { ...error };
+  const rawReason = normalized.stop_reason ?? normalized.stopReason ?? normalized.reason ?? null;
+  const rawCode = normalized.stop_reason_code ?? normalized.stopReasonCode ?? normalized.code ?? null;
+  const rawDetail =
+    normalized.stop_reason_detail ??
+    normalized.stopReasonDetail ??
+    normalized.message ??
+    null;
+  const stopInfo = buildStopReasonInfo({
+    error: rawDetail,
+    fallbackReason: rawReason,
+    fallbackCode: rawCode,
+    fallbackDetail: rawDetail,
+  });
+  normalized.reason = stopInfo.reason ?? null;
+  normalized.code = stopInfo.code ?? null;
+  normalized.reasonLabel = stopInfo.reasonLabel ?? normalized.reasonLabel ?? null;
+  normalized.stop_reason = stopInfo.reason ?? null;
+  normalized.stop_reason_code = stopInfo.code ?? null;
+  normalized.stop_reason_detail = stopInfo.detail ?? null;
+  delete normalized.stopReason;
+  delete normalized.stopReasonCode;
+  delete normalized.stopReasonDetail;
+  return normalized;
 }
 
 export function normalizePromptRequestPayload(request = undefined) {
@@ -83,6 +167,7 @@ export function normalizePromptResponsePayload(response = undefined) {
         : ["Schema validation missing."],
     };
   }
+  normalizeStopReasonPayload(normalized);
   if (!normalized.tool_calls) {
     delete normalized.tool_calls;
   }
@@ -104,4 +189,3 @@ export function normalizeJournalResponseValue(response = undefined) {
   }
   return String(response);
 }
-

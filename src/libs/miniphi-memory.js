@@ -3,6 +3,7 @@ import path from "path";
 import { randomUUID, createHash } from "crypto";
 import MemoryStoreBase from "./memory-store-base.js";
 import { parseStrictJsonObject } from "./core-utils.js";
+import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
 
 const DEFAULT_SEGMENT_SIZE = 2000; // characters per chunk to stay context-friendly
 
@@ -227,6 +228,12 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       return null;
     }
     await this.prepare();
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason: snapshot.stopReason ?? null,
+      stopReasonCode: snapshot.stopReasonCode ?? null,
+      stopReasonDetail: snapshot.stopReasonDetail ?? null,
+      error: snapshot.error ?? null,
+    });
     const timestamp = new Date().toISOString();
     const entry = {
       id: randomUUID(),
@@ -235,9 +242,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       baseUrl: snapshot.baseUrl ?? null,
       transport: snapshot.transport ?? null,
       status: snapshot.status ?? snapshot,
-      stopReason: snapshot.stopReason ?? null,
-      stopReasonCode: snapshot.stopReasonCode ?? null,
-      stopReasonDetail: snapshot.stopReasonDetail ?? null,
+      stopReason: normalizedStop.stopReason,
+      stopReasonCode: normalizedStop.stopReasonCode,
+      stopReasonDetail: normalizedStop.stopReasonDetail,
       warning: snapshot.warning ?? null,
       error: snapshot.error ?? null,
     };
@@ -286,6 +293,12 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     }
 
     await this.prepare();
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason: payload.stopReason ?? null,
+      stopReasonCode: payload.stopReasonCode ?? null,
+      stopReasonDetail: payload.stopReasonDetail ?? null,
+      error: payload.error ?? null,
+    });
 
     const timestamp = new Date().toISOString();
     const executionId = payload.executionId ?? randomUUID();
@@ -326,9 +339,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       truncationPlan: null,
       taskExecutionRegister,
       status: payload.status ?? "completed",
-      stopReason: payload.stopReason ?? null,
-      stopReasonCode: payload.stopReasonCode ?? null,
-      stopReasonDetail: payload.stopReasonDetail ?? null,
+      stopReason: normalizedStop.stopReason,
+      stopReasonCode: normalizedStop.stopReasonCode,
+      stopReasonDetail: normalizedStop.stopReasonDetail,
       error: payload.error ?? null,
     };
 
@@ -450,6 +463,12 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       return null;
     }
     await this.prepare();
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason: payload.stopReason ?? null,
+      stopReasonCode: payload.stopReasonCode ?? null,
+      stopReasonDetail: payload.stopReasonDetail ?? null,
+      error: payload.error ?? null,
+    });
 
     const timestamp = new Date().toISOString();
     const executionId = payload.executionId ?? randomUUID();
@@ -482,9 +501,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       truncationPlan: null,
       taskExecutionRegister,
       status: payload.status ?? "failed",
-      stopReason: payload.stopReason ?? null,
-      stopReasonCode: payload.stopReasonCode ?? null,
-      stopReasonDetail: payload.stopReasonDetail ?? null,
+      stopReason: normalizedStop.stopReason,
+      stopReasonCode: normalizedStop.stopReasonCode,
+      stopReasonDetail: normalizedStop.stopReasonDetail,
       error: payload.error ?? null,
     };
 
@@ -1142,6 +1161,43 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     return raw.replace(/[^A-Za-z0-9._-]/g, "_");
   }
 
+  _normalizeStopReasonFields(payload = undefined) {
+    const stopReason = this._normalizeTextValue(payload?.stopReason ?? payload?.reason ?? null);
+    const stopReasonCode = this._normalizeTextValue(
+      payload?.stopReasonCode ?? payload?.reasonCode ?? null,
+    );
+    const stopReasonDetail = this._normalizeTextValue(
+      payload?.stopReasonDetail ?? payload?.reasonDetail ?? null,
+    );
+    const stopError = this._normalizeTextValue(payload?.error ?? payload?.message ?? null);
+    if (!stopReason && !stopReasonCode && !stopReasonDetail && !stopError) {
+      return {
+        stopReason: null,
+        stopReasonCode: null,
+        stopReasonDetail: null,
+      };
+    }
+    const stopInfo = buildStopReasonInfo({
+      error: stopError ?? stopReasonDetail,
+      fallbackReason: stopReason,
+      fallbackCode: stopReasonCode,
+      fallbackDetail: stopReasonDetail,
+    });
+    return {
+      stopReason: this._normalizeTextValue(stopInfo.reason),
+      stopReasonCode: this._normalizeTextValue(stopInfo.code),
+      stopReasonDetail: this._normalizeTextValue(stopInfo.detail),
+    };
+  }
+
+  _normalizeTextValue(value) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
   _normalizeHelperLanguage(language) {
     const normalized = (language ?? "").toString().trim().toLowerCase();
     if (normalized.startsWith("py")) {
@@ -1777,6 +1833,12 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       return null;
     }
     await this.prepare();
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason: session.stopReason ?? null,
+      stopReasonCode: session.stopReasonCode ?? null,
+      stopReasonDetail: session.stopReasonDetail ?? null,
+      error: session.error ?? null,
+    });
     const timestamp = session.createdAt ?? new Date().toISOString();
     const id = session.id ?? randomUUID();
     const slug = this._slugify(session.label ?? session.task ?? "nitpick");
@@ -1793,6 +1855,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       id,
       createdAt: timestamp,
       finalTextPath: finalTextPath ? this._relative(finalTextPath) : null,
+      stopReason: normalizedStop.stopReason,
+      stopReasonCode: normalizedStop.stopReasonCode,
+      stopReasonDetail: normalizedStop.stopReasonDetail,
     };
     await this._writeJSON(sessionPath, payload);
     if (finalTextPath) {
@@ -1872,8 +1937,17 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       return null;
     }
     const timestamp = new Date().toISOString();
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason: cache.entries[index]?.reason ?? null,
+      stopReasonCode: cache.entries[index]?.reasonCode ?? null,
+      stopReasonDetail: cache.entries[index]?.reasonDetail ?? cache.entries[index]?.reason ?? null,
+      error: cache.entries[index]?.reasonDetail ?? cache.entries[index]?.reason ?? null,
+    });
     const entry = {
       ...cache.entries[index],
+      reason: normalizedStop.stopReason,
+      reasonCode: normalizedStop.stopReasonCode,
+      reasonDetail: normalizedStop.stopReasonDetail,
       hits: (cache.entries[index]?.hits ?? 0) + 1,
       lastUsedAt: timestamp,
     };
@@ -1895,6 +1969,33 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     const existingEntries = Array.isArray(cache.entries) ? cache.entries : [];
     const filtered = existingEntries.filter((entry) => entry?.key !== key);
     const existing = existingEntries.find((entry) => entry?.key === key);
+    const normalizedStop = this._normalizeStopReasonFields({
+      stopReason:
+        payload.reason ??
+        payload.stopReason ??
+        existing?.reason ??
+        null,
+      stopReasonCode:
+        payload.reasonCode ??
+        payload.stopReasonCode ??
+        existing?.reasonCode ??
+        null,
+      stopReasonDetail:
+        payload.reasonDetail ??
+        payload.stopReasonDetail ??
+        payload.reason ??
+        existing?.reasonDetail ??
+        existing?.reason ??
+        null,
+      error:
+        payload.error ??
+        payload.reasonDetail ??
+        payload.stopReasonDetail ??
+        payload.reason ??
+        existing?.reasonDetail ??
+        existing?.reason ??
+        null,
+    });
     const record = {
       id: existing?.id ?? randomUUID(),
       key,
@@ -1909,7 +2010,9 @@ export default class MiniPhiMemory extends MemoryStoreBase {
       analysis: payload.analysis,
       truncationPlan: payload.truncationPlan ?? null,
       workspaceSummary: payload.workspaceSummary ?? null,
-      reason: payload.reason ?? null,
+      reason: normalizedStop.stopReason,
+      reasonCode: normalizedStop.stopReasonCode,
+      reasonDetail: normalizedStop.stopReasonDetail,
       linesAnalyzed: payload.linesAnalyzed ?? null,
       compressedTokens: payload.compressedTokens ?? null,
       createdAt: existing?.createdAt ?? timestamp,

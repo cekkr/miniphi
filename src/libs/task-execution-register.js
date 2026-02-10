@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { normalizePromptErrorPayload } from "./prompt-log-normalizer.js";
 
 const DEFAULT_SCHEMA_VERSION = "task-execution-register@v1";
 
@@ -116,7 +117,7 @@ export default class TaskExecutionRegister {
       transport: entry.transport ?? null,
       request: entry.request ?? null,
       response: entry.response ?? null,
-      error: entry.error ?? null,
+      error: this._normalizeError(entry.error ?? null),
       metadata: entry.metadata ?? null,
       links: entry.links ?? null,
     };
@@ -131,5 +132,9 @@ export default class TaskExecutionRegister {
 
   getExecutionId() {
     return this.executionId;
+  }
+
+  _normalizeError(error) {
+    return normalizePromptErrorPayload(error);
   }
 }

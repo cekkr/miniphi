@@ -32,6 +32,28 @@ test("buildStopReasonInfo prefers session-timeout classification", () => {
   assert.equal(info.code, "session-timeout");
 });
 
+test("buildStopReasonInfo aligns conflicting code to canonical reason", () => {
+  const info = buildStopReasonInfo({
+    fallbackReason: "session-timeout",
+    fallbackCode: "fallback",
+    fallbackDetail: "session timeout happened",
+  });
+  assert.equal(info.reason, "session-timeout");
+  assert.equal(info.code, "session-timeout");
+});
+
+test("buildStopReasonInfo prefers explicit error detail over placeholder fallback detail", () => {
+  const info = buildStopReasonInfo({
+    error: "session-timeout: session deadline exceeded.",
+    fallbackReason: "session-timeout",
+    fallbackCode: "analysis-error",
+    fallbackDetail: "analysis-error",
+  });
+  assert.equal(info.reason, "session-timeout");
+  assert.equal(info.code, "session-timeout");
+  assert.equal(info.detail, "session-timeout: session deadline exceeded.");
+});
+
 test("classifyLmStudioError flags invalid-response variants", () => {
   const info = classifyLmStudioError("response body was empty");
   assert.equal(info.code, "invalid-response");
@@ -53,6 +75,10 @@ test("classifyLmStudioError normalizes connection/network labels", () => {
 test("stop reason helpers normalize aliases", () => {
   assert.equal(normalizeStopReasonCode("connection error"), "connection");
   assert.equal(normalizeStopReasonCode("session timeout"), "session-timeout");
+  assert.equal(normalizeStopReasonCode("invalid-json"), "invalid-response");
+  assert.equal(normalizeStopReasonCode("partial-fallback"), "analysis-error");
+  assert.equal(normalizeStopReasonCode("completed"), null);
+  assert.equal(normalizeStopReasonCode("totally-unknown-reason"), "analysis-error");
   assert.equal(getLmStudioStopReasonLabel("session-timeout"), "Session timeout");
   assert.equal(getLmStudioStopReasonLabel("preamble_detected"), "Preamble detected");
 });

@@ -69,9 +69,10 @@ export async function probeLmStudioHealth({
     status: status ?? (error ? { ok: false, error: error instanceof Error ? error.message : String(error) } : null),
     baseUrl: restClient.baseUrl ?? restBaseUrl ?? null,
     transport: "rest",
-    stopReason: stopInfo?.reason ?? (ok ? null : "lmstudio-health"),
-    stopReasonCode: stopInfo?.code ?? null,
-    stopReasonDetail: stopInfo?.detail ?? null,
+    stopReason: stopInfo?.reason ?? (ok ? null : "rest-failure"),
+    stopReasonCode: stopInfo?.code ?? (ok ? null : "rest-failure"),
+    stopReasonDetail:
+      stopInfo?.detail ?? (ok ? null : error instanceof Error ? error.message : String(error ?? "LM Studio health check failed")),
     error: error ? (error instanceof Error ? error.message : String(error)) : null,
     warning,
     modelsFallback,
@@ -146,7 +147,7 @@ export async function handleLmStudioHealthCommand({
       }
     }
   } else {
-    const reason = health.stopInfo?.reason ?? "lmstudio-health";
+    const reason = health.stopInfo?.reason ?? "rest-failure";
     const detail = health.stopInfo?.detail ?? health.snapshot.error ?? "Unknown error";
     if (!jsonOutput) {
       console.error(`[MiniPhi][Health] LM Studio REST failed (${reason}): ${detail}`);
@@ -169,9 +170,9 @@ export async function handleLmStudioHealthCommand({
       gpu: gpu ?? null,
       model_count: Number.isFinite(modelCount) ? modelCount : null,
       warning: health.warning ?? null,
-      stop_reason: health.stopInfo?.reason ?? (health.ok ? null : "lmstudio-health"),
-      stop_reason_code: health.stopInfo?.code ?? null,
-      stop_reason_detail: health.stopInfo?.detail ?? null,
+      stop_reason: health.snapshot.stopReason ?? null,
+      stop_reason_code: health.snapshot.stopReasonCode ?? null,
+      stop_reason_detail: health.snapshot.stopReasonDetail ?? null,
       error: health.snapshot.error ?? null,
       recorded_at: record?.entry?.recordedAt ?? null,
       snapshot_path: record?.path ?? null,

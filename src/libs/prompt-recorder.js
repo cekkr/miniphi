@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import {
+  normalizePromptErrorPayload,
   normalizePromptRequestPayload,
   normalizePromptResponsePayload,
 } from "./prompt-log-normalizer.js";
@@ -74,7 +75,7 @@ export default class PromptRecorder {
       metadata: exchange.metadata ?? null,
       request,
       response,
-      error: exchange.error ?? null,
+      error: this._normalizeError(exchange.error ?? null),
     };
     await fs.promises.writeFile(recordPath, JSON.stringify(payload, null, 2), "utf8");
     await this._updateIndex(payload, recordPath);
@@ -115,5 +116,9 @@ export default class PromptRecorder {
 
   _normalizeResponse(response) {
     return normalizePromptResponsePayload(response);
+  }
+
+  _normalizeError(error) {
+    return normalizePromptErrorPayload(error);
   }
 }

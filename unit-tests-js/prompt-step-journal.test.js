@@ -45,3 +45,39 @@ test("PromptStepJournal normalizes tool metadata and object responses", async ()
   }
 });
 
+test("PromptStepJournal normalizes stop reason metadata and status notes", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "miniphi-step-journal-stop-"));
+  try {
+    const journal = new PromptStepJournal(workspace);
+    await journal.openSession("step-journal-stop", { mode: "analyze-file" });
+    const step = await journal.appendStep("step-journal-stop", {
+      label: "fallback-step",
+      metadata: {
+        stopReason: "partial-fallback",
+        stopReasonCode: "fallback",
+        stopReasonDetail: "legacy fallback marker",
+      },
+    });
+    const stepPayload = JSON.parse(await fs.readFile(step.path, "utf8"));
+    assert.equal(stepPayload.metadata.stopReason, "analysis-error");
+    assert.equal(stepPayload.metadata.stopReasonCode, "analysis-error");
+    assert.equal(stepPayload.metadata.stopReasonDetail, "legacy fallback marker");
+
+    await journal.setStatus("step-journal-stop", "completed", {
+      stopReason: "completed",
+      stopReasonCode: "completed",
+    });
+    const sessionPath = path.join(
+      workspace,
+      "prompt-exchanges",
+      "stepwise",
+      "step-journal-stop",
+      "session.json",
+    );
+    const sessionPayload = JSON.parse(await fs.readFile(sessionPath, "utf8"));
+    assert.equal(sessionPayload.note.stopReason, null);
+    assert.equal(sessionPayload.note.stopReasonCode, null);
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});

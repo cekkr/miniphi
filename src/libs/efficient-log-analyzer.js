@@ -374,9 +374,9 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
-      stopReason: cachedFallback?.reason ?? null,
+      stopReason: cachedFallback ? "cached-fallback" : null,
       stopReasonCode: cachedFallback ? "cached-fallback" : null,
-      stopReasonDetail: cachedFallback?.reason ?? null,
+      stopReasonDetail: cachedFallback?.reasonDetail ?? cachedFallback?.reason ?? null,
     };
     const sanitizeOptions = {
       workspaceContext,
@@ -888,9 +888,9 @@ export default class EfficientLogAnalyzer {
     const analysisDiagnostics = {
       salvage: null,
       fallbackReason,
-      stopReason: cachedFallback?.reason ?? null,
+      stopReason: cachedFallback ? "cached-fallback" : null,
       stopReasonCode: cachedFallback ? "cached-fallback" : null,
-      stopReasonDetail: cachedFallback?.reason ?? null,
+      stopReasonDetail: cachedFallback?.reasonDetail ?? cachedFallback?.reason ?? null,
     };
     const sanitizeOptions = {
       workspaceContext,

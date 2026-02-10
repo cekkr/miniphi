@@ -41,7 +41,7 @@ import {
   listWorkspaceFiles,
   readReadmeSnippet,
 } from "./workspace-context-utils.js";
-import { classifyLmStudioError } from "./lmstudio-error-utils.js";
+import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
 import { createWorkspaceScanCache } from "./workspace-scanner.js";
 
 const TEXT_EXTENSIONS = new Set([
@@ -1332,14 +1332,20 @@ export default class RecomposeTester {
         metadata: traceOptions?.metadata ?? null,
         durationMs: 0,
       });
+      const stopInfo = buildStopReasonInfo({
+        fallbackReason: "offline-fallback",
+        fallbackCode: "offline-fallback",
+        fallbackDetail: "offline fallback active",
+      });
       await this._logStepEvent({
         stepId,
         event: "finish",
         label,
         schemaId,
         status: "skipped",
-        stopReason: "offline-fallback",
-        stopReasonCode: "offline-fallback",
+        stopReason: stopInfo.reason,
+        stopReasonCode: stopInfo.code,
+        stopReasonDetail: stopInfo.detail,
         durationMs: 0,
         error: null,
       });
@@ -1391,9 +1397,12 @@ export default class RecomposeTester {
     } finally {
       const durationMs = Date.now() - started;
       const errorMessage = error instanceof Error ? error.message : error ? String(error) : null;
-      const errorInfo = error ? classifyLmStudioError(error) : null;
-      const stopReason = error ? errorInfo?.reason ?? "error" : "completed";
-      const stopReasonCode = error ? errorInfo?.code ?? null : null;
+      const stopInfo = error
+        ? buildStopReasonInfo({
+            error: errorMessage,
+            fallbackDetail: errorMessage,
+          })
+        : { reason: null, code: null, detail: null };
       if (this.verboseLogging) {
         console.log(
           `[MiniPhi][Recompose][Prompt] ${label ?? "prompt"} completed in ${durationMs} ms`,
@@ -1413,8 +1422,9 @@ export default class RecomposeTester {
         label,
         schemaId,
         status: error ? "error" : "ok",
-        stopReason,
-        stopReasonCode,
+        stopReason: stopInfo.reason,
+        stopReasonCode: stopInfo.code,
+        stopReasonDetail: stopInfo.detail,
         durationMs,
         error: errorMessage,
       });

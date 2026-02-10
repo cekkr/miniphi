@@ -4,6 +4,7 @@ import {
   normalizeJournalResponseValue,
   normalizeToolMetadataPayload,
 } from "./prompt-log-normalizer.js";
+import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
 
 const DEFAULT_INDEX = { entries: [] };
 const VALID_STATUS = new Set(["active", "paused", "completed", "closed"]);
@@ -25,6 +26,38 @@ function resolveStatus(value, fallback = "active") {
   }
   if (!VALID_STATUS.has(normalized)) {
     return fallback;
+  }
+  return normalized;
+}
+
+function normalizeStopReasonMetadata(metadata = undefined) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return metadata ?? null;
+  }
+  const rawReason = metadata.stopReason ?? metadata.stop_reason ?? null;
+  const rawCode = metadata.stopReasonCode ?? metadata.stop_reason_code ?? null;
+  const rawDetail = metadata.stopReasonDetail ?? metadata.stop_reason_detail ?? null;
+  if (!rawReason && !rawCode && !rawDetail) {
+    return metadata;
+  }
+  const stopInfo = buildStopReasonInfo({
+    error: rawDetail,
+    fallbackReason: rawReason,
+    fallbackCode: rawCode,
+    fallbackDetail: rawDetail,
+  });
+  const normalized = { ...metadata };
+  normalized.stopReason = stopInfo.reason ?? null;
+  normalized.stopReasonCode = stopInfo.code ?? null;
+  normalized.stopReasonDetail = stopInfo.detail ?? null;
+  if (Object.prototype.hasOwnProperty.call(normalized, "stop_reason")) {
+    normalized.stop_reason = stopInfo.reason ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "stop_reason_code")) {
+    normalized.stop_reason_code = stopInfo.code ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "stop_reason_detail")) {
+    normalized.stop_reason_detail = stopInfo.detail ?? null;
   }
   return normalized;
 }
@@ -123,6 +156,7 @@ export default class PromptStepJournal {
     const startedAt = this._normalizeDate(payload.startedAt);
     const finishedAt = this._normalizeDate(payload.finishedAt);
     const toolMetadata = normalizeToolMetadataPayload(payload);
+    const normalizedMetadata = normalizeStopReasonMetadata(payload.metadata);
     const entry = {
       id: `${session.id}#${sequence}`,
       sequence,
@@ -132,7 +166,7 @@ export default class PromptStepJournal {
       schemaId: payload.schemaId ?? null,
       status: payload.status ?? "recorded",
       operations: Array.isArray(payload.operations) ? payload.operations : [],
-      metadata: payload.metadata ?? null,
+      metadata: normalizedMetadata,
       tool_calls: toolMetadata.tool_calls,
       tool_definitions: toolMetadata.tool_definitions,
       workspaceSummary: payload.workspaceSummary ?? null,
@@ -167,7 +201,7 @@ export default class PromptStepJournal {
     session.status = resolveStatus(status, session.status);
     session.updatedAt = new Date().toISOString();
     if (note) {
-      session.note = note;
+      session.note = normalizeStopReasonMetadata(note);
     }
     await this._writeJSON(sessionFile, session);
     await this._updateIndex(session, sessionFile);

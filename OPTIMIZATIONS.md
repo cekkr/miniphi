@@ -154,13 +154,27 @@ Status:
 - Step journals now normalize object responses before persistence, ensuring deterministic JSON text
   snapshots and canonical `tool_calls`/`tool_definitions` fields even when callers pass camelCase
   payloads.
+- Prompt error payload canonicalization now extends to task-execution persistence:
+  `task-execution-register` and `prompt-recorder` both normalize `error.stop_reason`,
+  `error.stop_reason_code`, and `error.stop_reason_detail` through
+  `prompt-log-normalizer`.
+- Persisted stop-reason detail now prefers explicit error text over placeholder codes when both are
+  present (for example, keeps `session-timeout: session deadline exceeded.` instead of
+  `analysis-error`), reducing low-signal diagnostics in execution artifacts.
 - Regression coverage added:
-  `node --test unit-tests-js/prompt-step-journal.test.js unit-tests-js/prompt-recorder.test.js`.
+  `node --test unit-tests-js/prompt-step-journal.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js unit-tests-js/miniphi-memory-stop-reason.test.js`.
 - Live proof run:
   `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for prompt logging proof" --summary-levels 0 --prompt-journal p1-logging-proof-20260207-215410 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
   produced canonical prompt exchange fields in `.miniphi/prompt-exchanges/9a7c2d51-8457-4b50-bf32-033cc610286a.json`
   and canonical journal tool metadata in
   `.miniphi/prompt-exchanges/stepwise/p1-logging-proof-20260207-215410/steps/step-001.json`.
+- Live proof runs:
+  `node src/index.js "Summarize node version output with implicit routing" --cmd "node -v" --no-stream --no-summary --cwd . --prompt-journal implicit-run-live-proof --prompt-journal-status paused --session-timeout 1 --command-policy allow --assume-yes`
+  validated implicit `"<task>" + --cmd` routing with canonical stop fields in
+  `.miniphi/indices/executions-index.json`.
+  `node src/index.js run --config <temp-rest-failure-config> --no-health --cmd 'node -e "console.log(Math.random())"' --task "Force REST prompt failure canonicalization proof 2" --no-stream --no-summary --command-policy allow --assume-yes --session-timeout 90`
+  validated canonical task-execution error stop fields in
+  `.miniphi/executions/07df17bb-c22c-418e-b34d-4adc55683837/task-execution.json`.
 
 ### P1 - LM Studio transport and error taxonomy
 
@@ -232,6 +246,24 @@ Status:
   `node src/index.js lmstudio-health --config <temp-config-with-lmStudio.rest.baseUrl=http://127.0.0.1:1> --timeout 2 --json`
   now reports deterministic failure payload (`ok: false`, `stop_reason: rest-failure`,
   `stop_reason_code: rest-failure`) instead of a false healthy status when REST is unreachable.
+- Stop-reason persistence closeout:
+  `.miniphi` writers now canonicalize stop reasons through `buildStopReasonInfo` in
+  `miniphi-memory` (execution/health/nitpick/fallback cache), prompt journal metadata/notes,
+  prompt-exchange response normalization, and recompose step-events. Legacy strings such as
+  `fallback`, `partial-fallback`, `offline-fallback`, `invalid-json`, `lmstudio-health`,
+  `lmstudio-protocol`, `command-denied`, and `no-token-timeout` now normalize to canonical codes.
+- Regression coverage:
+  `node --test unit-tests-js/miniphi-memory-stop-reason.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/prompt-step-journal.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js`
+  plus full `npm test` (`63/63` passing).
+- Live proof runs:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for stop reason canonicalization proof" --summary-levels 0 --prompt-journal p1-stop-reason-canonical-20260210-045239 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
+  and
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Timeout proof for canonical stop reason v2" --summary-levels 0 --prompt-journal p1-stop-reason-timeout2-20260210-045626 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 1`
+  persisted canonical stop reasons in `.miniphi/indices/executions-index.json` and corresponding
+  stepwise session notes.
+  `node src/index.js run --cmd "node -v" --task "Timeout detail preference proof" --no-stream --no-summary --session-timeout 1 --command-policy allow --assume-yes`
+  persisted canonical timeout detail text (`session-timeout: session deadline exceeded.`) in
+  `.miniphi/executions/00da664c-f88c-4582-ad42-a2484dc885bb/execution.json`.
 
 ### P2 - Legacy/ad-hoc cleanup pass
 

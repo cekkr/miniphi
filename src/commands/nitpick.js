@@ -10,6 +10,7 @@ import WebResearcher from "../libs/web-researcher.js";
 import WebBrowser from "../libs/web-browser.js";
 import { parseStrictJsonObject } from "../libs/core-utils.js";
 import { parseNumericSetting, resolveDurationMs } from "../libs/cli-utils.js";
+import { buildStopReasonInfo } from "../libs/lmstudio-error-utils.js";
 import { classifyTaskIntent, selectNitpickModels } from "../libs/model-selector.js";
 import { resolveLmStudioTransportPreference } from "../libs/lmstudio-transport.js";
 
@@ -18,6 +19,23 @@ const DEFAULT_TARGET_WORDS = 1200;
 const DEFAULT_MAX_RESULTS = 5;
 const DEFAULT_MAX_SOURCES = 6;
 const DEFAULT_SOURCE_CHARS = 1800;
+
+function normalizeStopReasonFields(payload = undefined) {
+  const rawReason = payload?.stopReason ?? payload?.stop_reason ?? null;
+  const rawCode = payload?.stopReasonCode ?? payload?.stop_reason_code ?? null;
+  const rawDetail = payload?.stopReasonDetail ?? payload?.stop_reason_detail ?? null;
+  const stopInfo = buildStopReasonInfo({
+    error: rawDetail,
+    fallbackReason: rawReason,
+    fallbackCode: rawCode,
+    fallbackDetail: rawDetail,
+  });
+  return {
+    stopReason: stopInfo.reason ?? null,
+    stopReasonCode: stopInfo.code ?? null,
+    stopReasonDetail: stopInfo.detail ?? null,
+  };
+}
 
 function parseList(value) {
   if (!value && value !== 0) {
@@ -159,15 +177,21 @@ function buildCritiquePrompt({ task, draft, sources, schemaBlock, blind }) {
 }
 
 function buildFallback(schemaId, { task, role, stage, reason }) {
+  const normalizedStop = normalizeStopReasonFields({
+    stopReason: reason,
+    stopReasonCode: "analysis-error",
+    stopReasonDetail: reason,
+  });
+  const fallbackReason = normalizedStop.stopReason ?? "analysis-error";
   const base = {
     schema_version: "fallback-v1",
     task: task ?? "",
     summary: reason ?? "fallback",
     needs_more_context: true,
     missing_snippets: [],
-    stop_reason: reason ?? "fallback",
-    stop_reason_code: "fallback",
-    stop_reason_detail: reason ?? null,
+    stop_reason: fallbackReason,
+    stop_reason_code: normalizedStop.stopReasonCode ?? fallbackReason,
+    stop_reason_detail: normalizedStop.stopReasonDetail ?? reason ?? null,
   };
   switch (schemaId) {
     case "nitpick-plan":
@@ -257,9 +281,12 @@ async function runNitpickStep({
         error: "invalid-json",
       };
     }
+    const normalizedStop = normalizeStopReasonFields(parsed);
     const response = {
       ...parsed,
-      stop_reason: parsed.stop_reason ?? "completed",
+      stop_reason: normalizedStop.stopReason,
+      stop_reason_code: normalizedStop.stopReasonCode,
+      stop_reason_detail: normalizedStop.stopReasonDetail,
     };
     return {
       response,
@@ -540,7 +567,7 @@ export async function handleNitpickCommand(context) {
   const steps = [];
   let sources = [];
   let latestDraft = "";
-  let stopReason = "completed";
+  let stopReason = null;
   let stopReasonCode = null;
   let stopReasonDetail = null;
 
@@ -952,9 +979,17 @@ export async function handleNitpickCommand(context) {
   }
 
   if (steps.some((step) => step.error)) {
-    stopReason = "partial-fallback";
-    stopReasonCode = "fallback";
-    stopReasonDetail = "One or more nitpick steps returned fallback JSON.";
+    const firstError =
+      steps.find((step) => typeof step?.error === "string" && step.error.trim().length)?.error ??
+      "One or more nitpick steps returned fallback JSON.";
+    const normalizedStop = normalizeStopReasonFields({
+      stopReason: "partial-fallback",
+      stopReasonCode: "fallback",
+      stopReasonDetail: firstError,
+    });
+    stopReason = normalizedStop.stopReason;
+    stopReasonCode = normalizedStop.stopReasonCode;
+    stopReasonDetail = normalizedStop.stopReasonDetail;
   }
 
   const session = {

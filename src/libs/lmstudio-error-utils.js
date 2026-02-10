@@ -67,13 +67,36 @@ const STOP_REASON_ALIASES = new Map([
   ["connection error", "connection"],
   ["network error", "network"],
   ["invalid response", "invalid-response"],
+  ["invalid-json", "invalid-response"],
   ["protocol warning", "protocol"],
   ["protocol-error", "protocol"],
   ["context overflow", "context-overflow"],
   ["session timeout", "session-timeout"],
   ["analysis error", "analysis-error"],
   ["cached fallback", "cached-fallback"],
+  ["fallback", "analysis-error"],
+  ["partial-fallback", "analysis-error"],
+  ["offline-fallback", "analysis-error"],
+  ["error", "analysis-error"],
+  ["unknown", "analysis-error"],
+  ["unknown-error", "analysis-error"],
+  ["command-denied", "analysis-error"],
+  ["command-failed", "analysis-error"],
+  ["cancelled", "analysis-error"],
+  ["canceled", "analysis-error"],
+  ["no-token-timeout", "timeout"],
+  ["lmstudio-health", "rest-failure"],
+  ["lmstudio-protocol", "protocol"],
   ["preamble detected", "preamble_detected"],
+  ["preamble-detected", "preamble_detected"],
+]);
+const STOP_REASON_SUCCESS_TOKENS = new Set([
+  "completed",
+  "complete",
+  "ok",
+  "success",
+  "none",
+  "null",
 ]);
 
 function matchesAny(patterns, value) {
@@ -105,7 +128,15 @@ export function normalizeStopReasonCode(value) {
     return null;
   }
   const compact = normalized.replace(/[_\s]+/g, "-");
-  return STOP_REASON_ALIASES.get(normalized) ?? STOP_REASON_ALIASES.get(compact) ?? compact;
+  if (STOP_REASON_SUCCESS_TOKENS.has(compact)) {
+    return null;
+  }
+  const mapped =
+    STOP_REASON_ALIASES.get(normalized) ?? STOP_REASON_ALIASES.get(compact) ?? compact;
+  if (STOP_REASON_SUCCESS_TOKENS.has(mapped)) {
+    return null;
+  }
+  return STOP_REASON_LABELS.has(mapped) ? mapped : "analysis-error";
 }
 
 export function getLmStudioStopReasonLabel(value) {
@@ -166,37 +197,54 @@ export function classifyLmStudioError(error) {
 
 export function buildStopReasonInfo(options = {}) {
   const message = normalizeLmStudioErrorMessage(options.error);
-  const sessionTimeout = isSessionTimeoutMessage(message);
-  const classified = message ? classifyLmStudioError(message) : null;
+  const messageText =
+    typeof message === "string" && message.trim().length > 0 ? message.trim() : null;
+  const sessionTimeout = isSessionTimeoutMessage(messageText);
+  const classified = messageText ? classifyLmStudioError(messageText) : null;
   const normalizedFallbackReason = normalizeStopReasonCode(options.fallbackReason);
   const normalizedFallbackCode = normalizeStopReasonCode(options.fallbackCode);
   const reason =
     normalizedFallbackReason ??
     (sessionTimeout ? "session-timeout" : classified?.reason) ??
-    normalizeStopReasonCode(message) ??
-    (message || null);
+    normalizeStopReasonCode(messageText);
   const code =
     normalizedFallbackCode ??
     normalizedFallbackReason ??
     (sessionTimeout ? "session-timeout" : classified?.code) ??
     normalizeStopReasonCode(reason) ??
     null;
+  const canonicalCode =
+    reason && code && reason !== code ? normalizeStopReasonCode(reason) ?? code : code;
   const reasonLabel =
     options.fallbackReasonLabel ??
-    getLmStudioStopReasonLabel(code ?? reason) ??
+    getLmStudioStopReasonLabel(canonicalCode ?? reason) ??
     classified?.reasonLabel ??
     null;
+  const fallbackDetailText =
+    typeof options.fallbackDetail === "string" && options.fallbackDetail.trim().length > 0
+      ? options.fallbackDetail.trim()
+      : null;
+  const fallbackDetailCode = normalizeStopReasonCode(fallbackDetailText);
+  const detailReasonCode = normalizeStopReasonCode(canonicalCode ?? reason);
+  const fallbackDetailIsPlaceholder = Boolean(
+    fallbackDetailText &&
+      fallbackDetailCode &&
+      (fallbackDetailCode === detailReasonCode ||
+        fallbackDetailCode === normalizeStopReasonCode(normalizedFallbackReason) ||
+        fallbackDetailCode === normalizeStopReasonCode(normalizedFallbackCode) ||
+        fallbackDetailCode === "analysis-error"),
+  );
   const detail =
-    options.fallbackDetail ??
-    (sessionTimeout ? message || "session-timeout" : classified?.message ?? message) ??
+    (fallbackDetailIsPlaceholder ? null : fallbackDetailText) ??
+    (sessionTimeout ? messageText || "session-timeout" : classified?.message ?? messageText) ??
     null;
   return {
     reason,
-    code,
+    code: canonicalCode,
     reasonLabel,
     detail,
     classified,
-    message,
+    message: messageText,
     sessionTimeout,
   };
 }
