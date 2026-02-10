@@ -90,6 +90,12 @@ For CI, use strict mode and emit malformed JSON paths directly:
 miniphi migrate-stop-reasons --strict --parse-error-report --json
 ```
 
+Repo npm script template (automatic strict enforcement):
+
+```bash
+npm run ci:migrate-stop-reasons
+```
+
 Capture a web page into a local snapshot:
 
 ```bash
@@ -167,6 +173,8 @@ These are the commands most people start with:
   Trim older `.miniphi/` artifacts using retention defaults or `--retain-*` overrides.
 - `miniphi migrate-stop-reasons`  
   One-shot normalization pass for historical stop reason fields in existing `.miniphi` JSON artifacts (`--dry-run`, `--strict`, `--parse-error-report`, and `--json` supported).
+- `npm run ci:migrate-stop-reasons`  
+  CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
 

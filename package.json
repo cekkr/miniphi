@@ -10,6 +10,7 @@
   "scripts": {
     "test": "node --test ./unit-tests-js/**/*.test.js",
     "lint": "node --test ./unit-tests-js/**/*.test.js",
+    "ci:migrate-stop-reasons": "node src/index.js migrate-stop-reasons --history-root . --dry-run --strict --parse-error-report --json",
     "benchmark": "node benchmark/run-tests.js",
     "benchmark:windows": "node scripts/run-benchmark-and-summarize.js --verbose",
     "sample:besh-journal": "node src/index.js analyze-file --file samples/besh/bsh.c --task \"Audit the besh shell and capture a prompt journal\" --summary-levels 4 --prompt-journal besh-regression --prompt-journal-status paused --no-stream",
