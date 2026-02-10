@@ -81,6 +81,7 @@ import { handleCommandLibrary } from "./commands/command-library.js";
 import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
 import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
+import { handleMigrateStopReasonsCommand } from "./commands/migrate-stop-reasons.js";
 import { handleNitpickCommand } from "./commands/nitpick.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRunCommand } from "./commands/run.js";
@@ -103,6 +104,7 @@ const COMMANDS = new Set([
   "command-library",
   "helpers",
   "cache-prune",
+  "migrate-stop-reasons",
   "nitpick",
 ]);
 
@@ -1418,6 +1420,11 @@ async function main() {
 
   if (command === "cache-prune") {
     await handleCachePruneCommand({ options, verbose, configData });
+    return;
+  }
+
+  if (command === "migrate-stop-reasons") {
+    await handleMigrateStopReasonsCommand({ options, verbose });
     return;
   }
 
@@ -2744,6 +2751,7 @@ Usage:
   node src/index.js command-library --limit 10
   node src/index.js helpers --limit 6
   node src/index.js cache-prune --dry-run
+  node src/index.js migrate-stop-reasons --dry-run
   node src/index.js workspace --task "Plan README refresh"
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
@@ -2893,6 +2901,12 @@ Cache prune:
   --retain-history-notes <n>   Keep the newest N history notes (default: 200)
   --retain-research <n>        Keep the newest N research snapshots (default: 200)
   --dry-run                    Report deletions without removing files
+  --json                       Output JSON summary instead of human-readable text
+
+Stop reason migration:
+  --history-root <path>        Override the starting directory used to locate .miniphi (default: cwd)
+  --include-global             Also migrate ~/.miniphi when present
+  --dry-run                    Report normalization changes without writing files
   --json                       Output JSON summary instead of human-readable text
 
 Recompose benchmarks:

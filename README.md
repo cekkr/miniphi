@@ -78,6 +78,12 @@ miniphi lmstudio-health --timeout 10
 
 For CI-friendly checks, add `--json` to emit a machine-readable summary.
 
+Normalize historical stop-reason fields in existing `.miniphi` artifacts:
+
+```bash
+miniphi migrate-stop-reasons
+```
+
 Capture a web page into a local snapshot:
 
 ```bash
@@ -153,6 +159,8 @@ These are the commands most people start with:
   Inspect saved helper scripts and recommended commands.
 - `miniphi cache-prune`  
   Trim older `.miniphi/` artifacts using retention defaults or `--retain-*` overrides.
+- `miniphi migrate-stop-reasons`  
+  One-shot normalization pass for historical stop reason fields in existing `.miniphi` JSON artifacts (`--dry-run` and `--json` supported).
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
 

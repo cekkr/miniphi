@@ -39,8 +39,8 @@ These are the main areas where duplication or confusion is likely to slow develo
 - JSON parsing/validation paths are scattered: `src/libs/lmstudio-handler.js`,
   `src/libs/efficient-log-analyzer.js`, and `src/libs/core-utils.js` each handle JSON extraction or
   schema enforcement separately.
-- Legacy/compatibility files (ex: `src/libs/lms-phi4.js`) are small but add cognitive overhead;
-  keep only with a documented compatibility reason.
+- Legacy/compatibility files are small but add cognitive overhead; keep only with a documented
+  compatibility reason.
 - Benchmark and recompose utilities are instrumentation; improvements should target the runtime
   pipeline rather than editing these scripts to mask runtime issues.
 
@@ -252,9 +252,13 @@ Status:
   prompt-exchange response normalization, and recompose step-events. Legacy strings such as
   `fallback`, `partial-fallback`, `offline-fallback`, `invalid-json`, `lmstudio-health`,
   `lmstudio-protocol`, `command-denied`, and `no-token-timeout` now normalize to canonical codes.
+- One-shot historical normalization command:
+  `migrate-stop-reasons` now scans existing `.miniphi/**/*.json` artifacts and rewrites legacy
+  stop reason aliases in-place (`--dry-run` + `--json` supported, optional `--include-global` for
+  `~/.miniphi`).
 - Regression coverage:
-  `node --test unit-tests-js/miniphi-memory-stop-reason.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/prompt-step-journal.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js`
-  plus full `npm test` (`63/63` passing).
+  `node --test unit-tests-js/miniphi-memory-stop-reason.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/prompt-step-journal.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js unit-tests-js/stop-reason-migrator.test.js unit-tests-js/cli-migrate-stop-reasons.test.js`
+  plus full `npm test` (`66/66` passing).
 - Live proof runs:
   `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for stop reason canonicalization proof" --summary-levels 0 --prompt-journal p1-stop-reason-canonical-20260210-045239 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
   and
@@ -264,6 +268,9 @@ Status:
   `node src/index.js run --cmd "node -v" --task "Timeout detail preference proof" --no-stream --no-summary --session-timeout 1 --command-policy allow --assume-yes`
   persisted canonical timeout detail text (`session-timeout: session deadline exceeded.`) in
   `.miniphi/executions/00da664c-f88c-4582-ad42-a2484dc885bb/execution.json`.
+  `node src/index.js migrate-stop-reasons --json`
+  migrated historical local artifacts in one pass (`filesScanned: 1157`, `filesChanged: 142`,
+  `fieldsUpdated: 308`, `writeErrors: 0`).
 
 ### P2 - Legacy/ad-hoc cleanup pass
 
@@ -273,6 +280,21 @@ Exit criteria:
 - Each legacy module has a documented owner and reason to exist, or it is removed with references
   updated in scripts/tests.
 - Benchmark/recompose tools remain functional and unchanged in intent.
+
+Status:
+- In progress. Removed `src/libs/lms-phi4.js` (unused legacy shim) and moved internal source fully
+  onto direct `lmstudio-handler` imports.
+- Added regression guard `unit-tests-js/legacy-module-cleanup.test.js` to assert the legacy shim
+  stays removed and source imports do not regress.
+- Validation:
+  `node --test unit-tests-js/legacy-module-cleanup.test.js` and full `npm test` (`66/66` passing).
+- Live proof run:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "P2 legacy cleanup proof run" --summary-levels 0 --prompt-journal p2-legacy-cleanup-20260210 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
+  completed with non-fallback JSON summary and persisted prompt-journal artifacts.
+- Recompose/benchmark guard proof:
+  `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean --recompose-mode offline`
+  still completes and writes report artifacts after the legacy shim removal (`recompose-report.json`
+  + prompt logs), confirming instrumentation remains functional.
 
 ## Focus rule (guardrail)
 

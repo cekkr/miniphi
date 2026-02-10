@@ -55,7 +55,7 @@ When you add or change CLI behavior:
 ## Runtime posture
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
 - Transport default: REST-first (`lmStudio.transport: "rest"`); override with `lmStudio.transport: "ws"` or env `MINIPHI_FORCE_REST=1` for forced REST.
-- CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, `lmstudio-health`, `web-browse`, `nitpick`, and helper/command-library browsers.
+- CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, and helper/command-library browsers.
 - Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
 - Health probes (`lmstudio-health`) write snapshots to `.miniphi/health/lmstudio-status.json` (timeout configurable via `lmStudio.health.timeoutMs`).
 - `lmstudio-health --json` emits a machine-readable summary for CI checks.
@@ -115,6 +115,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node src/index.js lmstudio-health --timeout 10` for a quick REST probe before long-running runs.
 - `node --test unit-tests-js/lmstudio-api-status.test.js unit-tests-js/lmstudio-error-utils.test.js unit-tests-js/runtime-defaults.test.js` to validate transport/error taxonomy and session-capped timeout normalization.
 - `node --test unit-tests-js/cli-implicit-run.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/miniphi-memory-stop-reason.test.js` to validate implicit run routing plus canonical stop-reason persistence across execution writers.
+- `node --test unit-tests-js/stop-reason-migrator.test.js unit-tests-js/cli-migrate-stop-reasons.test.js` to validate one-shot historical stop-reason migration over existing `.miniphi` artifacts.
 - `node src/index.js helpers --limit 5` and `node src/index.js command-library --limit 5` to confirm helper reuse/recording.
 - `node scripts/local-eval-report.js --output .miniphi/evals/local-eval-report.json` to capture JSON/tool-call coverage from prompt exchanges.
 - `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js` to validate nested plan branch selection and decomposition focus hints.
@@ -198,7 +199,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 
 ### What ships today
 - **Layered LM Studio runtime.** `LMStudioManager` performs JIT model loading and `/api/v0` diagnostics, `LMStudioHandler` streams reasoning while enforcing JSON schema contracts, and `EfficientLogAnalyzer` + `PythonLogSummarizer` compress live command output or saved files before the model thinks.
-- **CLI entrypoints + default workflow.** `node src/index.js run --cmd "npm test" --task "Analyze failures"` is the canonical loop, while `analyze-file`, `lmstudio-health`, `web-research`, `web-browse`, `nitpick`, `history-notes`, `cache-prune`, `recompose`, and `benchmark recompose|analyze|plan scaffold` cover file replay, health probes, research snapshots, browsing captures, writer/critic tests, `.miniphi` audits, pruning, recomposition, and benchmark sweeps.
+- **CLI entrypoints + default workflow.** `node src/index.js run --cmd "npm test" --task "Analyze failures"` is the canonical loop, while `analyze-file`, `lmstudio-health`, `web-research`, `web-browse`, `nitpick`, `history-notes`, `cache-prune`, `migrate-stop-reasons`, `recompose`, and `benchmark recompose|analyze|plan scaffold` cover file replay, health probes, research snapshots, browsing captures, writer/critic tests, `.miniphi` audits, stop-reason artifact normalization, pruning, recomposition, and benchmark sweeps.
 - **Persistent `.miniphi/` workspace.** `miniPhiMemory` snapshots each run under `executions/<id>/`, stores `prompt.json`, `analysis.json`, `task-execution.json` (LM Studio request/response register), helper scripts, TODO queues, and mirrors every sub-prompt as JSON inside `.miniphi/prompt-exchanges/` and `.miniphi/helpers/`. Prompt exchange records retain response text, `tool_calls`, `tool_definitions`, and the `promptJournalId` link.
 - **Schema registry + enforcement.** `PromptSchemaRegistry` injects schema blocks from `docs/prompts/*.schema.json` into every model call (main prompts, scoring prompts, decomposers) and rejects invalid responses before they touch history storage.
 - **Workspace context analyzers.** `WorkspaceProfiler`, `FileConnectionAnalyzer`, and `CapabilityInventory` scan the repository, render ASCII connection graphs, capture package/repo scripts plus `.bin` tools, and feed those hints into every prompt so Phi knows which capabilities already exist.
@@ -229,7 +230,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 
 ### src/ file map
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
-- `src/commands/`: Command handlers extracted from `src/index.js` (run, analyze-file, workspace, recompose, benchmark, prompt-template, web-research, web-browse, nitpick, history-notes, cache-prune, command-library, helpers).
+- `src/commands/`: Command handlers extracted from `src/index.js` (run, analyze-file, workspace, recompose, benchmark, prompt-template, web-research, web-browse, nitpick, history-notes, cache-prune, migrate-stop-reasons, command-library, helpers).
 - `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
 - `src/libs/benchmark-general.js`: General-purpose benchmark flow, resource baselines, and summaries.
 - `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
@@ -246,7 +247,6 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/global-memory.js`: Home-level `.miniphi` store for shared helpers, templates, preferences, and prompt telemetry.
 - `src/libs/history-notes.js`: Captures `.miniphi` snapshots (optionally with git metadata) into JSON and Markdown.
 - `src/libs/json-schema-utils.js`: Shared helpers to build JSON schema response_format blocks and validate responses.
-- `src/libs/lms-phi4.js`: Legacy alias for `lmstudio-handler` exports.
 - `src/libs/lmstudio-api.js`: LM Studio SDK wrapper and REST client utilities, including URL normalization and model lifecycle.
 - `src/libs/lmstudio-client-options.js`: Build LM Studio REST client options from config defaults.
 - `src/libs/lmstudio-error-utils.js`: Shared LM Studio error classification and transport/timeout detection.
@@ -287,6 +287,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `nitpick` runs a writer/critic loop to draft and revise long-form text with strict JSON schemas. Flags: `--writer-model`, `--critic-model`, `--model-pool`, `--rounds`, `--target-words`, `--blind` (forces web research + browsing), `--max-results`, `--max-sources`, `--max-source-chars`, `--research-rounds`, `--provider`, `--browser-timeout/--browser-timeout-ms`, `--output`, and `--print`. Sessions are saved under `.miniphi/nitpick/`.
 - `history-notes` snapshots `.miniphi/` and optionally attaches git metadata. Use `--label`, `--history-root`, and `--no-git`.
 - `cache-prune` trims older `.miniphi/` artifacts using retention caps. Use `--retain-*` overrides, `--dry-run`, `--json`, and `--cwd` to scope the workspace.
+- `migrate-stop-reasons` performs a one-shot normalization pass over existing `.miniphi` JSON artifacts so legacy stop reason aliases are rewritten to canonical fields. Use `--dry-run` to preview changes, `--json` for machine-readable output, and `--include-global` to include `~/.miniphi`.
 - `command-library` prints every command that Phi recommended via `recommended_fixes[].commands`; filter with `--search`, `--tag`, and `--limit`, or add `--json` to consume the output programmatically.
 - `helpers` lists the versioned helper scripts saved under `.miniphi/helpers/`. Filter with `--workspace-type`, `--source`, `--search`, or `--limit`, dump JSON with `--json`, and rerun helpers via `--run <id> [--version <n>]` plus optional `--stdin`, `--stdin-file`, `--helper-timeout`, `--helper-silence-timeout`, and `--helper-cwd`.
 - `recompose` operates on `samples/recompose` projects. Flags: `--sample`, `--direction code-to-markdown|markdown-to-code|roundtrip`, `--code-dir`, `--descriptions-dir`, `--output-dir`, `--clean`, `--report`, `--resume-descriptions`, and `--recompose-mode auto|live|offline` (default: auto; offline writes stub code). Use `--workspace-overview-timeout <seconds>` (or `--workspace-overview-timeout-ms <ms>`) to raise the dedicated workspace-overview prompt budget when Phi-4 needs more time before narration. Used for development and testing purposes.
