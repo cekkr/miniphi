@@ -16,6 +16,7 @@ import { resolveLmStudioTransportPreference } from "../libs/lmstudio-transport.j
 
 const DEFAULT_ROUNDS = 2;
 const DEFAULT_TARGET_WORDS = 1200;
+const DEFAULT_AUTO_EXPAND_ROUNDS = 1;
 const DEFAULT_MAX_RESULTS = 5;
 const DEFAULT_MAX_SOURCES = 6;
 const DEFAULT_SOURCE_CHARS = 1800;
@@ -272,6 +273,7 @@ async function runNitpickStep({
   task,
   role,
   stage,
+  minWordsRequired,
   sessionDeadline,
   mainPromptId,
 }) {
@@ -298,6 +300,23 @@ async function runNitpickStep({
         promptExchange: handler.consumeLastPromptExchange?.() ?? handler.getLastPromptExchange?.(),
         error: "invalid-json",
       };
+    }
+    if (
+      schemaId === "nitpick-draft" &&
+      Number.isFinite(minWordsRequired) &&
+      minWordsRequired > 0
+    ) {
+      const minWords = Math.max(1, Math.floor(minWordsRequired));
+      const actualWords = countWords(parsed.content);
+      if (actualWords < minWords) {
+        const reason = `minimum words validator failed (${actualWords}/${minWords})`;
+        return {
+          response: buildFallback(schemaId, { task, role, stage, reason }),
+          promptExchange:
+            handler.consumeLastPromptExchange?.() ?? handler.getLastPromptExchange?.(),
+          error: null,
+        };
+      }
     }
     const normalizedStop = normalizeStopReasonFields(parsed);
     const response = {
@@ -378,6 +397,11 @@ export async function handleNitpickCommand(context) {
     parseNumericSetting(nitpickDefaults.targetWords, "config.nitpick.targetWords") ??
     DEFAULT_TARGET_WORDS;
   const targetWords = Math.max(100, Math.floor(targetRaw));
+  const autoExpandRoundsRaw =
+    parseNumericSetting(options["auto-expand-rounds"], "--auto-expand-rounds") ??
+    parseNumericSetting(nitpickDefaults.autoExpandRounds, "config.nitpick.autoExpandRounds") ??
+    DEFAULT_AUTO_EXPAND_ROUNDS;
+  const autoExpandRounds = Math.max(0, Math.floor(autoExpandRoundsRaw));
   const maxResultsRaw =
     parseNumericSetting(options["max-results"], "--max-results") ??
     parseNumericSetting(nitpickDefaults.maxResults, "config.nitpick.maxResults") ??
@@ -588,6 +612,7 @@ export async function handleNitpickCommand(context) {
   let stopReason = null;
   let stopReasonCode = null;
   let stopReasonDetail = null;
+  const minWordThreshold = Math.max(100, Math.floor(targetWords));
 
   const planSchemaId = blind ? "nitpick-research-plan" : "nitpick-plan";
   const planPrompt = buildPlanPrompt({
@@ -610,6 +635,7 @@ export async function handleNitpickCommand(context) {
     task,
     role: "writer",
     stage: "draft",
+    minWordsRequired: null,
     sessionDeadline,
     mainPromptId: promptGroupId,
   });
@@ -817,6 +843,7 @@ export async function handleNitpickCommand(context) {
       task,
       role: "critic",
       stage: "revision",
+      minWordsRequired: null,
       sessionDeadline,
       mainPromptId: promptGroupId,
     });
@@ -957,6 +984,7 @@ export async function handleNitpickCommand(context) {
       task,
       role: "writer",
       stage: round === rounds ? "final" : "revision",
+      minWordsRequired: round === rounds ? minWordThreshold : null,
       sessionDeadline,
       mainPromptId: promptGroupId,
     });
@@ -996,9 +1024,14 @@ export async function handleNitpickCommand(context) {
     }
   }
 
-  const minWordThreshold = Math.max(100, Math.floor(targetWords));
   let finalWordCount = countWords(latestDraft);
-  if (finalWordCount < minWordThreshold && !isSessionExpired(sessionDeadline)) {
+  for (
+    let autoExpandAttempt = 1;
+    autoExpandAttempt <= autoExpandRounds &&
+    finalWordCount < minWordThreshold &&
+    !isSessionExpired(sessionDeadline);
+    autoExpandAttempt += 1
+  ) {
     const autoExpandPrompt = buildDraftPrompt({
       task,
       outline,
@@ -1006,6 +1039,7 @@ export async function handleNitpickCommand(context) {
       constraints,
       critique: [
         `Current draft length is ${finalWordCount} words; expand to at least ${minWordThreshold} words.`,
+        `Auto-expand attempt ${autoExpandAttempt} of ${autoExpandRounds}.`,
         "Keep chronology precise and resolve unsupported claims.",
         "Do not append a separate 'Word Count Estimate' line inside content.",
       ],
@@ -1018,7 +1052,7 @@ export async function handleNitpickCommand(context) {
       handler: writer,
       prompt: autoExpandPrompt,
       schemaId: "nitpick-draft",
-      label: "nitpick-auto-expand-1",
+      label: `nitpick-auto-expand-${autoExpandAttempt}`,
       metadata: {
         mode: "nitpick",
         taskType: intentInfo.intent,
@@ -1028,12 +1062,13 @@ export async function handleNitpickCommand(context) {
       task,
       role: "writer",
       stage: "final",
+      minWordsRequired: minWordThreshold,
       sessionDeadline,
       mainPromptId: promptGroupId,
     });
     latestDraft = pickDraftContent(autoExpandStep.response?.content, latestDraft);
     steps.push({
-      label: "auto-expand-1",
+      label: `auto-expand-${autoExpandAttempt}`,
       schemaId: "nitpick-draft",
       model: writerModel,
       response: autoExpandStep.response,
@@ -1042,7 +1077,7 @@ export async function handleNitpickCommand(context) {
     });
     if (promptJournal && promptJournalId) {
       await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
-        label: "nitpick-auto-expand-1",
+        label: `nitpick-auto-expand-${autoExpandAttempt}`,
         prompt: autoExpandPrompt,
         response: JSON.stringify(autoExpandStep.response, null, 2),
         schemaId: "nitpick-draft",
@@ -1116,6 +1151,7 @@ export async function handleNitpickCommand(context) {
     settings: {
       rounds,
       targetWords,
+      autoExpandRounds,
       blind,
       maxResults,
       maxSources,

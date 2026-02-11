@@ -124,6 +124,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node --test unit-tests-js/cli-bash-advanced.test.js` to run live bash sample prompts (requires LM Studio; long-running).
 - `node --test unit-tests-js/romeo-miniphi-flow.test.js` (exercise EfficientLogAnalyzer file flow with stubbed Phi and chunked summaries).
 - `node --test unit-tests-js/nitpick-two-student-essay.test.js` (exercise the two-model nitpick essay loop with mocked web research and a 1000+ word revision target).
+- `node --test unit-tests-js/nitpick-auto-expand-rounds.test.js` (validate `--auto-expand-rounds` retries and strict minimum-word validation for final nitpick drafts).
 - `node --test unit-tests-js/web-researcher-fallback.test.js` (verify DuckDuckGo HTML fallback parsing when API results are empty).
 
 ## Romeo unit test quick use
@@ -279,7 +280,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/runtime-defaults.js`: Shared runtime timeout defaults.
 - `src/libs/schema-adapter-registry.js`: Registers schema adapters for request/response normalization.
 - `src/libs/stream-analyzer.js`: Line-by-line file reader for chunked analysis of large files.
-- `src/libs/web-researcher.js`: DuckDuckGo Instant Answer client for the `web-research` command.
+- `src/libs/web-researcher.js`: DuckDuckGo research client with Instant Answer + HTML fallback parsing for the `web-research` command.
 - `src/libs/web-browser.js`: Puppeteer-backed browser fetcher for `web-browse` and blind nitpick sources.
 - `src/libs/workspace-context-utils.js`: Builds workspace file manifests, README snippets, and prompt hint blocks.
 - `src/libs/workspace-profiler.js`: Profiles workspace contents (code/docs/data) and optionally includes connection graphs.
@@ -289,7 +290,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.
 - `web-research` performs DuckDuckGo Instant Answer lookups. Use positional queries or `--query`, set `--max-results`, `--provider`, `--include-raw`, `--no-save`, and optional `--note`. Results live under `.miniphi/research/`.
 - `web-browse` drives a headless browser (Puppeteer) to capture page text. Use `--url` (or positional URLs), `--url-file`, `--timeout/--timeout-ms`, `--wait-selector`/`--wait-ms`, `--selector` to scope extraction, `--max-chars`, `--include-html`, `--screenshot` (`--screenshot-dir`), `--headful`, and `--block-resources` to speed loads. Snapshots land under `.miniphi/web/`.
-- `nitpick` runs a writer/critic loop to draft and revise long-form text with strict JSON schemas. Flags: `--writer-model`, `--critic-model`, `--model-pool`, `--rounds`, `--target-words`, `--blind` (forces web research + browsing), `--max-results`, `--max-sources`, `--max-source-chars`, `--research-rounds`, `--provider`, `--browser-timeout/--browser-timeout-ms`, `--output`, and `--print`. Sessions are saved under `.miniphi/nitpick/`.
+- `nitpick` runs a writer/critic loop to draft and revise long-form text with strict JSON schemas plus minimum-word validation by actual word count on final drafts. Flags: `--writer-model`, `--critic-model`, `--model-pool`, `--rounds`, `--target-words`, `--auto-expand-rounds`, `--blind` (forces web research + browsing), `--max-results`, `--max-sources`, `--max-source-chars`, `--research-rounds`, `--provider`, `--browser-timeout/--browser-timeout-ms`, `--output`, and `--print`. Sessions are saved under `.miniphi/nitpick/`.
 - `history-notes` snapshots `.miniphi/` and optionally attaches git metadata. Use `--label`, `--history-root`, and `--no-git`.
 - `cache-prune` trims older `.miniphi/` artifacts using retention caps. Use `--retain-*` overrides, `--dry-run`, `--json`, and `--cwd` to scope the workspace.
 - `migrate-stop-reasons` performs a one-shot normalization pass over existing `.miniphi` JSON artifacts so legacy stop reason aliases are rewritten to canonical fields. Use `--dry-run` to preview changes, `--strict` for CI fail-fast parse-error handling, `--parse-error-report` to print malformed JSON paths, `--json` for machine-readable output, and `--include-global` to include `~/.miniphi`.

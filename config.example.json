@@ -64,6 +64,7 @@
     "criticModel": "ibm/granite-4-h-tiny",
     "rounds": 2,
     "targetWords": 1200,
+    "autoExpandRounds": 1,
     "blind": false,
     "maxResults": 5,
     "maxSources": 6,

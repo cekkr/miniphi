@@ -2874,6 +2874,7 @@ Nitpick tests:
   --model-pool <list>          Comma-separated model pool to choose from
   --rounds <n>                 Number of critique/revision rounds (default: 2)
   --target-words <n>           Target word count (default: 1200)
+  --auto-expand-rounds <n>     Additional final expansion attempts when below target (default: 1)
   --blind                      Disable model prior knowledge and require web sources
   --research-rounds <n>        Max research refresh cycles when critiques request queries
   --max-results <n>            Max search results per query (default: 5)

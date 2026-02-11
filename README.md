@@ -105,7 +105,7 @@ miniphi web-browse --url "https://example.com" --max-chars 4000
 Run a writer/critic nitpicking loop (optional blind mode uses web sources):
 
 ```bash
-miniphi nitpick --task "Write a 2000-word brief on X" --rounds 2
+miniphi nitpick --task "Write a 2000-word brief on X" --rounds 2 --auto-expand-rounds 2
 ```
 
 If you're running from the repo (without a global install), the equivalent entrypoint is:
@@ -167,7 +167,7 @@ These are the commands most people start with:
 - `miniphi web-browse --url "<https://example.com>"`  
   Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
 - `miniphi nitpick --task "<long-form writing task>"`  
-  Run a writer/critic loop (optionally blind with web sources) and store the session under `.miniphi/nitpick/`.
+  Run a writer/critic loop (optionally blind with web sources), enforce minimum words by actual count on final drafts, and optionally retry final expansion with `--auto-expand-rounds`.
 - `miniphi helpers` / `miniphi command-library`  
   Inspect saved helper scripts and recommended commands.
 - `miniphi cache-prune`  
