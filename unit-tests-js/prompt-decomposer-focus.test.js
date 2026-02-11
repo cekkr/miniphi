@@ -158,3 +158,25 @@ test("PromptDecomposer parse result exposes focused branch metadata", () => {
   );
   assert.ok(typeof parsed.focusSegmentBlock === "string" && parsed.focusSegmentBlock.length > 0);
 });
+
+test("PromptDecomposer parse auto-focuses subprompt branch when planBranch is omitted", () => {
+  const decomposer = new PromptDecomposer({
+    restClient: {
+      createChatCompletion: async () => {
+        throw new Error("not used");
+      },
+    },
+  });
+
+  const responseText = JSON.stringify(buildResponsePlan());
+  const parsed = decomposer._parsePlan(responseText, {
+    objective: "Analyze default focus branch",
+  });
+
+  assert.equal(parsed.branch, null);
+  assert.equal(parsed.focusBranch, "1.2");
+  assert.equal(parsed.focusReason, "auto-subprompt-branch");
+  assert.equal(parsed.focusMatchedRequestedBranch, false);
+  assert.equal(parsed.nextSubpromptBranch, null);
+  assert.deepEqual(parsed.availableSubpromptBranches, ["1.2"]);
+});

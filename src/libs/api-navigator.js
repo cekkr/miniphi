@@ -2,6 +2,8 @@ import { spawn } from "child_process";
 import path from "path";
 import {
   buildJsonSchemaResponseFormat,
+  classifyJsonSchemaValidation,
+  validateJsonObjectAgainstSchema,
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import {
@@ -365,8 +367,12 @@ export default class ApiNavigator {
       responseText = message?.content ?? "";
       toolCalls = message?.tool_calls ?? null;
       toolDefinitions = completion?.tool_definitions ?? null;
-      schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
-      return this._parsePlan(responseText);
+      const validationResult = validateJsonObjectAgainstSchema(
+        this._resolveSchemaDefinition(),
+        responseText,
+      );
+      schemaValidation = validationResult.validation;
+      return this._parsePlan(responseText, validationResult.validation);
     };
 
     try {
@@ -520,12 +526,13 @@ export default class ApiNavigator {
     return isSessionTimeoutMessage(message);
   }
 
-  _parsePlan(raw) {
-    const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), raw);
-    const parsed = schemaValidation?.parsed ?? null;
-    const preambleDetected = Boolean(schemaValidation?.preambleDetected);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      if (preambleDetected) {
+  _parsePlan(raw, schemaValidation = undefined) {
+    const resolvedSchemaValidation =
+      schemaValidation ?? validateJsonAgainstSchema(this._resolveSchemaDefinition(), raw);
+    const validationOutcome = classifyJsonSchemaValidation(resolvedSchemaValidation);
+    const parsed = validationOutcome.parsed;
+    if (!parsed) {
+      if (validationOutcome.status === "preamble_detected") {
         this._log(
           "[ApiNavigator] Unable to parse navigation plan: non-JSON preamble detected.",
         );
@@ -536,8 +543,8 @@ export default class ApiNavigator {
       this._log("[ApiNavigator] Unable to parse navigation plan: no valid JSON block found.");
       return this._buildFallbackPlan("invalid response: no valid JSON found");
     }
-    if (schemaValidation && !schemaValidation.valid) {
-      const detail = schemaValidation.errors?.[0] ?? "schema validation failed";
+    if (validationOutcome.status === "schema_invalid") {
+      const detail = validationOutcome.error ?? "schema validation failed";
       this._log(`[ApiNavigator] Invalid navigation plan: ${detail}`);
       return this._buildFallbackPlan(`invalid response: ${detail}`);
     }

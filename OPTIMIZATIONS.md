@@ -84,6 +84,23 @@ Exit criteria:
 
 Status:
 - EfficientLogAnalyzer now skips JSON repair heuristics and relies on schema-only retries plus deterministic fallbacks to keep JSON-first behavior consistent.
+- `json-schema-utils` now exposes shared schema-validation outcome helpers
+  (`classifyJsonSchemaValidation`, `validateJsonObjectAgainstSchema`) so
+  `PromptDecomposer` and `ApiNavigator` consume one strict parse path
+  (preamble detection + invalid JSON + schema-invalid classification) instead of duplicating
+  response interpretation logic.
+- PromptDecomposer now reuses schema-validation artifacts from the request call and no longer
+  re-validates the same LM Studio payload during parse; ApiNavigator follows the same pattern.
+- Fixed a branch-focus regression in `PromptDecomposer._parsePlan()` where omitted
+  `--plan-branch` could reference `focus` before initialization and force fallbacks.
+- Regression coverage:
+  `node --test unit-tests-js/json-schema-utils.test.js unit-tests-js/prompt-decomposer-focus.test.js`
+  plus full `npm test` (`72/72` passing).
+- Live proof runs:
+  `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for shared JSON parsing regression checks" --summary-levels 1 --prompt-journal p2-json-parse-analyze-20260210-1919 --prompt-journal-status paused --no-stream --session-timeout 900`
+  and
+  `node ..\\..\\src\\index.js workspace --task "Audit this sample workspace and propose next shell checks." --prompt-journal p2-json-parse-workspace-sample-20260210-1923 --prompt-journal-status paused --no-stream --session-timeout 900`
+  both returned non-fallback JSON with `response_format=json_schema` + schema-valid prompt exchanges.
 
 ### P0 - Shared persistence helpers
 

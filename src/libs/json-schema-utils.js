@@ -56,6 +56,70 @@ export function validateJsonAgainstSchema(schemaDefinition, responseText, option
   return { valid: true, parsed, preambleDetected: false };
 }
 
+function resolveSchemaValidationError(schemaValidation) {
+  if (!schemaValidation || schemaValidation.valid !== false) {
+    return null;
+  }
+  if (Array.isArray(schemaValidation.errors) && schemaValidation.errors.length > 0) {
+    const firstError = schemaValidation.errors[0];
+    if (typeof firstError === "string" && firstError.trim().length > 0) {
+      return firstError.trim();
+    }
+  }
+  return "schema validation failed";
+}
+
+export function classifyJsonSchemaValidation(schemaValidation) {
+  const parsed = schemaValidation?.parsed ?? null;
+  const preambleDetected = Boolean(schemaValidation?.preambleDetected);
+  const parsedObject =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  if (!parsedObject) {
+    if (preambleDetected) {
+      return {
+        status: "preamble_detected",
+        parsed: null,
+        error: "non-JSON preamble detected",
+        preambleDetected: true,
+      };
+    }
+    return {
+      status: "invalid_json",
+      parsed: null,
+      error: "no valid JSON found",
+      preambleDetected: false,
+    };
+  }
+  const schemaError = resolveSchemaValidationError(schemaValidation);
+  if (schemaError) {
+    return {
+      status: "schema_invalid",
+      parsed: parsedObject,
+      error: schemaError,
+      preambleDetected: false,
+    };
+  }
+  return {
+    status: "ok",
+    parsed: parsedObject,
+    error: null,
+    preambleDetected: false,
+  };
+}
+
+export function validateJsonObjectAgainstSchema(
+  schemaDefinition,
+  responseText,
+  options = undefined,
+) {
+  const validation = validateJsonAgainstSchema(schemaDefinition, responseText, options);
+  const outcome = classifyJsonSchemaValidation(validation);
+  return {
+    ...outcome,
+    validation,
+  };
+}
+
 function detectPreamble(responseText, sanitizeOptions, stripped) {
   if (!responseText || sanitizeOptions?.allowPreamble) {
     return false;

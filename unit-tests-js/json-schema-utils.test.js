@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateJsonAgainstSchema } from "../src/libs/json-schema-utils.js";
+import {
+  classifyJsonSchemaValidation,
+  validateJsonAgainstSchema,
+  validateJsonObjectAgainstSchema,
+} from "../src/libs/json-schema-utils.js";
 
 const schema = {
   type: "object",
@@ -41,4 +45,23 @@ test("validateJsonAgainstSchema rejects helper_script missing required fields", 
     ),
     JSON.stringify(result.errors),
   );
+});
+
+test("classifyJsonSchemaValidation reports schema_invalid with parsed object", () => {
+  const response = JSON.stringify({ helper_script: {} });
+  const validation = validateJsonAgainstSchema(schema, response);
+  const outcome = classifyJsonSchemaValidation(validation);
+
+  assert.equal(outcome.status, "schema_invalid");
+  assert.equal(typeof outcome.error, "string");
+  assert.deepEqual(outcome.parsed, { helper_script: {} });
+});
+
+test("validateJsonObjectAgainstSchema reports preamble_detected on prose-prefixed payload", () => {
+  const response = `Sure, here is the JSON:\n${JSON.stringify({ helper_script: null })}`;
+  const outcome = validateJsonObjectAgainstSchema(schema, response);
+
+  assert.equal(outcome.status, "preamble_detected");
+  assert.equal(outcome.error, "non-JSON preamble detected");
+  assert.equal(outcome.preambleDetected, true);
 });

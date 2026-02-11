@@ -145,6 +145,26 @@ Slices (do in order):
      - Recompose guard proof:
        `node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean --recompose-mode offline`
        completed and regenerated report artifacts after the legacy shim removal.
+   - Shared JSON parse-path hardening + branch-focus regression fix (2026-02-10):
+     - Added shared schema-validation outcome helpers in `src/libs/json-schema-utils.js`
+       (`classifyJsonSchemaValidation`, `validateJsonObjectAgainstSchema`) and wired them into
+       PromptDecomposer + ApiNavigator so LM Studio responses follow one strict
+       preamble/invalid-json/schema-invalid decision path.
+     - PromptDecomposer and ApiNavigator now reuse the same schema-validation artifact captured at
+       request time instead of re-validating the same payload during parse.
+     - Fixed PromptDecomposer branch-focus parsing when `--plan-branch` is omitted
+       (removed `focus` self-reference before initialization that could force fallback flows).
+     - Regression coverage:
+       `node --test unit-tests-js/json-schema-utils.test.js unit-tests-js/prompt-decomposer-focus.test.js`
+       and full `npm test` passed (`72/72`).
+     - Live proof runs:
+       - `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for shared JSON parsing regression checks" --summary-levels 1 --prompt-journal p2-json-parse-analyze-20260210-1919 --prompt-journal-status paused --no-stream --session-timeout 900`
+         completed with non-fallback JSON and auto branch focus (`2.1`, `auto-subprompt-branch`).
+       - `node ..\\..\\src\\index.js workspace --task "Audit this sample workspace and propose next shell checks." --prompt-journal p2-json-parse-workspace-sample-20260210-1923 --prompt-journal-status paused --no-stream --session-timeout 900`
+         completed with non-fallback planner+navigator JSON; prompt exchanges show
+         `response_format=json_schema` with schema-valid `prompt-plan` + `navigation-plan`.
+       - `npm run sample:lmstudio-json-series` completed against
+         `samples/get-started/code` with passing verification (`npm test`).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Next steps (prioritized, add proof per item):

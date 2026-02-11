@@ -7,6 +7,8 @@ import {
 } from "./core-utils.js";
 import {
   buildJsonSchemaResponseFormat,
+  classifyJsonSchemaValidation,
+  validateJsonObjectAgainstSchema,
   validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
@@ -224,13 +226,18 @@ export default class PromptDecomposer {
       );
       const message = completion?.choices?.[0]?.message ?? null;
       const text = message?.content ?? "";
-      schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), text);
+      const validationResult = validateJsonObjectAgainstSchema(
+        this._resolveSchemaDefinition(),
+        text,
+      );
+      schemaValidation = validationResult.validation;
       return {
         text,
         toolCalls: message?.tool_calls ?? null,
         toolDefinitions: completion?.tool_definitions ?? null,
         messages,
         responseFormat: responseFormatForRun,
+        schemaValidation: validationResult.validation,
       };
     };
 
@@ -246,7 +253,7 @@ export default class PromptDecomposer {
         requestMessages = response.messages;
         responseToolCalls = response.toolCalls;
         responseToolDefinitions = response.toolDefinitions;
-        normalizedPlan = this._parsePlan(responseText, payload);
+        normalizedPlan = this._parsePlan(responseText, payload, response.schemaValidation);
         errorMessage = null;
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
@@ -556,12 +563,14 @@ export default class PromptDecomposer {
     });
   }
 
-  _parsePlan(responseText, payload) {
-    const schemaValidation = validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
-    const parsed = schemaValidation?.parsed ?? null;
-    const preambleDetected = Boolean(schemaValidation?.preambleDetected);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      if (preambleDetected) {
+  _parsePlan(responseText, payload, schemaValidation = undefined) {
+    const resolvedSchemaValidation =
+      schemaValidation ??
+      validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
+    const validationOutcome = classifyJsonSchemaValidation(resolvedSchemaValidation);
+    const parsed = validationOutcome.parsed;
+    if (!parsed) {
+      if (validationOutcome.status === "preamble_detected") {
         this._log(
           `[PromptDecomposer] Unable to parse JSON plan for "${payload.objective}": non-JSON preamble detected.`,
         );
@@ -577,8 +586,8 @@ export default class PromptDecomposer {
       );
       return this._fallbackPlan("no valid JSON found", payload);
     }
-    if (schemaValidation && !schemaValidation.valid) {
-      const detail = schemaValidation.errors?.[0] ?? "schema validation failed";
+    if (validationOutcome.status === "schema_invalid") {
+      const detail = validationOutcome.error ?? "schema validation failed";
       this._log(
         `[PromptDecomposer] JSON plan failed schema validation for "${payload.objective}": ${detail}`,
       );
@@ -601,8 +610,9 @@ export default class PromptDecomposer {
 
     const segments = buildPlanSegments(parsed, { limit: 36 });
     const segmentBlock = formatPlanSegmentsBlock(segments, { limit: 14 });
+    const requestedBranch = payload.planBranch ?? null;
     const focus = buildFocusedPlanSegments(segments, {
-      branch: payload.planBranch ?? focus.branch ?? null,
+      branch: requestedBranch,
       limit: 10,
       sourceLimit: 36,
     });
@@ -628,7 +638,7 @@ export default class PromptDecomposer {
         notes: parsed.notes ?? null,
       },
       outline: this._formatOutline(validation.steps),
-      branch: payload.planBranch ?? null,
+      branch: requestedBranch,
       segments,
       segmentBlock,
       focusBranch: focus.branch ?? null,
