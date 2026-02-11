@@ -25,7 +25,16 @@ export default class WebResearcher {
 
     const startedAt = Date.now();
     const raw = await this._dispatchProvider(provider, trimmed);
-    const normalizedResults = this._normalizeResults(provider, raw).slice(0, maxResults);
+    let normalizedResults = this._normalizeResults(provider, raw).slice(0, maxResults);
+    let fallbackRaw = null;
+    if (provider === "duckduckgo" && normalizedResults.length === 0) {
+      try {
+        fallbackRaw = await this._fetchDuckDuckGoHtml(trimmed);
+        normalizedResults = this._extractDuckDuckGoHtml(fallbackRaw).slice(0, maxResults);
+      } catch {
+        fallbackRaw = null;
+      }
+    }
 
     return {
       id: randomUUID(),
@@ -36,7 +45,12 @@ export default class WebResearcher {
       maxResults,
       results: normalizedResults,
       note: typeof options.note === "string" && options.note.trim() ? options.note.trim() : null,
-      raw: options.includeRaw ? raw : undefined,
+      raw: options.includeRaw
+        ? {
+            provider_payload: raw,
+            fallback_payload: fallbackRaw,
+          }
+        : undefined,
     };
   }
 
@@ -70,6 +84,32 @@ export default class WebResearcher {
       throw new Error(`DuckDuckGo request failed (${response.status}): ${body.slice(0, 200)}`);
     }
     return response.json();
+  }
+
+  async _fetchDuckDuckGoHtml(query) {
+    if (typeof fetch !== "function") {
+      throw new Error("Global fetch is not available in this Node runtime.");
+    }
+    const endpoint = new URL("https://duckduckgo.com/html/");
+    endpoint.searchParams.set("q", query);
+    endpoint.searchParams.set("kl", "us-en");
+
+    const response = await fetch(endpoint, {
+      headers: {
+        "User-Agent": this.userAgent,
+        Accept: "text/html,application/xhtml+xml",
+      },
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`DuckDuckGo HTML request failed (${response.status}): ${body.slice(0, 200)}`);
+    }
+    const html = await response.text();
+    return {
+      endpoint: endpoint.toString(),
+      status: response.status,
+      html,
+    };
   }
 
   _normalizeResults(provider, rawPayload) {
@@ -139,11 +179,97 @@ export default class WebResearcher {
     return Array.from(unique.values());
   }
 
+  _extractDuckDuckGoHtml(payload) {
+    const html = payload?.html;
+    if (!html || typeof html !== "string") {
+      return [];
+    }
+    const unique = new Map();
+    const anchorPattern = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+    let rank = 0;
+    while ((match = anchorPattern.exec(html)) !== null) {
+      const rawHref = this._decodeHtmlEntities(match[1] ?? "");
+      const title = this._sanitizeSnippet(this._stripHtml(match[2] ?? ""));
+      const url = this._decodeDuckDuckGoRedirect(rawHref);
+      if (!url) {
+        continue;
+      }
+      const key = url.toLowerCase();
+      if (unique.has(key)) {
+        continue;
+      }
+      const windowText = html.slice(match.index, match.index + 1600);
+      const snippetMatch =
+        windowText.match(
+          /<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i,
+        ) ??
+        windowText.match(
+          /<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+        );
+      const snippet = this._sanitizeSnippet(
+        this._stripHtml(this._decodeHtmlEntities(snippetMatch?.[1] ?? "")),
+      );
+      rank += 1;
+      unique.set(key, {
+        title: title || url,
+        url,
+        snippet,
+        source: this._sourceFromUrl(url),
+        rank,
+      });
+    }
+    return Array.from(unique.values());
+  }
+
   _sanitizeSnippet(snippet) {
     if (!snippet) {
       return "";
     }
     return snippet.replace(/\s+/g, " ").trim();
+  }
+
+  _stripHtml(value) {
+    if (!value) {
+      return "";
+    }
+    return value.replace(/<[^>]+>/g, " ");
+  }
+
+  _decodeHtmlEntities(value) {
+    if (!value) {
+      return "";
+    }
+    return value
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&#x2F;/gi, "/")
+      .replace(/&#x3D;/gi, "=")
+      .replace(/&#x26;/gi, "&");
+  }
+
+  _decodeDuckDuckGoRedirect(rawHref) {
+    if (!rawHref) {
+      return null;
+    }
+    const normalizedHref = rawHref.startsWith("//")
+      ? `https:${rawHref}`
+      : rawHref.startsWith("/")
+        ? `https://duckduckgo.com${rawHref}`
+        : rawHref;
+    try {
+      const parsed = new URL(normalizedHref);
+      const encodedTarget = parsed.searchParams.get("uddg");
+      if (encodedTarget) {
+        return decodeURIComponent(encodedTarget);
+      }
+      return parsed.toString();
+    } catch {
+      return null;
+    }
   }
 
   _sourceFromUrl(url) {

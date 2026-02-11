@@ -80,6 +80,9 @@ function buildPlanPrompt({ task, targetWords, schemaBlock, blind }) {
   ];
   if (targetWords) {
     lines.push(`Target word count: ${targetWords}`);
+    lines.push(
+      `Hard requirement: content must be at least ${targetWords} words. If impossible with available sources, set needs_more_context=true and explain in stop_reason_detail.`,
+    );
   }
   if (blind) {
     lines.push("Blind mode: do NOT use prior knowledge. Produce search queries and facts needed.");
@@ -236,6 +239,21 @@ function clampSourceText(text, maxChars) {
     return text;
   }
   return `${text.slice(0, limit)}...`;
+}
+
+function countWords(text) {
+  if (!text || typeof text !== "string") {
+    return 0;
+  }
+  const matches = text.match(/\b[\w'-]+\b/g);
+  return matches ? matches.length : 0;
+}
+
+function pickDraftContent(candidate, fallback = "") {
+  if (typeof candidate !== "string") {
+    return fallback;
+  }
+  return candidate.trim().length > 0 ? candidate : fallback;
 }
 
 function isSessionExpired(sessionDeadline) {
@@ -741,7 +759,7 @@ export async function handleNitpickCommand(context) {
     sessionDeadline,
     mainPromptId: promptGroupId,
   });
-  latestDraft = draftStep.response?.content ?? "";
+  latestDraft = pickDraftContent(draftStep.response?.content, "");
   steps.push({
     label: "draft",
     schemaId: "nitpick-draft",
@@ -942,7 +960,7 @@ export async function handleNitpickCommand(context) {
       sessionDeadline,
       mainPromptId: promptGroupId,
     });
-    latestDraft = revisionStep.response?.content ?? latestDraft;
+    latestDraft = pickDraftContent(revisionStep.response?.content, latestDraft);
     steps.push({
       label: `revision-${round}`,
       schemaId: "nitpick-draft",
@@ -978,6 +996,78 @@ export async function handleNitpickCommand(context) {
     }
   }
 
+  const minWordThreshold = Math.max(100, Math.floor(targetWords));
+  let finalWordCount = countWords(latestDraft);
+  if (finalWordCount < minWordThreshold && !isSessionExpired(sessionDeadline)) {
+    const autoExpandPrompt = buildDraftPrompt({
+      task,
+      outline,
+      targetWords,
+      constraints,
+      critique: [
+        `Current draft length is ${finalWordCount} words; expand to at least ${minWordThreshold} words.`,
+        "Keep chronology precise and resolve unsupported claims.",
+        "Do not append a separate 'Word Count Estimate' line inside content.",
+      ],
+      sources,
+      stage: "final",
+      schemaBlock: buildSchemaBlock(schemaRegistry, "nitpick-draft"),
+      blind,
+    });
+    const autoExpandStep = await runNitpickStep({
+      handler: writer,
+      prompt: autoExpandPrompt,
+      schemaId: "nitpick-draft",
+      label: "nitpick-auto-expand-1",
+      metadata: {
+        mode: "nitpick",
+        taskType: intentInfo.intent,
+        workspaceType: intentInfo.workspaceType,
+        subContext: "auto-expand",
+      },
+      task,
+      role: "writer",
+      stage: "final",
+      sessionDeadline,
+      mainPromptId: promptGroupId,
+    });
+    latestDraft = pickDraftContent(autoExpandStep.response?.content, latestDraft);
+    steps.push({
+      label: "auto-expand-1",
+      schemaId: "nitpick-draft",
+      model: writerModel,
+      response: autoExpandStep.response,
+      promptExchange: autoExpandStep.promptExchange,
+      error: autoExpandStep.error ?? null,
+    });
+    if (promptJournal && promptJournalId) {
+      await recordAnalysisStepInJournal(promptJournal, promptJournalId, {
+        label: "nitpick-auto-expand-1",
+        prompt: autoExpandPrompt,
+        response: JSON.stringify(autoExpandStep.response, null, 2),
+        schemaId: "nitpick-draft",
+        toolCalls: autoExpandStep.promptExchange?.response?.tool_calls ?? null,
+        toolDefinitions: autoExpandStep.promptExchange?.response?.tool_definitions ?? null,
+        operations: [
+          { type: "nitpick-step", status: "completed", summary: "Auto-expand final draft" },
+        ],
+        metadata: {
+          mode: "nitpick",
+          model: writerModel,
+          stopReason: autoExpandStep.response?.stop_reason ?? null,
+        },
+        workspaceSummary: workspaceContext?.summary ?? null,
+        links: autoExpandStep.promptExchange
+          ? {
+              promptExchangeId: autoExpandStep.promptExchange.id ?? null,
+              promptExchangePath: autoExpandStep.promptExchange.path ?? null,
+            }
+          : null,
+      });
+    }
+    finalWordCount = countWords(latestDraft);
+  }
+
   if (steps.some((step) => step.error)) {
     const firstError =
       steps.find((step) => typeof step?.error === "string" && step.error.trim().length)?.error ??
@@ -986,6 +1076,26 @@ export async function handleNitpickCommand(context) {
       stopReason: "partial-fallback",
       stopReasonCode: "fallback",
       stopReasonDetail: firstError,
+    });
+    stopReason = normalizedStop.stopReason;
+    stopReasonCode = normalizedStop.stopReasonCode;
+    stopReasonDetail = normalizedStop.stopReasonDetail;
+  }
+  if (blind && sources.length === 0 && !stopReason) {
+    const normalizedStop = normalizeStopReasonFields({
+      stopReason: "analysis-error",
+      stopReasonCode: "analysis-error",
+      stopReasonDetail: "blind-mode collected zero web sources",
+    });
+    stopReason = normalizedStop.stopReason;
+    stopReasonCode = normalizedStop.stopReasonCode;
+    stopReasonDetail = normalizedStop.stopReasonDetail;
+  }
+  if (finalWordCount < minWordThreshold && !stopReason) {
+    const normalizedStop = normalizeStopReasonFields({
+      stopReason: "analysis-error",
+      stopReasonCode: "analysis-error",
+      stopReasonDetail: `final draft word count below target (${finalWordCount}/${minWordThreshold})`,
     });
     stopReason = normalizedStop.stopReason;
     stopReasonCode = normalizedStop.stopReasonCode;
@@ -1015,6 +1125,7 @@ export async function handleNitpickCommand(context) {
     sources,
     steps,
     finalText: latestDraft,
+    finalWordCount,
     stopReason,
     stopReasonCode,
     stopReasonDetail,
