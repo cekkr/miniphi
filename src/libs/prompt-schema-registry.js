@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { sanitizeJsonResponseText } from "./core-utils.js";
-import { validateJsonAgainstSchema } from "./json-schema-utils.js";
+import { validateJsonObjectAgainstSchema } from "./json-schema-utils.js";
 
 function stripJsonFences(payload) {
   return sanitizeJsonResponseText(payload);
@@ -72,20 +72,53 @@ export default class PromptSchemaRegistry {
   }
 
   /**
-   * Validates a Phi response against the stored schema.
+   * Validates a Phi response against the stored schema and returns parse outcome metadata.
    * @param {string} id
    * @param {string} responseText
-   * @returns {{ valid: boolean, errors?: string[], parsed?: any } | null}
+   * @returns {{ status: string, parsed: any, error: string | null, preambleDetected: boolean, validation: object | null } | null}
    */
-  validate(id, responseText) {
+  validateOutcome(id, responseText) {
     const schema = this.getSchema(id);
     if (!schema) {
       return null;
     }
-    return validateJsonAgainstSchema(schema.definition, responseText);
+    return validateJsonObjectAgainstSchema(schema.definition, responseText);
   }
 
-
+  /**
+   * Validates a Phi response against the stored schema.
+   * @param {string} id
+   * @param {string} responseText
+   * @returns {{ valid: boolean, errors?: string[], parsed?: any, status?: string, error?: string | null, preambleDetected?: boolean } | null}
+   */
+  validate(id, responseText) {
+    const outcome = this.validateOutcome(id, responseText);
+    if (!outcome) {
+      return null;
+    }
+    const validation =
+      outcome.validation && typeof outcome.validation === "object"
+        ? { ...outcome.validation }
+        : {};
+    if (typeof validation.valid !== "boolean") {
+      validation.valid = outcome.status === "ok";
+    }
+    validation.status = outcome.status ?? validation.status ?? null;
+    if (
+      !validation.error &&
+      typeof outcome.error === "string" &&
+      outcome.error.trim().length > 0
+    ) {
+      validation.error = outcome.error.trim();
+    }
+    if (typeof validation.preambleDetected !== "boolean") {
+      validation.preambleDetected = Boolean(outcome.preambleDetected);
+    }
+    if (validation.valid && outcome.parsed && validation.parsed === undefined) {
+      validation.parsed = outcome.parsed;
+    }
+    return validation;
+  }
 }
 
 export { stripJsonFences };

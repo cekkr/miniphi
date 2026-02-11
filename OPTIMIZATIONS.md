@@ -83,6 +83,7 @@ Exit criteria:
 - Prompt/response artifacts retain response text, tool_calls, and tool_definitions for scoring.
 
 Status:
+- Complete. Remaining runtime schema-validation call sites now consume the shared parse-outcome contract.
 - EfficientLogAnalyzer now skips JSON repair heuristics and relies on schema-only retries plus deterministic fallbacks to keep JSON-first behavior consistent.
 - `json-schema-utils` now exposes shared schema-validation outcome helpers
   (`classifyJsonSchemaValidation`, `validateJsonObjectAgainstSchema`) so
@@ -101,6 +102,23 @@ Status:
   and
   `node ..\\..\\src\\index.js workspace --task "Audit this sample workspace and propose next shell checks." --prompt-journal p2-json-parse-workspace-sample-20260210-1923 --prompt-journal-status paused --no-stream --session-timeout 900`
   both returned non-fallback JSON with `response_format=json_schema` + schema-valid prompt exchanges.
+- `PromptSchemaRegistry` now exposes `validateOutcome()` and `validate()` now carries
+  shared status metadata (`status`, `error`, `preambleDetected`) while preserving
+  compatibility fields (`valid`, `errors`, `parsed`) for existing callers.
+- Remaining runtime call sites (`LMStudioHandler`, `EfficientLogAnalyzer`) now consume
+  the same shared parse-outcome contract through `PromptSchemaRegistry`.
+- Schema-validation prompt artifacts now preserve status metadata consistently across
+  planner/navigator/main analysis exchanges (`schemaValidation.status`, e.g. `ok`,
+  `schema_invalid`, `invalid_json`, `preamble_detected`).
+- Regression coverage:
+  `node --test unit-tests-js/prompt-schema-registry.test.js unit-tests-js/json-schema-utils.test.js`
+  plus full `npm test` (`77/77` passing).
+- Additional live proof runs:
+  `node src/index.js run --cmd "node -v" --task "Validate shared schema outcome metadata on run flow" --command-policy allow --assume-yes --no-stream --session-timeout 300 --prompt-journal p2-shared-schema-run-20260210-1945 --prompt-journal-status paused`
+  and
+  `node ..\\..\\src\\index.js workspace --task "Validate schema validation status propagation after shared contract update." --prompt-journal p2-shared-schema-workspace-20260211-0600 --prompt-journal-status paused --no-stream --session-timeout 900`
+  completed with JSON responses; prompt exchanges show schema-valid status metadata for
+  `prompt-plan`, `navigation-plan`, and `log-analysis`.
 
 ### P0 - Shared persistence helpers
 

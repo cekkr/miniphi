@@ -165,6 +165,24 @@ Slices (do in order):
          `response_format=json_schema` with schema-valid `prompt-plan` + `navigation-plan`.
        - `npm run sample:lmstudio-json-series` completed against
          `samples/get-started/code` with passing verification (`npm test`).
+   - Shared parse-outcome contract rollout (2026-02-11):
+     - `PromptSchemaRegistry` now exposes `validateOutcome()` and `validate()` returns
+       compatibility fields plus shared status metadata (`status`, `error`, `preambleDetected`).
+     - Remaining runtime schema-validation call sites (`LMStudioHandler`,
+       `EfficientLogAnalyzer`) now consume the same contract through registry helpers.
+     - Schema-validation summaries in prompt exchanges now preserve status codes consistently for
+       planner/navigator/main analysis calls (`ok`, `schema_invalid`, `invalid_json`,
+       `preamble_detected`).
+     - Regression coverage:
+       `node --test unit-tests-js/prompt-schema-registry.test.js unit-tests-js/json-schema-utils.test.js unit-tests-js/prompt-decomposer-focus.test.js`
+       and full `npm test` passed (`77/77`).
+     - Live proof runs:
+       - `node src/index.js run --cmd "node -v" --task "Validate shared schema outcome metadata on run flow" --command-policy allow --assume-yes --no-stream --session-timeout 300 --prompt-journal p2-shared-schema-run-20260210-1945 --prompt-journal-status paused`
+         completed with JSON-only output and canonical schema metadata persisted.
+       - `node ..\\..\\src\\index.js workspace --task "Validate schema validation status propagation after shared contract update." --prompt-journal p2-shared-schema-workspace-20260211-0600 --prompt-journal-status paused --no-stream --session-timeout 900`
+         completed with planner+navigator+analysis JSON where prompt exchanges include
+         `schemaValidation.status: "ok"` for `prompt-plan`, `navigation-plan`, and
+         `log-analysis`.
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Next steps (prioritized, add proof per item):

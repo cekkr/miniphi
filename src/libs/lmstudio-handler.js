@@ -4,7 +4,10 @@ import { randomUUID } from "crypto";
 import LMStudioManager from "./lmstudio-api.js";
 import Phi4StreamParser from "./phi4-stream-parser.js";
 import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
-import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
+import {
+  buildJsonSchemaResponseFormat,
+  summarizeJsonSchemaValidation,
+} from "./json-schema-utils.js";
 import {
   buildStopReasonInfo,
   classifyLmStudioError,
@@ -1344,20 +1347,39 @@ export class LMStudioHandler {
     if (!schemaDetails || !this.schemaRegistry) {
       return null;
     }
+    if (typeof this.schemaRegistry.validateOutcome === "function") {
+      const outcome = this.schemaRegistry.validateOutcome(schemaDetails.id, responseText);
+      if (!outcome) {
+        return null;
+      }
+      const validation =
+        outcome.validation && typeof outcome.validation === "object"
+          ? { ...outcome.validation }
+          : {};
+      if (typeof validation.valid !== "boolean") {
+        validation.valid = outcome.status === "ok";
+      }
+      validation.status = outcome.status ?? validation.status ?? null;
+      if (
+        !validation.error &&
+        typeof outcome.error === "string" &&
+        outcome.error.trim().length > 0
+      ) {
+        validation.error = outcome.error.trim();
+      }
+      if (typeof validation.preambleDetected !== "boolean") {
+        validation.preambleDetected = Boolean(outcome.preambleDetected);
+      }
+      if (validation.valid && outcome.parsed && validation.parsed === undefined) {
+        validation.parsed = outcome.parsed;
+      }
+      return validation;
+    }
     return this.schemaRegistry.validate(schemaDetails.id, responseText);
   }
 
   _summarizeValidation(validation) {
-    if (!validation) {
-      return null;
-    }
-    if (validation.valid) {
-      return { valid: true };
-    }
-    return {
-      valid: false,
-      errors: Array.isArray(validation.errors) ? validation.errors.slice(0, 10) : null,
-    };
+    return summarizeJsonSchemaValidation(validation, { maxErrors: 10 });
   }
 
   _summarizeSchemaErrors(errors) {

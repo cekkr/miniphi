@@ -2408,11 +2408,40 @@ export default class EfficientLogAnalyzer {
       !schemaId ||
       !analysisText ||
       !this.schemaRegistry ||
-      typeof this.schemaRegistry.validate !== "function"
+      (typeof this.schemaRegistry.validate !== "function" &&
+        typeof this.schemaRegistry.validateOutcome !== "function")
     ) {
       return null;
     }
     try {
+      if (typeof this.schemaRegistry.validateOutcome === "function") {
+        const outcome = this.schemaRegistry.validateOutcome(schemaId, analysisText);
+        if (!outcome) {
+          return null;
+        }
+        const validation =
+          outcome.validation && typeof outcome.validation === "object"
+            ? { ...outcome.validation }
+            : {};
+        if (typeof validation.valid !== "boolean") {
+          validation.valid = outcome.status === "ok";
+        }
+        validation.status = outcome.status ?? validation.status ?? null;
+        if (
+          !validation.error &&
+          typeof outcome.error === "string" &&
+          outcome.error.trim().length > 0
+        ) {
+          validation.error = outcome.error.trim();
+        }
+        if (typeof validation.preambleDetected !== "boolean") {
+          validation.preambleDetected = Boolean(outcome.preambleDetected);
+        }
+        if (validation.valid && outcome.parsed && validation.parsed === undefined) {
+          validation.parsed = outcome.parsed;
+        }
+        return validation;
+      }
       return this.schemaRegistry.validate(schemaId, analysisText);
     } catch {
       return null;

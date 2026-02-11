@@ -42,6 +42,7 @@ When you add or change CLI behavior:
 ### JSON-first operating rules
 - Schemas live in `docs/prompts/` with `additionalProperties: false` and required `needs_more_context` + `missing_snippets` fields; keep schema ids/versioning visible in prompts.
 - ApiNavigator and PromptDecomposer validate responses via `json-schema-utils` and require `needs_more_context` + `missing_snippets` in their schemas.
+- PromptSchemaRegistry now exposes `validateOutcome()` and normalizes validation metadata (`status`, `error`, `preambleDetected`) for shared use by LMStudioHandler, EfficientLogAnalyzer, ApiNavigator, and PromptDecomposer.
 - Strip `<think>`/markdown preambles, parse strictly, and treat non-JSON as failure; trigger a deterministic fallback JSON if the model drifts.
 - Never salvage JSON from mixed prose; only accept payloads that are valid JSON after stripping `<think>` blocks and JSON fences.
 - Prompt-chain interpreter treats preambles as invalid and emits a deterministic fallback with `stop_reason: preamble_detected` when strict parsing fails.
@@ -175,6 +176,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 ### Prompt logging contract
 - PromptRecorder is the canonical exchange log under `.miniphi/prompt-exchanges/` and stores the full request payload, raw response text, `tool_calls`, and `tool_definitions`.
 - PromptRecorder canonicalizes exchange payloads to reduce duplication: `request.response_format` is the canonical response format key, `promptText` is omitted when it matches the last user message, and `response.text` is omitted when it matches `rawResponseText` (which remains the full response text).
+- Schema-validation summaries in prompt exchanges should preserve `schemaValidation.status` + `schemaValidation.preambleDetected` when available (not just `valid/errors`) so downstream evals can distinguish `invalid_json` vs `schema_invalid` vs `preamble_detected`.
 - Prompt logging canonicalization is shared through `src/libs/prompt-log-normalizer.js`; both PromptRecorder and PromptStepJournal consume the same tool/request/response normalization helpers.
 - PromptStepJournal under `.miniphi/prompt-exchanges/stepwise/<id>/` records the stepwise operations with prompt/response text and links to PromptRecorder entries via `links.promptExchangeId`/`links.promptExchangePath` when available.
 - TaskExecutionRegister writes `executions/<id>/task-execution.json` with every LM Studio API request/response plus links to prompt exchanges so you can pause, fix prompt/schema issues, and resume from the last good call.

@@ -120,6 +120,46 @@ export function validateJsonObjectAgainstSchema(
   };
 }
 
+export function summarizeJsonSchemaValidation(validation, options = undefined) {
+  if (!validation || typeof validation !== "object") {
+    return null;
+  }
+  const maxErrors =
+    Number.isFinite(options?.maxErrors) && options.maxErrors > 0
+      ? Math.floor(options.maxErrors)
+      : 3;
+  const status =
+    typeof validation.status === "string" && validation.status.trim().length > 0
+      ? validation.status.trim()
+      : null;
+  const preambleDetected = Boolean(validation.preambleDetected);
+  if (validation.valid) {
+    return {
+      valid: true,
+      status: status ?? "ok",
+      preambleDetected,
+    };
+  }
+  const errors = Array.isArray(validation.errors)
+    ? validation.errors
+        .filter((entry) => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, maxErrors)
+    : null;
+  const error =
+    typeof validation.error === "string" && validation.error.trim().length > 0
+      ? validation.error.trim()
+      : errors?.[0] ?? null;
+  return {
+    valid: false,
+    status,
+    error,
+    errors,
+    preambleDetected,
+  };
+}
+
 function detectPreamble(responseText, sanitizeOptions, stripped) {
   if (!responseText || sanitizeOptions?.allowPreamble) {
     return false;

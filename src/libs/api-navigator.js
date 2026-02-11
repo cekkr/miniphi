@@ -3,8 +3,8 @@ import path from "path";
 import {
   buildJsonSchemaResponseFormat,
   classifyJsonSchemaValidation,
+  summarizeJsonSchemaValidation,
   validateJsonObjectAgainstSchema,
-  validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import {
   buildStopReasonInfo,
@@ -400,15 +400,9 @@ export default class ApiNavigator {
       }
     }
 
-    const schemaValidationSummary = schemaValidation
-      ? {
-          valid: Boolean(schemaValidation.valid),
-          errors: Array.isArray(schemaValidation.errors)
-            ? schemaValidation.errors.slice(0, 3)
-            : null,
-          preambleDetected: Boolean(schemaValidation.preambleDetected),
-        }
-      : null;
+    const schemaValidationSummary = summarizeJsonSchemaValidation(schemaValidation, {
+      maxErrors: 3,
+    });
     promptRecord = await this._recordPromptExchange({
       payload,
       requestBody: body,
@@ -527,9 +521,9 @@ export default class ApiNavigator {
   }
 
   _parsePlan(raw, schemaValidation = undefined) {
-    const resolvedSchemaValidation =
-      schemaValidation ?? validateJsonAgainstSchema(this._resolveSchemaDefinition(), raw);
-    const validationOutcome = classifyJsonSchemaValidation(resolvedSchemaValidation);
+    const validationOutcome = schemaValidation
+      ? classifyJsonSchemaValidation(schemaValidation)
+      : validateJsonObjectAgainstSchema(this._resolveSchemaDefinition(), raw);
     const parsed = validationOutcome.parsed;
     if (!parsed) {
       if (validationOutcome.status === "preamble_detected") {

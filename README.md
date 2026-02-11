@@ -135,6 +135,7 @@ Navigator follow-ups skip MiniPhi CLI entrypoints to avoid recursive runs.
 MiniPhi runs a fast LM Studio REST health gate before prompting; disable it with `--no-health` if you intentionally rely on WS-only setups.
 
 Model responses are schema-validated with deterministic JSON fallbacks across analysis, planning, and navigation prompts. Non-JSON preambles are rejected under the strict parser, so the fallback payload is saved instead of salvaging mixed prose.
+Prompt exchanges now persist schema-validation metadata with status fields (for example `ok`, `schema_invalid`, `invalid_json`, `preamble_detected`) so audits can distinguish parser failures from schema mismatches.
 Stop reasons (with a code/detail) are stored in execution archives and prompt journals; when a session budget expires before Phi responds, the analyzer emits deterministic fallback JSON instead of hanging.
 
 The deeper “JSON-only contracts”, schema rules, and contributor guardrails live in **AGENTS.md**.

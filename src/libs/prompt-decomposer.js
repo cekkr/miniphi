@@ -8,8 +8,8 @@ import {
 import {
   buildJsonSchemaResponseFormat,
   classifyJsonSchemaValidation,
+  summarizeJsonSchemaValidation,
   validateJsonObjectAgainstSchema,
-  validateJsonAgainstSchema,
 } from "./json-schema-utils.js";
 import { LMStudioRestClient } from "./lmstudio-api.js";
 import {
@@ -284,15 +284,9 @@ export default class PromptDecomposer {
     }
 
     if (payload.promptRecorder) {
-      const schemaValidationSummary = schemaValidation
-        ? {
-            valid: Boolean(schemaValidation.valid),
-            errors: Array.isArray(schemaValidation.errors)
-              ? schemaValidation.errors.slice(0, 3)
-              : null,
-            preambleDetected: Boolean(schemaValidation.preambleDetected),
-          }
-        : null;
+      const schemaValidationSummary = summarizeJsonSchemaValidation(schemaValidation, {
+        maxErrors: 3,
+      });
       const responsePayload =
         normalizedPlan && typeof normalizedPlan === "object" && !Array.isArray(normalizedPlan)
           ? { ...normalizedPlan }
@@ -564,10 +558,9 @@ export default class PromptDecomposer {
   }
 
   _parsePlan(responseText, payload, schemaValidation = undefined) {
-    const resolvedSchemaValidation =
-      schemaValidation ??
-      validateJsonAgainstSchema(this._resolveSchemaDefinition(), responseText);
-    const validationOutcome = classifyJsonSchemaValidation(resolvedSchemaValidation);
+    const validationOutcome = schemaValidation
+      ? classifyJsonSchemaValidation(schemaValidation)
+      : validateJsonObjectAgainstSchema(this._resolveSchemaDefinition(), responseText);
     const parsed = validationOutcome.parsed;
     if (!parsed) {
       if (validationOutcome.status === "preamble_detected") {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyJsonSchemaValidation,
+  summarizeJsonSchemaValidation,
   validateJsonAgainstSchema,
   validateJsonObjectAgainstSchema,
 } from "../src/libs/json-schema-utils.js";
@@ -64,4 +65,34 @@ test("validateJsonObjectAgainstSchema reports preamble_detected on prose-prefixe
   assert.equal(outcome.status, "preamble_detected");
   assert.equal(outcome.error, "non-JSON preamble detected");
   assert.equal(outcome.preambleDetected, true);
+});
+
+test("summarizeJsonSchemaValidation emits stable status for valid payloads", () => {
+  const summary = summarizeJsonSchemaValidation({
+    valid: true,
+    status: "ok",
+    preambleDetected: false,
+  });
+
+  assert.deepEqual(summary, {
+    valid: true,
+    status: "ok",
+    preambleDetected: false,
+  });
+});
+
+test("summarizeJsonSchemaValidation preserves status and error for invalid payloads", () => {
+  const summary = summarizeJsonSchemaValidation({
+    valid: false,
+    status: "schema_invalid",
+    error: "missing required property \"helper_script\"",
+    errors: ["$.helper_script: missing required property \"code\""],
+    preambleDetected: false,
+  });
+
+  assert.equal(summary.valid, false);
+  assert.equal(summary.status, "schema_invalid");
+  assert.equal(summary.error, "missing required property \"helper_script\"");
+  assert.deepEqual(summary.errors, ["$.helper_script: missing required property \"code\""]);
+  assert.equal(summary.preambleDetected, false);
 });
