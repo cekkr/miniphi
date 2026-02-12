@@ -43,6 +43,12 @@ test("PromptStepJournal stores normalized prompt-exchange links", async () => {
     const payload = JSON.parse(await fs.readFile(step.path, "utf8"));
     assert.equal(payload.links.promptExchangeId, "step-1");
     assert.equal(payload.links.promptExchangePath, "prompt-exchanges/step.json");
+
+    const index = JSON.parse(
+      await fs.readFile(path.join(miniPhiRoot, "prompt-exchanges", "stepwise", "index.json"), "utf8"),
+    );
+    assert.ok(index.entries[0].file.startsWith("prompt-exchanges/stepwise/"));
+    assert.ok(!index.entries[0].file.includes("\\"), "journal index path should use posix separators");
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
