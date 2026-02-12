@@ -188,6 +188,7 @@ For the full list of flags and subcommands, run `miniphi --help` (or `node src/i
 - **ROADMAP.md**: milestones and exit criteria.
 - `docs/`: implementation notes and LM Studio integration details.
 - `samples/`: recomposition and benchmark fixtures used to validate the runtime.
+- `dev_samples/task-tests.md` + `dev_samples/test_tasks/`: benchmark compendium source and cloned JSON suite used by unit tests (`node scripts/sync-test-task-catalog.js` to refresh artifacts).
 
 ## License
 

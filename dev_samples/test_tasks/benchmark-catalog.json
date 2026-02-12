@@ -1,0 +1,1070 @@
+{
+  "schema_version": "1.0.0",
+  "source_file": "dev_samples/task-tests.md",
+  "total_categories": 4,
+  "total_benchmarks": 50,
+  "categories": [
+    {
+      "id": "function-calling-tool-use",
+      "title": "Function Calling & Tool Use",
+      "benchmark_count": 13,
+      "benchmark_ids": [
+        "bfcl-berkeley-function-calling-leaderboard",
+        "toolbench",
+        "complexfuncbench",
+        "bench-tau-bench",
+        "composio-function-calling-benchmark",
+        "api-bank-a-comprehensive-benchmark-for-tool-augmented-llms",
+        "hammerbench-fine-grained-function-calling-evaluation-in-real-mobile-device-scenarios",
+        "dpab",
+        "nfcl-nexus-function-calling-leaderboard",
+        "xlam-a-family-of-large-action-models-for-function-calling-and-ai-agent-systems",
+        "toolace-a-framework-for-generating-high-quality-tool-learning-data-for-llms",
+        "livemcpbench",
+        "mcp-universe"
+      ]
+    },
+    {
+      "id": "general-assistant-reasoning",
+      "title": "General Assistant & Reasoning",
+      "benchmark_count": 11,
+      "benchmark_ids": [
+        "gaia-general-ai-assistants",
+        "agentbench-a-comprehensive-benchmark-for-evaluating-llms-as-agents",
+        "assistantbench",
+        "livebench-a-challenging-contamination-free-benchmark-for-llms",
+        "humanity-s-last-exam-hle",
+        "fortress-frontier-risk-evaluation-for-national-security-and-public-safety",
+        "the-mask-benchmark-disentangling-honesty-from-accuracy-in-ai-systems",
+        "simpleqa",
+        "simpleqa-verified",
+        "facts-grounding",
+        "galileo-agent-leaderboard-v2"
+      ]
+    },
+    {
+      "id": "coding-software-engineering",
+      "title": "Coding & Software Engineering",
+      "benchmark_count": 7,
+      "benchmark_ids": [
+        "swe-bench-evaluating-ai-in-real-world-software-engineering",
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "livecodebench",
+        "swe-polybench-a-multi-language-benchmark-for-ai-coding-agents",
+        "aider-s-ai-assisted-code-benchmarks",
+        "aider-polyglot-benchmark"
+      ]
+    },
+    {
+      "id": "computer-interaction-gui-web",
+      "title": "Computer Interaction (GUI & Web)",
+      "benchmark_count": 19,
+      "benchmark_ids": [
+        "webarena-a-realistic-web-environment-for-building-autonomous-agents",
+        "visualwebarena",
+        "web-bench-a-benchmark-for-ai-browser-agents",
+        "webvoyager",
+        "browsecomp-a-simple-yet-challenging-benchmark-for-browsing-agents",
+        "mind2web",
+        "webgames-benchmark",
+        "st-webagentbench",
+        "osworld-benchmarking-multimodal-agents-for-open-ended-tasks-in-real-computer-environments",
+        "osuniverse",
+        "screensuite-benchmark",
+        "workarena-benchmark-enhanced-evaluation-for-ai-in-enterprise-workflows",
+        "androidworld-benchmark",
+        "worldgui",
+        "macosworld",
+        "officebench-benchmarking-language-agents-across-multiple-applications-for-office-automation",
+        "eebd-emergence-enterprise-benchmark-dataset",
+        "alfred-a-benchmark-for-interpreting-grounded-instructions-for-everyday-tasks",
+        "embodiedbench"
+      ]
+    }
+  ],
+  "benchmarks": [
+    {
+      "id": "bfcl-berkeley-function-calling-leaderboard",
+      "name": "BFCL (Berkeley Function Calling Leaderboard)",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "BFCL is a comprehensive benchmark designed to evaluate the function calling (also known as tool use) capabilities of Large Language Models (LLMs) in a wide range of real-world settings. It assesses models across various scenarios, including serial (simple), parallel, and multi-turn interactions, and evaluates agentic capabilities such as reasoning in stateful multi-step environments, memory, web search, and format sensitivity.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://openreview.net/pdf?id=2GmDdhBdDk"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/ShishirPatil/gorilla/tree/main/berkeley-function-call-leaderboard"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://gorilla.cs.berkeley.edu/leaderboard.html"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard"
+        }
+      ]
+    },
+    {
+      "id": "toolbench",
+      "name": "ToolBench",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A massive-scale benchmark designed for evaluating and facilitating large language models in mastering over 16,000 real-world RESTful APIs. It functions as an instruction-tuning dataset for tool use, which was automatically generated using ChatGPT to enhance the general tool-use capabilities of large language models.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2307.16789"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/OpenBMB/ToolBench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://huggingface.co/spaces/qiantong-xu/toolbench-leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/Maurus/ToolBench"
+        }
+      ]
+    },
+    {
+      "id": "complexfuncbench",
+      "name": "ComplexFuncBench",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A benchmark specifically designed for the evaluation of complex function calling in LLMs. It addresses challenging scenarios across five key aspects: multi-step function calls within a single turn, function calls involving user-provided constraints, parameter value reasoning, calls with long parameter values, and calls requiring a 128k long-context length.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2501.10132"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/THUDM/ComplexFuncBench"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/zai-org/ComplexFuncBench"
+        }
+      ]
+    },
+    {
+      "id": "bench-tau-bench",
+      "name": "τ-Bench/Tau-Bench",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A conversational benchmark designed to test AI agents in dynamic, open-ended real-world scenarios. It specifically evaluates an agent's ability to interact with simulated human users and programmatic APIs while strictly adhering to domain-specific policies and maintaining consistent behavior, with domains in e-commerce and airline reservations.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2406.12045"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/sierra-research/tau-bench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://github.com/sierra-research/tau-bench#leaderboard"
+        }
+      ]
+    },
+    {
+      "id": "composio-function-calling-benchmark",
+      "name": "Composio Function Calling Benchmark",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "Tests the ability of LLMs to correctly call functions based on given prompts. It comprises 50 function calling problems, each designed to be solved using one of eight provided function schemas inspired by real-world API structures from ClickUp's integration endpoints.",
+      "links": [
+        {
+          "label": "GitHub",
+          "url": "https://github.com/ComposioHQ/Composio-Function-Calling-Benchmark"
+        }
+      ]
+    },
+    {
+      "id": "api-bank-a-comprehensive-benchmark-for-tool-augmented-llms",
+      "name": "API-Bank: A Comprehensive Benchmark for Tool-Augmented LLMs",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "Evaluates an agent's ability to plan step-by-step API calls, retrieve relevant APIs, and correctly execute API calls to meet human needs based on understanding real-world API documentation. It features over 2,200 dialogues utilizing thousands of APIs.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/pdf/2304.08244.pdf"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/AlibabaResearch/DAMO-ConvAI/tree/main/api-bank"
+        }
+      ]
+    },
+    {
+      "id": "hammerbench-fine-grained-function-calling-evaluation-in-real-mobile-device-scenarios",
+      "name": "HammerBench: Fine-Grained Function-Calling Evaluation in Real Mobile Device Scenarios",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A novel benchmark designed to evaluate the function-calling capabilities of LLMs in realistic, multi-turn human-agent interactions, particularly simulating mobile assistant use cases. It tests models under challenging circumstances like imperfect instructions and shifts in user intent.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2412.16516"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/MadeAgents/HammerBench"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/MadeAgents/HammerBench"
+        }
+      ]
+    },
+    {
+      "id": "dpab",
+      "name": "DPAB-α",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "The Dria Pythonic Agent Benchmark is a comprehensive benchmark designed to evaluate the function calling capabilities of LLMs. It specifically compares the performance of models using Pythonic function calling versus traditional JSON-based methods across 100 problems.",
+      "links": [
+        {
+          "label": "Blog",
+          "url": "https://huggingface.co/blog/andthattoo/dpab-a"
+        }
+      ]
+    },
+    {
+      "id": "nfcl-nexus-function-calling-leaderboard",
+      "name": "NFCL (Nexus Function Calling Leaderboard)",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A benchmark designed to evaluate the proficiency of LLMs in single-turn function calling tasks. It assesses various complexities, including simple, parallel, and nested function calls, where the output of one function serves as an input for another.",
+      "links": [
+        {
+          "label": "GitHub",
+          "url": "https://github.com/nexusflowai/NexusRaven-V2"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://huggingface.co/spaces/Nexusflow/Nexus_Function_Calling_Leaderboard"
+        }
+      ]
+    },
+    {
+      "id": "xlam-a-family-of-large-action-models-for-function-calling-and-ai-agent-systems",
+      "name": "xLAM: A Family of Large Action Models for Function Calling and AI Agent Systems",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A series of large action models (LLMs) developed by Salesforce AI Research, specifically optimized for function calling and AI agent tasks. These models are designed to enhance the generalizability and performance of AI agents across diverse environments.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2409.03215"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/SalesforceAIResearch/xLAM"
+        }
+      ]
+    },
+    {
+      "id": "toolace-a-framework-for-generating-high-quality-tool-learning-data-for-llms",
+      "name": "ToolACE: A Framework for Generating High-Quality Tool-Learning Data for LLMs",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "An automatic agentic pipeline meticulously designed to generate accurate, complex, and diverse tool-learning data, specifically tailored to enhance the function-calling capabilities of LLMs.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2409.00920"
+        }
+      ]
+    },
+    {
+      "id": "livemcpbench",
+      "name": "LiveMCPBench",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A comprehensive benchmark designed to evaluate the ability of LLM agents to navigate and effectively utilize a large-scale Model Context Protocol (MCP) toolset in real-world scenarios, overcoming limitations of single-server environments.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2508.01780"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://icip-cas.github.io/LiveMCPBench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://docs.google.com/spreadsheets/d/1EXpgXq1VKw5A7l7-N2E9xt3w0eLJ2YPVPT-VrRxKZBw/edit?gid=0#gid=0"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/ICIP/LiveMCPBench"
+        }
+      ]
+    },
+    {
+      "id": "mcp-universe",
+      "name": "MCP-Universe",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "summary": "A comprehensive framework and benchmark for developing, testing, and evaluating AI agents and LLMs through direct interaction with real-world Model Context Protocol (MCP) servers, rather than relying on simulations, covering domains like financial analysis and browser automation.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/pdf/2508.14704.pdf"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/SalesforceAIResearch/MCP-Universe"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://mcp-universe.github.io/"
+        }
+      ]
+    },
+    {
+      "id": "gaia-general-ai-assistants",
+      "name": "GAIA (General AI Assistants)",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A landmark benchmark designed to evaluate General AI Assistants, posing real-world questions that are conceptually simple for humans but significantly challenging for most advanced AI systems. It requires AI models to demonstrate a combination of fundamental abilities, including reasoning, multi-modality handling, web browsing, and proficient tool use.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2311.12983"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://huggingface.co/spaces/gaia-benchmark/leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/gaia-benchmark/GAIA"
+        }
+      ]
+    },
+    {
+      "id": "agentbench-a-comprehensive-benchmark-for-evaluating-llms-as-agents",
+      "name": "AgentBench: A Comprehensive Benchmark for Evaluating LLMs as Agents",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A multi-dimensional, evolving benchmark designed to thoroughly assess the reasoning and decision-making capabilities of LLMs when functioning as autonomous agents. It encompasses eight distinct environments, including Operating System, Database, and Web Shopping.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2308.03688"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/THUDM/AgentBench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://github.com/THUDM/AgentBench?tab=readme-ov-file#leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://github.com/THUDM/AgentBench#dataset-summary"
+        }
+      ]
+    },
+    {
+      "id": "assistantbench",
+      "name": "AssistantBench",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A challenging benchmark designed to evaluate the ability of web agents to automatically solve realistic and time-consuming tasks. It comprises 214 tasks that require navigating the open web, spanning multiple domains, and interacting with over 525 pages from 258 different websites.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2407.15711"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/oriyor/assistantbench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://huggingface.co/spaces/AssistantBench/leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/AssistantBench/AssistantBench"
+        }
+      ]
+    },
+    {
+      "id": "livebench-a-challenging-contamination-free-benchmark-for-llms",
+      "name": "LiveBench: A Challenging, Contamination-Free Benchmark for LLMs",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A challenging, contamination-free benchmark for LLMs that regularly releases new questions from recent information sources to ensure models are tested on novel problems rather than memorized answers.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2406.19314"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/livebench/livebench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://livebench.ai/"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/livebench"
+        }
+      ]
+    },
+    {
+      "id": "humanity-s-last-exam-hle",
+      "name": "Humanity's Last Exam (HLE)",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A highly challenging, multi-modal benchmark with 2,500 expert-level academic questions across a broad range of disciplines, designed to test models at the absolute frontier of human knowledge and require genuine reasoning capabilities rather than simple factual recall.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2501.14249"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/centerforaisafety/hle"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://lastexam.ai/"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/cais/hle"
+        }
+      ]
+    },
+    {
+      "id": "fortress-frontier-risk-evaluation-for-national-security-and-public-safety",
+      "name": "FORTRESS: Frontier Risk Evaluation for National Security and Public Safety",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A benchmark designed to evaluate the robustness of LLM safeguards against potential misuse relevant to national security and public safety, using expert-crafted adversarial prompts across domains like CBRNE and political violence.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2506.14922"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://scale.com/leaderboard/fortress"
+        }
+      ]
+    },
+    {
+      "id": "the-mask-benchmark-disentangling-honesty-from-accuracy-in-ai-systems",
+      "name": "The MASK Benchmark: Disentangling Honesty from Accuracy in AI Systems",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "Aims to evaluate the honesty of LLMs by disentangling it from factual accuracy. The benchmark measures whether models will knowingly contradict their established beliefs when subjected to pressure to lie.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2503.03750"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/centerforaisafety/mask"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://scale.com/leaderboard/mask"
+        }
+      ]
+    },
+    {
+      "id": "simpleqa",
+      "name": "SimpleQA",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A factuality benchmark designed to evaluate the ability of LLMs to answer short, fact-seeking questions. It aims to measure how well models \"know what they know\" and to identify \"hallucinations\" or factually incorrect outputs with single, indisputable answers.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://cdn.openai.com/papers/simpleqa.pdf"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/openai/simple-evals"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/basicv8vc/SimpleQA"
+        }
+      ]
+    },
+    {
+      "id": "simpleqa-verified",
+      "name": "SimpleQA Verified",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "A 1,000-prompt benchmark designed for evaluating the short-form factuality of LLMs, developed to address limitations in the original SimpleQA benchmark, such as noisy labels and topical biases, through a rigorous filtering process.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2509.07968"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://www.kaggle.com/benchmarks/deepmind/simpleqa-verified"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://www.kaggle.com/benchmarks/deepmind/simpleqa-verified"
+        }
+      ]
+    },
+    {
+      "id": "facts-grounding",
+      "name": "FACTS Grounding",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "Evaluates LLMs' ability to generate long-form responses that are factually accurate and strictly \"grounded\" in provided context documents, thereby mitigating hallucination. Tasks require models to generate responses based exclusively on documents up to 32,000 tokens long.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://deepmind.google/discover/blog/facts-grounding-a-new-benchmark-for-evaluating-the-factuality-of-large-language-models/"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/google-deepmind/long-form-factuality"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://www.kaggle.com/facts-leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://www.kaggle.com/facts-leaderboard"
+        }
+      ]
+    },
+    {
+      "id": "galileo-agent-leaderboard-v2",
+      "name": "Galileo Agent Leaderboard v2",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "summary": "Provides comprehensive performance metrics for LLM agents across business domains.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://galileo.ai/blog/agent-leaderboard"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/rungalileo/agent-leaderboard"
+        }
+      ]
+    },
+    {
+      "id": "swe-bench-evaluating-ai-in-real-world-software-engineering",
+      "name": "SWE-bench: Evaluating AI in Real-World Software Engineering",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "A benchmark for evaluating LLMs and AI agents on their ability to resolve real-world software engineering issues. It comprises 2,294 problems sourced from GitHub issues across 12 popular Python repositories. The task is to generate a patch that resolves the issue.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2310.06770"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/SWE-bench/SWE-bench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://swebench.com/"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://www.swebench.com/SWE-bench/guides/datasets/"
+        }
+      ]
+    },
+    {
+      "id": "swe-bench-verified",
+      "name": "SWE-bench Verified",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "SWE-bench Verified is a human-validated subset of the original SWE-bench dataset, containing 500 samples that assess the capability of AI models to resolve real-world software engineering issues. To improve the reliability of evaluation, SWE-bench Verified was created in collaboration with OpenAI and involved professional software developers who screened each sample to ensure well-specified issue descriptions and appropriate unit tests.",
+      "links": [
+        {
+          "label": "Blog",
+          "url": "https://openai.com/index/introducing-swe-bench-verified/"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://www.swebench.com/"
+        }
+      ]
+    },
+    {
+      "id": "swe-bench-pro",
+      "name": "SWE-Bench Pro:",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "A benchmark for evaluating LLMs and AI agents on their ability to resolve real-world software engineering issues. It comprises 1,865 problems sourced from 41 diverse professional repositories. The task is to generate a patch that resolves the issue. Hidden Test set with 276 additional private tasks.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://t.co/5ArWF1bKmS"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/scaleapi/SWE-bench_Pro-os/tree/main?tab=readme-ov-file"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://scale.com/leaderboard/swe_bench_pro_public"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro"
+        }
+      ]
+    },
+    {
+      "id": "livecodebench",
+      "name": "LiveCodeBench",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "A holistic and contamination-free benchmark for evaluating LLMs for code-related tasks. It continuously collects new problems from competitive programming platforms and assesses capabilities like self-repair, code execution, and test output prediction.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2403.07974"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/LiveCodeBench/LiveCodeBench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://www.kaggle.com/benchmarks/open-benchmarks/livecodebench"
+        }
+      ]
+    },
+    {
+      "id": "swe-polybench-a-multi-language-benchmark-for-ai-coding-agents",
+      "name": "SWE-PolyBench: A Multi-Language Benchmark for AI Coding Agents",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "A multi-language benchmark designed to evaluate AI coding agents across diverse programming tasks and languages. It contains over 2,000 curated issues from 21 real-world repositories, covering Java, JavaScript, TypeScript, and Python.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/pdf/2504.08703"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/amazon-science/SWE-PolyBench"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://amazon-science.github.io/SWE-PolyBench/"
+        }
+      ]
+    },
+    {
+      "id": "aider-s-ai-assisted-code-benchmarks",
+      "name": "Aider's \"AI-Assisted Code\" Benchmarks",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "A set of practical evaluations designed to measure how effectively LLMs can edit, refactor, and contribute to an existing codebase. These benchmarks include a code editing benchmark, a challenging refactoring benchmark, and a polyglot benchmark.",
+      "links": [
+        {
+          "label": "GitHub",
+          "url": "https://github.com/Aider-AI/aider"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://aider.chat/docs/leaderboards/"
+        }
+      ]
+    },
+    {
+      "id": "aider-polyglot-benchmark",
+      "name": "Aider Polyglot Benchmark",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "summary": "Evaluates coding and self-correction abilities of LLMs by testing them on 225 challenging Exercism coding exercises across multiple languages, including C++, Go, Java, JavaScript, Python, and Rust.",
+      "links": [
+        {
+          "label": "GitHub",
+          "url": "https://github.com/Aider-AI/polyglot-benchmark"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://aider.chat/docs/leaderboards/"
+        }
+      ]
+    },
+    {
+      "id": "webarena-a-realistic-web-environment-for-building-autonomous-agents",
+      "name": "WebArena: A Realistic Web Environment for Building Autonomous Agents",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A standalone, self-hostable web environment for building autonomous agents. WebArena creates websites from four popular categories with functionality and data mimicking their real-world equivalents and introduces a benchmark on interpreting high-level commands.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/pdf/2307.13854.pdf"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/web-arena-x/webarena"
+        }
+      ]
+    },
+    {
+      "id": "visualwebarena",
+      "name": "VisualWebArena",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A benchmark designed to assess the performance of multimodal agents on realistic, visually grounded web tasks. It extends WebArena with 910 new, diverse, and complex tasks that require agents to accurately process image-text inputs and execute actions on websites.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://aclanthology.org/2024.acl-long.50/"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/web-arena-x/visualwebarena"
+        }
+      ]
+    },
+    {
+      "id": "web-bench-a-benchmark-for-ai-browser-agents",
+      "name": "Web Bench: A Benchmark for AI Browser Agents",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A benchmark designed to evaluate the performance of AI browser agents. It differentiates agent capabilities on information retrieval (READ) tasks from state-changing (WRITE) tasks across 452 live websites, encompassing 5,750 tasks.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://halluminate.ai/blog/benchmark"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/Halluminate/WebBench"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/Halluminate/WebBench"
+        }
+      ]
+    },
+    {
+      "id": "webvoyager",
+      "name": "WebVoyager",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A foundational benchmark designed for evaluating Large Multimodal Models (LMMs) and web agents on end-to-end, real-world navigation tasks across a diverse set of popular, live websites, integrating both textual (HTML) and visual (screenshots) information.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2401.13919"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/MinorJerry/WebVoyager"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://leaderboard.steel.dev/"
+        }
+      ]
+    },
+    {
+      "id": "browsecomp-a-simple-yet-challenging-benchmark-for-browsing-agents",
+      "name": "BrowseComp: A Simple Yet Challenging Benchmark for Browsing Agents",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A simple yet challenging benchmark to measure the ability of agents to browse the web. It consists of 1,266 questions that demand persistent navigation of the internet to find hard-to-find, entangled information.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2504.12516"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/openai/simple-evals/tree/main"
+        }
+      ]
+    },
+    {
+      "id": "mind2web",
+      "name": "Mind2Web",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A comprehensive benchmark for developing and evaluating generalist web agents. The original dataset includes over 2,000 open-ended tasks collected from 137 real-world websites, with variants for evaluating performance on live websites.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2306.06070"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/osu-nlp-group/Mind2Web"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://huggingface.co/spaces/osunlp/Online_Mind2Web_Leaderboard"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/osunlp/Mind2Web"
+        }
+      ]
+    },
+    {
+      "id": "webgames-benchmark",
+      "name": "WebGames Benchmark",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A comprehensive benchmark suite to evaluate general-purpose web-browsing AI agents, featuring over 50 interactive challenges crafted to be straightforward for humans but challenging for AI. It operates in a self-contained, hermetic testing environment.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2502.18356"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/convergence-ai/webgames"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://webgames.convergence.ai/"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://huggingface.co/datasets/convergence-ai/webgames"
+        }
+      ]
+    },
+    {
+      "id": "st-webagentbench",
+      "name": "ST-WebAgentBench",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A benchmarking platform specifically designed to evaluate the safety and trustworthiness of autonomous web agents in realistic enterprise contexts, where policy compliance and safety are paramount.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2410.06703"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/segev-shlomov/ST-WebAgentBench"
+        }
+      ]
+    },
+    {
+      "id": "osworld-benchmarking-multimodal-agents-for-open-ended-tasks-in-real-computer-environments",
+      "name": "OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks in Real Computer Environments",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A first-of-its-kind scalable, real computer environment for benchmarking multimodal agents on open-ended tasks within genuine operating systems, including Windows, macOS, and Ubuntu, featuring 369 real-world tasks.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2404.07972"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://os-world.github.io/"
+        }
+      ]
+    },
+    {
+      "id": "osuniverse",
+      "name": "OSUniverse",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A benchmark for evaluating advanced GUI-navigation AI agents on complex, multimodal, desktop-oriented tasks. It features 160 tasks across five levels of complexity and nine categories, designed to be easy for humans but challenging for AI.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2505.03570"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/agentsea/osuniverse"
+        }
+      ]
+    },
+    {
+      "id": "screensuite-benchmark",
+      "name": "ScreenSuite Benchmark",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A comprehensive suite of 13 benchmarks for evaluating Graphical User Interface (GUI) agents, focusing on the Vision Language Models (VLMs) that power them. It uses a vision-only evaluation stack without relying on accessibility trees or DOM information.",
+      "links": [
+        {
+          "label": "GitHub",
+          "url": "https://github.com/huggingface/screensuite"
+        }
+      ]
+    },
+    {
+      "id": "workarena-benchmark-enhanced-evaluation-for-ai-in-enterprise-workflows",
+      "name": "WorkArena++ Benchmark: Enhanced Evaluation for AI in Enterprise Workflows",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A novel benchmark to rigorously evaluate AI agents in performing complex, realistic enterprise workflows. It expands upon the original WorkArena benchmark with 682 tasks that mimic the intricate operations of knowledge workers on the ServiceNow platform.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2407.05291"
+        }
+      ]
+    },
+    {
+      "id": "androidworld-benchmark",
+      "name": "AndroidWorld Benchmark",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A dynamic benchmarking environment for autonomous agents that control mobile devices. It operates on a live Android emulator and features 116 hand-crafted tasks across 20 real-world Android applications, with millions of unique task variations.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2405.14573"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/google-research/android_world"
+        }
+      ]
+    },
+    {
+      "id": "worldgui",
+      "name": "WorldGUI",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A comprehensive Graphical User Interface (GUI) benchmark designed to evaluate AI agents across ten widely used desktop and web applications (e.g., PowerPoint, VSCode). It features 315 tasks with diverse initial states to simulate authentic human-computer interactions.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2502.08047"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/showlab/WorldGUI"
+        }
+      ]
+    },
+    {
+      "id": "macosworld",
+      "name": "macOSWorld",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "The first comprehensive, multilingual, and interactive benchmark to evaluate GUI agents operating within the macOS environment. It features 202 multilingual tasks across 30 applications, with instructions and interfaces in five languages.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2506.04135"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/showlab/macosworld"
+        }
+      ]
+    },
+    {
+      "id": "officebench-benchmarking-language-agents-across-multiple-applications-for-office-automation",
+      "name": "OfficeBench: Benchmarking Language Agents across Multiple Applications for Office Automation",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A pioneering benchmark to evaluate an LLM agent's ability to automate complex office workflows across multiple applications, such as Word, Excel, and email. It assesses long-horizon planning and proficiency in switching between applications.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2407.19056"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/zlwang-cs/OfficeBench"
+        }
+      ]
+    },
+    {
+      "id": "eebd-emergence-enterprise-benchmark-dataset",
+      "name": "EEBD (Emergence Enterprise Benchmark Dataset)",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "Evaluates AI agents in realistic enterprise scenarios that require them to go beyond simple browser interaction, intelligently selecting tools like APIs and combining web UI interaction with API calls.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://github.com/EmergenceAI/emergence-benchmarks/blob/main/papers/e-web/e-web-v0.pdf"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/EmergenceAI/emergence-benchmarks"
+        },
+        {
+          "label": "Dataset",
+          "url": "https://github.com/EmergenceAI/emergence-benchmarks/blob/main/benchmarks/e-web/e-web_benchmark_lite.csv"
+        }
+      ]
+    },
+    {
+      "id": "alfred-a-benchmark-for-interpreting-grounded-instructions-for-everyday-tasks",
+      "name": "ALFRED: A Benchmark for Interpreting Grounded Instructions for Everyday Tasks",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A benchmark for learning a mapping from natural language instructions and egocentric vision to sequences of actions for household tasks. It features long, compositional tasks in a simulated 3D environment.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/1912.01734"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/askforalfred/alfred"
+        },
+        {
+          "label": "Leaderboard",
+          "url": "https://askforalfred.com/leaderboard/leaderboard.html"
+        }
+      ]
+    },
+    {
+      "id": "embodiedbench",
+      "name": "EmbodiedBench",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "summary": "A comprehensive benchmark designed to evaluate Multi-modal Large Language Models (MLLMs) as embodied agents. It spans diverse tasks in navigation, manipulation, and high-level planning across four simulated environments.",
+      "links": [
+        {
+          "label": "Paper",
+          "url": "https://arxiv.org/abs/2502.09560"
+        },
+        {
+          "label": "GitHub",
+          "url": "https://github.com/EmbodiedBench/EmbodiedBench"
+        }
+      ]
+    }
+  ]
+}

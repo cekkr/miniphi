@@ -126,6 +126,8 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node --test unit-tests-js/nitpick-two-student-essay.test.js` (exercise the two-model nitpick essay loop with mocked web research and a 1000+ word revision target).
 - `node --test unit-tests-js/nitpick-auto-expand-rounds.test.js` (validate `--auto-expand-rounds` retries and strict minimum-word validation for final nitpick drafts).
 - `node --test unit-tests-js/web-researcher-fallback.test.js` (verify DuckDuckGo HTML fallback parsing when API results are empty).
+- `node scripts/sync-test-task-catalog.js` to regenerate `dev_samples/test_tasks/benchmark-catalog.json` + `dev_samples/test_tasks/general-purpose-suite.json` from `dev_samples/task-tests.md`.
+- `node --test unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js` to validate benchmark-catalog sync and `benchmark general` suite execution.
 
 ## Romeo unit test quick use
 - Run `node --test unit-tests-js/romeo-miniphi-flow.test.js` to validate MiniPhi log/file analysis against `samples/txt/romeoAndJuliet-part1.txt`.
@@ -139,6 +141,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `scripts/lmstudio-json-debug.js` + `scripts/lmstudio-json-series.js` for fast LM Studio sanity checks.
 - `scripts/prompt-composer.js` + `scripts/prompt-interpret.js` for prompt-chain JSON request/response iteration (see `samples/prompt-chain/`).
 - `scripts/local-eval-report.js` for local JSON/tool-call coverage reports over `.miniphi/prompt-exchanges/`.
+- `dev_samples/task-tests.md` + `dev_samples/test_tasks/` for the benchmark compendium clone and category-balanced benchmark-general regression suite.
 - `docs/prompts/*.schema.json` are the schema source of truth (including `nitpick-plan`, `nitpick-research-plan`, `nitpick-draft`, `nitpick-critique`); cached templates live under `.miniphi/prompt-exchanges/templates/`.
 - Samples: `samples/get-started/`, `samples/recompose/hello-flow/`, `samples/bash-it/`, `samples/besh/`.
 - Global cache: `~/.miniphi/` holds the prompt DB, capability snapshots, and shared helper metadata.

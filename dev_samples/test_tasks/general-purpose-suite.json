@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "source_file": "dev_samples/task-tests.md",
+  "purpose": "Category-balanced benchmark general regression suite derived from task-tests.md.",
+  "tasks": [
+    {
+      "id": "general-suite-1-function-calling-tool-use",
+      "category_id": "function-calling-tool-use",
+      "category_title": "Function Calling & Tool Use",
+      "benchmark_refs": [
+        "bfcl-berkeley-function-calling-leaderboard",
+        "toolbench",
+        "complexfuncbench"
+      ],
+      "task": "Benchmark MiniPhi for function-calling style tasks. Prioritize strict JSON actions, schema-safe arguments, and deterministic tool-call planning. Use BFCL (Berkeley Function Calling Leaderboard), ToolBench, ComplexFuncBench as reference signals for coverage.",
+      "command": "node -v"
+    },
+    {
+      "id": "general-suite-2-general-assistant-reasoning",
+      "category_id": "general-assistant-reasoning",
+      "category_title": "General Assistant & Reasoning",
+      "benchmark_refs": [
+        "gaia-general-ai-assistants",
+        "agentbench-a-comprehensive-benchmark-for-evaluating-llms-as-agents",
+        "assistantbench"
+      ],
+      "task": "Benchmark MiniPhi for assistant reasoning tasks. Prioritize grounded multi-step reasoning, factual discipline, and explicit uncertainty handling. Use GAIA (General AI Assistants), AgentBench: A Comprehensive Benchmark for Evaluating LLMs as Agents, AssistantBench as reference signals for coverage.",
+      "command": "node -v"
+    },
+    {
+      "id": "general-suite-3-coding-software-engineering",
+      "category_id": "coding-software-engineering",
+      "category_title": "Coding & Software Engineering",
+      "benchmark_refs": [
+        "swe-bench-evaluating-ai-in-real-world-software-engineering",
+        "swe-bench-verified",
+        "swe-bench-pro"
+      ],
+      "task": "Benchmark MiniPhi for software engineering tasks. Prioritize repo-grounded planning, safe edits, clear validation steps, and diff-aware summaries. Use SWE-bench: Evaluating AI in Real-World Software Engineering, SWE-bench Verified, SWE-Bench Pro: as reference signals for coverage.",
+      "command": "node -v"
+    },
+    {
+      "id": "general-suite-4-computer-interaction-gui-web",
+      "category_id": "computer-interaction-gui-web",
+      "category_title": "Computer Interaction (GUI & Web)",
+      "benchmark_refs": [
+        "webarena-a-realistic-web-environment-for-building-autonomous-agents",
+        "visualwebarena",
+        "web-bench-a-benchmark-for-ai-browser-agents"
+      ],
+      "task": "Benchmark MiniPhi for GUI and web-interaction style tasks. Prioritize reproducible navigation plans, policy-safe actions, and context-budget discipline. Use WebArena: A Realistic Web Environment for Building Autonomous Agents, VisualWebArena, Web Bench: A Benchmark for AI Browser Agents as reference signals for coverage.",
+      "command": "node -v"
+    }
+  ]
+}

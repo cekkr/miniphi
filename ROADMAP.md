@@ -214,11 +214,14 @@ Exit criteria:
 - Helper and command libraries show consistent reuse across at least two different repos.
 - Workspace caching and capability inventory remain accurate across runs.
 - Offline evaluation harness (ai-agent-evals style) runs locally and records JSON compliance + tool-call accuracy metrics with a stored report.
+- Benchmark compendium clone under `dev_samples/test_tasks/` stays in sync with `dev_samples/task-tests.md` (4 categories, 50 benchmark entries, valid links).
+- Category-balanced `benchmark general` suite executes in unit tests without LM Studio and emits per-task summaries under `.miniphi/history/benchmarks/`.
 
 Focus areas:
 - Prompt decomposition resume improvements and branch selection hygiene.
 - Evaluation harness for prompt/response quality (JSON validity, tool-call accuracy, task adherence, token metrics).
 - Nitpick evaluation harness (writer/critic loops, blind browsing sources, and context-aware model selection).
+- Benchmark-compendium harness (deterministic markdown-to-JSON catalog + local `benchmark general` regression suite).
 
 Nitpick exit criteria:
 - `miniphi nitpick --task "<long-form task>" --rounds 2` completes with JSON-only plan/draft/critique/revision steps and stores a session under `.miniphi/nitpick/`.
@@ -226,6 +229,7 @@ Nitpick exit criteria:
 
 Deferred (lower priority while nitpick + blind browsing harden):
 - Helper script lifecycle (versioning, replay, and output summarization).
+- Full external benchmark repo mirroring under `dev_samples/test_tasks/` (WebArena/OSWorld-scale assets) until metadata + local suite coverage remains stable.
 
 ### v0.3 Distribution and sustainability
 Objective: prepare MiniPhi for wider distribution and long-term maintenance.
