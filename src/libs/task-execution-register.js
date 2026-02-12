@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
-import { normalizePromptErrorPayload } from "./prompt-log-normalizer.js";
+import {
+  normalizeLinksPayload,
+  normalizePromptErrorPayload,
+} from "./prompt-log-normalizer.js";
 
 const DEFAULT_SCHEMA_VERSION = "task-execution-register@v1";
 
@@ -119,7 +122,7 @@ export default class TaskExecutionRegister {
       response: entry.response ?? null,
       error: this._normalizeError(entry.error ?? null),
       metadata: entry.metadata ?? null,
-      links: entry.links ?? null,
+      links: normalizeLinksPayload(entry.links, { baseDir: this.workspaceRoot }),
     };
     this.sequence = next.sequence;
     this.session.entries = Array.isArray(this.session.entries) ? this.session.entries : [];

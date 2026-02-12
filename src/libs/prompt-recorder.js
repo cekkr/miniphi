@@ -92,7 +92,7 @@ export default class PromptRecorder {
       subPromptId: payload.subPromptId,
       recordedAt: payload.recordedAt,
       error: payload.error,
-      file: path.relative(this.workspaceRoot, recordPath),
+      file: path.relative(this.workspaceRoot, recordPath).replace(/\\/g, "/"),
     };
     const filtered = index.entries.filter((entry) => entry.id !== payload.id);
     filtered.unshift(summary);

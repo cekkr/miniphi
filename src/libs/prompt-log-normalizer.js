@@ -1,3 +1,4 @@
+import path from "path";
 import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
 
 function selectArrayValue(...candidates) {
@@ -48,6 +49,97 @@ function normalizeStopReasonPayload(payload = undefined) {
   delete payload.stopReasonCode;
   delete payload.stopReasonDetail;
   return payload;
+}
+
+function normalizePromptExchangePath(rawPath, baseDir = undefined) {
+  if (typeof rawPath !== "string") {
+    return null;
+  }
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const resolveBase =
+    typeof baseDir === "string" && baseDir.trim().length ? path.resolve(baseDir) : null;
+  try {
+    const absolute = path.isAbsolute(trimmed)
+      ? trimmed
+      : resolveBase
+        ? path.resolve(resolveBase, trimmed)
+        : trimmed;
+    if (resolveBase && path.isAbsolute(absolute)) {
+      const rel = path.relative(resolveBase, absolute);
+      if (rel && !rel.startsWith("..")) {
+        return rel.replace(/\\/g, "/");
+      }
+    }
+    return absolute.replace(/\\/g, "/");
+  } catch {
+    return trimmed.replace(/\\/g, "/");
+  }
+}
+
+export function normalizePromptExchangeLink(link = undefined, options = undefined) {
+  if (!link) {
+    return null;
+  }
+  const baseDir =
+    typeof options?.baseDir === "string" && options.baseDir.trim().length
+      ? options.baseDir
+      : null;
+  if (typeof link === "string") {
+    return {
+      promptExchangeId: null,
+      promptExchangePath: normalizePromptExchangePath(link, baseDir),
+    };
+  }
+  if (typeof link !== "object" || Array.isArray(link)) {
+    return null;
+  }
+  const promptExchangeId =
+    link.promptExchangeId ?? link.prompt_exchange_id ?? link.id ?? link.promptId ?? null;
+  const promptExchangePath = normalizePromptExchangePath(
+    link.promptExchangePath ?? link.prompt_exchange_path ?? link.path ?? link.file ?? null,
+    baseDir,
+  );
+  if (!promptExchangeId && !promptExchangePath) {
+    return null;
+  }
+  return {
+    promptExchangeId: promptExchangeId ?? null,
+    promptExchangePath: promptExchangePath ?? null,
+  };
+}
+
+export function normalizeLinksPayload(links = undefined, options = undefined) {
+  if (!links) {
+    return null;
+  }
+  const baseDir =
+    typeof options?.baseDir === "string" && options.baseDir.trim().length
+      ? options.baseDir
+      : null;
+  const normalized = {};
+  if (typeof links === "object" && !Array.isArray(links)) {
+    for (const [key, value] of Object.entries(links)) {
+      normalized[key] = value;
+    }
+  }
+  const exchangeLink = normalizePromptExchangeLink(links, { baseDir });
+  if (exchangeLink) {
+    normalized.promptExchangeId = exchangeLink.promptExchangeId ?? null;
+    normalized.promptExchangePath = exchangeLink.promptExchangePath ?? null;
+    if (normalized.id && normalized.id === normalized.promptExchangeId) {
+      delete normalized.id;
+    }
+    if (normalized.path) {
+      normalized.path = normalizePromptExchangePath(normalized.path, baseDir);
+    }
+    if (normalized.file) {
+      normalized.file = normalizePromptExchangePath(normalized.file, baseDir);
+    }
+  }
+  return Object.keys(normalized).length ? normalized : null;
 }
 
 export function normalizePromptErrorPayload(error = undefined) {

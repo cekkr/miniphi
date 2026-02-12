@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import {
   normalizeJournalResponseValue,
+  normalizeLinksPayload,
   normalizeToolMetadataPayload,
 } from "./prompt-log-normalizer.js";
 import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
@@ -157,6 +158,7 @@ export default class PromptStepJournal {
     const finishedAt = this._normalizeDate(payload.finishedAt);
     const toolMetadata = normalizeToolMetadataPayload(payload);
     const normalizedMetadata = normalizeStopReasonMetadata(payload.metadata);
+    const normalizedLinks = normalizeLinksPayload(payload.links, { baseDir: this.baseDir });
     const entry = {
       id: `${session.id}#${sequence}`,
       sequence,
@@ -170,7 +172,7 @@ export default class PromptStepJournal {
       tool_calls: toolMetadata.tool_calls,
       tool_definitions: toolMetadata.tool_definitions,
       workspaceSummary: payload.workspaceSummary ?? null,
-      links: payload.links ?? null,
+      links: normalizedLinks,
       startedAt,
       finishedAt,
       durationMs:
