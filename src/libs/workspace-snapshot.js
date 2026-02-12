@@ -13,6 +13,7 @@ import {
   extractLmStudioGpu,
   extractLmStudioModel,
 } from "./lmstudio-status-utils.js";
+import { DEFAULT_AGENT_COMMANDS, buildAgentCommandsBlock } from "./agent-commands.js";
 
 function formatCommandLibraryBlock(entries, limit = 6) {
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -543,6 +544,8 @@ async function generateWorkspaceSnapshot({
   });
   const planDirectives = profile?.directives ?? null;
   const hasHintBlock = Boolean(hintBlock && hintBlock.trim());
+  const agentCommands = DEFAULT_AGENT_COMMANDS;
+  const agentCommandsBlock = buildAgentCommandsBlock(agentCommands);
   let cachedHint = null;
   if (memory?.loadWorkspaceHint) {
     try {
@@ -567,6 +570,7 @@ async function generateWorkspaceSnapshot({
     planDirectives ? `Workspace directives: ${planDirectives}` : null,
     cachedHintBlock,
     cachedDirectives,
+    agentCommandsBlock,
   ]);
 
   let capabilities = null;
@@ -589,6 +593,8 @@ async function generateWorkspaceSnapshot({
     capabilitySummary: capabilities?.summary ?? null,
     capabilityDetails: capabilities?.details ?? null,
     cachedHints: cachedHint,
+    agentCommands,
+    agentCommandsBlock,
   };
 
   const promptTemplates = [];
