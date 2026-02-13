@@ -74,7 +74,6 @@ import {
   persistTruncationProgressSafe,
   selectTruncationChunk,
 } from "./libs/truncation-utils.js";
-import { handleAnalyzeFileCommand } from "./commands/analyze-file.js";
 import { handleBenchmarkCommand } from "./commands/benchmark.js";
 import { handleCachePruneCommand } from "./commands/cache-prune.js";
 import { handleCommandLibrary } from "./commands/command-library.js";
@@ -82,13 +81,11 @@ import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
 import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
 import { handleMigrateStopReasonsCommand } from "./commands/migrate-stop-reasons.js";
-import { handleNitpickCommand } from "./commands/nitpick.js";
+import { buildPrimaryCommandContext, executePrimaryCommand } from "./commands/primary-flow.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
-import { handleRunCommand } from "./commands/run.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
 import { handleWebResearch } from "./commands/web-research.js";
 import { handleWebBrowse } from "./commands/web-browse.js";
-import { handleWorkspaceCommand } from "./commands/workspace.js";
 
 const COMMANDS = new Set([
   "run",
@@ -2295,7 +2292,7 @@ const describeWorkspace = (dir, options = undefined) =>
     await lmStudioRuntime.load({ contextLength, gpu });
     scoringPhi = lmStudioRuntime.scoringPhi;
 
-    const commandContext = {
+    const commandContext = buildPrimaryCommandContext({
       command,
       options,
       positionals,
@@ -2366,35 +2363,18 @@ const describeWorkspace = (dir, options = undefined) =>
       promptJournal,
       workspaceContext,
       result,
-    };
+    });
+    const primaryCommandResult = await executePrimaryCommand(commandContext);
 
-    if (command === "workspace") {
-      await handleWorkspaceCommand(commandContext);
-      task = commandContext.task;
-      stateManager = commandContext.stateManager;
-      promptRecorder = commandContext.promptRecorder;
-      promptJournal = commandContext.promptJournal;
-      workspaceContext = commandContext.workspaceContext;
+    task = primaryCommandResult.task;
+    stateManager = primaryCommandResult.stateManager;
+    promptRecorder = primaryCommandResult.promptRecorder;
+    promptJournal = primaryCommandResult.promptJournal;
+    workspaceContext = primaryCommandResult.workspaceContext;
+    result = primaryCommandResult.result;
+    if (primaryCommandResult.skipPostAnalysis) {
       return;
     }
-
-    if (command === "nitpick") {
-      await handleNitpickCommand(commandContext);
-      return;
-    }
-
-    if (command === "run") {
-      await handleRunCommand(commandContext);
-    } else if (command === "analyze-file") {
-      await handleAnalyzeFileCommand(commandContext);
-    }
-
-    task = commandContext.task;
-    stateManager = commandContext.stateManager;
-    promptRecorder = commandContext.promptRecorder;
-    promptJournal = commandContext.promptJournal;
-    workspaceContext = commandContext.workspaceContext;
-    result = commandContext.result;
 
     await stopResourceMonitorIfNeeded();
 
@@ -2905,7 +2885,7 @@ Cache prune:
   --dry-run                    Report deletions without removing files
   --json                       Output JSON summary instead of human-readable text
 
-Stop reason migration:
+Stop reason + prompt-exchange metadata migration:
   --history-root <path>        Override the starting directory used to locate .miniphi (default: cwd)
   --include-global             Also migrate ~/.miniphi when present
   --dry-run                    Report normalization changes without writing files
@@ -2952,6 +2932,7 @@ Benchmark helper:
     --live-lm-timeout-ms <ms>   REST timeout override in milliseconds
     --live-lm-plan-timeout <s>  Prompt decomposer timeout when live LM is enabled (default: 12)
     --live-lm-plan-timeout-ms <ms>  Prompt decomposer timeout override in milliseconds
+    (If navigator + decomposer both timeout, benchmark still issues one ultra-compact assessment-only LM request.)
 `);
 }
 

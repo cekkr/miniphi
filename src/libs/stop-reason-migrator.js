@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
+import { isDeepStrictEqual } from "node:util";
 import { buildStopReasonInfo } from "./lmstudio-error-utils.js";
+import {
+  normalizePromptRequestPayload,
+  normalizePromptResponsePayload,
+} from "./prompt-log-normalizer.js";
 
 function hasOwn(target, key) {
   return Object.prototype.hasOwnProperty.call(target, key);
@@ -29,6 +34,51 @@ function assignIfPresent(target, key, value, stats) {
   target[key] = nextValue;
   stats.fieldsUpdated += 1;
   return true;
+}
+
+function countObjectDiffFields(beforeValue, afterValue) {
+  const before = isPlainObject(beforeValue) ? beforeValue : {};
+  const after = isPlainObject(afterValue) ? afterValue : {};
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  let changed = 0;
+  for (const key of keys) {
+    if (!isDeepStrictEqual(before[key], after[key])) {
+      changed += 1;
+    }
+  }
+  return changed;
+}
+
+function normalizePromptExchangePayload(target, stats) {
+  if (!isPlainObject(target)) {
+    return false;
+  }
+  let changed = false;
+
+  if (isPlainObject(target.request)) {
+    const current = target.request;
+    const normalized = normalizePromptRequestPayload(current);
+    if (!isDeepStrictEqual(current, normalized)) {
+      target.request = normalized;
+      changed = true;
+      stats.fieldsUpdated += Math.max(1, countObjectDiffFields(current, normalized));
+    }
+  }
+
+  if (isPlainObject(target.response)) {
+    const current = target.response;
+    const normalized = normalizePromptResponsePayload(current);
+    if (!isDeepStrictEqual(current, normalized)) {
+      target.response = normalized;
+      changed = true;
+      stats.fieldsUpdated += Math.max(1, countObjectDiffFields(current, normalized));
+    }
+  }
+
+  if (changed) {
+    stats.objectsUpdated += 1;
+  }
+  return changed;
 }
 
 function normalizeStopReasonObject(target, stats) {
@@ -114,6 +164,7 @@ function normalizeValue(value, stats) {
   if (!isPlainObject(value)) {
     return false;
   }
+  changed = normalizePromptExchangePayload(value, stats) || changed;
   for (const key of Object.keys(value)) {
     changed = normalizeValue(value[key], stats) || changed;
   }

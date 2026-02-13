@@ -433,22 +433,38 @@ async function buildBenchmarkAssessmentRequestBody({
   workspaceContext,
   commandDetails,
   decompositionPlan,
-  compactMode = false,
+  requestMode = "full",
 }) {
+  const normalizedRequestMode =
+    requestMode === "assessment-only"
+      ? "assessment-only"
+      : requestMode === "compact"
+        ? "compact"
+        : "full";
+  const compactMode = normalizedRequestMode === "compact";
+  const assessmentOnlyMode = normalizedRequestMode === "assessment-only";
   const commandPreview = await readCommandOutputPreview({
     ...(commandDetails ?? {}),
-    previewLimit: compactMode ? 420 : COMMAND_OUTPUT_PREVIEW_CHARS,
+    previewLimit: assessmentOnlyMode ? 180 : compactMode ? 420 : COMMAND_OUTPUT_PREVIEW_CHARS,
   });
+  const workspaceSummaryLimit = assessmentOnlyMode ? 220 : compactMode ? 420 : 1000;
+  const navigationSummaryLimit = assessmentOnlyMode ? 0 : compactMode ? 260 : 700;
+  const decompositionSummaryLimit = assessmentOnlyMode ? 0 : compactMode ? 240 : 600;
+  const decompositionOutlineLimit = assessmentOnlyMode ? 0 : compactMode ? 360 : 1200;
   return {
-    request_mode: compactMode ? "compact" : "full",
+    request_mode: normalizedRequestMode,
     objective: task,
     workspace: {
       cwd,
       classification: workspaceContext?.classification ?? null,
-      summary: clampTextPreview(workspaceContext?.summary ?? "", compactMode ? 420 : 1000) || null,
+      summary: clampTextPreview(workspaceContext?.summary ?? "", workspaceSummaryLimit) || null,
       navigation_summary:
-        clampTextPreview(workspaceContext?.navigationSummary ?? "", compactMode ? 260 : 700) || null,
-      helper_script: workspaceContext?.helperScript
+        navigationSummaryLimit > 0
+          ? clampTextPreview(workspaceContext?.navigationSummary ?? "", navigationSummaryLimit) || null
+          : null,
+      helper_script: assessmentOnlyMode
+        ? null
+        : workspaceContext?.helperScript
         ? {
             id: workspaceContext.helperScript.id ?? null,
             name: workspaceContext.helperScript.name ?? null,
@@ -477,8 +493,14 @@ async function buildBenchmarkAssessmentRequestBody({
     decomposition: decompositionPlan
       ? {
           id: decompositionPlan.planId ?? null,
-          summary: clampTextPreview(decompositionPlan.summary ?? "", compactMode ? 240 : 600) || null,
-          outline: clampTextPreview(decompositionPlan.outline ?? "", compactMode ? 360 : 1200) || null,
+          summary:
+            decompositionSummaryLimit > 0
+              ? clampTextPreview(decompositionPlan.summary ?? "", decompositionSummaryLimit) || null
+              : null,
+          outline:
+            decompositionOutlineLimit > 0
+              ? clampTextPreview(decompositionPlan.outline ?? "", decompositionOutlineLimit) || null
+              : null,
           stop_reason: decompositionPlan.stopReason ?? null,
         }
       : null,
@@ -502,6 +524,7 @@ async function runLmGeneralBenchmarkAssessment({
   workspaceContext,
   commandDetails,
   decompositionPlan,
+  attemptModes = undefined,
 }) {
   if (!restClient) {
     return null;
@@ -512,7 +535,8 @@ async function runLmGeneralBenchmarkAssessment({
         maxLength: 1800,
       }) || ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n")
     : ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n");
-  const attemptModes = ["full", "compact"];
+  const resolvedAttemptModes =
+    Array.isArray(attemptModes) && attemptModes.length ? attemptModes : ["full", "compact"];
   let requestBody = null;
   let messages = null;
   let responseText = "";
@@ -524,9 +548,10 @@ async function runLmGeneralBenchmarkAssessment({
   const attemptHistory = [];
   let resolvedTimeoutMs = null;
 
-  for (let index = 0; index < attemptModes.length; index += 1) {
-    const mode = attemptModes[index];
-    const compactMode = mode === "compact";
+  for (let index = 0; index < resolvedAttemptModes.length; index += 1) {
+    const rawMode = resolvedAttemptModes[index];
+    const mode =
+      rawMode === "assessment-only" ? "assessment-only" : rawMode === "compact" ? "compact" : "full";
     let attemptTimeoutMs = normalizePositiveMs(timeoutMs, null);
     if (Number.isFinite(sessionDeadline) && sessionDeadline > 0) {
       try {
@@ -548,7 +573,7 @@ async function runLmGeneralBenchmarkAssessment({
       workspaceContext,
       commandDetails,
       decompositionPlan,
-      compactMode,
+      requestMode: mode,
     });
     messages = [
       {
@@ -601,16 +626,17 @@ async function runLmGeneralBenchmarkAssessment({
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
       const errorInfo = classifyLmStudioError(errorMessage);
-      const hasRetry = index < attemptModes.length - 1;
-      const shouldRetryCompact = hasRetry && (errorInfo.isTimeout || errorInfo.isContextOverflow);
+      const nextMode = index < resolvedAttemptModes.length - 1 ? resolvedAttemptModes[index + 1] : null;
+      const hasRetry = Boolean(nextMode);
+      const shouldRetryNext = hasRetry && (errorInfo.isTimeout || errorInfo.isContextOverflow);
       attemptHistory.push({
         mode,
-        result: shouldRetryCompact ? "retry-compact" : "error",
+        result: shouldRetryNext ? `retry-${nextMode}` : "error",
         error: errorMessage,
         stop_reason: errorInfo.reason ?? null,
         timeout_ms: attemptTimeoutMs,
       });
-      if (shouldRetryCompact) {
+      if (shouldRetryNext) {
         continue;
       }
       assessment = buildBenchmarkAssessmentFallback(
@@ -961,44 +987,27 @@ async function runGeneralPurposeBenchmark({
 
   let lmAssessment = null;
   const assessmentTimeoutBudget = liveLmTimeoutPlanner?.resolveStageTimeout("assessment") ?? null;
+  let assessmentFallbackMode = null;
   if (useLiveLm) {
     const navigationStopReason = workspaceContext?.navigationHints?.raw?.stop_reason ?? null;
     const decompositionStopReason = decompositionPlan?.stopReason ?? null;
     const navigationTimedOut = isTimeoutLikeStopReason(navigationStopReason);
     const decompositionTimedOut = isTimeoutLikeStopReason(decompositionStopReason);
-    const shouldSkipAssessment = navigationTimedOut && decompositionTimedOut;
-    if (shouldSkipAssessment) {
-      const skipReason = `skipped benchmark assessment after navigator+decomposer timeout (${[
-        navigationStopReason,
-        decompositionStopReason,
-      ]
-        .filter(Boolean)
-        .join(", ")})`;
-      lmAssessment = {
-        assessment: buildBenchmarkAssessmentFallback(skipReason, "timeout"),
-        error: skipReason,
-        schemaValidation: null,
-        promptRecord: null,
-        toolCalls: null,
-        toolDefinitions: null,
-        requestMode: null,
-        attemptHistory: [],
-        resolvedTimeoutMs: assessmentTimeoutBudget?.requestTimeoutMs ?? null,
-      };
-    } else {
-      lmAssessment = await runLmGeneralBenchmarkAssessment({
-        restClient,
-        timeoutMs: assessmentTimeoutBudget?.requestTimeoutMs ?? liveLmTimeoutMs,
-        sessionDeadline: liveLmEffectiveDeadlineMs,
-        schemaRegistry,
-        promptRecorder,
-        task,
-        cwd,
-        workspaceContext,
-        commandDetails,
-        decompositionPlan,
-      });
-    }
+    const useAssessmentOnlyFallback = navigationTimedOut && decompositionTimedOut;
+    assessmentFallbackMode = useAssessmentOnlyFallback ? "assessment-only" : null;
+    lmAssessment = await runLmGeneralBenchmarkAssessment({
+      restClient,
+      timeoutMs: assessmentTimeoutBudget?.requestTimeoutMs ?? liveLmTimeoutMs,
+      sessionDeadline: liveLmEffectiveDeadlineMs,
+      schemaRegistry,
+      promptRecorder,
+      task,
+      cwd,
+      workspaceContext,
+      commandDetails,
+      decompositionPlan,
+      attemptModes: useAssessmentOnlyFallback ? ["assessment-only"] : undefined,
+    });
   }
 
   if (benchmarkMonitor) {
@@ -1089,6 +1098,7 @@ async function runGeneralPurposeBenchmark({
       assessmentAttemptCount: Array.isArray(lmAssessment?.attemptHistory)
         ? lmAssessment.attemptHistory.length
         : 0,
+      assessmentFallbackMode,
       assessmentTimeoutMs: assessmentResolvedTimeoutMs ?? null,
       timeoutBudget: useLiveLm
         ? {

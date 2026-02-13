@@ -11,9 +11,11 @@ test("migrateStopReasonArtifacts normalizes legacy stop reason fields", async ()
     const miniPhiRoot = path.join(root, ".miniphi");
     await fs.mkdir(path.join(miniPhiRoot, "executions", "demo"), { recursive: true });
     await fs.mkdir(path.join(miniPhiRoot, "indices"), { recursive: true });
+    await fs.mkdir(path.join(miniPhiRoot, "prompt-exchanges"), { recursive: true });
 
     const executionPath = path.join(miniPhiRoot, "executions", "demo", "execution.json");
     const fallbackPath = path.join(miniPhiRoot, "indices", "fallback-cache.json");
+    const promptExchangePath = path.join(miniPhiRoot, "prompt-exchanges", "legacy.json");
     const originalExecution = {
       stopReason: "session-timeout",
       stopReasonCode: "analysis-error",
@@ -37,17 +39,40 @@ test("migrateStopReasonArtifacts normalizes legacy stop reason fields", async ()
         },
       ],
     };
+    const originalPromptExchange = {
+      id: "legacy",
+      request: {
+        messages: [{ role: "user", content: "hello" }],
+      },
+      response: {
+        rawResponseText: "{\"ok\":true}",
+      },
+    };
     await fs.writeFile(executionPath, `${JSON.stringify(originalExecution, null, 2)}\n`, "utf8");
     await fs.writeFile(fallbackPath, `${JSON.stringify(originalFallback, null, 2)}\n`, "utf8");
+    await fs.writeFile(
+      promptExchangePath,
+      `${JSON.stringify(originalPromptExchange, null, 2)}\n`,
+      "utf8",
+    );
 
     const dryRun = await migrateStopReasonArtifacts({ baseDir: miniPhiRoot, dryRun: true });
-    assert.equal(dryRun.filesChanged, 2);
+    assert.equal(dryRun.filesChanged, 3);
     assert.equal(dryRun.writeErrors, 0);
     const dryExecution = JSON.parse(await fs.readFile(executionPath, "utf8"));
     assert.equal(dryExecution.stopReasonCode, "analysis-error");
+    const dryPromptExchange = JSON.parse(await fs.readFile(promptExchangePath, "utf8"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(dryPromptExchange.request, "tool_definitions"),
+      false,
+    );
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(dryPromptExchange.response, "tool_calls"),
+      false,
+    );
 
     const applied = await migrateStopReasonArtifacts({ baseDir: miniPhiRoot, dryRun: false });
-    assert.equal(applied.filesChanged, 2);
+    assert.equal(applied.filesChanged, 3);
     assert.equal(applied.writeErrors, 0);
     assert.ok(applied.objectsUpdated >= 2);
 
@@ -69,6 +94,23 @@ test("migrateStopReasonArtifacts normalizes legacy stop reason fields", async ()
     assert.equal(migratedFallback.entries[0].reason, "analysis-error");
     assert.equal(migratedFallback.entries[0].reasonCode, "analysis-error");
     assert.equal(migratedFallback.entries[0].reasonDetail, "legacy fallback marker");
+
+    const migratedPromptExchange = JSON.parse(await fs.readFile(promptExchangePath, "utf8"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(migratedPromptExchange.request, "tool_definitions"),
+      true,
+    );
+    assert.equal(migratedPromptExchange.request.tool_definitions, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(migratedPromptExchange.response, "tool_calls"),
+      true,
+    );
+    assert.equal(migratedPromptExchange.response.tool_calls, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(migratedPromptExchange.response, "tool_definitions"),
+      true,
+    );
+    assert.equal(migratedPromptExchange.response.tool_definitions, null);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

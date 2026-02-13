@@ -155,6 +155,61 @@ class FakeAssessmentRetryRestClient extends FakeBenchmarkRestClient {
   }
 }
 
+class FakeDualTimeoutAssessmentOnlyRestClient extends FakeBenchmarkRestClient {
+  constructor() {
+    super();
+    this.assessmentModes = [];
+  }
+
+  async createChatCompletion(payload) {
+    const schemaName = payload?.response_format?.json_schema?.name ?? "";
+    if (schemaName === "prompt-plan") {
+      this.calls.push(payload);
+      throw new Error(
+        "Prompt decomposition exceeded 12s timeout.",
+      );
+    }
+
+    this.calls.push(payload);
+    const mode = parseAssessmentRequestMode(payload);
+    this.assessmentModes.push(mode);
+    if (mode !== "assessment-only") {
+      throw new Error(`Expected assessment-only request mode, received ${mode ?? "null"}.`);
+    }
+
+    return {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              schema_version: "benchmark-general-assessment@v1",
+              summary: "Recovered with assessment-only fallback after upstream timeout pressure.",
+              needs_more_context: false,
+              missing_snippets: [],
+              category_scores: {
+                function_calling_tool_use: { score: 62, rationale: "Assessment-only pass used minimal telemetry." },
+                general_assistant_reasoning: { score: 66, rationale: "Fallback still produced schema-valid reasoning." },
+                coding_software_engineering: { score: 70, rationale: "Coding readiness can still be approximated from compact inputs." },
+                computer_interaction_gui_web: { score: 58, rationale: "GUI/web signals remain thin in fallback mode." },
+              },
+              action_plan: [
+                {
+                  priority: "high",
+                  category: "computer_interaction_gui_web",
+                  recommendation: "Re-run benchmark with larger live LM budget for full context.",
+                },
+              ],
+              stop_reason: null,
+              notes: "assessment-only-fallback",
+            }),
+          },
+        },
+      ],
+      tool_definitions: [],
+    };
+  }
+}
+
 async function findMiniPhiRoot(startDir) {
   let current = path.resolve(startDir);
   const { root } = path.parse(current);
@@ -360,6 +415,67 @@ test("runGeneralPurposeBenchmark retries assessment in compact mode after timeou
     assert.equal(summary.liveLm.assessmentAttemptCount, 2);
     assert.equal(summary.liveLm.assessmentTimeoutMs, 12000);
     assert.equal(summary.lmAssessment.notes, "compact-retry-success");
+  } finally {
+    process.chdir(previousCwd);
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("runGeneralPurposeBenchmark runs assessment-only fallback when navigator and decomposer both timeout", async () => {
+  const workspace = await createTempWorkspace("miniphi-benchmark-live-assessment-only-");
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(workspace);
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspace, "src", "index.js"), "console.log('ok');\n", "utf8");
+    await fs.writeFile(path.join(workspace, "README.md"), "# workspace\n", "utf8");
+    const restClient = new FakeDualTimeoutAssessmentOnlyRestClient();
+
+    await runGeneralPurposeBenchmark({
+      options: {
+        task: "Live benchmark assessment-only fallback",
+        cmd: "node -v",
+        cwd: workspace,
+        timeout: "20000",
+        "silence-timeout": "5000",
+      },
+      verbose: false,
+      schemaRegistry: null,
+      restClient,
+      liveLmEnabled: true,
+      resourceMonitorForcedDisabled: true,
+      generateWorkspaceSnapshot: async () => ({
+        summary: "Test workspace",
+        classification: { label: "codebase", domain: "software" },
+        navigationSummary: "Navigator unavailable (timeout).",
+        helperScript: null,
+        navigationHints: {
+          raw: { stop_reason: "timeout" },
+          requestMode: "compact",
+          attemptHistory: [
+            { mode: "full", result: "retry-compact", stop_reason: "timeout", timeout_ms: 12000 },
+            { mode: "compact", result: "fallback-plan", stop_reason: "timeout", timeout_ms: 12000 },
+          ],
+          resolvedTimeoutMs: 12000,
+        },
+      }),
+      globalMemory: null,
+      schemaAdapterRegistry: null,
+      mirrorPromptTemplateToGlobal: async () => {},
+      emitFeatureDisableNotice: () => {},
+    });
+
+    const summary = await readLatestGeneralBenchmarkSummary(workspace);
+    assert.deepEqual(restClient.assessmentModes, ["assessment-only"]);
+    assert.equal(summary.liveLm.navigationStopReason, "timeout");
+    assert.equal(summary.liveLm.decompositionStopReason, "timeout");
+    assert.equal(summary.liveLm.decompositionRequestMode, "compact");
+    assert.equal(summary.liveLm.assessmentRequestMode, "assessment-only");
+    assert.equal(summary.liveLm.assessmentFallbackMode, "assessment-only");
+    assert.equal(summary.liveLm.assessmentAttemptCount, 1);
+    assert.equal(summary.liveLm.assessmentSchemaStatus, "ok");
+    assert.equal(summary.liveLm.assessmentStopReason, null);
+    assert.equal(summary.lmAssessment.notes, "assessment-only-fallback");
   } finally {
     process.chdir(previousCwd);
     await removeTempWorkspace(workspace);

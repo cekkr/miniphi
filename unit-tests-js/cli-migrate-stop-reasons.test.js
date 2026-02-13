@@ -15,8 +15,11 @@ test("CLI migrate-stop-reasons command supports dry-run and apply modes", async 
   try {
     const miniPhiRoot = path.join(workspace, ".miniphi");
     const executionDir = path.join(miniPhiRoot, "executions", "legacy-demo");
+    const promptExchangeDir = path.join(miniPhiRoot, "prompt-exchanges");
     await fs.mkdir(executionDir, { recursive: true });
+    await fs.mkdir(promptExchangeDir, { recursive: true });
     const executionPath = path.join(executionDir, "execution.json");
+    const promptExchangePath = path.join(promptExchangeDir, "legacy.json");
     const payload = {
       mode: "run",
       task: "legacy stop reason",
@@ -25,7 +28,17 @@ test("CLI migrate-stop-reasons command supports dry-run and apply modes", async 
       stopReasonDetail: "analysis-error",
       error: "session-timeout: session deadline exceeded.",
     };
+    const legacyPromptExchange = {
+      id: "legacy",
+      request: {
+        messages: [{ role: "user", content: "hello" }],
+      },
+      response: {
+        rawResponseText: "{\"ok\":true}",
+      },
+    };
     await fs.writeFile(executionPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    await fs.writeFile(promptExchangePath, `${JSON.stringify(legacyPromptExchange, null, 2)}\n`, "utf8");
 
     const dryRun = runCli(
       [
@@ -42,6 +55,11 @@ test("CLI migrate-stop-reasons command supports dry-run and apply modes", async 
     assert.equal(drySummary.totals.filesChanged >= 1, true);
     let persisted = JSON.parse(await fs.readFile(executionPath, "utf8"));
     assert.equal(persisted.stopReasonCode, "analysis-error");
+    let persistedPromptExchange = JSON.parse(await fs.readFile(promptExchangePath, "utf8"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(persistedPromptExchange.request, "tool_definitions"),
+      false,
+    );
 
     const apply = runCli(
       [
@@ -59,6 +77,22 @@ test("CLI migrate-stop-reasons command supports dry-run and apply modes", async 
     assert.equal(persisted.stopReason, "session-timeout");
     assert.equal(persisted.stopReasonCode, "session-timeout");
     assert.equal(persisted.stopReasonDetail, "session-timeout: session deadline exceeded.");
+    persistedPromptExchange = JSON.parse(await fs.readFile(promptExchangePath, "utf8"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(persistedPromptExchange.request, "tool_definitions"),
+      true,
+    );
+    assert.equal(persistedPromptExchange.request.tool_definitions, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(persistedPromptExchange.response, "tool_calls"),
+      true,
+    );
+    assert.equal(persistedPromptExchange.response.tool_calls, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(persistedPromptExchange.response, "tool_definitions"),
+      true,
+    );
+    assert.equal(persistedPromptExchange.response.tool_definitions, null);
   } finally {
     await removeTempWorkspace(workspace);
   }

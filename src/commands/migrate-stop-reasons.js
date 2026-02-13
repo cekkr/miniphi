@@ -50,7 +50,7 @@ function buildParseErrorReportEntries(targets) {
 function printHumanSummary(summary, verbose, parseErrorReport) {
   const mode = summary.dryRun ? "dry run" : "complete";
   console.log(
-    `[MiniPhi] Stop-reason migration ${mode}: ${summary.targets.length} target${
+    `[MiniPhi] Stop-reason/prompt-exchange migration ${mode}: ${summary.targets.length} target${
       summary.targets.length === 1 ? "" : "s"
     }, ${summary.totals.filesChanged}/${summary.totals.filesScanned} JSON files updated.`,
   );

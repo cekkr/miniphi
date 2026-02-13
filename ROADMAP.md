@@ -189,7 +189,7 @@ Slices (do in order):
      - `PromptDecomposer` now records full -> compact retry attempts (timeout/context-overflow), and benchmark summaries persist decomposer attempt telemetry (`liveLm.decompositionRequestMode`, `liveLm.decompositionAttemptCount`, `liveLm.decompositionStopReason`).
      - Benchmark summaries now persist `liveLm.assessmentRequestMode` + `liveLm.assessmentAttemptCount`; prompt exchanges persist per-attempt metadata (`assessment_attempts`, `request_mode`).
      - Benchmark-live mode now computes adaptive per-stage timeout budgets (navigator/decomposer/assessment) from remaining live-session budget and stores planned+resolved timeout metadata under `liveLm.timeoutBudget` plus per-stage resolved timeout fields (`liveLm.navigationTimeoutMs`, `liveLm.decompositionTimeoutMs`, `liveLm.assessmentTimeoutMs`).
-     - Assessment skip is now limited to the double-timeout case (navigator + decomposer), so assessment still runs when only one upstream stage times out.
+     - When navigator + decomposer both timeout, benchmark-live now falls back to a single ultra-compact `assessment-only` request instead of skipping assessment.
      - Regression coverage:
        `node --test unit-tests-js/api-navigator-retry.test.js unit-tests-js/prompt-decomposer-retry.test.js unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js`
        and full `npm test` passed (`96/96`).
@@ -197,10 +197,28 @@ Slices (do in order):
        `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 12 --live-lm-plan-timeout 12 --verbose`
        produced `.miniphi/history/benchmarks/2026-02-13T03-16-12-601Z-general-benchmark.json` with
        timeout-budget telemetry (`liveLm.timeoutBudget`) and capped stage timeouts (`decomposer.requestTimeoutMs: 11978`, `assessment.requestTimeoutMs: 11900`) after upstream timeout pressure.
-   - Live proof run:
-     `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
-     produced `.miniphi/history/benchmarks/2026-02-13T03-21-14-786Z-general-benchmark.json` with
-     expanded stage budgets (`liveLm.timeoutBudget.*.requestTimeoutMs: 30000`) and matching resolved timeout fields.
+     - Live proof run:
+       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
+       produced `.miniphi/history/benchmarks/2026-02-13T03-21-14-786Z-general-benchmark.json` with
+       expanded stage budgets (`liveLm.timeoutBudget.*.requestTimeoutMs: 30000`) and matching resolved timeout fields.
+   - Historical prompt-exchange backfill + orchestration extraction (2026-02-13):
+     - `migrate-stop-reasons` now backfills legacy prompt exchanges so deterministic tool metadata
+       keys are present (`request.tool_definitions`, `response.tool_calls`,
+       `response.tool_definitions`) alongside canonical stop reasons.
+     - Core `run`/`analyze-file`/`workspace` command dispatch in `src/index.js` now routes through
+       `src/commands/primary-flow.js` (shared context builder + primary command executor), reducing
+       remaining P0 orchestration surface in the CLI entrypoint.
+     - `benchmark general --live-lm` no longer skips assessment after dual navigator+decomposer
+       timeouts; it now sends one ultra-compact `assessment-only` request.
+     - Regression coverage:
+       `node --test unit-tests-js/stop-reason-migrator.test.js unit-tests-js/cli-migrate-stop-reasons.test.js unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/cli-smoke.test.js`
+       and full `npm test` passed.
+     - Live proof runs:
+       - `node src/index.js migrate-stop-reasons --history-root . --json` now reports prompt-exchange
+         backfill updates in changed artifact counts.
+       - `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 12 --live-lm-plan-timeout 12 --verbose`
+         now persists `liveLm.assessmentFallbackMode: "assessment-only"` whenever both upstream
+         stages timeout and still records an assessment payload.
    - Prompt logging determinism hardening (2026-02-13):
      - Prompt exchange normalization now preserves canonical tool metadata keys even when a prompt
        has no tools (`response.tool_calls`, `response.tool_definitions`, `request.tool_definitions`

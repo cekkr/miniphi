@@ -67,7 +67,10 @@ Status:
   `src/libs/benchmark-general.js`.
 - LM Studio runtime bootstrap (handler init, compatibility probe, prompt scoring wiring) now lives in
   `src/libs/lmstudio-runtime.js`.
-- Remaining extraction: the core run/analyze/workspace orchestration still lives in `src/index.js`.
+- Primary run/analyze/workspace/nitpick command dispatch now routes through
+  `src/commands/primary-flow.js` (shared context builder + executor), removing another orchestration
+  block from `src/index.js`.
+- Remaining extraction: command-finalization/persistence flow still lives in `src/index.js`.
 
 ### P0 - Unified JSON schema enforcement + fallback
 
@@ -190,6 +193,9 @@ Status:
   `response.tool_calls`, `response.tool_definitions`, and `request.tool_definitions` persist as
   `null`/`[]` instead of being dropped, so eval/report tooling can score every exchange with a
   deterministic shape.
+- Historical prompt exchanges are now backfilled through `migrate-stop-reasons` by re-normalizing
+  prompt `request`/`response` payloads during artifact migration, so legacy `.miniphi` data can
+  match deterministic tool-key expectations without re-running old sessions.
 - Step journals now normalize object responses before persistence, ensuring deterministic JSON text
   snapshots and canonical `tool_calls`/`tool_definitions` fields even when callers pass camelCase
   payloads.
@@ -269,6 +275,9 @@ Status:
 - Prompt decomposition records persisted under `.miniphi/prompt-exchanges/decompositions/` and
   stepwise journals now include focus metadata (`focusBranch`, `focusSegmentBlock`,
   `nextSubpromptBranch`) for resumable nested follow-ups.
+- Live `benchmark general --live-lm` no longer skips assessment when navigator + decomposer both
+  timeout; it now issues a single ultra-compact `assessment-only` request and records
+  `liveLm.assessmentFallbackMode` telemetry in benchmark summaries.
 - Regression coverage added:
   `node --test unit-tests-js/plan-focus-segments.test.js unit-tests-js/prompt-decomposer-focus.test.js`
   plus full `npm test` (`47/47` passing).

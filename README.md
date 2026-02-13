@@ -78,7 +78,7 @@ miniphi lmstudio-health --timeout 10
 
 For CI-friendly checks, add `--json` to emit a machine-readable summary.
 
-Normalize historical stop-reason fields in existing `.miniphi` artifacts:
+Normalize historical stop-reason fields and prompt-exchange tool metadata keys in existing `.miniphi` artifacts:
 
 ```bash
 miniphi migrate-stop-reasons
@@ -114,7 +114,7 @@ Run a live general-purpose benchmark with schema-validated LM Studio assessment:
 miniphi benchmark general --task "Assess general agent readiness" --cmd "node -v" --live-lm --live-lm-timeout 12
 ```
 
-Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context, and benchmark summaries include adaptive per-stage timeout budgets/resolved timeout telemetry.
+Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context, and benchmark summaries include adaptive per-stage timeout budgets/resolved timeout telemetry. If both navigator and decomposer time out, MiniPhi still sends one ultra-compact `assessment-only` LM request instead of skipping assessment entirely.
 
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
@@ -182,7 +182,7 @@ These are the commands most people start with:
 - `miniphi cache-prune`  
   Trim older `.miniphi/` artifacts using retention defaults or `--retain-*` overrides.
 - `miniphi migrate-stop-reasons`  
-  One-shot normalization pass for historical stop reason fields in existing `.miniphi` JSON artifacts (`--dry-run`, `--strict`, `--parse-error-report`, and `--json` supported).
+  One-shot normalization pass for historical stop reason fields plus prompt-exchange tool metadata key backfill in existing `.miniphi` JSON artifacts (`--dry-run`, `--strict`, `--parse-error-report`, and `--json` supported).
 - `npm run ci:migrate-stop-reasons`  
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
