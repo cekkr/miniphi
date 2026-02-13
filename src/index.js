@@ -2940,6 +2940,17 @@ Benchmark helper:
     --sample <path>             Sample directory to inspect (default: samples/recompose/hello-flow)
     --benchmark-root <path>     Suggested benchmark root override
     --output <path>             Persist the scaffold to a file instead of stdout
+  benchmark general             Run a general-purpose benchmark over the current workspace
+    --task <text>               Objective used for workspace planning/assessment
+    --cmd "<command>"           Optional command to execute and include in benchmark context
+    --cwd <path>                Workspace directory (default: current working directory)
+    --timeout <ms>              Command timeout in milliseconds (default: 60000)
+    --silence-timeout <ms>      Max command silence before termination (default: 15000)
+    --live-lm                   Enable live LM Studio planning + schema-validated assessment calls
+    --live-lm-timeout <s>       REST timeout for live LM Studio benchmark calls (default: 12)
+    --live-lm-timeout-ms <ms>   REST timeout override in milliseconds
+    --live-lm-plan-timeout <s>  Prompt decomposer timeout when live LM is enabled (default: 12)
+    --live-lm-plan-timeout-ms <ms>  Prompt decomposer timeout override in milliseconds
 `);
 }
 

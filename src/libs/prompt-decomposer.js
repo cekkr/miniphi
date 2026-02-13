@@ -26,6 +26,7 @@ import {
 
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
+const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 120000;
 const MIN_DECOMPOSER_TIMEOUT_MS = 1000;
@@ -112,6 +113,11 @@ export default class PromptDecomposer {
       new LMStudioRestClient(options?.restClientOptions ?? undefined);
     this.maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.maxActions = options?.maxActions ?? DEFAULT_MAX_ACTIONS;
+    const parsedAttempts = Number(options?.maxAttempts);
+    this.maxAttempts =
+      Number.isFinite(parsedAttempts) && parsedAttempts > 0
+        ? Math.min(DEFAULT_MAX_ATTEMPTS, Math.max(1, Math.floor(parsedAttempts)))
+        : DEFAULT_MAX_ATTEMPTS;
     this.temperature = options?.temperature ?? DEFAULT_TEMPERATURE;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
@@ -241,7 +247,7 @@ export default class PromptDecomposer {
       };
     };
 
-    for (let i = 0; i < attempts.length && !normalizedPlan; i += 1) {
+    for (let i = 0; i < attempts.length && i < this.maxAttempts && !normalizedPlan; i += 1) {
       requestBody = attempts[i];
       const modeLabel = i === 0 ? "full" : i === 1 ? "compact" : "minimal";
       try {

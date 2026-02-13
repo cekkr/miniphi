@@ -108,6 +108,14 @@ Run a writer/critic nitpicking loop (optional blind mode uses web sources):
 miniphi nitpick --task "Write a 2000-word brief on X" --rounds 2 --auto-expand-rounds 2
 ```
 
+Run a live general-purpose benchmark with schema-validated LM Studio assessment:
+
+```bash
+miniphi benchmark general --task "Assess general agent readiness" --cmd "node -v" --live-lm --live-lm-timeout 12
+```
+
+Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs.
+
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
 ```bash
@@ -177,7 +185,7 @@ These are the commands most people start with:
 - `npm run ci:migrate-stop-reasons`  
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
-  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override.
+  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation.
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 

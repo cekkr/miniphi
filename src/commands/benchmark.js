@@ -7,6 +7,8 @@ import { resolveDurationMs } from "../libs/cli-utils.js";
 import { normalizePlanDirections } from "../libs/core-utils.js";
 import { runGeneralPurposeBenchmark } from "../libs/benchmark-general.js";
 import { createRecomposeHarness } from "../libs/recompose-harness.js";
+import { LMStudioRestClient } from "../libs/lmstudio-api.js";
+import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 
 export async function handleBenchmarkCommand(context) {
   const {
@@ -49,11 +51,52 @@ export async function handleBenchmarkCommand(context) {
   }
 
   if (mode === "general" || mode === "general-purpose" || mode === "generalpurpose") {
+    const liveLmRequested =
+      options["live-lm"] === true ||
+      options.liveLm === true ||
+      process.env.MINIPHI_BENCHMARK_LIVE_LM === "1";
+    const liveLmTimeoutMs =
+      resolveDurationMs({
+        secondsValue: options["live-lm-timeout"],
+        secondsLabel: "--live-lm-timeout",
+        millisValue: options["live-lm-timeout-ms"],
+        millisLabel: "--live-lm-timeout-ms",
+      }) ?? 12000;
+    const liveLmPlanTimeoutMs =
+      resolveDurationMs({
+        secondsValue: options["live-lm-plan-timeout"],
+        secondsLabel: "--live-lm-plan-timeout",
+        millisValue: options["live-lm-plan-timeout-ms"],
+        millisLabel: "--live-lm-plan-timeout-ms",
+      }) ?? 12000;
+    let effectiveRestClient = restClient;
+    if (liveLmRequested && !effectiveRestClient) {
+      try {
+        const clientOptions = buildRestClientOptions(
+          configData,
+          { modelKey, contextLength },
+          { timeoutMs: liveLmTimeoutMs },
+        );
+        effectiveRestClient = new LMStudioRestClient(clientOptions);
+      } catch (error) {
+        effectiveRestClient = null;
+        if (verbose) {
+          console.warn(
+            `[MiniPhi][Benchmark] Live LM initialization failed: ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+        }
+      }
+    }
     await runGeneralPurposeBenchmark({
       options,
       verbose,
       schemaRegistry,
-      restClient,
+      restClient: effectiveRestClient,
+      liveLmEnabled: liveLmRequested,
+      liveLmTimeoutMs,
+      liveLmPlanTimeoutMs,
       configData,
       resourceConfig,
       resourceMonitorForcedDisabled,
