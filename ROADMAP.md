@@ -179,17 +179,37 @@ Slices (do in order):
      - Live proof runs:
        - `node src/index.js run --cmd "node -v" --task "Validate shared schema outcome metadata on run flow" --command-policy allow --assume-yes --no-stream --session-timeout 300 --prompt-journal p2-shared-schema-run-20260210-1945 --prompt-journal-status paused`
          completed with JSON-only output and canonical schema metadata persisted.
-       - `node ..\\..\\src\\index.js workspace --task "Validate schema validation status propagation after shared contract update." --prompt-journal p2-shared-schema-workspace-20260211-0600 --prompt-journal-status paused --no-stream --session-timeout 900`
-         completed with planner+navigator+analysis JSON where prompt exchanges include
-         `schemaValidation.status: "ok"` for `prompt-plan`, `navigation-plan`, and
-         `log-analysis`.
+     - `node ..\\..\\src\\index.js workspace --task "Validate schema validation status propagation after shared contract update." --prompt-journal p2-shared-schema-workspace-20260211-0600 --prompt-journal-status paused --no-stream --session-timeout 900`
+       completed with planner+navigator+analysis JSON where prompt exchanges include
+       `schemaValidation.status: "ok"` for `prompt-plan`, `navigation-plan`, and
+       `log-analysis`.
+   - Live benchmark-general hardening (2026-02-13):
+     - `benchmark general --live-lm` now keeps strict JSON assessment flow while retrying LM assessment once with a compact payload after timeout/context-overflow.
+     - Benchmark summaries now persist `liveLm.assessmentRequestMode` + `liveLm.assessmentAttemptCount`; prompt exchanges persist per-attempt metadata (`assessment_attempts`, `request_mode`).
+     - Assessment skip is now limited to the double-timeout case (navigator + decomposer), so assessment still runs when only one upstream stage times out.
+     - Regression coverage:
+       `node --test unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js`
+       and full `npm test` passed (`91/91`).
+     - Live proof run:
+       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
+       produced `.miniphi/history/benchmarks/2026-02-13T00-39-07-949Z-general-benchmark.json` with
+       `assessmentRequestMode: "compact"` and `assessmentAttemptCount: 2` (both attempts timed out, deterministic fallback preserved).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Next steps (prioritized, add proof per item):
-    - Proof run: implicit `miniphi "<task>" --cmd "..."/--file ...` routes to `run`/`analyze-file` with schema compliance + stop reason recorded.
-    - Proof run: prompt-chain `compose` + `interpret` steps pass strict JSON parsing (no preamble salvage) and emit deterministic fallback with `stop_reason` when invalid.
+    - Live benchmark navigator resilience:
+      Exit criteria: `ApiNavigator` in benchmark-live mode retries once with compact workspace context on timeout/context-overflow; benchmark summary records navigator attempt count/mode and still emits canonical stop reasons when both attempts fail.
+      Proof run: `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`.
+    - Live benchmark decomposer resilience:
+      Exit criteria: benchmark-mode decomposer attempts `full -> compact` before fallback; fallback still deterministic (`prompt-plan-fallback`) with attempt telemetry in prompt exchanges.
+      Proof run: same command as above plus `node --test unit-tests-js/prompt-decomposer-focus.test.js unit-tests-js/benchmark-general-live-lm.test.js`.
+    - Adaptive live benchmark budgets:
+      Exit criteria: benchmark-live mode computes per-stage LM timeout budgets (navigator/decomposer/assessment) from remaining session budget and records the resolved timeout per stage in summary metadata.
+      Proof run: run benchmark live with `--live-lm-timeout 12`, `--live-lm-timeout 30`, compare summaries under `.miniphi/history/benchmarks/` for per-stage timeout metadata + stop reasons.
   - Deferred (lower priority while the above are in flight):
     - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
+    - Prompt-chain `compose` + `interpret` strict-parse refinements (kept deferred while benchmark-live reliability is prioritized).
+    - Implicit `miniphi "<task>" --cmd "..."/--file ...` routing proof refresh (already passing in tests; defer additional live proof reruns until benchmark-live resilience closes).
 
 2) Reliable edit pipeline
    - Scope: pinned file references with hashes, diff guards, rollback on mismatch.
@@ -216,18 +236,21 @@ Exit criteria:
 - Offline evaluation harness (ai-agent-evals style) runs locally and records JSON compliance + tool-call accuracy metrics with a stored report.
 - Benchmark compendium clone under `dev_samples/test_tasks/` stays in sync with `dev_samples/task-tests.md` (4 categories, 50 benchmark entries, valid links).
 - Category-balanced `benchmark general` suite executes in unit tests without LM Studio and emits per-task summaries under `.miniphi/history/benchmarks/`.
+- Live `benchmark general --live-lm` reliability reaches stable behavior in constrained environments:
+  navigator/decomposer/assessment retries are deterministic, attempt telemetry is persisted, and fallback JSON carries canonical timeout/invalid-response stop reasons without hanging loops.
 
 Focus areas:
 - Prompt decomposition resume improvements and branch selection hygiene.
 - Evaluation harness for prompt/response quality (JSON validity, tool-call accuracy, task adherence, token metrics).
-- Nitpick evaluation harness (writer/critic loops, blind browsing sources, and context-aware model selection).
-- Benchmark-compendium harness (deterministic markdown-to-JSON catalog + local `benchmark general` regression suite).
+- Live benchmark runtime hardening (navigator/decomposer/assessment retry ladders, compact prompts, and adaptive timeout budgets).
+- Benchmark-compendium maintenance (keep markdown catalog sync + suite regression green while runtime hardening lands).
 
 Nitpick exit criteria:
 - `miniphi nitpick --task "<long-form task>" --rounds 2` completes with JSON-only plan/draft/critique/revision steps and stores a session under `.miniphi/nitpick/`.
 - `miniphi nitpick --blind --task "<long-form task>"` captures research + web snapshots under `.miniphi/research/` + `.miniphi/web/` and produces a final draft using cited sources.
 
 Deferred (lower priority while nitpick + blind browsing harden):
+- Nitpick evaluation harness (writer/critic loops, blind browsing sources, and context-aware model selection).
 - Helper script lifecycle (versioning, replay, and output summarization).
 - Full external benchmark repo mirroring under `dev_samples/test_tasks/` (WebArena/OSWorld-scale assets) until metadata + local suite coverage remains stable.
 
