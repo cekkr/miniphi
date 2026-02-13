@@ -188,20 +188,21 @@ Slices (do in order):
      - `ApiNavigator` now records full -> compact retry attempts (timeout/context-overflow), and benchmark summaries persist navigator attempt telemetry (`liveLm.navigationRequestMode`, `liveLm.navigationAttemptCount`, `liveLm.navigationStopReason`).
      - `PromptDecomposer` now records full -> compact retry attempts (timeout/context-overflow), and benchmark summaries persist decomposer attempt telemetry (`liveLm.decompositionRequestMode`, `liveLm.decompositionAttemptCount`, `liveLm.decompositionStopReason`).
      - Benchmark summaries now persist `liveLm.assessmentRequestMode` + `liveLm.assessmentAttemptCount`; prompt exchanges persist per-attempt metadata (`assessment_attempts`, `request_mode`).
+     - Benchmark-live mode now computes adaptive per-stage timeout budgets (navigator/decomposer/assessment) from remaining live-session budget and stores planned+resolved timeout metadata under `liveLm.timeoutBudget` plus per-stage resolved timeout fields (`liveLm.navigationTimeoutMs`, `liveLm.decompositionTimeoutMs`, `liveLm.assessmentTimeoutMs`).
      - Assessment skip is now limited to the double-timeout case (navigator + decomposer), so assessment still runs when only one upstream stage times out.
      - Regression coverage:
        `node --test unit-tests-js/api-navigator-retry.test.js unit-tests-js/prompt-decomposer-retry.test.js unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js`
-       and full `npm test` passed (`95/95`).
+       and full `npm test` passed (`96/96`).
      - Live proof run:
-       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 20 --live-lm-plan-timeout 20 --verbose`
-       produced `.miniphi/history/benchmarks/2026-02-13T02-13-52-274Z-general-benchmark.json` with
-       `navigationRequestMode: "compact"`, `navigationAttemptCount: 2`, `decompositionRequestMode: "compact"`, and `decompositionAttemptCount: 2` (deterministic timeout fallbacks preserved).
+       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 12 --live-lm-plan-timeout 12 --verbose`
+       produced `.miniphi/history/benchmarks/2026-02-13T03-16-12-601Z-general-benchmark.json` with
+       timeout-budget telemetry (`liveLm.timeoutBudget`) and capped stage timeouts (`decomposer.requestTimeoutMs: 11978`, `assessment.requestTimeoutMs: 11900`) after upstream timeout pressure.
+     - Live proof run:
+       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
+       produced `.miniphi/history/benchmarks/2026-02-13T03-21-14-786Z-general-benchmark.json` with
+       expanded stage budgets (`liveLm.timeoutBudget.*.requestTimeoutMs: 30000`) and matching resolved timeout fields.
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
-  - Next steps (prioritized, add proof per item):
-    - Adaptive live benchmark budgets:
-      Exit criteria: benchmark-live mode computes per-stage LM timeout budgets (navigator/decomposer/assessment) from remaining session budget and records the resolved timeout per stage in summary metadata.
-      Proof run: run benchmark live with `--live-lm-timeout 12`, `--live-lm-timeout 30`, compare summaries under `.miniphi/history/benchmarks/` for per-stage timeout metadata + stop reasons.
   - Deferred (lower priority while the above are in flight):
     - Re-run the recompose workspace overview with a higher `--workspace-overview-timeout` and inspect `.miniphi/recompose/.../prompts.log` to identify prompt/response failures under strict parsing.
     - Prompt-chain `compose` + `interpret` strict-parse refinements (kept deferred while benchmark-live reliability is prioritized).

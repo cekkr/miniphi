@@ -198,6 +198,7 @@ export default class PromptDecomposer {
     let errorInfo = null;
     let requestMode = "full";
     const attemptHistory = [];
+    let resolvedTimeoutMs = null;
 
     const attempts = [
       this._buildRequestBody(payload, { compact: false }),
@@ -223,6 +224,7 @@ export default class PromptDecomposer {
       const messages = buildMessages(body);
       requestMessages = messages;
       const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
+      resolvedTimeoutMs = Number.isFinite(requestTimeoutMs) ? requestTimeoutMs : resolvedTimeoutMs;
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
@@ -246,6 +248,7 @@ export default class PromptDecomposer {
         messages,
         responseFormat: responseFormatForRun,
         schemaValidation: validationResult.validation,
+        requestTimeoutMs,
       };
     };
 
@@ -268,6 +271,7 @@ export default class PromptDecomposer {
           result: normalizedPlan?.schemaVersion === "prompt-plan@fallback" ? "fallback-plan" : "ok",
           error: null,
           stop_reason: normalizedPlan?.stopReason ?? null,
+          timeout_ms: response?.requestTimeoutMs ?? null,
         });
         errorMessage = null;
       } catch (error) {
@@ -285,6 +289,7 @@ export default class PromptDecomposer {
             result: shouldRetry && hasRetry ? retryResult : "error",
             error: errorMessage,
             stop_reason: errorInfo.reason ?? null,
+            timeout_ms: resolvedTimeoutMs,
           });
           if (shouldRetry) {
             continue;
@@ -320,6 +325,10 @@ export default class PromptDecomposer {
         schemaValidationSummary ?? responsePayload.schemaValidation ?? null;
       responsePayload.request_mode = requestMode ?? null;
       responsePayload.decomposition_attempts = attemptHistory;
+      responsePayload.request_timeout_ms =
+        (Array.isArray(attemptHistory)
+          ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+          : null) ?? null;
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
       const stopInfo = buildStopReasonInfo({
@@ -338,6 +347,10 @@ export default class PromptDecomposer {
           promptJournalId: payload.promptJournalId ?? null,
           request_mode: requestMode ?? null,
           decomposition_attempts: attemptHistory,
+          request_timeout_ms:
+            (Array.isArray(attemptHistory)
+              ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+              : null) ?? null,
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -346,6 +359,10 @@ export default class PromptDecomposer {
           endpoint: "/chat/completions",
           payload: requestBody,
           attempts: attemptHistory,
+          timeout_ms:
+            (Array.isArray(attemptHistory)
+              ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+              : null) ?? null,
           messages: requestMessages ?? null,
           response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },
@@ -363,6 +380,10 @@ export default class PromptDecomposer {
     normalizedPlan.promptExchange = promptRecord ?? null;
     normalizedPlan.requestMode = requestMode ?? null;
     normalizedPlan.attemptHistory = attemptHistory;
+    normalizedPlan.resolvedTimeoutMs =
+      resolvedTimeoutMs ??
+      attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms ??
+      null;
 
     if (payload.storage) {
       try {

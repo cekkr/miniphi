@@ -32,6 +32,7 @@ export async function handleBenchmarkCommand(context) {
     schemaAdapterRegistry,
     mirrorPromptTemplateToGlobal,
     emitFeatureDisableNotice,
+    sessionDeadline = null,
   } = context;
 
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
@@ -97,6 +98,7 @@ export async function handleBenchmarkCommand(context) {
       liveLmEnabled: liveLmRequested,
       liveLmTimeoutMs,
       liveLmPlanTimeoutMs,
+      sessionDeadline,
       configData,
       resourceConfig,
       resourceMonitorForcedDisabled,

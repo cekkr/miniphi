@@ -1479,6 +1479,7 @@ async function main() {
       schemaAdapterRegistry,
       mirrorPromptTemplateToGlobal,
       emitFeatureDisableNotice,
+      sessionDeadline,
     });
     return;
   }

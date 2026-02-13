@@ -114,7 +114,7 @@ Run a live general-purpose benchmark with schema-validated LM Studio assessment:
 miniphi benchmark general --task "Assess general agent readiness" --cmd "node -v" --live-lm --live-lm-timeout 12
 ```
 
-Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context.
+Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context, and benchmark summaries include adaptive per-stage timeout budgets/resolved timeout telemetry.
 
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
@@ -185,7 +185,7 @@ These are the commands most people start with:
 - `npm run ci:migrate-stop-reasons`  
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
-  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation and compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow.
+  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 

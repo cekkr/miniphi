@@ -17,6 +17,7 @@ import {
 } from "./json-schema-utils.js";
 import { buildStopReasonInfo, classifyLmStudioError } from "./lmstudio-error-utils.js";
 import { parseNumericSetting } from "./cli-utils.js";
+import { resolveSessionCappedTimeoutMs } from "./runtime-defaults.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,6 +31,12 @@ const GENERAL_BENCHMARK_BASELINE_PATH = path.join(
 const BENCHMARK_ASSESSMENT_SCHEMA_ID = "benchmark-general-assessment";
 const BENCHMARK_ASSESSMENT_SCHEMA_VERSION = "benchmark-general-assessment@v1";
 const COMMAND_OUTPUT_PREVIEW_CHARS = 1400;
+const LIVE_LM_STAGE_MIN_TIMEOUT_MS = 1000;
+const LIVE_LM_STAGE_ATTEMPTS = {
+  navigator: 2,
+  decomposer: 2,
+  assessment: 2,
+};
 const BENCHMARK_ASSESSMENT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -276,6 +283,123 @@ function classifyAssessmentStopReason(validationStatus) {
   return "analysis-error";
 }
 
+function normalizePositiveMs(value, fallback = null) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.floor(numeric);
+  }
+  return fallback;
+}
+
+function toIsoOrNull(timestampMs) {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return null;
+  }
+  return new Date(timestampMs).toISOString();
+}
+
+function buildLiveLmTimeoutPlanner({
+  liveLmTimeoutMs,
+  liveLmPlanTimeoutMs,
+  sessionDeadline = null,
+}) {
+  const now = Date.now();
+  const stages = [
+    {
+      key: "navigator",
+      baseTimeoutMs: normalizePositiveMs(liveLmTimeoutMs, 12000),
+      maxAttempts: LIVE_LM_STAGE_ATTEMPTS.navigator,
+    },
+    {
+      key: "decomposer",
+      baseTimeoutMs: normalizePositiveMs(liveLmPlanTimeoutMs, 12000),
+      maxAttempts: LIVE_LM_STAGE_ATTEMPTS.decomposer,
+    },
+    {
+      key: "assessment",
+      baseTimeoutMs: normalizePositiveMs(liveLmTimeoutMs, 12000),
+      maxAttempts: LIVE_LM_STAGE_ATTEMPTS.assessment,
+    },
+  ];
+  const configuredSessionDeadlineMs = normalizePositiveMs(sessionDeadline, null);
+  const syntheticBudgetMs = stages.reduce((total, stage) => {
+    return total + stage.baseTimeoutMs * stage.maxAttempts;
+  }, 0);
+  const syntheticDeadlineMs = now + syntheticBudgetMs;
+  const effectiveDeadlineMs = Number.isFinite(configuredSessionDeadlineMs)
+    ? Math.min(configuredSessionDeadlineMs, syntheticDeadlineMs)
+    : syntheticDeadlineMs;
+
+  const resolveStageTimeout = (stageKey) => {
+    const stageIndex = stages.findIndex((stage) => stage.key === stageKey);
+    if (stageIndex < 0) {
+      return null;
+    }
+    const stage = stages[stageIndex];
+    const remainingStages = stages.slice(stageIndex);
+    const remainingCostMs = remainingStages.reduce((total, entry) => {
+      return total + entry.baseTimeoutMs * entry.maxAttempts;
+    }, 0);
+    const stageCostMs = stage.baseTimeoutMs * stage.maxAttempts;
+    const stageShare = remainingCostMs > 0 ? stageCostMs / remainingCostMs : 1;
+    const remainingBudgetMs = Math.max(0, Math.floor(effectiveDeadlineMs - Date.now()));
+    let stageBudgetMs = stageCostMs;
+    let requestTimeoutMs = stage.baseTimeoutMs;
+    let sessionCapped = false;
+    let sessionExpired = false;
+    if (remainingBudgetMs <= 0) {
+      sessionExpired = true;
+      sessionCapped = true;
+      stageBudgetMs = 0;
+      requestTimeoutMs = LIVE_LM_STAGE_MIN_TIMEOUT_MS;
+    } else {
+      const targetStageBudgetMs = Math.floor(remainingBudgetMs * stageShare);
+      stageBudgetMs = Math.min(
+        stageCostMs,
+        Math.max(LIVE_LM_STAGE_MIN_TIMEOUT_MS, targetStageBudgetMs),
+      );
+      const perAttemptBudgetMs = Math.floor(stageBudgetMs / Math.max(1, stage.maxAttempts));
+      requestTimeoutMs = Math.min(
+        stage.baseTimeoutMs,
+        Math.max(LIVE_LM_STAGE_MIN_TIMEOUT_MS, perAttemptBudgetMs),
+      );
+      sessionCapped = requestTimeoutMs < stage.baseTimeoutMs || stageBudgetMs < stageCostMs;
+    }
+    return {
+      stage: stage.key,
+      baseTimeoutMs: stage.baseTimeoutMs,
+      maxAttempts: stage.maxAttempts,
+      stageCostMs,
+      remainingStageCostMs: remainingCostMs,
+      stageShare: Number(stageShare.toFixed(4)),
+      remainingBudgetMsAtStart: remainingBudgetMs,
+      stageBudgetMs,
+      requestTimeoutMs,
+      sessionCapped,
+      sessionExpired,
+    };
+  };
+
+  return {
+    resolveStageTimeout,
+    metadata: {
+      startedAtMs: now,
+      configuredSessionDeadlineMs,
+      syntheticBudgetMs,
+      syntheticDeadlineMs,
+      effectiveDeadlineMs,
+    },
+  };
+}
+
+function firstAttemptTimeoutMs(attemptHistory) {
+  if (!Array.isArray(attemptHistory)) {
+    return null;
+  }
+  const entry = attemptHistory.find((item) => Number.isFinite(item?.timeout_ms));
+  return entry ? Number(entry.timeout_ms) : null;
+}
+
 async function readCommandOutputPreview(commandDetails) {
   if (!commandDetails || typeof commandDetails !== "object") {
     return { stdout: "", stderr: "" };
@@ -370,6 +494,7 @@ async function buildBenchmarkAssessmentRequestBody({
 async function runLmGeneralBenchmarkAssessment({
   restClient,
   timeoutMs = undefined,
+  sessionDeadline = null,
   schemaRegistry,
   promptRecorder,
   task,
@@ -397,10 +522,26 @@ async function runLmGeneralBenchmarkAssessment({
   let errorMessage = null;
   let assessment = null;
   const attemptHistory = [];
+  let resolvedTimeoutMs = null;
 
   for (let index = 0; index < attemptModes.length; index += 1) {
     const mode = attemptModes[index];
     const compactMode = mode === "compact";
+    let attemptTimeoutMs = normalizePositiveMs(timeoutMs, null);
+    if (Number.isFinite(sessionDeadline) && sessionDeadline > 0) {
+      try {
+        attemptTimeoutMs = resolveSessionCappedTimeoutMs({
+          baseTimeoutMs: attemptTimeoutMs,
+          sessionDeadline,
+          budgetRatio: 1,
+          capMs: attemptTimeoutMs ?? undefined,
+          minTimeoutMs: LIVE_LM_STAGE_MIN_TIMEOUT_MS,
+        });
+      } catch (error) {
+        attemptTimeoutMs = LIVE_LM_STAGE_MIN_TIMEOUT_MS;
+      }
+    }
+    resolvedTimeoutMs = Number.isFinite(attemptTimeoutMs) ? attemptTimeoutMs : resolvedTimeoutMs;
     requestBody = await buildBenchmarkAssessmentRequestBody({
       task,
       cwd,
@@ -425,7 +566,7 @@ async function runLmGeneralBenchmarkAssessment({
         temperature: 0.1,
         max_tokens: -1,
         response_format: BENCHMARK_ASSESSMENT_RESPONSE_FORMAT,
-        timeoutMs,
+        timeoutMs: attemptTimeoutMs,
       });
       const message = completion?.choices?.[0]?.message ?? null;
       responseText = message?.content ?? "";
@@ -443,6 +584,7 @@ async function runLmGeneralBenchmarkAssessment({
           mode,
           result: "ok",
           error: null,
+          timeout_ms: attemptTimeoutMs,
         });
       } else {
         const stopReason = classifyAssessmentStopReason(validationOutcome.status);
@@ -452,6 +594,7 @@ async function runLmGeneralBenchmarkAssessment({
           mode,
           result: "invalid-response",
           error: errorMessage,
+          timeout_ms: attemptTimeoutMs,
         });
       }
       break;
@@ -465,6 +608,7 @@ async function runLmGeneralBenchmarkAssessment({
         result: shouldRetryCompact ? "retry-compact" : "error",
         error: errorMessage,
         stop_reason: errorInfo.reason ?? null,
+        timeout_ms: attemptTimeoutMs,
       });
       if (shouldRetryCompact) {
         continue;
@@ -492,6 +636,8 @@ async function runLmGeneralBenchmarkAssessment({
       rawResponseText: responseText ?? "",
       schemaValidation: schemaValidationSummary ?? null,
       assessment_attempts: attemptHistory,
+      request_timeout_ms:
+        firstAttemptTimeoutMs(attemptHistory) ?? normalizePositiveMs(timeoutMs, null),
       tool_calls: toolCalls ?? null,
       tool_definitions: toolDefinitions ?? null,
     };
@@ -510,6 +656,8 @@ async function runLmGeneralBenchmarkAssessment({
           cwd,
           request_mode: requestBody?.request_mode ?? null,
           assessment_attempts: attemptHistory,
+          request_timeout_ms:
+            firstAttemptTimeoutMs(attemptHistory) ?? normalizePositiveMs(timeoutMs, null),
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -518,6 +666,8 @@ async function runLmGeneralBenchmarkAssessment({
           endpoint: "/chat/completions",
           payload: requestBody,
           attempts: attemptHistory,
+          timeout_ms:
+            firstAttemptTimeoutMs(attemptHistory) ?? normalizePositiveMs(timeoutMs, null),
           messages,
           response_format: BENCHMARK_ASSESSMENT_RESPONSE_FORMAT,
         },
@@ -536,6 +686,10 @@ async function runLmGeneralBenchmarkAssessment({
     promptRecord,
     requestMode: requestBody?.request_mode ?? null,
     attemptHistory,
+    resolvedTimeoutMs:
+      resolvedTimeoutMs ??
+      firstAttemptTimeoutMs(attemptHistory) ??
+      normalizePositiveMs(timeoutMs, null),
     toolCalls,
     toolDefinitions,
   };
@@ -566,6 +720,7 @@ async function runGeneralPurposeBenchmark({
   liveLmEnabled = false,
   liveLmTimeoutMs = 12000,
   liveLmPlanTimeoutMs = 12000,
+  sessionDeadline = null,
   configData = undefined,
   resourceConfig = undefined,
   resourceMonitorForcedDisabled = false,
@@ -627,6 +782,15 @@ async function runGeneralPurposeBenchmark({
   const cli = new CliExecutor();
   const workspaceProfiler = new WorkspaceProfiler();
   const capabilityInventory = new CapabilityInventory();
+  const liveLmTimeoutPlanner = useLiveLm
+    ? buildLiveLmTimeoutPlanner({
+        liveLmTimeoutMs,
+        liveLmPlanTimeoutMs,
+        sessionDeadline,
+      })
+    : null;
+  const liveLmEffectiveDeadlineMs = liveLmTimeoutPlanner?.metadata?.effectiveDeadlineMs ?? null;
+  const navigationTimeoutBudget = liveLmTimeoutPlanner?.resolveStageTimeout("navigator") ?? null;
   const navigator =
     useLiveLm &&
     new ApiNavigator({
@@ -638,7 +802,7 @@ async function runGeneralPurposeBenchmark({
       adapterRegistry: schemaAdapterRegistry,
       schemaRegistry,
       helperSilenceTimeoutMs: configData?.prompt?.navigator?.helperSilenceTimeoutMs,
-      navigationRequestTimeoutMs: liveLmTimeoutMs,
+      navigationRequestTimeoutMs: navigationTimeoutBudget?.requestTimeoutMs ?? liveLmTimeoutMs,
       promptRecorder,
     });
   const workspaceContext = await generateWorkspaceSnapshot({
@@ -651,17 +815,19 @@ async function runGeneralPurposeBenchmark({
     executeHelper: true,
     memory: stateManager,
     globalMemory,
+    sessionDeadline: liveLmEffectiveDeadlineMs,
     emitFeatureDisableNotice,
   });
 
   let decompositionPlan = null;
+  const decompositionTimeoutBudget = liveLmTimeoutPlanner?.resolveStageTimeout("decomposer") ?? null;
   if (useLiveLm) {
     const decompositionWorkspace = buildBenchmarkDecompositionWorkspace(workspaceContext);
     const decomposer = new PromptDecomposer({
       restClient,
       logger: verbose ? (message) => console.warn(message) : null,
       schemaRegistry,
-      timeoutMs: liveLmPlanTimeoutMs,
+      timeoutMs: decompositionTimeoutBudget?.requestTimeoutMs ?? liveLmPlanTimeoutMs,
       maxAttempts: 2,
     });
     try {
@@ -672,6 +838,7 @@ async function runGeneralPurposeBenchmark({
         promptRecorder,
         storage: stateManager,
         metadata: { mode: "benchmark", scope: "general-purpose" },
+        sessionDeadline: liveLmEffectiveDeadlineMs,
       });
     } catch (error) {
       if (verbose) {
@@ -793,6 +960,7 @@ async function runGeneralPurposeBenchmark({
   }
 
   let lmAssessment = null;
+  const assessmentTimeoutBudget = liveLmTimeoutPlanner?.resolveStageTimeout("assessment") ?? null;
   if (useLiveLm) {
     const navigationStopReason = workspaceContext?.navigationHints?.raw?.stop_reason ?? null;
     const decompositionStopReason = decompositionPlan?.stopReason ?? null;
@@ -813,11 +981,15 @@ async function runGeneralPurposeBenchmark({
         promptRecord: null,
         toolCalls: null,
         toolDefinitions: null,
+        requestMode: null,
+        attemptHistory: [],
+        resolvedTimeoutMs: assessmentTimeoutBudget?.requestTimeoutMs ?? null,
       };
     } else {
       lmAssessment = await runLmGeneralBenchmarkAssessment({
         restClient,
-        timeoutMs: liveLmTimeoutMs,
+        timeoutMs: assessmentTimeoutBudget?.requestTimeoutMs ?? liveLmTimeoutMs,
+        sessionDeadline: liveLmEffectiveDeadlineMs,
         schemaRegistry,
         promptRecorder,
         task,
@@ -881,6 +1053,14 @@ async function runGeneralPurposeBenchmark({
       console.log(`[MiniPhi][Benchmark] Resource delta vs baseline: ${diffSummary}`);
     }
   }
+  const navigationResolvedTimeoutMs =
+    workspaceContext?.navigationHints?.resolvedTimeoutMs ??
+    firstAttemptTimeoutMs(workspaceContext?.navigationHints?.attemptHistory);
+  const decompositionResolvedTimeoutMs =
+    decompositionPlan?.resolvedTimeoutMs ?? firstAttemptTimeoutMs(decompositionPlan?.attemptHistory);
+  const assessmentResolvedTimeoutMs =
+    lmAssessment?.resolvedTimeoutMs ?? firstAttemptTimeoutMs(lmAssessment?.attemptHistory);
+
   const summary = {
     kind: "general-purpose",
     analyzedAt: new Date().toISOString(),
@@ -894,11 +1074,13 @@ async function runGeneralPurposeBenchmark({
       navigationAttemptCount: Array.isArray(workspaceContext?.navigationHints?.attemptHistory)
         ? workspaceContext.navigationHints.attemptHistory.length
         : 0,
+      navigationTimeoutMs: navigationResolvedTimeoutMs ?? null,
       decompositionStopReason: decompositionPlan?.stopReason ?? null,
       decompositionRequestMode: decompositionPlan?.requestMode ?? null,
       decompositionAttemptCount: Array.isArray(decompositionPlan?.attemptHistory)
         ? decompositionPlan.attemptHistory.length
         : 0,
+      decompositionTimeoutMs: decompositionResolvedTimeoutMs ?? null,
       assessmentStopReason: lmAssessment?.assessment?.stop_reason ?? null,
       assessmentPromptExchangeId: lmAssessment?.promptRecord?.id ?? null,
       assessmentSchemaStatus: lmAssessment?.schemaValidation?.status ?? null,
@@ -907,6 +1089,36 @@ async function runGeneralPurposeBenchmark({
       assessmentAttemptCount: Array.isArray(lmAssessment?.attemptHistory)
         ? lmAssessment.attemptHistory.length
         : 0,
+      assessmentTimeoutMs: assessmentResolvedTimeoutMs ?? null,
+      timeoutBudget: useLiveLm
+        ? {
+            startedAt: toIsoOrNull(liveLmTimeoutPlanner?.metadata?.startedAtMs),
+            syntheticDeadline: toIsoOrNull(liveLmTimeoutPlanner?.metadata?.syntheticDeadlineMs),
+            effectiveDeadline: toIsoOrNull(liveLmTimeoutPlanner?.metadata?.effectiveDeadlineMs),
+            configuredSessionDeadline: toIsoOrNull(
+              liveLmTimeoutPlanner?.metadata?.configuredSessionDeadlineMs,
+            ),
+            syntheticBudgetMs: liveLmTimeoutPlanner?.metadata?.syntheticBudgetMs ?? null,
+            navigator: navigationTimeoutBudget
+              ? {
+                  ...navigationTimeoutBudget,
+                  resolvedTimeoutMs: navigationResolvedTimeoutMs ?? null,
+                }
+              : null,
+            decomposer: decompositionTimeoutBudget
+              ? {
+                  ...decompositionTimeoutBudget,
+                  resolvedTimeoutMs: decompositionResolvedTimeoutMs ?? null,
+                }
+              : null,
+            assessment: assessmentTimeoutBudget
+              ? {
+                  ...assessmentTimeoutBudget,
+                  resolvedTimeoutMs: assessmentResolvedTimeoutMs ?? null,
+                }
+              : null,
+          }
+        : null,
     },
     workspaceType: workspaceContext?.classification?.label ?? null,
     workspaceSummary: workspaceContext?.summary ?? null,
@@ -940,6 +1152,8 @@ async function runGeneralPurposeBenchmark({
           attemptCount: Array.isArray(decompositionPlan.attemptHistory)
             ? decompositionPlan.attemptHistory.length
             : 0,
+          timeoutMs: decompositionResolvedTimeoutMs ?? null,
+          timeoutBudgetMs: decompositionTimeoutBudget?.requestTimeoutMs ?? null,
         }
       : null,
     lmAssessment: lmAssessment?.assessment ?? null,

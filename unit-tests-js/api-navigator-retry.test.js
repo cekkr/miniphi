@@ -111,6 +111,9 @@ test("ApiNavigator retries with compact payload after timeout and records attemp
   assert.deepEqual(restClient.modes, ["full", "compact"]);
   assert.equal(hints.attemptHistory[0]?.result, "retry-compact");
   assert.equal(hints.attemptHistory[1]?.result, "ok");
+  assert.equal(hints.attemptHistory[0]?.timeout_ms, 12000);
+  assert.equal(hints.attemptHistory[1]?.timeout_ms, 12000);
+  assert.equal(hints.resolvedTimeoutMs, 12000);
   assert.equal(hints.raw?.stop_reason ?? null, null);
 });
 
@@ -128,6 +131,9 @@ test("ApiNavigator records compact retry attempts when both requests timeout", a
   assert.deepEqual(restClient.modes, ["full", "compact"]);
   assert.equal(hints.attemptHistory[0]?.result, "retry-compact");
   assert.equal(hints.attemptHistory[1]?.result, "error");
+  assert.equal(hints.attemptHistory[0]?.timeout_ms, 12000);
+  assert.equal(hints.attemptHistory[1]?.timeout_ms, 12000);
+  assert.equal(hints.resolvedTimeoutMs, 12000);
   assert.equal(hints.raw?.stop_reason, "timeout");
   assert.match(hints.summary ?? "", /Navigator unavailable \(timeout\)/);
 });

@@ -113,6 +113,9 @@ test("PromptDecomposer retries full -> compact after timeout and returns compact
   assert.equal(plan.attemptHistory.length, 2);
   assert.equal(plan.attemptHistory[0]?.result, "retry-compact");
   assert.equal(plan.attemptHistory[1]?.result, "ok");
+  assert.equal(plan.attemptHistory[0]?.timeout_ms, 12000);
+  assert.equal(plan.attemptHistory[1]?.timeout_ms, 12000);
+  assert.equal(plan.resolvedTimeoutMs, 12000);
   assert.deepEqual(restClient.modes, ["full", "compact"]);
   assert.equal(plan.stopReason, null);
 });
@@ -132,6 +135,9 @@ test("PromptDecomposer records compact retry attempts when both requests timeout
   assert.equal(plan.attemptHistory.length, 2);
   assert.equal(plan.attemptHistory[0]?.result, "retry-compact");
   assert.equal(plan.attemptHistory[1]?.result, "error");
+  assert.equal(plan.attemptHistory[0]?.timeout_ms, 12000);
+  assert.equal(plan.attemptHistory[1]?.timeout_ms, 12000);
+  assert.equal(plan.resolvedTimeoutMs, 12000);
   assert.deepEqual(restClient.modes, ["full", "compact"]);
   assert.equal(plan.stopReason, "timeout");
 });

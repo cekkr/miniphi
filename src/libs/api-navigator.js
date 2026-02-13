@@ -240,6 +240,7 @@ export default class ApiNavigator {
       attemptHistory: Array.isArray(planResult?.attemptHistory)
         ? planResult.attemptHistory
         : [],
+      resolvedTimeoutMs: planResult?.resolvedTimeoutMs ?? null,
     };
   }
 
@@ -359,9 +360,11 @@ export default class ApiNavigator {
     let promptRecord = null;
     let requestMode = "full";
     const attemptHistory = [];
+    let resolvedTimeoutMs = null;
 
     const runCompletion = async (bodyPayload) => {
       const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
+      resolvedTimeoutMs = Number.isFinite(requestTimeoutMs) ? requestTimeoutMs : resolvedTimeoutMs;
       requestMessages = buildMessages(bodyPayload);
       const completion = await this.restClient.createChatCompletion({
         messages: requestMessages,
@@ -379,16 +382,21 @@ export default class ApiNavigator {
         responseText,
       );
       schemaValidation = validationResult.validation;
-      return this._parsePlan(responseText, validationResult.validation);
+      return {
+        plan: this._parsePlan(responseText, validationResult.validation),
+        requestTimeoutMs,
+      };
     };
 
     try {
-      plan = await runCompletion(body);
+      const completion = await runCompletion(body);
+      plan = completion?.plan ?? null;
       attemptHistory.push({
         mode: "full",
         result: plan?.schema_version === "navigation-plan@fallback" ? "fallback-plan" : "ok",
         error: null,
         stop_reason: plan?.stop_reason ?? null,
+        timeout_ms: completion?.requestTimeoutMs ?? null,
       });
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
@@ -398,17 +406,20 @@ export default class ApiNavigator {
           result: "retry-compact",
           error: errorMessage,
           stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+          timeout_ms: resolvedTimeoutMs,
         });
         compactTried = true;
         body = buildBody(true);
         requestMode = "compact";
         try {
-          plan = await runCompletion(body);
+          const completion = await runCompletion(body);
+          plan = completion?.plan ?? null;
           attemptHistory.push({
             mode: "compact",
             result: plan?.schema_version === "navigation-plan@fallback" ? "fallback-plan" : "ok",
             error: null,
             stop_reason: plan?.stop_reason ?? null,
+            timeout_ms: completion?.requestTimeoutMs ?? null,
           });
           errorMessage = null;
         } catch (compactError) {
@@ -419,6 +430,7 @@ export default class ApiNavigator {
             result: "error",
             error: errorMessage,
             stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+            timeout_ms: resolvedTimeoutMs,
           });
         }
       } else {
@@ -427,6 +439,7 @@ export default class ApiNavigator {
           result: "error",
           error: errorMessage,
           stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+          timeout_ms: resolvedTimeoutMs,
         });
       }
       if (!plan) {
@@ -465,6 +478,10 @@ export default class ApiNavigator {
       promptRecord,
       requestMode,
       attemptHistory,
+      resolvedTimeoutMs:
+        resolvedTimeoutMs ??
+        attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms ??
+        null,
     };
   }
 
@@ -491,6 +508,10 @@ export default class ApiNavigator {
     responsePayload.schemaValidation = schemaValidation ?? responsePayload.schemaValidation ?? null;
     responsePayload.request_mode = requestMode ?? null;
     responsePayload.navigation_attempts = Array.isArray(attemptHistory) ? attemptHistory : [];
+    responsePayload.request_timeout_ms =
+      (Array.isArray(attemptHistory)
+        ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+        : null) ?? null;
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
     const stopInfo = buildStopReasonInfo({
@@ -510,6 +531,10 @@ export default class ApiNavigator {
           promptJournalId: payload?.promptJournalId ?? null,
           request_mode: requestMode ?? null,
           navigation_attempts: Array.isArray(attemptHistory) ? attemptHistory : [],
+          request_timeout_ms:
+            (Array.isArray(attemptHistory)
+              ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+              : null) ?? null,
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -518,6 +543,10 @@ export default class ApiNavigator {
           endpoint: "/chat/completions",
           payload: requestBody ?? null,
           attempts: Array.isArray(attemptHistory) ? attemptHistory : [],
+          timeout_ms:
+            (Array.isArray(attemptHistory)
+              ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
+              : null) ?? null,
           messages: requestMessages ?? null,
           response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },

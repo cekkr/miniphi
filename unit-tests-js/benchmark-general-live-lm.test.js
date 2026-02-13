@@ -230,9 +230,19 @@ test("runGeneralPurposeBenchmark records live LM assessment details when enabled
     assert.equal(summary.liveLm.decompositionStopReason, null);
     assert.equal(summary.liveLm.decompositionRequestMode, "full");
     assert.equal(summary.liveLm.decompositionAttemptCount, 1);
+    assert.equal(summary.liveLm.navigationTimeoutMs, null);
+    assert.equal(summary.liveLm.decompositionTimeoutMs, 12000);
     assert.equal(summary.liveLm.assessmentStopReason, null);
     assert.equal(summary.liveLm.assessmentSchemaStatus, "ok");
     assert.ok(summary.liveLm.assessmentPromptExchangeId);
+    assert.equal(summary.liveLm.assessmentTimeoutMs, 12000);
+    assert.ok(summary.liveLm.timeoutBudget);
+    assert.ok(summary.liveLm.timeoutBudget.navigator.requestTimeoutMs <= 12000);
+    assert.ok(summary.liveLm.timeoutBudget.navigator.requestTimeoutMs >= 11000);
+    assert.ok(summary.liveLm.timeoutBudget.decomposer.requestTimeoutMs <= 12000);
+    assert.ok(summary.liveLm.timeoutBudget.decomposer.requestTimeoutMs >= 11000);
+    assert.ok(summary.liveLm.timeoutBudget.assessment.requestTimeoutMs <= 12000);
+    assert.ok(summary.liveLm.timeoutBudget.assessment.requestTimeoutMs >= 11000);
     assert.ok(summary.decompositionPlan);
     assert.ok(summary.decompositionPlan.promptExchangeId);
     assert.equal(summary.decompositionPlan.requestMode, "full");
@@ -287,6 +297,7 @@ test("runGeneralPurposeBenchmark still runs assessment when only decomposition t
     assert.equal(summary.liveLm.decompositionStopReason, "timeout");
     assert.equal(summary.liveLm.decompositionRequestMode, "compact");
     assert.equal(summary.liveLm.decompositionAttemptCount, 2);
+    assert.equal(summary.liveLm.decompositionTimeoutMs, 12000);
     assert.equal(summary.decompositionPlan.id, "prompt-plan-fallback");
     assert.equal(summary.decompositionPlan.requestMode, "compact");
     assert.equal(summary.decompositionPlan.attemptCount, 2);
@@ -347,7 +358,62 @@ test("runGeneralPurposeBenchmark retries assessment in compact mode after timeou
     assert.equal(summary.liveLm.assessmentSchemaStatus, "ok");
     assert.equal(summary.liveLm.assessmentRequestMode, "compact");
     assert.equal(summary.liveLm.assessmentAttemptCount, 2);
+    assert.equal(summary.liveLm.assessmentTimeoutMs, 12000);
     assert.equal(summary.lmAssessment.notes, "compact-retry-success");
+  } finally {
+    process.chdir(previousCwd);
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("runGeneralPurposeBenchmark adapts per-stage live LM timeout budgets with tight session deadline", async () => {
+  const workspace = await createTempWorkspace("miniphi-benchmark-live-timeout-budget-");
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(workspace);
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspace, "src", "index.js"), "console.log('ok');\n", "utf8");
+    await fs.writeFile(path.join(workspace, "README.md"), "# workspace\n", "utf8");
+    const restClient = new FakeBenchmarkRestClient();
+
+    await runGeneralPurposeBenchmark({
+      options: {
+        task: "Live benchmark adaptive timeout budget",
+        cmd: "node -v",
+        cwd: workspace,
+        timeout: "20000",
+        "silence-timeout": "5000",
+      },
+      verbose: false,
+      schemaRegistry: null,
+      restClient,
+      liveLmEnabled: true,
+      liveLmTimeoutMs: 12000,
+      liveLmPlanTimeoutMs: 12000,
+      sessionDeadline: Date.now() + 4500,
+      resourceMonitorForcedDisabled: true,
+      generateWorkspaceSnapshot: async () => ({
+        summary: "Test workspace",
+        classification: { label: "codebase", domain: "software" },
+        navigationSummary: null,
+        helperScript: null,
+      }),
+      globalMemory: null,
+      schemaAdapterRegistry: null,
+      mirrorPromptTemplateToGlobal: async () => {},
+      emitFeatureDisableNotice: () => {},
+    });
+
+    const summary = await readLatestGeneralBenchmarkSummary(workspace);
+    const timeoutBudget = summary.liveLm.timeoutBudget;
+    assert.ok(timeoutBudget);
+    assert.ok(timeoutBudget.configuredSessionDeadline);
+    assert.ok(timeoutBudget.navigator.requestTimeoutMs < 12000);
+    assert.ok(timeoutBudget.decomposer.requestTimeoutMs < 12000);
+    assert.ok(timeoutBudget.assessment.requestTimeoutMs < 12000);
+    assert.equal(summary.liveLm.navigationTimeoutMs, null);
+    assert.ok(summary.liveLm.decompositionTimeoutMs <= timeoutBudget.decomposer.requestTimeoutMs);
+    assert.ok(summary.liveLm.assessmentTimeoutMs <= timeoutBudget.assessment.requestTimeoutMs);
   } finally {
     process.chdir(previousCwd);
     await removeTempWorkspace(workspace);
