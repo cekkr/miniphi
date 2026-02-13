@@ -76,3 +76,36 @@ test("PromptRecorder normalizes legacy stop reason aliases", async () => {
     await fs.rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("PromptRecorder retains tool metadata keys even when no tools are supplied", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "miniphi-recorder-tool-keys-"));
+  try {
+    const recorder = new PromptRecorder(workspace);
+    const record = await recorder.record({
+      request: {
+        messages: [{ role: "user", content: "No tools." }],
+      },
+      response: {
+        text: "{\"ok\":true}",
+      },
+    });
+    const payload = JSON.parse(await fs.readFile(record.path, "utf8"));
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload.request, "tool_definitions"),
+      true,
+    );
+    assert.equal(payload.request.tool_definitions, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload.response, "tool_calls"),
+      true,
+    );
+    assert.equal(payload.response.tool_calls, null);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload.response, "tool_definitions"),
+      true,
+    );
+    assert.equal(payload.response.tool_definitions, null);
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});

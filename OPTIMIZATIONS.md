@@ -186,6 +186,10 @@ Status:
 - Prompt logging normalization now shares a single utility module (`src/libs/prompt-log-normalizer.js`)
   used by both `PromptRecorder` and `PromptStepJournal`, so request/response/tool metadata
   canonicalization happens in one place.
+- Prompt exchanges now retain canonical tool metadata keys even when no tools are present:
+  `response.tool_calls`, `response.tool_definitions`, and `request.tool_definitions` persist as
+  `null`/`[]` instead of being dropped, so eval/report tooling can score every exchange with a
+  deterministic shape.
 - Step journals now normalize object responses before persistence, ensuring deterministic JSON text
   snapshots and canonical `tool_calls`/`tool_definitions` fields even when callers pass camelCase
   payloads.
@@ -198,11 +202,19 @@ Status:
   `analysis-error`), reducing low-signal diagnostics in execution artifacts.
 - Regression coverage added:
   `node --test unit-tests-js/prompt-step-journal.test.js unit-tests-js/prompt-recorder.test.js unit-tests-js/task-execution-register-stop-reason.test.js unit-tests-js/cli-implicit-run.test.js unit-tests-js/miniphi-memory-stop-reason.test.js`.
+- Additional regression coverage:
+  `node --test unit-tests-js/prompt-recorder.test.js` now validates that tool metadata keys remain
+  present when no tools are supplied.
 - Live proof run:
   `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file for prompt logging proof" --summary-levels 0 --prompt-journal p1-logging-proof-20260207-215410 --prompt-journal-status paused --no-stream --no-navigator --session-timeout 300`
   produced canonical prompt exchange fields in `.miniphi/prompt-exchanges/9a7c2d51-8457-4b50-bf32-033cc610286a.json`
   and canonical journal tool metadata in
   `.miniphi/prompt-exchanges/stepwise/p1-logging-proof-20260207-215410/steps/step-001.json`.
+- Live proof run:
+  `node src/index.js run --cmd "node -v" --task "Post-patch prompt logging check" --command-policy allow --assume-yes --no-stream --session-timeout 300 --prompt-journal run-live-20260213-toolmeta --prompt-journal-status paused`
+  persisted deterministic tool metadata keys in `.miniphi/prompt-exchanges/f4c403dd-2b1d-476a-b6b2-3afe696cfb7a.json`;
+  `node scripts/local-eval-report.js --limit 1 --output .miniphi/evals/local-eval-report-codex-20260213-limit1.json`
+  reported 100% coverage for `toolCalls` + `toolDefinitions` on the newest exchange.
 - Live proof runs:
   `node src/index.js "Summarize node version output with implicit routing" --cmd "node -v" --no-stream --no-summary --cwd . --prompt-journal implicit-run-live-proof --prompt-journal-status paused --session-timeout 1 --command-policy allow --assume-yes`
   validated implicit `"<task>" + --cmd` routing with canonical stop fields in

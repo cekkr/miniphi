@@ -220,9 +220,6 @@ export function normalizePromptRequestPayload(request = undefined) {
   const toolMetadata = normalizeToolMetadataPayload(normalized);
   normalized.tool_definitions = toolMetadata.tool_definitions;
   delete normalized.toolDefinitions;
-  if (!normalized.tool_definitions) {
-    delete normalized.tool_definitions;
-  }
   return normalized;
 }
 
@@ -260,12 +257,6 @@ export function normalizePromptResponsePayload(response = undefined) {
     };
   }
   normalizeStopReasonPayload(normalized);
-  if (!normalized.tool_calls) {
-    delete normalized.tool_calls;
-  }
-  if (!normalized.tool_definitions) {
-    delete normalized.tool_definitions;
-  }
   return normalized;
 }
 

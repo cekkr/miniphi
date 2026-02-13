@@ -197,10 +197,23 @@ Slices (do in order):
        `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 12 --live-lm-plan-timeout 12 --verbose`
        produced `.miniphi/history/benchmarks/2026-02-13T03-16-12-601Z-general-benchmark.json` with
        timeout-budget telemetry (`liveLm.timeoutBudget`) and capped stage timeouts (`decomposer.requestTimeoutMs: 11978`, `assessment.requestTimeoutMs: 11900`) after upstream timeout pressure.
+   - Live proof run:
+     `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
+     produced `.miniphi/history/benchmarks/2026-02-13T03-21-14-786Z-general-benchmark.json` with
+     expanded stage budgets (`liveLm.timeoutBudget.*.requestTimeoutMs: 30000`) and matching resolved timeout fields.
+   - Prompt logging determinism hardening (2026-02-13):
+     - Prompt exchange normalization now preserves canonical tool metadata keys even when a prompt
+       has no tools (`response.tool_calls`, `response.tool_definitions`, `request.tool_definitions`
+       persist as `null`/`[]` instead of being omitted).
+     - Regression coverage:
+       `node --test unit-tests-js/prompt-recorder.test.js` now includes tool-key retention checks;
+       full `npm test` passed (`97/97`).
      - Live proof run:
-       `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
-       produced `.miniphi/history/benchmarks/2026-02-13T03-21-14-786Z-general-benchmark.json` with
-       expanded stage budgets (`liveLm.timeoutBudget.*.requestTimeoutMs: 30000`) and matching resolved timeout fields.
+       `node src/index.js run --cmd "node -v" --task "Post-patch prompt logging check" --command-policy allow --assume-yes --no-stream --session-timeout 300 --prompt-journal run-live-20260213-toolmeta --prompt-journal-status paused`
+       persisted deterministic tool metadata keys in `.miniphi/prompt-exchanges/f4c403dd-2b1d-476a-b6b2-3afe696cfb7a.json`.
+     - Eval proof run:
+       `node scripts/local-eval-report.js --limit 1 --output .miniphi/evals/local-eval-report-codex-20260213-limit1.json`
+       reported 100% tool metadata coverage on the newest prompt exchange.
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Deferred (lower priority while the above are in flight):
