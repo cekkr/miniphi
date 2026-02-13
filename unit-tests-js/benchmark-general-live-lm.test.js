@@ -77,6 +77,21 @@ class FakeBenchmarkRestClient {
   }
 }
 
+function parseAssessmentRequestMode(payload) {
+  const userMessage = Array.isArray(payload?.messages)
+    ? payload.messages.find((entry) => entry?.role === "user")
+    : null;
+  if (!userMessage || typeof userMessage.content !== "string") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(userMessage.content);
+    return parsed?.request_mode ?? null;
+  } catch {
+    return null;
+  }
+}
+
 class FakeDecomposerTimeoutRestClient extends FakeBenchmarkRestClient {
   async createChatCompletion(payload) {
     const schemaName = payload?.response_format?.json_schema?.name ?? "";
@@ -85,6 +100,58 @@ class FakeDecomposerTimeoutRestClient extends FakeBenchmarkRestClient {
       throw new Error("Prompt decomposition exceeded 12s timeout.");
     }
     return super.createChatCompletion(payload);
+  }
+}
+
+class FakeAssessmentRetryRestClient extends FakeBenchmarkRestClient {
+  constructor() {
+    super();
+    this.assessmentModes = [];
+  }
+
+  async createChatCompletion(payload) {
+    const schemaName = payload?.response_format?.json_schema?.name ?? "";
+    if (schemaName === "prompt-plan") {
+      return super.createChatCompletion(payload);
+    }
+    this.calls.push(payload);
+    const mode = parseAssessmentRequestMode(payload);
+    this.assessmentModes.push(mode);
+    if (mode === "full") {
+      throw new Error(
+        "LM Studio REST request timed out waiting for a response after 12000ms (url: http://127.0.0.1:1234/api/v0/chat/completions).",
+      );
+    }
+    return {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              schema_version: "benchmark-general-assessment@v1",
+              summary: "Recovered with compact benchmark assessment request.",
+              needs_more_context: false,
+              missing_snippets: [],
+              category_scores: {
+                function_calling_tool_use: { score: 68, rationale: "Compact retry preserved tool coverage scoring." },
+                general_assistant_reasoning: { score: 71, rationale: "Compact retry still yielded valid structured output." },
+                coding_software_engineering: { score: 76, rationale: "Repo-grounded scoring remained consistent." },
+                computer_interaction_gui_web: { score: 62, rationale: "Web/GUI category remains the main gap." },
+              },
+              action_plan: [
+                {
+                  priority: "high",
+                  category: "computer_interaction_gui_web",
+                  recommendation: "Keep compact retry and add browser-plan specific probes.",
+                },
+              ],
+              stop_reason: null,
+              notes: "compact-retry-success",
+            }),
+          },
+        },
+      ],
+      tool_definitions: [],
+    };
   }
 }
 
@@ -218,6 +285,56 @@ test("runGeneralPurposeBenchmark still runs assessment when only decomposition t
     assert.equal(summary.liveLm.assessmentSchemaStatus, "ok");
     assert.ok(summary.liveLm.assessmentPromptExchangeId);
     assert.equal(summary.lmAssessment.schema_version, "benchmark-general-assessment@v1");
+  } finally {
+    process.chdir(previousCwd);
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("runGeneralPurposeBenchmark retries assessment in compact mode after timeout", async () => {
+  const workspace = await createTempWorkspace("miniphi-benchmark-live-assessment-retry-");
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(workspace);
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspace, "src", "index.js"), "console.log('ok');\n", "utf8");
+    await fs.writeFile(path.join(workspace, "README.md"), "# workspace\n", "utf8");
+    const restClient = new FakeAssessmentRetryRestClient();
+
+    await runGeneralPurposeBenchmark({
+      options: {
+        task: "Live benchmark compact retry",
+        cmd: "node -v",
+        cwd: workspace,
+        timeout: "20000",
+        "silence-timeout": "5000",
+      },
+      verbose: false,
+      schemaRegistry: null,
+      restClient,
+      liveLmEnabled: true,
+      resourceMonitorForcedDisabled: true,
+      generateWorkspaceSnapshot: async () => ({
+        summary: "Test workspace",
+        classification: { label: "codebase", domain: "software" },
+        navigationSummary: null,
+        helperScript: null,
+      }),
+      globalMemory: null,
+      schemaAdapterRegistry: null,
+      mirrorPromptTemplateToGlobal: async () => {},
+      emitFeatureDisableNotice: () => {},
+    });
+
+    const summary = await readLatestGeneralBenchmarkSummary(workspace);
+    assert.deepEqual(restClient.assessmentModes, ["full", "compact"]);
+    assert.equal(summary.liveLm.requested, true);
+    assert.equal(summary.liveLm.active, true);
+    assert.equal(summary.liveLm.assessmentStopReason, null);
+    assert.equal(summary.liveLm.assessmentSchemaStatus, "ok");
+    assert.equal(summary.liveLm.assessmentRequestMode, "compact");
+    assert.equal(summary.liveLm.assessmentAttemptCount, 2);
+    assert.equal(summary.lmAssessment.notes, "compact-retry-success");
   } finally {
     process.chdir(previousCwd);
     await removeTempWorkspace(workspace);

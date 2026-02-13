@@ -280,6 +280,10 @@ async function readCommandOutputPreview(commandDetails) {
   if (!commandDetails || typeof commandDetails !== "object") {
     return { stdout: "", stderr: "" };
   }
+  const previewLimit = parseNumericSetting(
+    commandDetails?.previewLimit ?? COMMAND_OUTPUT_PREVIEW_CHARS,
+    "benchmark command preview limit",
+  ) ?? COMMAND_OUTPUT_PREVIEW_CHARS;
   const previews = { stdout: "", stderr: "" };
   const entries = [
     ["stdout", commandDetails.stdoutPath],
@@ -291,7 +295,7 @@ async function readCommandOutputPreview(commandDetails) {
     }
     try {
       const content = await fs.promises.readFile(filePath, "utf8");
-      previews[field] = clampTextPreview(content);
+      previews[field] = clampTextPreview(content, previewLimit);
     } catch {
       previews[field] = "";
     }
@@ -299,34 +303,27 @@ async function readCommandOutputPreview(commandDetails) {
   return previews;
 }
 
-async function runLmGeneralBenchmarkAssessment({
-  restClient,
-  timeoutMs = undefined,
-  schemaRegistry,
-  promptRecorder,
+async function buildBenchmarkAssessmentRequestBody({
   task,
   cwd,
   workspaceContext,
   commandDetails,
   decompositionPlan,
+  compactMode = false,
 }) {
-  if (!restClient) {
-    return null;
-  }
-  const commandPreview = await readCommandOutputPreview(commandDetails);
-  const schemaBlock = schemaRegistry?.buildInstructionBlock
-    ? schemaRegistry.buildInstructionBlock(BENCHMARK_ASSESSMENT_SCHEMA_ID, {
-        compact: true,
-        maxLength: 1800,
-      }) || ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n")
-    : ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n");
-  const requestBody = {
+  const commandPreview = await readCommandOutputPreview({
+    ...(commandDetails ?? {}),
+    previewLimit: compactMode ? 420 : COMMAND_OUTPUT_PREVIEW_CHARS,
+  });
+  return {
+    request_mode: compactMode ? "compact" : "full",
     objective: task,
     workspace: {
       cwd,
       classification: workspaceContext?.classification ?? null,
-      summary: clampTextPreview(workspaceContext?.summary ?? "", 1000) || null,
-      navigation_summary: clampTextPreview(workspaceContext?.navigationSummary ?? "", 700) || null,
+      summary: clampTextPreview(workspaceContext?.summary ?? "", compactMode ? 420 : 1000) || null,
+      navigation_summary:
+        clampTextPreview(workspaceContext?.navigationSummary ?? "", compactMode ? 260 : 700) || null,
       helper_script: workspaceContext?.helperScript
         ? {
             id: workspaceContext.helperScript.id ?? null,
@@ -334,7 +331,10 @@ async function runLmGeneralBenchmarkAssessment({
             run: workspaceContext.helperScript.run
               ? {
                   exitCode: workspaceContext.helperScript.run.exitCode ?? null,
-                  summary: workspaceContext.helperScript.run.summary ?? null,
+                  summary: clampTextPreview(
+                    workspaceContext.helperScript.run.summary ?? "",
+                    compactMode ? 140 : 420,
+                  ),
                 }
               : null,
           }
@@ -353,8 +353,8 @@ async function runLmGeneralBenchmarkAssessment({
     decomposition: decompositionPlan
       ? {
           id: decompositionPlan.planId ?? null,
-          summary: clampTextPreview(decompositionPlan.summary ?? "", 600) || null,
-          outline: clampTextPreview(decompositionPlan.outline ?? "", 1200) || null,
+          summary: clampTextPreview(decompositionPlan.summary ?? "", compactMode ? 240 : 600) || null,
+          outline: clampTextPreview(decompositionPlan.outline ?? "", compactMode ? 360 : 1200) || null,
           stop_reason: decompositionPlan.stopReason ?? null,
         }
       : null,
@@ -365,55 +365,121 @@ async function runLmGeneralBenchmarkAssessment({
       "computer_interaction_gui_web",
     ],
   };
-  const messages = [
-    {
-      role: "system",
-      content: `${BENCHMARK_ASSESSMENT_SYSTEM_PROMPT}\nJSON schema:\n${schemaBlock}`,
-    },
-    {
-      role: "user",
-      content: JSON.stringify(requestBody, null, 2),
-    },
-  ];
+}
+
+async function runLmGeneralBenchmarkAssessment({
+  restClient,
+  timeoutMs = undefined,
+  schemaRegistry,
+  promptRecorder,
+  task,
+  cwd,
+  workspaceContext,
+  commandDetails,
+  decompositionPlan,
+}) {
+  if (!restClient) {
+    return null;
+  }
+  const schemaBlock = schemaRegistry?.buildInstructionBlock
+    ? schemaRegistry.buildInstructionBlock(BENCHMARK_ASSESSMENT_SCHEMA_ID, {
+        compact: true,
+        maxLength: 1800,
+      }) || ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n")
+    : ["```json", BENCHMARK_ASSESSMENT_SCHEMA_BLOCK, "```"].join("\n");
+  const attemptModes = ["full", "compact"];
+  let requestBody = null;
+  let messages = null;
   let responseText = "";
   let toolCalls = null;
   let toolDefinitions = null;
   let schemaValidation = null;
   let errorMessage = null;
   let assessment = null;
+  const attemptHistory = [];
 
-  try {
-    const completion = await restClient.createChatCompletion({
-      messages,
-      temperature: 0.1,
-      max_tokens: -1,
-      response_format: BENCHMARK_ASSESSMENT_RESPONSE_FORMAT,
-      timeoutMs,
+  for (let index = 0; index < attemptModes.length; index += 1) {
+    const mode = attemptModes[index];
+    const compactMode = mode === "compact";
+    requestBody = await buildBenchmarkAssessmentRequestBody({
+      task,
+      cwd,
+      workspaceContext,
+      commandDetails,
+      decompositionPlan,
+      compactMode,
     });
-    const message = completion?.choices?.[0]?.message ?? null;
-    responseText = message?.content ?? "";
-    toolCalls = message?.tool_calls ?? null;
-    toolDefinitions = completion?.tool_definitions ?? null;
-    const validationOutcome = validateJsonObjectAgainstSchema(
-      BENCHMARK_ASSESSMENT_JSON_SCHEMA,
-      responseText,
-    );
-    schemaValidation = validationOutcome.validation;
-    if (validationOutcome.status === "ok" && validationOutcome.parsed) {
-      assessment = validationOutcome.parsed;
-      assessment.stop_reason = assessment.stop_reason ?? null;
-    } else {
-      const stopReason = classifyAssessmentStopReason(validationOutcome.status);
-      errorMessage = validationOutcome.error ?? "invalid benchmark assessment JSON";
-      assessment = buildBenchmarkAssessmentFallback(errorMessage, stopReason);
+    messages = [
+      {
+        role: "system",
+        content: `${BENCHMARK_ASSESSMENT_SYSTEM_PROMPT}\nJSON schema:\n${schemaBlock}`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify(requestBody, null, 2),
+      },
+    ];
+    try {
+      const completion = await restClient.createChatCompletion({
+        messages,
+        temperature: 0.1,
+        max_tokens: -1,
+        response_format: BENCHMARK_ASSESSMENT_RESPONSE_FORMAT,
+        timeoutMs,
+      });
+      const message = completion?.choices?.[0]?.message ?? null;
+      responseText = message?.content ?? "";
+      toolCalls = message?.tool_calls ?? null;
+      toolDefinitions = completion?.tool_definitions ?? null;
+      const validationOutcome = validateJsonObjectAgainstSchema(
+        BENCHMARK_ASSESSMENT_JSON_SCHEMA,
+        responseText,
+      );
+      schemaValidation = validationOutcome.validation;
+      if (validationOutcome.status === "ok" && validationOutcome.parsed) {
+        assessment = validationOutcome.parsed;
+        assessment.stop_reason = assessment.stop_reason ?? null;
+        attemptHistory.push({
+          mode,
+          result: "ok",
+          error: null,
+        });
+      } else {
+        const stopReason = classifyAssessmentStopReason(validationOutcome.status);
+        errorMessage = validationOutcome.error ?? "invalid benchmark assessment JSON";
+        assessment = buildBenchmarkAssessmentFallback(errorMessage, stopReason);
+        attemptHistory.push({
+          mode,
+          result: "invalid-response",
+          error: errorMessage,
+        });
+      }
+      break;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+      const errorInfo = classifyLmStudioError(errorMessage);
+      const hasRetry = index < attemptModes.length - 1;
+      const shouldRetryCompact = hasRetry && (errorInfo.isTimeout || errorInfo.isContextOverflow);
+      attemptHistory.push({
+        mode,
+        result: shouldRetryCompact ? "retry-compact" : "error",
+        error: errorMessage,
+        stop_reason: errorInfo.reason ?? null,
+      });
+      if (shouldRetryCompact) {
+        continue;
+      }
+      assessment = buildBenchmarkAssessmentFallback(
+        errorMessage,
+        errorInfo.reason ?? "analysis-error",
+      );
+      break;
     }
-  } catch (error) {
-    errorMessage = error instanceof Error ? error.message : String(error);
-    const errorInfo = classifyLmStudioError(errorMessage);
-    assessment = buildBenchmarkAssessmentFallback(
-      errorMessage,
-      errorInfo.reason ?? "analysis-error",
-    );
+  }
+
+  if (!assessment) {
+    const fallbackReason = errorMessage ?? "missing benchmark assessment payload";
+    assessment = buildBenchmarkAssessmentFallback(fallbackReason, "analysis-error");
   }
 
   let promptRecord = null;
@@ -425,6 +491,7 @@ async function runLmGeneralBenchmarkAssessment({
       ...(assessment ?? buildBenchmarkAssessmentFallback("missing assessment payload")),
       rawResponseText: responseText ?? "",
       schemaValidation: schemaValidationSummary ?? null,
+      assessment_attempts: attemptHistory,
       tool_calls: toolCalls ?? null,
       tool_definitions: toolDefinitions ?? null,
     };
@@ -441,6 +508,8 @@ async function runLmGeneralBenchmarkAssessment({
           type: "benchmark-general-assessment",
           objective: task,
           cwd,
+          request_mode: requestBody?.request_mode ?? null,
+          assessment_attempts: attemptHistory,
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -448,6 +517,7 @@ async function runLmGeneralBenchmarkAssessment({
         request: {
           endpoint: "/chat/completions",
           payload: requestBody,
+          attempts: attemptHistory,
           messages,
           response_format: BENCHMARK_ASSESSMENT_RESPONSE_FORMAT,
         },
@@ -464,6 +534,8 @@ async function runLmGeneralBenchmarkAssessment({
     error: errorMessage,
     schemaValidation: summarizeJsonSchemaValidation(schemaValidation, { maxErrors: 3 }),
     promptRecord,
+    requestMode: requestBody?.request_mode ?? null,
+    attemptHistory,
     toolCalls,
     toolDefinitions,
   };
@@ -821,6 +893,10 @@ async function runGeneralPurposeBenchmark({
       assessmentPromptExchangeId: lmAssessment?.promptRecord?.id ?? null,
       assessmentSchemaStatus: lmAssessment?.schemaValidation?.status ?? null,
       assessmentError: lmAssessment?.error ?? null,
+      assessmentRequestMode: lmAssessment?.requestMode ?? null,
+      assessmentAttemptCount: Array.isArray(lmAssessment?.attemptHistory)
+        ? lmAssessment.attemptHistory.length
+        : 0,
     },
     workspaceType: workspaceContext?.classification?.label ?? null,
     workspaceSummary: workspaceContext?.summary ?? null,
