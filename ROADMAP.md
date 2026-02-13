@@ -185,21 +185,19 @@ Slices (do in order):
        `log-analysis`.
    - Live benchmark-general hardening (2026-02-13):
      - `benchmark general --live-lm` now keeps strict JSON assessment flow while retrying LM assessment once with a compact payload after timeout/context-overflow.
+     - `ApiNavigator` now records full -> compact retry attempts (timeout/context-overflow), and benchmark summaries persist navigator attempt telemetry (`liveLm.navigationRequestMode`, `liveLm.navigationAttemptCount`, `liveLm.navigationStopReason`).
      - Benchmark summaries now persist `liveLm.assessmentRequestMode` + `liveLm.assessmentAttemptCount`; prompt exchanges persist per-attempt metadata (`assessment_attempts`, `request_mode`).
      - Assessment skip is now limited to the double-timeout case (navigator + decomposer), so assessment still runs when only one upstream stage times out.
      - Regression coverage:
-       `node --test unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js`
+       `node --test unit-tests-js/api-navigator-retry.test.js unit-tests-js/benchmark-general-live-lm.test.js unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js`
        and full `npm test` passed (`91/91`).
      - Live proof run:
        `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`
-       produced `.miniphi/history/benchmarks/2026-02-13T00-39-07-949Z-general-benchmark.json` with
-       `assessmentRequestMode: "compact"` and `assessmentAttemptCount: 2` (both attempts timed out, deterministic fallback preserved).
+       produced `.miniphi/history/benchmarks/2026-02-13T01-05-11-584Z-general-benchmark.json` with
+       `navigationRequestMode: "compact"`, `navigationAttemptCount: 2`, and canonical `navigationStopReason: "timeout"` (both attempts timed out, deterministic fallback preserved).
    - Exit criteria: JSON-only output with strict parsing (strip <think> blocks + fences + short preambles), request payloads include schema id + response_format and compaction metadata in `.miniphi/prompt-exchanges/`, response analysis surfaces needs_more_context/missing_snippets, stop reason recorded.
    - Conclusion: keep the prompt-chain sample template path chain-relative (matches composer expectations), add a guardrail note in prompt-chain docs/templates to prevent embedding repo-relative paths, capture tool_calls/tool_definitions in prompt scoring telemetry to validate evaluator coverage, enforce explicit null helper_script guidance in navigator prompts, and avoid JSON repair salvage beyond schema-only retries in the analyzer.
   - Next steps (prioritized, add proof per item):
-    - Live benchmark navigator resilience:
-      Exit criteria: `ApiNavigator` in benchmark-live mode retries once with compact workspace context on timeout/context-overflow; benchmark summary records navigator attempt count/mode and still emits canonical stop reasons when both attempts fail.
-      Proof run: `node src/index.js benchmark general --task "Assess MiniPhi readiness for coding tasks" --cmd "node -v" --cwd samples/get-started/code --live-lm --live-lm-timeout 30 --live-lm-plan-timeout 30 --verbose`.
     - Live benchmark decomposer resilience:
       Exit criteria: benchmark-mode decomposer attempts `full -> compact` before fallback; fallback still deterministic (`prompt-plan-fallback`) with attempt telemetry in prompt exchanges.
       Proof run: same command as above plus `node --test unit-tests-js/prompt-decomposer-focus.test.js unit-tests-js/benchmark-general-live-lm.test.js`.

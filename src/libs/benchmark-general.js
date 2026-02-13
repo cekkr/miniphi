@@ -889,6 +889,11 @@ async function runGeneralPurposeBenchmark({
     liveLm: {
       requested: Boolean(liveLmEnabled),
       active: useLiveLm,
+      navigationStopReason: workspaceContext?.navigationHints?.raw?.stop_reason ?? null,
+      navigationRequestMode: workspaceContext?.navigationHints?.requestMode ?? null,
+      navigationAttemptCount: Array.isArray(workspaceContext?.navigationHints?.attemptHistory)
+        ? workspaceContext.navigationHints.attemptHistory.length
+        : 0,
       assessmentStopReason: lmAssessment?.assessment?.stop_reason ?? null,
       assessmentPromptExchangeId: lmAssessment?.promptRecord?.id ?? null,
       assessmentSchemaStatus: lmAssessment?.schemaValidation?.status ?? null,

@@ -235,6 +235,11 @@ export default class ApiNavigator {
       toolCalls: planResult?.toolCalls ?? null,
       toolDefinitions: planResult?.toolDefinitions ?? null,
       promptExchange: planResult?.promptRecord ?? null,
+      requestMode: planResult?.requestMode ?? null,
+      attemptCount: Array.isArray(planResult?.attemptHistory) ? planResult.attemptHistory.length : 0,
+      attemptHistory: Array.isArray(planResult?.attemptHistory)
+        ? planResult.attemptHistory
+        : [],
     };
   }
 
@@ -352,6 +357,8 @@ export default class ApiNavigator {
     let schemaValidation = null;
     let compactTried = false;
     let promptRecord = null;
+    let requestMode = "full";
+    const attemptHistory = [];
 
     const runCompletion = async (bodyPayload) => {
       const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
@@ -377,18 +384,50 @@ export default class ApiNavigator {
 
     try {
       plan = await runCompletion(body);
+      attemptHistory.push({
+        mode: "full",
+        result: plan?.schema_version === "navigation-plan@fallback" ? "fallback-plan" : "ok",
+        error: null,
+        stop_reason: plan?.stop_reason ?? null,
+      });
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);
       if (this._shouldRetryWithCompact(errorMessage) && !compactTried) {
+        attemptHistory.push({
+          mode: "full",
+          result: "retry-compact",
+          error: errorMessage,
+          stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+        });
         compactTried = true;
         body = buildBody(true);
+        requestMode = "compact";
         try {
           plan = await runCompletion(body);
+          attemptHistory.push({
+            mode: "compact",
+            result: plan?.schema_version === "navigation-plan@fallback" ? "fallback-plan" : "ok",
+            error: null,
+            stop_reason: plan?.stop_reason ?? null,
+          });
           errorMessage = null;
         } catch (compactError) {
           errorMessage =
             compactError instanceof Error ? compactError.message : String(compactError);
+          attemptHistory.push({
+            mode: "compact",
+            result: "error",
+            error: errorMessage,
+            stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+          });
         }
+      } else {
+        attemptHistory.push({
+          mode: "full",
+          result: "error",
+          error: errorMessage,
+          stop_reason: classifyLmStudioError(errorMessage).reason ?? null,
+        });
       }
       if (!plan) {
         this._log(`[ApiNavigator] Failed to request navigation hints: ${errorMessage}`);
@@ -414,6 +453,8 @@ export default class ApiNavigator {
       toolDefinitions,
       responseFormat,
       schemaValidation: schemaValidationSummary,
+      requestMode,
+      attemptHistory,
     });
 
     return {
@@ -422,6 +463,8 @@ export default class ApiNavigator {
       toolDefinitions,
       responseFormat,
       promptRecord,
+      requestMode,
+      attemptHistory,
     };
   }
 
@@ -436,6 +479,8 @@ export default class ApiNavigator {
     toolDefinitions,
     responseFormat,
     schemaValidation,
+    requestMode,
+    attemptHistory,
   }) {
     if (!this.promptRecorder) {
       return null;
@@ -444,6 +489,8 @@ export default class ApiNavigator {
       plan && typeof plan === "object" && !Array.isArray(plan) ? { ...plan } : { raw: responseText ?? "" };
     responsePayload.rawResponseText = responseText ?? "";
     responsePayload.schemaValidation = schemaValidation ?? responsePayload.schemaValidation ?? null;
+    responsePayload.request_mode = requestMode ?? null;
+    responsePayload.navigation_attempts = Array.isArray(attemptHistory) ? attemptHistory : [];
     responsePayload.tool_calls = toolCalls ?? null;
     responsePayload.tool_definitions = toolDefinitions ?? null;
     const stopInfo = buildStopReasonInfo({
@@ -461,6 +508,8 @@ export default class ApiNavigator {
           cwd: payload?.cwd ?? null,
           workspaceType: payload?.workspace?.classification ?? null,
           promptJournalId: payload?.promptJournalId ?? null,
+          request_mode: requestMode ?? null,
+          navigation_attempts: Array.isArray(attemptHistory) ? attemptHistory : [],
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -468,6 +517,7 @@ export default class ApiNavigator {
         request: {
           endpoint: "/chat/completions",
           payload: requestBody ?? null,
+          attempts: Array.isArray(attemptHistory) ? attemptHistory : [],
           messages: requestMessages ?? null,
           response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },
