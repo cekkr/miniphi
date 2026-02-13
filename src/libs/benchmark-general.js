@@ -662,7 +662,7 @@ async function runGeneralPurposeBenchmark({
       logger: verbose ? (message) => console.warn(message) : null,
       schemaRegistry,
       timeoutMs: liveLmPlanTimeoutMs,
-      maxAttempts: 1,
+      maxAttempts: 2,
     });
     try {
       decompositionPlan = await decomposer.decompose({
@@ -894,6 +894,11 @@ async function runGeneralPurposeBenchmark({
       navigationAttemptCount: Array.isArray(workspaceContext?.navigationHints?.attemptHistory)
         ? workspaceContext.navigationHints.attemptHistory.length
         : 0,
+      decompositionStopReason: decompositionPlan?.stopReason ?? null,
+      decompositionRequestMode: decompositionPlan?.requestMode ?? null,
+      decompositionAttemptCount: Array.isArray(decompositionPlan?.attemptHistory)
+        ? decompositionPlan.attemptHistory.length
+        : 0,
       assessmentStopReason: lmAssessment?.assessment?.stop_reason ?? null,
       assessmentPromptExchangeId: lmAssessment?.promptRecord?.id ?? null,
       assessmentSchemaStatus: lmAssessment?.schemaValidation?.status ?? null,
@@ -931,6 +936,10 @@ async function runGeneralPurposeBenchmark({
           summary: decompositionPlan.summary ?? null,
           outline: decompositionPlan.outline ?? null,
           promptExchangeId: decompositionPlan.promptExchange?.id ?? null,
+          requestMode: decompositionPlan.requestMode ?? null,
+          attemptCount: Array.isArray(decompositionPlan.attemptHistory)
+            ? decompositionPlan.attemptHistory.length
+            : 0,
         }
       : null,
     lmAssessment: lmAssessment?.assessment ?? null,

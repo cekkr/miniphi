@@ -196,6 +196,8 @@ export default class PromptDecomposer {
     let schemaValidation = null;
     let errorMessage = null;
     let errorInfo = null;
+    let requestMode = "full";
+    const attemptHistory = [];
 
     const attempts = [
       this._buildRequestBody(payload, { compact: false }),
@@ -250,6 +252,7 @@ export default class PromptDecomposer {
     for (let i = 0; i < attempts.length && i < this.maxAttempts && !normalizedPlan; i += 1) {
       requestBody = attempts[i];
       const modeLabel = i === 0 ? "full" : i === 1 ? "compact" : "minimal";
+      requestMode = modeLabel;
       try {
         if (i > 0) {
           this._log(`[PromptDecomposer] Attempting ${modeLabel} workspace payload due to previous failure.`);
@@ -260,6 +263,12 @@ export default class PromptDecomposer {
         responseToolCalls = response.toolCalls;
         responseToolDefinitions = response.toolDefinitions;
         normalizedPlan = this._parsePlan(responseText, payload, response.schemaValidation);
+        attemptHistory.push({
+          mode: modeLabel,
+          result: normalizedPlan?.schemaVersion === "prompt-plan@fallback" ? "fallback-plan" : "ok",
+          error: null,
+          stop_reason: normalizedPlan?.stopReason ?? null,
+        });
         errorMessage = null;
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
@@ -268,6 +277,15 @@ export default class PromptDecomposer {
           const shouldRetry =
             this._isContextOverflowError(errorMessage) ||
             (errorInfo.isTimeout && !this._isSessionTimeout(errorMessage));
+          const hasRetry = i < this.maxAttempts - 1 && i < attempts.length - 1;
+          const retryResult =
+            modeLabel === "full" ? "retry-compact" : modeLabel === "compact" ? "retry-minimal" : "retry";
+          attemptHistory.push({
+            mode: modeLabel,
+            result: shouldRetry && hasRetry ? retryResult : "error",
+            error: errorMessage,
+            stop_reason: errorInfo.reason ?? null,
+          });
           if (shouldRetry) {
             continue;
           }
@@ -300,6 +318,8 @@ export default class PromptDecomposer {
       responsePayload.rawResponseText = responseText ?? "";
       responsePayload.schemaValidation =
         schemaValidationSummary ?? responsePayload.schemaValidation ?? null;
+      responsePayload.request_mode = requestMode ?? null;
+      responsePayload.decomposition_attempts = attemptHistory;
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
       const stopInfo = buildStopReasonInfo({
@@ -316,6 +336,8 @@ export default class PromptDecomposer {
           command: payload.command ?? null,
           workspaceType: payload.workspace?.classification ?? null,
           promptJournalId: payload.promptJournalId ?? null,
+          request_mode: requestMode ?? null,
+          decomposition_attempts: attemptHistory,
           stop_reason: stopInfo.reason,
           stop_reason_code: stopInfo.code,
           stop_reason_detail: stopInfo.detail,
@@ -323,6 +345,7 @@ export default class PromptDecomposer {
         request: {
           endpoint: "/chat/completions",
           payload: requestBody,
+          attempts: attemptHistory,
           messages: requestMessages ?? null,
           response_format: responseFormat ?? DEFAULT_RESPONSE_FORMAT,
         },
@@ -338,6 +361,8 @@ export default class PromptDecomposer {
     normalizedPlan.toolCalls = responseToolCalls ?? null;
     normalizedPlan.toolDefinitions = responseToolDefinitions ?? null;
     normalizedPlan.promptExchange = promptRecord ?? null;
+    normalizedPlan.requestMode = requestMode ?? null;
+    normalizedPlan.attemptHistory = attemptHistory;
 
     if (payload.storage) {
       try {
