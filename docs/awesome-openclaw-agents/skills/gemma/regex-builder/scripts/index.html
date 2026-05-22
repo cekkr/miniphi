@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Regex Builder</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?description=${encodeURIComponent(d.description)}&regex=${encodeURIComponent(d.regex)}&flags=${encodeURIComponent(d.flags||'')}&explanation=${encodeURIComponent(d.explanation)}&match=${encodeURIComponent(d.example_match)}&nomatch=${encodeURIComponent(d.example_no_match)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

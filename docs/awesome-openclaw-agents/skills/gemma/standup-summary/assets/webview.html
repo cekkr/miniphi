@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standup Summary</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #111827;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #f9fafb;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+      .title { font-size: clamp(16px, 4.5vw, 22px); font-weight: 700; }
+      .mood {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .focused { background: #1e3a5f; color: #60a5fa; }
+      .energized { background: #1a3326; color: #34d399; }
+      .tired { background: #3b2a1a; color: #fb923c; }
+      .steady { background: #1f2937; color: #9ca3af; }
+      .blocked { background: #3b1a1a; color: #f87171; }
+      .row {
+        background: #1f2937;
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 10px;
+      }
+      .row-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .row-label .icon { font-size: 14px; }
+      .yesterday .row-label { color: #9ca3af; }
+      .today .row-label { color: #60a5fa; }
+      .blocker-row .row-label { color: #f87171; }
+      .eta-row .row-label { color: #a78bfa; }
+      .row-text {
+        font-size: clamp(13px, 3.5vw, 16px);
+        line-height: 1.6;
+        color: #e5e7eb;
+      }
+      .footer { font-size: 11px; color: #374151; text-align: right; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="top-row">
+        <div class="title">Daily Standup</div>
+        <div class="mood" id="mood"></div>
+      </div>
+      <div class="row yesterday">
+        <div class="row-label"><span class="icon">✓</span> Yesterday</div>
+        <div class="row-text" id="yesterday"></div>
+      </div>
+      <div class="row today">
+        <div class="row-label"><span class="icon">→</span> Today</div>
+        <div class="row-text" id="today"></div>
+      </div>
+      <div class="row blocker-row" id="blocker-row">
+        <div class="row-label"><span class="icon">⚠</span> Blocker</div>
+        <div class="row-text" id="blocker"></div>
+      </div>
+      <div class="row eta-row" id="eta-row">
+        <div class="row-label"><span class="icon">◷</span> ETA</div>
+        <div class="row-text" id="eta"></div>
+      </div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      const mood = p.get('mood') || 'steady';
+      const moodEl = document.getElementById('mood');
+      moodEl.textContent = mood;
+      moodEl.className = 'mood ' + mood.toLowerCase();
+
+      document.getElementById('yesterday').textContent = p.get('yesterday') || '';
+      document.getElementById('today').textContent = p.get('today') || '';
+
+      const blocker = p.get('blocker') || '';
+      if (blocker && blocker.toLowerCase() !== 'no blockers') {
+        document.getElementById('blocker').textContent = blocker;
+      } else {
+        document.getElementById('blocker-row').style.display = 'none';
+      }
+
+      const eta = p.get('eta') || '';
+      if (eta) {
+        document.getElementById('eta').textContent = eta;
+      } else {
+        document.getElementById('eta-row').style.display = 'none';
+      }
+    </script>
+  </body>
+</html>

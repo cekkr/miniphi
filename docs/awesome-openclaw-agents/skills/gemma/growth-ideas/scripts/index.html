@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Growth Ideas</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?product=${encodeURIComponent(d.product)}&stage=${encodeURIComponent(d.stage)}&i1t=${encodeURIComponent(d.idea1_title)}&i1d=${encodeURIComponent(d.idea1_desc)}&i2t=${encodeURIComponent(d.idea2_title)}&i2d=${encodeURIComponent(d.idea2_desc)}&i3t=${encodeURIComponent(d.idea3_title)}&i3d=${encodeURIComponent(d.idea3_desc)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

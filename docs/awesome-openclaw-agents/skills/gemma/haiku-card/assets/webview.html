@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haiku</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; }
+      body {
+        background: linear-gradient(135deg, #f5f1e8 0%, #e8dfc8 100%);
+        font-family: Georgia, 'Times New Roman', serif;
+        color: #2c2416;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card {
+        width: 100%;
+        height: 100%;
+        border: 1px solid #8b7355;
+        padding: 4%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      .card::before {
+        content: '';
+        position: absolute;
+        top: 3%; left: 3%; right: 3%; bottom: 3%;
+        border: 1px solid rgba(139, 115, 85, 0.3);
+        pointer-events: none;
+      }
+      .haiku {
+        text-align: center;
+        font-size: clamp(18px, 5vw, 42px);
+        font-weight: 400;
+        line-height: 1.8;
+      }
+      .haiku div { margin: 0.3em 0; }
+      .rule {
+        width: 80px;
+        height: 1px;
+        background: #8b7355;
+        margin: 30px 0 20px;
+      }
+      .topic {
+        font-style: italic;
+        font-size: clamp(12px, 2.5vw, 20px);
+        color: #8b7355;
+      }
+      .footer {
+        position: absolute;
+        bottom: 6%;
+        font-size: clamp(10px, 1.8vw, 14px);
+        color: rgba(139, 115, 85, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="haiku" id="haiku"></div>
+      <div class="rule"></div>
+      <div class="topic" id="topic"></div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const l1 = params.get('l1') || '';
+      const l2 = params.get('l2') || '';
+      const l3 = params.get('l3') || '';
+      const t = params.get('t') || 'untitled';
+      document.getElementById('haiku').innerHTML =
+        '<div>' + l1 + '</div><div>' + l2 + '</div><div>' + l3 + '</div>';
+      document.getElementById('topic').textContent = '— ' + t + ' —';
+    </script>
+  </body>
+</html>

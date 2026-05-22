@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haiku Card</title>
+  </head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const jsonObj = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `webview.html?l1=${encodeURIComponent(jsonObj.line1)}&l2=${encodeURIComponent(jsonObj.line2)}&l3=${encodeURIComponent(jsonObj.line3)}&t=${encodeURIComponent(jsonObj.topic)}`
+          }
+        })
+      };
+    </script>
+  </body>
+</html>

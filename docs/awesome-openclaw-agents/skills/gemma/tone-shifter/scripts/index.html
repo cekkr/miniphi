@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Tone Shifter</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?original=${encodeURIComponent(d.original)}&tone=${encodeURIComponent(d.tone)}&rewritten=${encodeURIComponent(d.rewritten)}&change=${encodeURIComponent(d.change)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Code Explainer</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?language=${encodeURIComponent(d.language)}&snippet=${encodeURIComponent(d.snippet)}&summary=${encodeURIComponent(d.summary)}&how=${encodeURIComponent(d.how)}&tip=${encodeURIComponent(d.tip)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

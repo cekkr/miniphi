@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>SQL Explainer</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?query=${encodeURIComponent(d.query)}&summary=${encodeURIComponent(d.summary)}&step1=${encodeURIComponent(d.step1)}&step2=${encodeURIComponent(d.step2)}&step3=${encodeURIComponent(d.step3||'')}&tip=${encodeURIComponent(d.tip)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

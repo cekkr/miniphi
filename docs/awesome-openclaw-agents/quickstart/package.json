@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-quickstart",
+  "version": "1.0.0",
+  "description": "Minimal OpenClaw agent with Telegram bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "dotenv": "^16.4.7"
+  }
+}

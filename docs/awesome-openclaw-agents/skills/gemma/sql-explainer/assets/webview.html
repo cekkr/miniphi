@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Explainer</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #1a1a2e;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #e2e8f0;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card {
+        width: 100%;
+        background: #16213e;
+        border: 1px solid #0f3460;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .header {
+        background: #0f3460;
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #63b3ed;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .query-block {
+        background: #0d1b2a;
+        margin: 16px;
+        border-radius: 8px;
+        padding: 12px;
+        font-family: 'Courier New', monospace;
+        font-size: clamp(11px, 3vw, 14px);
+        color: #90cdf4;
+        word-break: break-all;
+        line-height: 1.5;
+        border-left: 3px solid #4299e1;
+      }
+      .summary {
+        padding: 0 16px 12px;
+        font-size: clamp(14px, 4vw, 17px);
+        font-weight: 600;
+        color: #e2e8f0;
+        line-height: 1.5;
+      }
+      .steps { padding: 0 16px 12px; }
+      .step {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .step-num {
+        flex-shrink: 0;
+        width: 22px; height: 22px;
+        background: #4299e1;
+        color: #fff;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .step-text { font-size: clamp(12px, 3.5vw, 15px); color: #a0aec0; line-height: 1.5; }
+      .tip {
+        margin: 0 16px 16px;
+        background: #1c2a1c;
+        border: 1px solid #276749;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: clamp(11px, 3vw, 13px);
+        color: #68d391;
+        line-height: 1.5;
+      }
+      .tip-label { font-weight: 700; margin-bottom: 4px; }
+      .footer { padding: 10px 16px; font-size: 11px; color: #4a5568; text-align: right; border-top: 1px solid #0f3460; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="header">SQL Explainer</div>
+      <div class="query-block" id="query"></div>
+      <div class="summary" id="summary"></div>
+      <div class="steps" id="steps"></div>
+      <div class="tip"><div class="tip-label">Tip</div><span id="tip"></span></div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('query').textContent = p.get('query') || '';
+      document.getElementById('summary').textContent = p.get('summary') || '';
+      document.getElementById('tip').textContent = p.get('tip') || '';
+
+      const stepsEl = document.getElementById('steps');
+      [p.get('step1'), p.get('step2'), p.get('step3')].filter(Boolean).forEach((s, i) => {
+        stepsEl.innerHTML += `<div class="step"><div class="step-num">${i+1}</div><div class="step-text">${s}</div></div>`;
+      });
+    </script>
+  </body>
+</html>

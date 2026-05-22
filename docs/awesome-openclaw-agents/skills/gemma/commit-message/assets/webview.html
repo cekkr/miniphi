@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commit Message</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #0d1117;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #e6edf3;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card {
+        width: 100%;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .header {
+        background: #21262d;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #30363d;
+      }
+      .dot { width: 10px; height: 10px; border-radius: 50%; }
+      .dot.r { background: #f85149; }
+      .dot.y { background: #d29922; }
+      .dot.g { background: #3fb950; }
+      .title { font-size: 12px; color: #8b949e; margin-left: 4px; }
+      .body { padding: 20px 16px; }
+      .badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        margin-bottom: 14px;
+      }
+      .feat { background: #1f4e2e; color: #3fb950; border: 1px solid #3fb950; }
+      .fix { background: #4e1f1f; color: #f85149; border: 1px solid #f85149; }
+      .docs { background: #1f3a4e; color: #58a6ff; border: 1px solid #58a6ff; }
+      .refactor { background: #2e1f4e; color: #bc8cff; border: 1px solid #bc8cff; }
+      .chore { background: #2e2a1f; color: #d29922; border: 1px solid #d29922; }
+      .style { background: #1f4e4a; color: #39d353; border: 1px solid #39d353; }
+      .test { background: #3a1f4e; color: #f0883e; border: 1px solid #f0883e; }
+      .commit-line {
+        font-family: 'Courier New', monospace;
+        font-size: clamp(14px, 4vw, 20px);
+        font-weight: 600;
+        color: #e6edf3;
+        line-height: 1.4;
+        margin-bottom: 16px;
+        word-break: break-word;
+      }
+      .scope { color: #58a6ff; }
+      .commit-body {
+        font-size: clamp(12px, 3vw, 15px);
+        color: #8b949e;
+        line-height: 1.6;
+        padding-top: 12px;
+        border-top: 1px solid #21262d;
+      }
+      .footer {
+        padding: 10px 16px;
+        font-size: 11px;
+        color: #484f58;
+        border-top: 1px solid #21262d;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="header">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <span class="title">git commit</span>
+      </div>
+      <div class="body">
+        <div class="badge" id="badge"></div>
+        <div class="commit-line" id="commit-line"></div>
+        <div class="commit-body" id="commit-body"></div>
+      </div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      const type = p.get('type') || 'chore';
+      const scope = p.get('scope') || '';
+      const message = p.get('message') || '';
+      const body = p.get('body') || '';
+
+      const badge = document.getElementById('badge');
+      badge.textContent = type;
+      badge.className = 'badge ' + type;
+
+      const line = document.getElementById('commit-line');
+      if (scope) {
+        line.innerHTML = type + '(<span class="scope">' + scope + '</span>): ' + message;
+      } else {
+        line.textContent = type + ': ' + message;
+      }
+
+      const bodyEl = document.getElementById('commit-body');
+      if (body) {
+        bodyEl.textContent = body;
+        bodyEl.style.display = 'block';
+      } else {
+        bodyEl.style.display = 'none';
+      }
+    </script>
+  </body>
+</html>

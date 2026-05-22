@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cover Letter</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #f8f6f1;
+        font-family: Georgia, 'Times New Roman', serif;
+        color: #2c2416;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card {
+        width: 100%;
+        background: #fff;
+        border-radius: 4px;
+        padding: 24px 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      }
+      .to-line {
+        font-size: clamp(11px, 3vw, 13px);
+        color: #999;
+        font-family: -apple-system, sans-serif;
+        margin-bottom: 18px;
+        letter-spacing: 0.3px;
+      }
+      .to-line strong { color: #444; }
+      .rule { height: 1px; background: #e5e0d5; margin-bottom: 18px; }
+      .letter-body {
+        font-size: clamp(14px, 4vw, 17px);
+        line-height: 1.9;
+        color: #2c2416;
+      }
+      .sentence { display: block; margin-bottom: 14px; }
+      .sentence:last-child { margin-bottom: 0; }
+      .footer {
+        margin-top: 20px;
+        font-size: 11px;
+        color: #c5bba8;
+        font-family: -apple-system, sans-serif;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="to-line">Applying for: <strong id="role-company"></strong></div>
+      <div class="rule"></div>
+      <div class="letter-body">
+        <span class="sentence" id="hook"></span>
+        <span class="sentence" id="value"></span>
+        <span class="sentence" id="fit"></span>
+        <span class="sentence" id="close"></span>
+      </div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      const role = p.get('role') || '';
+      const company = p.get('company') || '';
+      document.getElementById('role-company').textContent = role + (company ? ' at ' + company : '');
+      document.getElementById('hook').textContent = p.get('hook') || '';
+      document.getElementById('value').textContent = p.get('value') || '';
+      document.getElementById('fit').textContent = p.get('fit') || '';
+      document.getElementById('close').textContent = p.get('close') || '';
+    </script>
+  </body>
+</html>

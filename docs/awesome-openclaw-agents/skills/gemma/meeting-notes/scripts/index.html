@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Meeting Notes</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?title=${encodeURIComponent(d.title)}&summary=${encodeURIComponent(d.summary)}&d1=${encodeURIComponent(d.decision1||'')}&d2=${encodeURIComponent(d.decision2||'')}&a1w=${encodeURIComponent(d.action1_who)}&a1t=${encodeURIComponent(d.action1_what)}&a2w=${encodeURIComponent(d.action2_who||'')}&a2t=${encodeURIComponent(d.action2_what||'')}&a3w=${encodeURIComponent(d.action3_who||'')}&a3t=${encodeURIComponent(d.action3_what||'')}&next=${encodeURIComponent(d.next_step)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

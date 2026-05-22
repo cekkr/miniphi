@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing Advisor</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #09090b;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #fafafa;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .product {
+        font-size: clamp(16px, 4.5vw, 22px);
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .model-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        background: #18181b;
+        color: #a1a1aa;
+        border: 1px solid #27272a;
+        margin-bottom: 18px;
+      }
+      .tiers { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+      .tier {
+        background: #18181b;
+        border: 1px solid #27272a;
+        border-radius: 12px;
+        padding: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .tier.highlight {
+        border-color: #3f3f46;
+        background: #1c1c1f;
+      }
+      .tier-left { flex: 1; min-width: 0; }
+      .tier-name {
+        font-size: clamp(14px, 4vw, 17px);
+        font-weight: 700;
+        color: #fafafa;
+        margin-bottom: 3px;
+      }
+      .tier-for {
+        font-size: clamp(11px, 3vw, 13px);
+        color: #71717a;
+      }
+      .tier-price {
+        font-size: clamp(16px, 4.5vw, 22px);
+        font-weight: 800;
+        color: #fafafa;
+        white-space: nowrap;
+        text-align: right;
+      }
+      .rationale {
+        background: #18181b;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: clamp(12px, 3vw, 14px);
+        color: #71717a;
+        line-height: 1.6;
+        font-style: italic;
+      }
+      .rationale-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #52525b;
+        margin-bottom: 4px;
+        font-style: normal;
+      }
+      .footer { font-size: 11px; color: #27272a; text-align: right; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="product" id="product"></div>
+      <div class="model-badge" id="model"></div>
+      <div class="tiers" id="tiers"></div>
+      <div class="rationale">
+        <div class="rationale-label">Strategy</div>
+        <span id="rationale"></span>
+      </div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('product').textContent = p.get('product') || '';
+      document.getElementById('model').textContent = p.get('model') || '';
+      document.getElementById('rationale').textContent = p.get('rationale') || '';
+
+      const tiers = [
+        { name: p.get('t1n'), price: p.get('t1p'), for: p.get('t1f') },
+        { name: p.get('t2n'), price: p.get('t2p'), for: p.get('t2f'), highlight: true },
+        { name: p.get('t3n'), price: p.get('t3p'), for: p.get('t3f') },
+      ];
+      const tiersEl = document.getElementById('tiers');
+      tiers.forEach(t => {
+        if (!t.name) return;
+        tiersEl.innerHTML += `
+          <div class="tier${t.highlight ? ' highlight' : ''}">
+            <div class="tier-left">
+              <div class="tier-name">${t.name}</div>
+              <div class="tier-for">${t.for}</div>
+            </div>
+            <div class="tier-price">${t.price}</div>
+          </div>`;
+      });
+    </script>
+  </body>
+</html>

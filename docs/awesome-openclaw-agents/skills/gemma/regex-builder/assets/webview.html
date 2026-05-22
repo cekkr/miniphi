@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regex Builder</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #0d1117;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #e6edf3;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #484f58;
+        margin-bottom: 6px;
+      }
+      .description {
+        font-size: clamp(15px, 4vw, 18px);
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 18px;
+        line-height: 1.4;
+      }
+      .regex-box {
+        background: #161b22;
+        border: 1px solid #f78166;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .slash { color: #f78166; font-size: 22px; font-family: monospace; }
+      .regex-text {
+        font-family: 'Courier New', monospace;
+        font-size: clamp(14px, 4vw, 20px);
+        color: #7ee787;
+        word-break: break-all;
+        flex: 1;
+      }
+      .flags { color: #f78166; font-family: monospace; font-size: 18px; }
+      .explanation {
+        background: #161b22;
+        border-radius: 10px;
+        padding: 14px;
+        font-size: clamp(13px, 3.5vw, 15px);
+        color: #8b949e;
+        line-height: 1.6;
+        margin-bottom: 14px;
+      }
+      .examples { display: flex; gap: 10px; margin-bottom: 14px; }
+      .ex-card {
+        flex: 1;
+        background: #161b22;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .ex-card .label { margin-bottom: 4px; }
+      .ex-match { border-top: 2px solid #3fb950; }
+      .ex-nomatch { border-top: 2px solid #f85149; }
+      .ex-text {
+        font-family: monospace;
+        font-size: clamp(11px, 3vw, 13px);
+        word-break: break-all;
+      }
+      .ex-match .ex-text { color: #3fb950; }
+      .ex-nomatch .ex-text { color: #f85149; }
+      .footer { font-size: 11px; color: #484f58; text-align: right; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="label">Pattern for</div>
+      <div class="description" id="description"></div>
+      <div class="regex-box">
+        <span class="slash">/</span>
+        <span class="regex-text" id="regex"></span>
+        <span class="slash">/</span>
+        <span class="flags" id="flags"></span>
+      </div>
+      <div class="explanation" id="explanation"></div>
+      <div class="examples">
+        <div class="ex-card ex-match">
+          <div class="label">Matches</div>
+          <div class="ex-text" id="match"></div>
+        </div>
+        <div class="ex-card ex-nomatch">
+          <div class="label">No match</div>
+          <div class="ex-text" id="nomatch"></div>
+        </div>
+      </div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('description').textContent = p.get('description') || '';
+      document.getElementById('regex').textContent = p.get('regex') || '';
+      document.getElementById('flags').textContent = p.get('flags') || '';
+      document.getElementById('explanation').textContent = p.get('explanation') || '';
+      document.getElementById('match').textContent = p.get('match') || '';
+      document.getElementById('nomatch').textContent = p.get('nomatch') || '';
+    </script>
+  </body>
+</html>

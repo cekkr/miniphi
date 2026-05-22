@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Pricing Advisor</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?product=${encodeURIComponent(d.product)}&model=${encodeURIComponent(d.model)}&t1n=${encodeURIComponent(d.tier1_name)}&t1p=${encodeURIComponent(d.tier1_price)}&t1f=${encodeURIComponent(d.tier1_for)}&t2n=${encodeURIComponent(d.tier2_name)}&t2p=${encodeURIComponent(d.tier2_price)}&t2f=${encodeURIComponent(d.tier2_for)}&t3n=${encodeURIComponent(d.tier3_name)}&t3p=${encodeURIComponent(d.tier3_price)}&t3f=${encodeURIComponent(d.tier3_for)}&rationale=${encodeURIComponent(d.rationale)}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

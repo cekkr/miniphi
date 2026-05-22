@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Explainer</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #0f0f0f;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #d4d4d4;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .lang-badge {
+        display: inline-block;
+        padding: 3px 12px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #264f78;
+        color: #9cdcfe;
+        margin-bottom: 12px;
+        letter-spacing: 0.5px;
+      }
+      .code-block {
+        background: #1e1e1e;
+        border-radius: 8px;
+        padding: 14px;
+        font-family: 'Courier New', monospace;
+        font-size: clamp(11px, 3vw, 14px);
+        color: #ce9178;
+        word-break: break-all;
+        line-height: 1.6;
+        margin-bottom: 14px;
+        border: 1px solid #333;
+      }
+      .section-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #666;
+        margin-bottom: 6px;
+      }
+      .summary {
+        font-size: clamp(14px, 4vw, 17px);
+        font-weight: 600;
+        color: #d4d4d4;
+        line-height: 1.5;
+        margin-bottom: 14px;
+      }
+      .how {
+        background: #1a2332;
+        border-left: 3px solid #264f78;
+        border-radius: 0 8px 8px 0;
+        padding: 10px 14px;
+        font-size: clamp(12px, 3.5vw, 15px);
+        color: #9cdcfe;
+        line-height: 1.5;
+        margin-bottom: 14px;
+      }
+      .tip {
+        background: #1c1a10;
+        border: 1px solid #5a4e00;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: clamp(11px, 3vw, 13px);
+        color: #dcdcaa;
+        line-height: 1.5;
+      }
+      .tip-label { font-weight: 700; margin-bottom: 4px; }
+      .footer { font-size: 11px; color: #444; text-align: right; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="lang-badge" id="lang"></div>
+      <div class="code-block" id="snippet"></div>
+      <div class="section-label">What it does</div>
+      <div class="summary" id="summary"></div>
+      <div class="section-label">How it works</div>
+      <div class="how" id="how"></div>
+      <div class="tip"><div class="tip-label">Tip</div><span id="tip"></span></div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('lang').textContent = p.get('language') || 'Code';
+      document.getElementById('snippet').textContent = p.get('snippet') || '';
+      document.getElementById('summary').textContent = p.get('summary') || '';
+      document.getElementById('how').textContent = p.get('how') || '';
+      document.getElementById('tip').textContent = p.get('tip') || '';
+    </script>
+  </body>
+</html>

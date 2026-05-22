@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tone Shifter</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #1a1a1a;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #f0f0f0;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .tone-badge {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        background: #7c3aed;
+        color: #fff;
+        margin-bottom: 16px;
+      }
+      .panel {
+        background: #2a2a2a;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+      .panel-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #666;
+        margin-bottom: 8px;
+      }
+      .panel-text {
+        font-size: clamp(13px, 3.5vw, 16px);
+        line-height: 1.6;
+        color: #ccc;
+      }
+      .arrow {
+        text-align: center;
+        font-size: 22px;
+        margin: 4px 0;
+        color: #7c3aed;
+      }
+      .panel.rewritten { background: #1e1530; border: 1px solid #7c3aed; }
+      .panel.rewritten .panel-text { color: #e9d5ff; }
+      .change {
+        font-size: 11px;
+        color: #666;
+        text-align: center;
+        margin-top: 8px;
+        font-style: italic;
+      }
+      .footer { font-size: 11px; color: #444; text-align: right; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="tone-badge" id="tone"></div>
+      <div class="panel">
+        <div class="panel-label">Original</div>
+        <div class="panel-text" id="original"></div>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="panel rewritten">
+        <div class="panel-label">Rewritten</div>
+        <div class="panel-text" id="rewritten"></div>
+      </div>
+      <div class="change" id="change"></div>
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('tone').textContent = p.get('tone') || 'rewritten';
+      document.getElementById('original').textContent = p.get('original') || '';
+      document.getElementById('rewritten').textContent = p.get('rewritten') || '';
+      document.getElementById('change').textContent = p.get('change') ? '✦ ' + p.get('change') : '';
+    </script>
+  </body>
+</html>

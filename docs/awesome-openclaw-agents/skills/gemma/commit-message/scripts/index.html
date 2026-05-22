@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Commit Message</title></head>
+  <body>
+    <script>
+      window['ai_edge_gallery_get_result'] = async (data) => {
+        const d = JSON.parse(data);
+        return JSON.stringify({
+          webview: {
+            url: `../assets/webview.html?type=${encodeURIComponent(d.type)}&scope=${encodeURIComponent(d.scope||'')}&message=${encodeURIComponent(d.message)}&body=${encodeURIComponent(d.body||'')}`
+          }
+        });
+      };
+    </script>
+  </body>
+</html>

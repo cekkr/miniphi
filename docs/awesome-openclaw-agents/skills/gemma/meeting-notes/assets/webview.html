@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #fafafa;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #1a1a1a;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 6%;
+      }
+      .card { width: 100%; }
+      .meeting-title {
+        font-size: clamp(18px, 5vw, 26px);
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .summary {
+        font-size: clamp(12px, 3.5vw, 15px);
+        color: #666;
+        margin-bottom: 18px;
+        line-height: 1.5;
+      }
+      .section { margin-bottom: 16px; }
+      .section-label {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #999;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .section-label::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #e5e5e5;
+      }
+      .decision {
+        background: #fff8e6;
+        border-left: 3px solid #f59e0b;
+        border-radius: 0 6px 6px 0;
+        padding: 8px 12px;
+        font-size: clamp(12px, 3.5vw, 14px);
+        color: #1a1a1a;
+        margin-bottom: 6px;
+        line-height: 1.5;
+      }
+      .action {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .who {
+        flex-shrink: 0;
+        background: #e8f4fd;
+        color: #1a7fc1;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 20px;
+        white-space: nowrap;
+      }
+      .what {
+        font-size: clamp(12px, 3.5vw, 14px);
+        color: #333;
+        line-height: 1.5;
+      }
+      .next {
+        background: #f0fdf4;
+        border: 1px solid #86efac;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: clamp(13px, 3.5vw, 15px);
+        font-weight: 600;
+        color: #166534;
+        line-height: 1.5;
+      }
+      .footer { font-size: 11px; color: #ccc; text-align: right; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="meeting-title" id="title"></div>
+      <div class="summary" id="summary"></div>
+
+      <div class="section" id="decisions-section">
+        <div class="section-label">Decisions</div>
+        <div id="decisions"></div>
+      </div>
+
+      <div class="section" id="actions-section">
+        <div class="section-label">Action Items</div>
+        <div id="actions"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Next Step</div>
+        <div class="next" id="next"></div>
+      </div>
+
+      <div class="footer">made on device with gemma</div>
+    </div>
+    <script>
+      const p = new URLSearchParams(window.location.search);
+      document.getElementById('title').textContent = p.get('title') || 'Meeting Summary';
+      document.getElementById('summary').textContent = p.get('summary') || '';
+      document.getElementById('next').textContent = p.get('next') || '';
+
+      const decisionsEl = document.getElementById('decisions');
+      [p.get('d1'), p.get('d2')].filter(Boolean).forEach(d => {
+        decisionsEl.innerHTML += `<div class="decision">${d}</div>`;
+      });
+      if (!decisionsEl.innerHTML) document.getElementById('decisions-section').style.display = 'none';
+
+      const actionsEl = document.getElementById('actions');
+      [[p.get('a1w'), p.get('a1t')], [p.get('a2w'), p.get('a2t')], [p.get('a3w'), p.get('a3t')]]
+        .filter(([w, t]) => w && t)
+        .forEach(([who, what]) => {
+          actionsEl.innerHTML += `<div class="action"><span class="who">${who}</span><span class="what">${what}</span></div>`;
+        });
+    </script>
+  </body>
+</html>
