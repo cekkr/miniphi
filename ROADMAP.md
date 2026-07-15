@@ -168,6 +168,14 @@ Focus areas:
   unit-tests-js/cli-bash-advanced.test.js`) — asserts on executed model output.
 - Live proofs: real `miniphi` runs recorded in the active slice with prompt journals and stop
   reasons; prefer `--model auto` so proofs exercise the catalog too.
+- Known live-run hazard (2026-07-15): after several long `max_tokens: -1` generations the LM
+  Studio server can wedge — the model still reports `state: loaded` but even a 30-token
+  completion times out, so every MiniPhi prompt hits its 120s timeout (decomposer disables
+  itself, analysis emits fallback JSON; runs still exit 0 with canonical stop reasons).
+  Fix: restart the LM Studio app (reload the model), then rerun. Prevention: before a proof
+  run, probe with a tiny real completion (e.g. POST /api/v0/chat/completions, max_tokens 30),
+  not just `lmstudio-health`/`/models`, which both look healthy while wedged. Candidate v0.2
+  automation: extend the health gate with a micro-completion probe + stall stop reason.
 
 ## Operating checklist (for each slice)
 - Run a real `miniphi` task or sample; capture prompt journal and stop reason.
