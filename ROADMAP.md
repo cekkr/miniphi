@@ -54,6 +54,9 @@ Known gaps (drive the slices below):
   installed on the reference host); auto-selection exists but is opt-in.
 - Models are JIT-loaded at the server default context (8192 on the reference host); MiniPhi
   cannot yet size context deliberately (LM Studio `/api/v1/models/load` exists for this).
+- "Idle vs stall" is indistinguishable to the operator: when nothing is computing, a static
+  screen / silent stdout looks the same whether MiniPhi is *waiting for input* or *hung*. See the
+  detailed future-fix note under v0.1 slice 5.
 
 ## Milestones
 
@@ -147,6 +150,38 @@ Slices (in order):
    - Proof runs: `samples/get-started` walkthrough (interactive + `--headless`);
      `npm run sample:lmstudio-json-series`.
    - Exit criteria: docs match CLI behavior and sample runs complete without manual patching.
+
+5) Idle-vs-stall observability — **NOTE / future fix (not started)**
+   - Problem: when no computation is running, the operator cannot tell whether MiniPhi is
+     *waiting for input* or *stalled/hung*. A static UI frame or silent stdout looks identical for:
+     an unanswered permission prompt, the empty task box / file picker, a long in-flight model
+     turn, a blocked headless approver, or an actually-wedged LM Studio call. This is the "stall"
+     users report — often it is just waiting for input, but nothing distinguishes that from a bug.
+   - Where it bites (code hooks for whoever picks this up):
+     - Interactive UI: `src/ui/components/progress-pane.js` animates the spinner only while
+       `running` and shows a generic "thinking…"; it does not distinguish "awaiting your keypress"
+       (a pending `permission-request`, the prompt box, the picker) from "awaiting the model", and
+       gives no elapsed time, so a hang looks like normal work. `src/ui/app.js` holds the
+       `running`/`pending` state that a clearer banner would key off.
+     - Agent loop: `AgentSession._requestTurn` (`src/agent/agent-session.js`) has no per-turn
+       watchdog beyond the REST client timeout; between the request and a response there is no
+       heartbeat. `_budgetExhausted()`/`sessionDeadline` bound the whole run but do not surface a
+       mid-turn stall.
+     - Headless: a caller that does not subscribe to session events sees nothing during model
+       calls (looks stalled); the `ask`-policy readline approver waits on stdin with only its
+       one-line question printed.
+   - Proposed fix:
+     - Explicit operator-facing state: `WAITING FOR YOU` (permission/prompt/picker) vs `WORKING`
+       (model/tool in flight) vs `IDLE/DONE`; emit an `awaiting-approval` / `awaiting-input`
+       status from `AgentSession` so both UI and headless can render it.
+     - Heartbeat on long model turns: elapsed timer ("waiting on <model> — Ns") wired off a
+       per-turn watchdog; consider streaming (`chatStream`) so partial tokens prove liveness.
+     - Stall watchdog: if a turn exceeds a threshold with no tokens/response, surface a `stalled?`
+       hint plus the LM Studio wedge remedy (see the "Known live-run hazard" note) and a canonical
+       `stall`/`session-timeout` stop reason instead of hanging silently.
+   - Exit criteria: at any moment the operator can tell from the screen (or headless output)
+     whether MiniPhi is computing, waiting on them, or stalled; a hung model turn is reported
+     within a bounded time rather than appearing as indefinite "thinking".
 
 ### v0.2 Reliability, reuse, and model management
 Objective: make the agent predictable across sessions, workloads, and model inventories.
