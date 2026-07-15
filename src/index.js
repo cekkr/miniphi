@@ -62,6 +62,9 @@ import {
   normalizeLmStudioRequestTimeoutMs,
 } from "./libs/runtime-defaults.js";
 import { resolveLmStudioTransportPreference } from "./libs/lmstudio-transport.js";
+import { LMStudioRestClient } from "./libs/lmstudio-api.js";
+import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
+import { resolveAutoModel } from "./libs/model-catalog.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import {
   buildLineRangeFromChunk,
@@ -81,6 +84,7 @@ import { handleHelpersCommand } from "./commands/helpers.js";
 import { handleHistoryNotes } from "./commands/history-notes.js";
 import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
 import { handleMigrateStopReasonsCommand } from "./commands/migrate-stop-reasons.js";
+import { handleModelsCommand } from "./commands/models.js";
 import { buildPrimaryCommandContext, executePrimaryCommand } from "./commands/primary-flow.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
@@ -103,6 +107,7 @@ const COMMANDS = new Set([
   "cache-prune",
   "migrate-stop-reasons",
   "nitpick",
+  "models",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -1168,8 +1173,48 @@ async function main() {
           : typeof process.env.MINIPHI_MODEL === "string" && process.env.MINIPHI_MODEL.trim()
             ? process.env.MINIPHI_MODEL.trim()
             : null;
+  const autoModelRequested =
+    typeof requestedModel === "string" && requestedModel.trim().toLowerCase() === "auto";
+  let autoModelInfo = null;
+  if (autoModelRequested) {
+    try {
+      const autoRestClient = new LMStudioRestClient(
+        buildRestClientOptions(configData, undefined, {
+          ...(lmStudioEndpoints?.restBaseUrl ? { baseUrl: lmStudioEndpoints.restBaseUrl } : {}),
+          timeoutMs: 10000,
+        }),
+      );
+      autoModelInfo = await resolveAutoModel({
+        restClient: autoRestClient,
+        task:
+          typeof options.task === "string" && options.task.trim()
+            ? options.task
+            : implicitWorkspaceTask,
+        command: typeof options.cmd === "string" ? options.cmd : null,
+        mode: command,
+        requiredContextLength: contextLengthExplicit ? contextLength : null,
+        logger: verbose ? (message) => console.warn(message) : null,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Auto model selection failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+    if (autoModelInfo) {
+      const reasonNote = autoModelInfo.reasons?.length ? ` — ${autoModelInfo.reasons[0]}` : "";
+      console.log(
+        `[MiniPhi] Auto-selected model ${autoModelInfo.modelKey} (intent: ${autoModelInfo.intent}${reasonNote})`,
+      );
+    } else {
+      console.warn(
+        "[MiniPhi] --model auto could not pick a live model; falling back to the configured default.",
+      );
+    }
+  }
   const modelSelection = resolveModelConfig({
-    model: requestedModel,
+    model: autoModelInfo?.modelKey ?? (autoModelRequested ? null : requestedModel),
     contextLength,
     contextIsExplicit: contextLengthExplicit,
   });
@@ -1428,6 +1473,18 @@ async function main() {
   if (command === "lmstudio-health") {
     await handleLmStudioHealthCommand({
       options,
+      verbose,
+      configData,
+      modelSelection,
+      restBaseUrl: resolvedLmStudioBaseUrl,
+    });
+    return;
+  }
+
+  if (command === "models") {
+    await handleModelsCommand({
+      options,
+      positionals,
       verbose,
       configData,
       modelSelection,
@@ -2119,6 +2176,12 @@ async function main() {
       maxActions: configData.prompt?.decomposer?.maxActions,
       timeoutMs: decomposerTimeoutMs,
       schemaRegistry,
+      expandSubprompts:
+        !options["no-plan-expansion"] &&
+        configData.prompt?.decomposer?.expandSubprompts !== false,
+      maxExpansions:
+        parseNumericSetting(options["max-plan-expansions"], "--max-plan-expansions") ??
+        configData.prompt?.decomposer?.maxExpansions,
     });
   const emitDecomposerNoticeIfNeeded = () => {
     if (promptDecomposer && typeof promptDecomposer.consumeDisableNotice === "function") {
@@ -2725,6 +2788,7 @@ Usage:
   node src/index.js run --cmd "npm test" --task "Analyze failures"
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js lmstudio-health --timeout 10
+  node src/index.js models --task "Refactor the parser" [--json]
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js web-browse --url "https://example.com" --max-chars 4000
   node src/index.js history-notes --label "post benchmark"
@@ -2747,7 +2811,9 @@ Options:
   --cwd <path>                 Working directory for --cmd
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override model context length (default: model preset)
-  --model <id>                 LM Studio model key or alias (mistralai/devstral-small-2-2512, ibm/granite-4-h-tiny, phi-4)
+  --model <id|auto>            LM Studio model key or alias; "auto" picks the best installed model for the task
+  --no-plan-expansion          Disable recursive plan-branch expansion prompts
+  --max-plan-expansions <n>    Cap follow-up branch expansion prompts per plan (default: 4)
   --rl-router                 Enable adaptive RL prompt routing (multi-model pool)
   --rl-models <list>          Comma-separated model keys to route between
   --rl-state <path>           Router Q-table JSON path (default: .miniphi/indices/prompt-router.json)

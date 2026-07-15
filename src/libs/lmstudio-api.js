@@ -245,6 +245,10 @@ export class LMStudioRestClient {
       DEFAULT_REST_TIMEOUT_MS,
     );
     this.defaultModel = options?.defaultModel ?? DEFAULT_MODEL_KEY;
+    // Only advertise a context_length on the wire when the caller pinned one;
+    // sending the static default can exceed a JIT-loaded model's smaller
+    // context and LM Studio rejects the request with 400.
+    this.hasExplicitContextLength = Number.isFinite(options?.defaultContextLength);
     this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
     this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
     this.executionRegister = options?.executionRegister ?? null;
@@ -357,12 +361,15 @@ export class LMStudioRestClient {
       stream: false,
       max_tokens: -1,
       model: restPayload.model ?? this.defaultModel,
-      context_length:
-        typeof restPayload.context_length === "number"
-          ? restPayload.context_length
-          : this.defaultContextLength,
       ...restPayload,
     };
+    if (typeof restPayload.context_length !== "number") {
+      if (this.hasExplicitContextLength) {
+        body.context_length = this.defaultContextLength;
+      } else {
+        delete body.context_length;
+      }
+    }
     return this._post("/chat/completions", body, timeoutMs);
   }
 
@@ -388,12 +395,15 @@ export class LMStudioRestClient {
       stream: false,
       max_tokens: -1,
       model: restPayload.model ?? this.defaultModel,
-      context_length:
-        typeof restPayload.context_length === "number"
-          ? restPayload.context_length
-          : this.defaultContextLength,
       ...restPayload,
     };
+    if (typeof restPayload.context_length !== "number") {
+      if (this.hasExplicitContextLength) {
+        body.context_length = this.defaultContextLength;
+      } else {
+        delete body.context_length;
+      }
+    }
     return this._post("/completions", body, timeoutMs);
   }
 
@@ -428,6 +438,7 @@ export class LMStudioRestClient {
       throw new Error("model is required.");
     }
     this.defaultModel = model;
+    this.hasExplicitContextLength = Number.isFinite(contextLength);
     this.defaultContextLength = contextLength ?? DEFAULT_CONTEXT_LENGTH;
   }
 

@@ -855,6 +855,9 @@ async function runGeneralPurposeBenchmark({
       schemaRegistry,
       timeoutMs: decompositionTimeoutBudget?.requestTimeoutMs ?? liveLmPlanTimeoutMs,
       maxAttempts: 2,
+      // Benchmark stage budgets time a single decomposer call; branch expansion
+      // would add unbudgeted REST calls and skew stage telemetry.
+      expandSubprompts: false,
     });
     try {
       decompositionPlan = await decomposer.decompose({

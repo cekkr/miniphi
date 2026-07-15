@@ -108,9 +108,13 @@ function assertMultiFileFixes(result, expectedPrefixes) {
   assert.ok(matches.length >= 2);
 }
 
+// Live LM Studio runs: gate behind MINIPHI_LMSTUDIO_INTEGRATION=1 so the
+// default `npm test` stays offline and deterministic.
+const LIVE = process.env.MINIPHI_LMSTUDIO_INTEGRATION === "1";
+
 test(
   "MiniPhi advanced prompt covers multiple bash C files",
-  { timeout: 12 * 60 * 1000 },
+  { skip: !LIVE, timeout: 12 * 60 * 1000 },
   async () => {
     const workspace = await createTempWorkspace();
     try {
@@ -175,7 +179,7 @@ test(
 
 test(
   "MiniPhi advanced prompt covers multiple bash-it scripts",
-  { timeout: 12 * 60 * 1000 },
+  { skip: !LIVE, timeout: 12 * 60 * 1000 },
   async () => {
     const workspace = await createTempWorkspace();
     try {

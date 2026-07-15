@@ -27,6 +27,8 @@ import {
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_MAX_EXPANSIONS = 4;
+const SESSION_EXPANSION_RESERVE_MS = 1500;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 120000;
 const MIN_DECOMPOSER_TIMEOUT_MS = 1000;
@@ -46,6 +48,18 @@ const SYSTEM_PROMPT = [
   "Mandatory fields: schema_version, plan_id, summary, needs_more_context, missing_snippets, steps[].id/title/description/requires_subprompt/children, recommended_tools, notes.",
   "Use depth-first numbering so follow-up prompts can resume mid-branch (e.g., 1, 1.1, 1.2, 2, ...).",
   "Do not invent actions outside the workspace scope; prefer to reference concrete files, commands, or tools when available.",
+].join(" ");
+
+const SHALLOW_PLAN_HINT = [
+  "Return a SHALLOW plan: top-level steps only with children set to [].",
+  "Set requires_subprompt=true on any step that needs further decomposition;",
+  "MiniPhi will expand those branches with focused follow-up prompts.",
+].join(" ");
+
+const BRANCH_EXPANSION_HINT = [
+  "You are expanding ONE branch of an existing plan.",
+  "Return child steps for the given branch objective only; do not restate the parent plan.",
+  "Keep steps concrete and small enough to execute with local files and commands.",
 ].join(" ");
 
 const PLAN_SCHEMA = [
@@ -131,6 +145,12 @@ export default class PromptDecomposer {
       DEFAULT_TIMEOUT_MS,
       MIN_DECOMPOSER_TIMEOUT_MS,
     );
+    this.expandSubprompts = options?.expandSubprompts !== false;
+    const parsedExpansions = Number(options?.maxExpansions);
+    this.maxExpansions =
+      Number.isFinite(parsedExpansions) && parsedExpansions >= 0
+        ? Math.floor(parsedExpansions)
+        : DEFAULT_MAX_EXPANSIONS;
     this.disabled = false;
     this.disableNotice = null;
   }
@@ -208,10 +228,11 @@ export default class PromptDecomposer {
     const schemaBlock = this._buildSchemaBlock();
     const responseFormat = this._resolveResponseFormat();
 
+    const shallowHint = this.expandSubprompts && this.maxExpansions > 0 ? ` ${SHALLOW_PLAN_HINT}` : "";
     const buildMessages = (body) => [
       {
         role: "system",
-        content: `${SYSTEM_PROMPT}\nJSON schema:\n${schemaBlock}`,
+        content: `${SYSTEM_PROMPT}${shallowHint}\nJSON schema:\n${schemaBlock}`,
       },
       {
         role: "user",
@@ -312,6 +333,23 @@ export default class PromptDecomposer {
       normalizedPlan = this._fallbackPlan(errorMessage, payload, errorInfo);
     }
 
+    let branchExpansions = null;
+    const planIsUsable =
+      normalizedPlan &&
+      normalizedPlan.schemaVersion !== "prompt-plan@fallback" &&
+      Array.isArray(normalizedPlan.plan?.steps) &&
+      normalizedPlan.plan.steps.length > 0;
+    if (planIsUsable && this.expandSubprompts && this.maxExpansions > 0 && !this.disabled) {
+      branchExpansions = await this._expandPlanBranches(normalizedPlan, payload, {
+        schemaBlock,
+        responseFormat,
+      });
+      if (branchExpansions?.some((entry) => entry.status === "expanded")) {
+        this._refreshPlanDerivedFields(normalizedPlan, payload.planBranch ?? null);
+      }
+      normalizedPlan.branchExpansions = branchExpansions;
+    }
+
     if (payload.promptRecorder) {
       const schemaValidationSummary = summarizeJsonSchemaValidation(schemaValidation, {
         maxErrors: 3,
@@ -331,6 +369,7 @@ export default class PromptDecomposer {
           : null) ?? null;
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
+      responsePayload.branch_expansions = branchExpansions ?? null;
       const stopInfo = buildStopReasonInfo({
         error: errorMessage,
         fallbackReason: normalizedPlan?.stopReason ?? null,
@@ -347,6 +386,7 @@ export default class PromptDecomposer {
           promptJournalId: payload.promptJournalId ?? null,
           request_mode: requestMode ?? null,
           decomposition_attempts: attemptHistory,
+          branch_expansions: branchExpansions ?? null,
           request_timeout_ms:
             (Array.isArray(attemptHistory)
               ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
@@ -410,6 +450,7 @@ export default class PromptDecomposer {
             mainPromptId: payload.mainPromptId ?? null,
             extra: payload.metadata ?? null,
             planBranch: payload.planBranch ?? null,
+            branchExpansions: normalizedPlan.branchExpansions ?? null,
           },
         });
       } catch (error) {
@@ -766,6 +807,241 @@ export default class PromptDecomposer {
       }
     }
     return { valid: true, steps: normalized };
+  }
+
+  /**
+   * Expands plan branches flagged `requires_subprompt` with focused follow-up
+   * prompts so complex tasks decompose recursively without demanding a deep
+   * nested plan from a single completion. Returns telemetry entries per
+   * branch: expanded / failed / skipped-budget / skipped-session / skipped-depth.
+   */
+  async _expandPlanBranches(normalizedPlan, payload, { schemaBlock, responseFormat }) {
+    const expansions = [];
+    const budget = { remaining: this.maxExpansions, halted: false };
+    await this._expandStepsRecursive(normalizedPlan.plan.steps, {
+      normalizedPlan,
+      payload,
+      schemaBlock,
+      responseFormat,
+      depth: 1,
+      budget,
+      expansions,
+    });
+    return expansions;
+  }
+
+  async _expandStepsRecursive(steps, context) {
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return;
+    }
+    const { payload, depth, budget, expansions } = context;
+    for (const step of steps) {
+      if (budget.halted) {
+        return;
+      }
+      const wantsExpansion =
+        step?.requires_subprompt === true &&
+        (!Array.isArray(step.children) || step.children.length === 0);
+      if (wantsExpansion) {
+        if (depth >= this.maxDepth) {
+          expansions.push({ branch: step.id, title: step.title, status: "skipped-depth" });
+        } else if (budget.remaining <= 0) {
+          expansions.push({ branch: step.id, title: step.title, status: "skipped-budget" });
+        } else if (this._sessionBudgetExhausted(payload?.sessionDeadline)) {
+          expansions.push({ branch: step.id, title: step.title, status: "skipped-session" });
+          budget.halted = true;
+          return;
+        } else {
+          budget.remaining -= 1;
+          const result = await this._requestBranchExpansion(step, context);
+          expansions.push(result.telemetry);
+          if (result.children) {
+            step.children = result.children;
+          } else if (result.stopExpansion) {
+            budget.halted = true;
+            return;
+          }
+        }
+      }
+      if (Array.isArray(step.children) && step.children.length > 0 && depth < this.maxDepth) {
+        await this._expandStepsRecursive(step.children, { ...context, depth: depth + 1 });
+      }
+    }
+  }
+
+  _sessionBudgetExhausted(sessionDeadline) {
+    return (
+      Number.isFinite(sessionDeadline) &&
+      sessionDeadline > 0 &&
+      Date.now() >= sessionDeadline - SESSION_EXPANSION_RESERVE_MS
+    );
+  }
+
+  async _requestBranchExpansion(step, context) {
+    const { normalizedPlan, payload, schemaBlock, responseFormat } = context;
+    const branchObjective = [step.title, step.description]
+      .filter((part) => typeof part === "string" && part.trim().length)
+      .join(": ");
+    const body = {
+      objective: branchObjective || payload.objective,
+      parent: {
+        objective: payload.objective,
+        plan_id: normalizedPlan.planId,
+        summary: this._compactText(normalizedPlan.summary, 240),
+        branch: step.id,
+      },
+      command: payload.command ?? null,
+      workspace: {
+        classification: payload.workspace?.classification ?? null,
+        summary: this._compactText(payload.workspace?.summary, 240),
+      },
+      limits: {
+        maxDepth: 1,
+        maxActions: Math.min(6, this.maxActions ?? DEFAULT_MAX_ACTIONS),
+      },
+      expectations: {
+        jsonOnly: true,
+        stripPreambles: true,
+        branch_expansion: true,
+      },
+    };
+    const messages = [
+      {
+        role: "system",
+        content: `${SYSTEM_PROMPT} ${BRANCH_EXPANSION_HINT}\nJSON schema:\n${schemaBlock}`,
+      },
+      { role: "user", content: JSON.stringify(body, null, 2) },
+    ];
+
+    let responseText = "";
+    let errorMessage = null;
+    let children = null;
+    let stopExpansion = false;
+    let validationStatus = null;
+    try {
+      const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
+      const completion = await this._withTimeout(
+        this.restClient.createChatCompletion({
+          messages,
+          temperature: this.temperature,
+          max_tokens: -1,
+          response_format: responseFormat,
+        }),
+        requestTimeoutMs,
+      );
+      responseText = completion?.choices?.[0]?.message?.content ?? "";
+      const validationResult = validateJsonObjectAgainstSchema(
+        this._resolveSchemaDefinition(),
+        responseText,
+      );
+      const outcome = classifyJsonSchemaValidation(validationResult.validation);
+      validationStatus = outcome.status ?? null;
+      const parsed = outcome.parsed;
+      if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) {
+        const normalizedSteps = this._normalizeSteps(parsed.steps);
+        if (normalizedSteps.valid && normalizedSteps.steps.length > 0) {
+          children = this._renumberSteps(normalizedSteps.steps, step.id);
+        } else {
+          errorMessage = normalizedSteps.error ?? "branch expansion returned no usable steps";
+        }
+      } else {
+        errorMessage = outcome.error ?? "branch expansion returned no steps";
+      }
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+      const errorInfo = classifyLmStudioError(errorMessage);
+      // Transport-level failures poison further expansion; JSON/schema misses are branch-local.
+      stopExpansion = this._isSessionTimeout(errorMessage) || errorInfo.isTimeout || errorInfo.shouldDisable;
+    }
+
+    const telemetry = {
+      branch: step.id,
+      title: step.title,
+      status: children ? "expanded" : "failed",
+      childCount: children ? children.length : 0,
+      error: errorMessage,
+      validation_status: validationStatus,
+    };
+    this._log(
+      children
+        ? `[PromptDecomposer] Expanded branch ${step.id} into ${children.length} child steps.`
+        : `[PromptDecomposer] Branch ${step.id} expansion failed: ${errorMessage ?? "unknown"}.`,
+    );
+
+    if (payload.promptRecorder) {
+      try {
+        await payload.promptRecorder.record({
+          scope: "sub",
+          label: "prompt-decomposition-branch",
+          mainPromptId: payload.mainPromptId ?? null,
+          metadata: {
+            type: "prompt-decomposition-branch",
+            objective: body.objective,
+            branch: step.id,
+            parentPlanId: normalizedPlan.planId,
+            promptJournalId: payload.promptJournalId ?? null,
+            status: telemetry.status,
+            child_count: telemetry.childCount,
+          },
+          request: {
+            endpoint: "/chat/completions",
+            payload: body,
+            messages,
+            response_format: responseFormat,
+          },
+          response: {
+            rawResponseText: responseText,
+            children,
+            tool_calls: null,
+            tool_definitions: null,
+          },
+          error: errorMessage,
+        });
+      } catch (recordError) {
+        this._log(
+          `[PromptDecomposer] Unable to record branch expansion ${step.id}: ${
+            recordError instanceof Error ? recordError.message : recordError
+          }`,
+        );
+      }
+    }
+
+    return { children, telemetry, stopExpansion };
+  }
+
+  _renumberSteps(steps, parentId) {
+    if (!Array.isArray(steps)) {
+      return [];
+    }
+    return steps.map((step, index) => {
+      const id = parentId ? `${parentId}.${index + 1}` : String(index + 1);
+      return {
+        ...step,
+        id,
+        children: this._renumberSteps(step.children, id),
+      };
+    });
+  }
+
+  _refreshPlanDerivedFields(normalizedPlan, requestedBranch) {
+    const planPayload = normalizedPlan.plan;
+    const segments = buildPlanSegments(planPayload, { limit: 36 });
+    const segmentBlock = formatPlanSegmentsBlock(segments, { limit: 14 });
+    const focus = buildFocusedPlanSegments(segments, {
+      branch: requestedBranch,
+      limit: 10,
+      sourceLimit: 36,
+    });
+    normalizedPlan.outline = this._formatOutline(planPayload.steps);
+    normalizedPlan.segments = segments;
+    normalizedPlan.segmentBlock = segmentBlock;
+    normalizedPlan.focusBranch = focus.branch ?? null;
+    normalizedPlan.focusReason = focus.reason ?? null;
+    normalizedPlan.focusMatchedRequestedBranch = focus.matchedRequestedBranch ?? false;
+    normalizedPlan.focusSegments = focus.segments ?? [];
+    normalizedPlan.focusSegmentBlock = focus.block ?? null;
+    normalizedPlan.nextSubpromptBranch = focus.nextSubpromptBranch ?? null;
+    normalizedPlan.availableSubpromptBranches = focus.availableSubpromptBranches ?? [];
   }
 
   _buildResumeContext(payload) {
