@@ -35,13 +35,21 @@ Proven and regression-covered:
 - Live model management: `models` command and `--model auto` rank installed models per task
   intent (purpose, context, loaded state, memory fit); catalog falls back to OpenAI-compat
   `/v1/models` when the native route is unavailable.
-- Test suite: 133 tests — 128 offline deterministic, 5 live-gated (code generation, targeted
+- Interactive agent UI (2026-07-15): bare `miniphi`/free-form tasks open an Ink+htm agent that
+  selects files, streams progress, and applies **guarded edits** (diff + rollback via
+  `writeFileWithGuard`) behind per-edit operator approval; direct subcommands stay headless.
+  Core is offline-covered (executor/session/UI/routing suites); a live LM Studio proof of a
+  model-proposed edit applied end-to-end is still pending.
+- Test suite: 166 tests — 161 offline deterministic, 5 live-gated (code generation, targeted
   bug-fix editing, stateful class generation, bash multi-file prompts) — 0 failures.
 
 Known gaps (drive the slices below):
-- Plans are produced but not executed: steps and `recommended_tools` never become actions.
-- `needs_more_context`/`missing_snippets` are printed, not auto-fetched and re-prompted.
-- Model-proposed edits only apply inside recompose; the main loop has no guarded edit path.
+- Plans are produced but not executed in the **headless** flow: workspace maps leaves to
+  read-only actions, but run/analyze-file don't yet consume plan actions.
+- `needs_more_context`/`missing_snippets` auto-fetch + re-prompt is wired in workspace and the
+  interactive agent; a live end-to-end firing is still unproven.
+- Guarded model-proposed edits now exist in the **interactive agent** path; the **headless**
+  run/workspace analyzer flow still has no `edit_file` action (live proof pending for both).
 - `model-presets.js` defaults drift from installed models (default preset model is not even
   installed on the reference host); auto-selection exists but is opt-in.
 - Models are JIT-loaded at the server default context (8192 on the reference host); MiniPhi
@@ -101,22 +109,43 @@ Slices (in order):
      - One live run where the `missing_snippets` re-prompt fires end-to-end
        (request -> auto-fetch -> re-prompt -> non-fallback JSON).
 
-3) Reliable edit pipeline
-   - Scope: bring the guarded writer (diff summary + rollback, today recompose-only) into the
-     main run/workspace flow behind an `edit_file` action; edits arrive as schema-validated
-     JSON (full-file `content` or find/replace), following the contract already proven by the
-     live code-generation tests.
-   - Proof runs: a targeted live edit on a repo file with diff summary + rollback verification,
-     then a rerun with a prompt journal to confirm determinism; live gated suite stays green
-     (`MINIPHI_LMSTUDIO_INTEGRATION=1 node --test unit-tests-js/lmstudio-code-generation.live.test.js`).
-   - Exit criteria: diff guard blocks mismatched writes, rollback path verified, and a
-     validation command (test/lint) runs after the edit with its result recorded.
+3) Reliable edit pipeline — **core + live create-write landed 2026-07-15; edit/validate proof pending**
+   - Scope: bring the guarded writer (diff summary + rollback, previously recompose-only) into an
+     agent loop behind `write_file`/`edit_file` actions; edits arrive as schema-validated JSON
+     (full-file `content` or unique-anchor find/replace) via the `agent-action` schema.
+   - Landed (`src/agent/`): `AgentSession` runs a plan→act→approve→apply loop; `agent-executor`
+     normalizes actions (path-safe), builds a two-phase mutation **proposal** (diff + before/after
+     + `expectedHash`) and commits through `writeFileWithGuard` with a per-session `rollbacks/`
+     dir; `run_cmd` is CommandAuthorizationManager/approver-gated. Offline coverage:
+     `agent-executor.test.js` (guarded write, hash-mismatch rollback, anchor miss/ambiguity,
+     path-escape), `agent-session.test.js` (scripted loop, rejection, off-schema fallback, dedup).
+   - Closing proof (2026-07-15, live `qwen3-coder-30b-a3b-instruct`): agent proposed
+     `write_file slug.js`, the guard applied it (`written`, correct content), and the run finished
+     `completed` in 3 turns. **Anti-stall fix made during the proof:** without it the model
+     re-proposed the identical write every turn (guard returned `unchanged`) and spun to
+     `max-turns`; the loop now dedupes repeated identical read/edit actions and auto-finishes
+     `completed` after 2 no-progress turns (regression: `agent-session.test.js` "dedupes repeated
+     identical writes").
+   - Next steps to close (in order):
+     1. Live **anchored `edit_file`** on an existing repo file: prove the diff guard applies a
+        unique-anchor edit, then a hash-mismatch case rolls back (offline-covered today, not live).
+     2. Wire a **post-edit validation command** into the agent finish path (policy-gated
+        `run_cmd`, e.g. the file's test/lint) and record its result in the session `result.json`.
+     3. Extend the same guarded `write_file`/`edit_file` action into the **headless**
+        run/workspace analyzer flow (interactive path is the proven reference).
+   - Exit criteria: diff guard blocks mismatched writes, rollback path verified, and a validation
+     command runs after the edit with its result recorded — proven on a real run.
 
-4) Usable CLI + docs
-   - Scope: onboarding quickstart, config/profile summary, minimal regression benchmark; make
-     `--model auto` the documented default posture when the configured model is not installed
-     (health gate should say so explicitly).
-   - Proof runs: `samples/get-started` walkthrough; `npm run sample:lmstudio-json-series`.
+4) Usable CLI + docs — **advanced 2026-07-15 (interactive UI is now the primary interface)**
+   - Delivered: interactive Ink+htm agent UI as the default front door (file picker, live
+     progress, inline permission/diff approval) with all direct subcommands preserved for
+     scripting (`decideUiLaunch` routing; `--headless`/non-TTY fall back to the classic pipeline);
+     README leads with the UI, AGENTS documents the agent loop + schema + file map. Routing is
+     offline-covered (`ui-route`, `agent-ui`, `agent-ui-app` suites).
+   - Remaining: onboarding quickstart polish, config/profile summary, minimal regression
+     benchmark; make `--model auto` the documented default when the configured model is missing.
+   - Proof runs: `samples/get-started` walkthrough (interactive + `--headless`);
+     `npm run sample:lmstudio-json-series`.
    - Exit criteria: docs match CLI behavior and sample runs complete without manual patching.
 
 ### v0.2 Reliability, reuse, and model management

@@ -59,7 +59,8 @@ When you add or change CLI behavior:
 - LM Studio's newer `/api/v1` REST surface (models load/unload/download, stateful `/api/v1/chat`) exists alongside the deprecated-but-working `/api/v0`; the REST client still targets `/api/v0` + OpenAI-compat routes.
 - `LMStudioRestClient` only sends `context_length` when explicitly configured (constructor option or per request); advertising the static default can exceed a JIT-loaded model's smaller context and LM Studio rejects the request with 400 "Context size has been exceeded".
 - Transport default: REST-first (`lmStudio.transport: "rest"`); override with `lmStudio.transport: "ws"` or env `MINIPHI_FORCE_REST=1` for forced REST.
-- CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, and helper/command-library browsers.
+- CLI entrypoints: `ui` (interactive agent, also the default for bare `miniphi` / free-form tasks on a TTY), `run`, `analyze-file`, `workspace` (`miniphi "<task>" --headless`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, and helper/command-library browsers.
+- UI routing (`src/ui/route.js` `decideUiLaunch`): on a TTY, bare `miniphi`, the `ui` command, and a free-form task open the Ink UI; `--headless`/`--no-ui`, a non-TTY (scripts/CI), and every explicit subcommand run headless. This keeps direct arguments always available while the UI is the primary interface. The UI path (`launchInteractiveUi` in `src/index.js`) builds its own lightweight REST client (model only, never a static `context_length`) and dynamic-imports `src/ui/launch.js` so Ink/React never load on headless runs.
 - Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
 - Health probes (`lmstudio-health`) write snapshots to `.miniphi/health/lmstudio-status.json` (timeout configurable via `lmStudio.health.timeoutMs`).
 - `lmstudio-health --json` emits a machine-readable summary for CI checks.
@@ -92,9 +93,22 @@ Current slice: Plan execution bridge
 - Regression: `node --test unit-tests-js/plan-executor.test.js` (9 tests: mapping, path safety, dedup, budgets, snippet resolution, progress persistence).
 - Remaining before slice close: default `--plan-branch` to `firstIncompleteBranch` on resume; extend executor wiring to `run`/`analyze-file` (with policy-gated `runCommand` in run mode); one live run where the `missing_snippets` re-prompt fires end-to-end.
 
-Next slices (see `ROADMAP.md` for full scope and exit criteria):
-- Reliable edit pipeline (guarded writes with diff + rollback in the main flow).
-- Usable CLI + docs.
+Delivered 2026-07-15 — Interactive agent UI + guarded edits (live create-write proven):
+- Bare `miniphi`/free-form tasks open an Ink+htm agent (`src/agent/` + `src/ui/`) that selects
+  files, streams progress, and applies `write_file`/`edit_file` through `writeFileWithGuard`
+  (diff + rollback) behind per-edit approval; `run_cmd` is approver/policy gated. Direct
+  subcommands stay headless (`decideUiLaunch`; `--headless`/non-TTY). Offline-covered by
+  `agent-executor`/`agent-session`/`agent-ui`/`agent-ui-app`/`ui-route` suites.
+- Live proof (`qwen3-coder-30b-a3b-instruct`): agent proposed `write_file`, guard applied it,
+  run finished `completed` in 3 turns. Anti-stall fix landed during the proof — the loop dedupes
+  repeated identical read/edit actions and auto-finishes `completed` after 2 no-progress turns
+  (else the model re-proposes the same `unchanged` write until `max-turns`).
+
+Next steps to close "Reliable edit pipeline" (ordered — see `ROADMAP.md`):
+1. Live anchored `edit_file` on an existing file (+ a hash-mismatch rollback) end-to-end.
+2. Wire a post-edit validation command (policy-gated `run_cmd`) into the finish path; record its result.
+3. Bring the guarded `write_file`/`edit_file` action into the headless run/workspace flow.
+Then: Usable CLI + docs — onboarding polish; `--model auto` as documented default when the configured model is missing.
 
 Rule: if progress stalls on a slice, switch to another live `miniphi` run instead of revisiting the same mini-detail.
 
@@ -106,6 +120,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - PromptDecomposer + ApiNavigator: plan branches, emit branch-focused nested sub-prompt hints (`focusBranch`, `focusSegmentBlock`, `nextSubpromptBranch`), propose commands/helpers, execute safe helpers, feed outputs back into prompts.
 - PromptDecomposer decomposes recursively: the first completion asks for a SHALLOW plan (children empty, `requires_subprompt` flags), then each flagged branch is expanded with a focused compact follow-up prompt (same prompt-plan schema, children renumbered `parentId.N`), capped by `maxDepth`, `maxExpansions` (default 4), and the session deadline. Telemetry lands in `branchExpansions` (statuses: expanded/failed/skipped-budget/skipped-depth/skipped-session) and per-branch prompt exchanges are recorded as `prompt-decomposition-branch`. Disable via `--no-plan-expansion` or `prompt.decomposer.expandSubprompts=false`; cap via `--max-plan-expansions`. `benchmark general` keeps expansion off to preserve stage timing budgets.
 - ModelCatalog (`src/libs/model-catalog.js`): live model inventory + task-intent scoring behind `--model auto` and the `models` command.
+- Interactive agent (`src/agent/` + `src/ui/`): `AgentSession` (`src/agent/agent-session.js`) is a UI-agnostic `EventEmitter` loop (plan → act → approve → apply → repeat). Each turn requests strict `agent-action` JSON (schema `docs/prompts/agent-action.schema.json`), auto-runs read-only actions (`read_file`/`list_dir`/`search_text` via `executeReadonly`), and gates `write_file`/`edit_file`/`run_cmd` behind an injected `approver`. `agent-executor.js` normalizes actions (path-safe via `resolveWorkspacePath`), builds a two-phase mutation proposal (`buildMutationProposal` → diff, before/after, `expectedHash`) and commits through `writeFileWithGuard` (`commitMutation`, rollback dir under the session). `approvers.js` provides `createHeadlessApprover` (policy `ask|allow|deny|session`, TTY prompt) and `createUiApprover` (emits `permission-request`, resolved by `session.resolvePermission`). Sessions persist under `.miniphi/agent-sessions/<id>/` (`session.json`, `transcript.jsonl`, `result.json`, `rollbacks/`). The Ink+htm UI (`src/ui/app.js`, `launch.js`, `components/*`) renders file picker → prompt → live progress → inline permission/diff modal → done; it uses no build step (htm binds to `React.createElement`) and no JSX-component peer deps (input/selection are built on Ink's `useInput`).
 - PlanExecutor (`src/libs/plan-executor.js`): executes the focused plan branch's mappable leaf steps as read-only native actions (read_file/list_dir/search_text; `run_cmd` recommendations stay deferred unless a policy-gated `runCommand` is injected), dedupes identical actions across sibling branches, feeds outputs into the workspace-summary prompt (`executedActionsBlock`), and persists per-branch progress via `MiniPhiMemory.savePlanProgress` (`.miniphi/prompt-exchanges/decompositions/<slug>-progress.json`, `firstIncompleteBranch` for `--plan-branch` resume). It also resolves analyzer `missing_snippets` that name repo-relative files (path-escape safe) so the workspace flow re-prompts once with the fetched content (`workspace-summary-snippets` scope) instead of only printing the request.
 - PromptStepJournal / PromptRecorder / PromptPerformanceTracker: persist per-step exchanges under `.miniphi/prompt-exchanges/` with telemetry.
 - EfficientLogAnalyzer + PythonLogSummarizer: compress outputs, honor `needs_more_context` and truncation plans; store hints in `.miniphi/executions/<id>/analysis.json`.
@@ -143,6 +158,8 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node --test unit-tests-js/model-catalog.test.js unit-tests-js/model-selector.test.js` to validate live-model normalization/scoring behind `--model auto` plus task-intent classification.
 - `node --test unit-tests-js/lmstudio-rest-context-length.test.js` to guard the context_length wire contract (omit unless explicitly configured).
 - `node --test unit-tests-js/plan-executor.test.js` to validate plan-branch action mapping (path safety, search-term extraction, dedup, budgets), missing-snippet resolution, and plan-progress persistence.
+- `node --test unit-tests-js/agent-executor.test.js unit-tests-js/agent-session.test.js` to validate the interactive agent core: action normalization/path-safety, two-phase guarded write/edit (diff, hash-mismatch rollback, anchor miss/ambiguity), the `agent-action` schema, and the scripted plan→act→approve→finish loop with a stubbed client.
+- `node --test unit-tests-js/agent-ui.test.js unit-tests-js/agent-ui-app.test.js unit-tests-js/ui-route.test.js` to validate the Ink UI (file picker filter/toggle, permission/diff modal accept/reject, progress pane), the end-to-end App flow (prompt→run→approve→applied edit) via ink-testing-library, and the `decideUiLaunch` routing decision (TTY/headless/bare/free-form/explicit).
 - `MINIPHI_LMSTUDIO_INTEGRATION=1 node --test unit-tests-js/lmstudio-code-generation.live.test.js` to run live code generation/editing checks (simple slugify module, targeted bug-fix edit, stateful class) against LM Studio with strict JSON-schema responses that are executed and asserted on. `unit-tests-js/cli-bash-advanced.test.js` is gated behind the same env var.
 
 ## Romeo unit test quick use
@@ -158,7 +175,8 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `scripts/prompt-composer.js` + `scripts/prompt-interpret.js` for prompt-chain JSON request/response iteration (see `samples/prompt-chain/`).
 - `scripts/local-eval-report.js` for local JSON/tool-call coverage reports over `.miniphi/prompt-exchanges/`.
 - `dev_samples/task-tests.md` + `dev_samples/test_tasks/` for the benchmark compendium clone and category-balanced benchmark-general regression suite.
-- `docs/prompts/*.schema.json` are the schema source of truth (including `nitpick-plan`, `nitpick-research-plan`, `nitpick-draft`, `nitpick-critique`); cached templates live under `.miniphi/prompt-exchanges/templates/`.
+- `docs/prompts/*.schema.json` are the schema source of truth (including `agent-action`, `nitpick-plan`, `nitpick-research-plan`, `nitpick-draft`, `nitpick-critique`); cached templates live under `.miniphi/prompt-exchanges/templates/`.
+- The interactive agent turn schema is `agent-action` (`actions[]` with `type` ∈ read_file/list_dir/search_text/write_file/edit_file/run_cmd/finish, plus `needs_more_context`/`missing_snippets`); `AgentSession` validates every turn, retries once with a compact nudge, and otherwise falls back to a deterministic `finish` with a stop reason (`invalid-response`, `session-timeout`, `no-actions`, `max-turns`, `cancelled`).
 - Samples: `samples/get-started/`, `samples/recompose/hello-flow/`, `samples/bash-it/`, `samples/besh/`.
 - Global cache: `~/.miniphi/` holds the prompt DB, capability snapshots, and shared helper metadata.
 
@@ -258,6 +276,8 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 ### src/ file map
 - `src/index.js`: CLI entrypoint and command router; loads config, builds workspace context, and wires LM Studio, memory, and analyzers for all commands.
 - `src/commands/`: Command handlers extracted from `src/index.js` (run, analyze-file, workspace, recompose, benchmark, prompt-template, web-research, web-browse, nitpick, history-notes, cache-prune, migrate-stop-reasons, command-library, helpers) plus shared primary command dispatch in `src/commands/primary-flow.js`.
+- `src/agent/`: interactive agent core — `agent-session.js` (event-driven plan→act→approve→apply loop), `agent-executor.js` (action normalization + guarded write/edit via `writeFileWithGuard`, read-only reuse of plan-executor), `approvers.js` (headless + UI permission approvers).
+- `src/ui/`: Ink+htm terminal UI — `route.js` (`decideUiLaunch`), `launch.js` (session + approver + Ink render, dynamic-imported), `app.js` (phase orchestration), `file-scan.js`, `theme.js`, `html.js`/`ink-elements.js` (no-build htm binding), and `components/` (file-picker, prompt-input, progress-pane, permission-modal, text-input).
 - `src/libs/api-navigator.js`: Requests navigation plans from LM Studio, normalizes actions, and optionally runs helper scripts.
 - `src/libs/benchmark-general.js`: General-purpose benchmark flow, resource baselines, and summaries.
 - `src/libs/benchmark-analyzer.js`: Reads benchmark run JSON files, produces summary artifacts, and records history entries.
@@ -307,6 +327,7 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/workspace-profiler.js`: Profiles workspace contents (code/docs/data) and optionally includes connection graphs.
 
 ### Command tour
+- `ui` launches the interactive agent (also the default for bare `miniphi` and free-form tasks on a TTY). Flags: `--task "<objective>"` (seed the prompt), `--model <id|auto>`, `--command-policy`, `--session-timeout`, `--cwd`; `--headless`/`--no-ui` opt out. Requires a TTY (non-TTY `ui` errors; non-TTY bare falls back to help). Sessions persist under `.miniphi/agent-sessions/<id>/`.
 - `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--no-navigator`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, `--no-plan-expansion`, `--max-plan-expansions <n>`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
 - `models` lists the live LM Studio inventory ranked for a task: `node src/index.js models [--task "<objective>"] [--json] [--timeout <s>]`. The top-ranked model is what `--model auto` resolves to.
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.

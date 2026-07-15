@@ -90,6 +90,7 @@ import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
 import { handleWebResearch } from "./commands/web-research.js";
 import { handleWebBrowse } from "./commands/web-browse.js";
+import { decideUiLaunch } from "./ui/route.js";
 
 const COMMANDS = new Set([
   "run",
@@ -108,6 +109,7 @@ const COMMANDS = new Set([
   "migrate-stop-reasons",
   "nitpick",
   "models",
+  "ui",
 ]);
 
 const DEFAULT_TASK_DESCRIPTION = "Provide a precise technical analysis of the captured output.";
@@ -1002,19 +1004,102 @@ schemaAdapterRegistry.registerAdapter({
   },
 });
 
+/**
+ * Boots the interactive agent UI with a lightweight LM Studio REST client. Kept
+ * self-contained (its own model resolution + client build) so the UI path does
+ * not depend on the full headless runtime/health/workspace setup, and so the Ink
+ * layer is only imported when the UI is actually launched.
+ */
+async function launchInteractiveUi({ configData, lmStudioEndpoints, options, initialTask, verbose }) {
+  const requestedModel =
+    typeof options.model === "string" && options.model.trim()
+      ? options.model.trim()
+      : typeof configData?.defaults?.model === "string" && configData.defaults.model.trim()
+        ? configData.defaults.model.trim()
+        : typeof configData?.lmStudio?.model === "string" && configData.lmStudio.model.trim()
+          ? configData.lmStudio.model.trim()
+          : typeof process.env.MINIPHI_MODEL === "string" && process.env.MINIPHI_MODEL.trim()
+            ? process.env.MINIPHI_MODEL.trim()
+            : null;
+  const baseOverrides = lmStudioEndpoints?.restBaseUrl ? { baseUrl: lmStudioEndpoints.restBaseUrl } : {};
+
+  let autoInfo = null;
+  if (requestedModel && requestedModel.toLowerCase() === "auto") {
+    try {
+      const probe = new LMStudioRestClient(
+        buildRestClientOptions(configData, undefined, { ...baseOverrides, timeoutMs: 10000 }),
+      );
+      autoInfo = await resolveAutoModel({
+        restClient: probe,
+        task: initialTask || null,
+        mode: "workspace",
+        logger: verbose ? (message) => console.warn(message) : null,
+      });
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Auto model selection failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+    if (autoInfo) {
+      console.log(`[MiniPhi] Auto-selected model ${autoInfo.modelKey} (intent: ${autoInfo.intent})`);
+    }
+  }
+
+  const modelSelection = resolveModelConfig({
+    model: autoInfo?.modelKey ?? (requestedModel && requestedModel.toLowerCase() !== "auto" ? requestedModel : null),
+  });
+  // Only advertise the model, never a static context_length: a JIT-loaded model
+  // may have a smaller window and LM Studio rejects the overflow with a 400.
+  const restClient = new LMStudioRestClient(
+    buildRestClientOptions(configData, { modelKey: modelSelection.modelKey }, { ...baseOverrides }),
+  );
+
+  const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const baseDir = path.join(cwd, ".miniphi");
+  const cli = new CliExecutor();
+  const runCommand = async (command) => {
+    const result = await cli
+      .executeCommand(command, { cwd, timeout: 60000, captureOutput: true })
+      .catch((error) => error ?? {});
+    const stdout = result?.stdout ?? "";
+    const stderr = result?.stderr ?? "";
+    return [stdout, stderr].filter(Boolean).join("\n") || result?.message || "";
+  };
+
+  const sessionSeconds = Number(options["session-timeout"]);
+  const sessionDeadline =
+    Number.isFinite(sessionSeconds) && sessionSeconds > 0 ? Date.now() + sessionSeconds * 1000 : null;
+
+  const { launchAgentUi } = await import("./ui/launch.js");
+  await launchAgentUi({
+    client: restClient,
+    cwd,
+    baseDir,
+    initialTask,
+    runCommand,
+    sessionDeadline,
+    model: modelSelection.modelKey,
+  });
+}
+
 async function main() {
   const args = process.argv.slice(2);
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  if (args.includes("--help") || args.includes("-h")) {
     printHelp();
     return;
   }
+  // A bare `miniphi` (no command) opens the interactive UI on a TTY; the
+  // headless fallback below prints help for non-interactive shells.
+  const bareInvocation = args.length === 0;
 
-  let command = args[0];
-  let rest = args.slice(1);
+  let command = bareInvocation ? null : args[0];
+  let rest = bareInvocation ? [] : args.slice(1);
   let implicitWorkspaceTask = null;
   let implicitTaskMode = false;
 
-  if (!COMMANDS.has(command)) {
+  if (!bareInvocation && !COMMANDS.has(command)) {
     const extracted = extractImplicitWorkspaceTask(args);
     if (extracted.task) {
       implicitWorkspaceTask = extracted.task;
@@ -1063,6 +1148,58 @@ async function main() {
     const relPath = path.relative(process.cwd(), configPath) || configPath;
     console.log(`[MiniPhi] Loaded configuration from ${relPath}`);
   }
+
+  // Interactive UI routing. On a TTY, bare invocation / the `ui` command / a
+  // free-form task open the Ink agent; explicit subcommands, `--headless`, and
+  // non-TTY shells fall through to the classic headless pipeline below.
+  const interactiveTty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const uiDecision = decideUiLaunch({
+    command,
+    bare: bareInvocation,
+    isImplicitTask: implicitTaskMode,
+    options,
+    isTTY: interactiveTty,
+  });
+  if (uiDecision.ui) {
+    let uiInitialTask = "";
+    if (command === "ui") {
+      uiInitialTask =
+        (typeof options.task === "string" && options.task.trim()) ||
+        (Array.isArray(positionals) && positionals.length ? positionals.join(" ").trim() : "") ||
+        "";
+    } else if (uiDecision.reason === "free-form-task") {
+      uiInitialTask = implicitWorkspaceTask ?? "";
+    }
+    try {
+      await launchInteractiveUi({
+        configData,
+        lmStudioEndpoints,
+        options,
+        initialTask: uiInitialTask,
+        verbose,
+      });
+    } catch (error) {
+      console.error(
+        `[MiniPhi] Interactive UI failed: ${error instanceof Error ? error.message : error}`,
+      );
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (bareInvocation) {
+    // Non-interactive shell with no command: nothing to do but show help.
+    printHelp();
+    return;
+  }
+  if (command === "ui") {
+    // `ui` is a UI-only command; without a TTY there is nothing to render.
+    console.error(
+      "[MiniPhi] The `ui` command requires an interactive terminal (TTY). Use a subcommand (e.g. `run`, `workspace --headless`) for non-interactive runs.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const activeProfile = configResult?.profileName ?? null;
   if (activeProfile) {
     const profileDetails = [];
@@ -2785,6 +2922,9 @@ function printHelp() {
   console.log(`MiniPhi CLI
 
 Usage:
+  miniphi                                    Open the interactive agent UI (primary interface)
+  miniphi "Add input validation to the parser"   Free-form task -> interactive UI (add --headless to run non-interactively)
+  node src/index.js ui [--task "<objective>"]     Explicitly launch the interactive agent UI
   node src/index.js run --cmd "npm test" --task "Analyze failures"
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js lmstudio-health --timeout 10
@@ -2812,6 +2952,7 @@ Options:
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override model context length (default: model preset)
   --model <id|auto>            LM Studio model key or alias; "auto" picks the best installed model for the task
+  --headless, --no-ui          Skip the interactive UI; run the classic non-interactive pipeline (implied when stdout is not a TTY)
   --no-plan-expansion          Disable recursive plan-branch expansion prompts
   --max-plan-expansions <n>    Cap follow-up branch expansion prompts per plan (default: 4)
   --rl-router                 Enable adaptive RL prompt routing (multi-model pool)
