@@ -23,7 +23,7 @@ miniPhi is a workspace-aware assistant: it scans the current folder (your repo),
 - **Python 3.9+** (used by the bundled log summarizer)
 - **LM Studio** with the local server enabled (default endpoint: `http://127.0.0.1:1234`)
 - A model loaded in LM Studio  
-  Defaults/presets typically include `mistralai/devstral-small-2-2512` or `mistralai/devstral-small-2507` (you can switch via `--model` or config).
+  Defaults/presets typically include `mistralai/devstral-small-2-2512` or `mistralai/devstral-small-2507` (you can switch via `--model` or config). Use `--model auto` to let MiniPhi query LM Studio and pick the best installed model for the task (`miniphi models` shows the ranking).
 
 MiniPhi defaults to REST transport (`lmStudio.transport: "rest"`). Switch to WebSocket by overriding the setting in `config.json`.
 
@@ -173,6 +173,8 @@ These are the commands most people start with:
   Analyze a log or text file.
 - `miniphi lmstudio-health`  
   Fast REST probe with stop reasons stored under `.miniphi/health/`.
+- `miniphi models [--task "<objective>"] [--json]`  
+  List the models installed in LM Studio ranked for the task; pass `--model auto` to any command to let MiniPhi pick the best installed model automatically.
 - `miniphi web-browse --url "<https://example.com>"`  
   Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
 - `miniphi nitpick --task "<long-form writing task>"`  
@@ -193,8 +195,7 @@ For the full list of flags and subcommands, run `miniphi --help` (or `node src/i
 ## Documentation map
 
 - **AGENTS.md**: contributor + agent guardrails, JSON-first rules, deeper reference.
-- **AI_REFERENCE.md**: status snapshot + near-term roadmap.
-- **ROADMAP.md**: milestones and exit criteria.
+- **ROADMAP.md**: milestones, exit criteria, and the current status snapshot.
 - `docs/`: implementation notes and LM Studio integration details.
 - `samples/`: recomposition and benchmark fixtures used to validate the runtime.
 - `dev_samples/task-tests.md` + `dev_samples/test_tasks/`: benchmark compendium source and cloned JSON suite used by unit tests (`node scripts/sync-test-task-catalog.js` to refresh artifacts).

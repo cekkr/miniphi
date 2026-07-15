@@ -55,6 +55,9 @@ When you add or change CLI behavior:
 
 ## Runtime posture
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
+- `--model auto` queries the live model inventory (`/api/v0/models`, OpenAI-compat fallback) via `src/libs/model-catalog.js`, classifies the task intent (coding/writing/analysis/research), and picks the best installed model (scores: purpose match, context window, loaded state, tool_use, memory fit, quantization). `node src/index.js models [--task ...] [--json]` prints the ranking.
+- LM Studio's newer `/api/v1` REST surface (models load/unload/download, stateful `/api/v1/chat`) exists alongside the deprecated-but-working `/api/v0`; the REST client still targets `/api/v0` + OpenAI-compat routes.
+- `LMStudioRestClient` only sends `context_length` when explicitly configured (constructor option or per request); advertising the static default can exceed a JIT-loaded model's smaller context and LM Studio rejects the request with 400 "Context size has been exceeded".
 - Transport default: REST-first (`lmStudio.transport: "rest"`); override with `lmStudio.transport: "ws"` or env `MINIPHI_FORCE_REST=1` for forced REST.
 - CLI entrypoints: `run`, `analyze-file`, `workspace` (`miniphi "<task>"`), `recompose`, `benchmark recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, and helper/command-library browsers.
 - Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
@@ -80,13 +83,16 @@ Exit criteria:
 - Command execution is gated by command-policy with timeouts and max retries; runs end with a clear stop reason.
 - Passes `samples/get-started` plus one real repo run without manual patching.
 
-Current slice: Core loop hardening
-- Focus: prompt hygiene, schema enforcement, recursion caps, stop reasons in `.miniphi/`.
-- Proof: run `miniphi "Tighten lint config"` (or similar) against this repo.
-- Proof: run `node src/index.js analyze-file --file samples/txt/romeoAndJuliet-part1.txt --task "Analyze romeo file" --summary-levels 1 --prompt-journal live-romeo-json-<id>` and confirm JSON-only output with strict parsing (strip <think> blocks + fences + short preambles) and no duplicated workspace directives.
+Closed slice: Core loop hardening (2026-07-15)
+- Closing proof: `node src/index.js "Improve the CLI argument parser with input validation and add unit tests for it" --model auto --verbose --no-navigator` auto-selected `qwen3-coder-30b-a3b-instruct`, produced a 21-step depth-3 plan via 4 recursive branch expansions (telemetry in `.miniphi/prompt-exchanges/decompositions/`), and ended with a schema-valid log-analysis JSON footer.
+
+Current slice: Plan execution bridge
+- Focus: execute leaf steps of the focused plan branch through the default agent commands (command-policy gated), auto-fetch repo-relative `missing_snippets` and re-prompt once, and persist per-branch execution status so `--plan-branch` resumes from the first incomplete branch.
+- Proof: one live `miniphi "<task>"` against this repo where at least one branch executes end-to-end (search/read + follow-up prompt with fetched context) without manual patching; plan progress artifact written under `.miniphi/`.
+- Regression: action mapping + missing-snippet round-trip covered by offline tests with stubbed clients.
 
 Next slices (see `ROADMAP.md` for full scope and exit criteria):
-- Reliable edit pipeline.
+- Reliable edit pipeline (guarded writes with diff + rollback in the main flow).
 - Usable CLI + docs.
 
 Rule: if progress stalls on a slice, switch to another live `miniphi` run instead of revisiting the same mini-detail.
@@ -97,6 +103,8 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - PromptSchemaRegistry / SchemaAdapterRegistry: load schemas from `docs/prompts/*.schema.json`, inject schema ids, adapt versions.
 - json-schema-utils: shared response_format builder + schema validator across LM Studio calls (run/analyze/navigator/decomposer).
 - PromptDecomposer + ApiNavigator: plan branches, emit branch-focused nested sub-prompt hints (`focusBranch`, `focusSegmentBlock`, `nextSubpromptBranch`), propose commands/helpers, execute safe helpers, feed outputs back into prompts.
+- PromptDecomposer decomposes recursively: the first completion asks for a SHALLOW plan (children empty, `requires_subprompt` flags), then each flagged branch is expanded with a focused compact follow-up prompt (same prompt-plan schema, children renumbered `parentId.N`), capped by `maxDepth`, `maxExpansions` (default 4), and the session deadline. Telemetry lands in `branchExpansions` (statuses: expanded/failed/skipped-budget/skipped-depth/skipped-session) and per-branch prompt exchanges are recorded as `prompt-decomposition-branch`. Disable via `--no-plan-expansion` or `prompt.decomposer.expandSubprompts=false`; cap via `--max-plan-expansions`. `benchmark general` keeps expansion off to preserve stage timing budgets.
+- ModelCatalog (`src/libs/model-catalog.js`): live model inventory + task-intent scoring behind `--model auto` and the `models` command.
 - PromptStepJournal / PromptRecorder / PromptPerformanceTracker: persist per-step exchanges under `.miniphi/prompt-exchanges/` with telemetry.
 - EfficientLogAnalyzer + PythonLogSummarizer: compress outputs, honor `needs_more_context` and truncation plans; store hints in `.miniphi/executions/<id>/analysis.json`.
 - WorkspaceProfiler / CapabilityInventory / FileConnectionAnalyzer: cache repo shape + available commands, feed into prompts, and attach ASCII graphs or capability snapshots.
@@ -129,6 +137,10 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node scripts/sync-test-task-catalog.js` to regenerate `dev_samples/test_tasks/benchmark-catalog.json` + `dev_samples/test_tasks/general-purpose-suite.json` from `dev_samples/task-tests.md`.
 - `node --test unit-tests-js/benchmark-task-catalog.test.js unit-tests-js/cli-benchmark-general-suite.test.js` to validate benchmark-catalog sync and `benchmark general` suite execution.
 - `node --test unit-tests-js/api-navigator-retry.test.js unit-tests-js/prompt-decomposer-retry.test.js unit-tests-js/benchmark-general-live-lm.test.js` to validate live benchmark retry telemetry (`full -> compact`) across navigator, decomposer, and assessment flows.
+- `node --test unit-tests-js/prompt-decomposer-recursive.test.js` to validate recursive branch expansion (renumbering, budget/depth/session caps, branch-local JSON failures) with a stubbed REST client.
+- `node --test unit-tests-js/model-catalog.test.js unit-tests-js/model-selector.test.js` to validate live-model normalization/scoring behind `--model auto` plus task-intent classification.
+- `node --test unit-tests-js/lmstudio-rest-context-length.test.js` to guard the context_length wire contract (omit unless explicitly configured).
+- `MINIPHI_LMSTUDIO_INTEGRATION=1 node --test unit-tests-js/lmstudio-code-generation.live.test.js` to run live code generation/editing checks (simple slugify module, targeted bug-fix edit, stateful class) against LM Studio with strict JSON-schema responses that are executed and asserted on. `unit-tests-js/cli-bash-advanced.test.js` is gated behind the same env var.
 
 ## Romeo unit test quick use
 - Run `node --test unit-tests-js/romeo-miniphi-flow.test.js` to validate MiniPhi log/file analysis against `samples/txt/romeoAndJuliet-part1.txt`.
@@ -292,7 +304,8 @@ miniPhi currently targets macOS, Windows, and Linux and expects LM Studio to be 
 - `src/libs/workspace-profiler.js`: Profiles workspace contents (code/docs/data) and optionally includes connection graphs.
 
 ### Command tour
-- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--no-navigator`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
+- `run` executes a command and streams reasoning. Key flags: `--cmd`, `--task`, `--cwd`, `--timeout`, `--session-timeout`, `--no-navigator`, `--prompt-id`, `--plan-branch`, `--refresh-plan`, `--python-script`, `--summary-levels`, `--context-length`, `--no-plan-expansion`, `--max-plan-expansions <n>`, and the resource monitor thresholds (`--max-memory-percent`, `--max-cpu-percent`, `--max-vram-percent`, `--resource-sample-interval`).
+- `models` lists the live LM Studio inventory ranked for a task: `node src/index.js models [--task "<objective>"] [--json] [--timeout <s>]`. The top-ranked model is what `--model auto` resolves to.
 - `analyze-file` summarizes an existing file. Flags mirror `run` but swap `--cmd` for `--file`.
 - `web-research` performs DuckDuckGo Instant Answer lookups. Use positional queries or `--query`, set `--max-results`, `--provider`, `--include-raw`, `--no-save`, and optional `--note`. Results live under `.miniphi/research/`.
 - `web-browse` drives a headless browser (Puppeteer) to capture page text. Use `--url` (or positional URLs), `--url-file`, `--timeout/--timeout-ms`, `--wait-selector`/`--wait-ms`, `--selector` to scope extraction, `--max-chars`, `--include-html`, `--screenshot` (`--screenshot-dir`), `--headful`, and `--block-resources` to speed loads. Snapshots land under `.miniphi/web/`.
@@ -348,8 +361,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 
 ### Documentation and samples
 - `OPTIMIZATIONS.md` is the optimization roadmap for full-pipeline improvements across `src/`.
-- `AI_REFERENCE.md` holds the current status snapshot plus the near-term roadmap.
-- `ROADMAP.md` tracks the long-lived milestone plan and explicit exit criteria.
+- `ROADMAP.md` tracks the long-lived milestone plan and explicit exit criteria (status snapshot lives in its "Where we are" section; this file carries the active-slice summary).
 - `docs/NodeJS LM Studio API Integration.md` explains how the LM Studio SDK and REST layers fit together.
 - `docs/miniphi-cli-implementation.md` walks through compression heuristics, pipelines, and architectural decisions.
 - `docs/APIs/lmstudio-docs/1_developer/` contains the current LM Studio developer docs; `docs/studies/APIs/REST API v0 _ LM Studio Docs.html` is the archived offline snapshot.
@@ -357,7 +369,7 @@ All of these artifacts are plain text so you can sync them to your own dashboard
 - `scripts/lmstudio-json-series.js` runs a multi-step, schema-enforced LM Studio session that applies file edits inside a sandbox copy of `samples/get-started/code` (use `npm run sample:lmstudio-json-series`).
 - `scripts/prompt-composer.js` renders JSON-only prompt payloads from a prompt-chain definition (with option selections + templates) and can send them to LM Studio for rapid prompt iteration.
 - `scripts/prompt-interpret.js` validates prompt-chain responses against a schema and updates learned options/selected options based on the JSON output.
-- `unit-tests-js/lmstudio-json-schema.integration.test.js` is an optional integration test for LM Studio JSON-schema enforcement; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running).
+- `unit-tests-js/lmstudio-code-generation.live.test.js` holds the live LM Studio JSON-schema code-generation tests; run with `MINIPHI_LMSTUDIO_INTEGRATION=1 npm test` (requires LM Studio running; plain `npm test` skips all live tests).
 - `docs/os-defaults/windows.md` and `docs/prompts/windows-benchmark-default.md` document the Windows helper workflow.
 - `docs/studies/todo/author.md` tracks authoring tasks that still need human review.
 - `samples/recompose/hello-flow` plus `samples/benchmark/` contain the recomposition harness and reference plans described in `WHY_SAMPLES.md`.
