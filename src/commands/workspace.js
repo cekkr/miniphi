@@ -3,6 +3,13 @@ import MiniPhiMemory from "../libs/miniphi-memory.js";
 import PromptRecorder from "../libs/prompt-recorder.js";
 import PromptStepJournal from "../libs/prompt-step-journal.js";
 import { classifyTaskIntent } from "../libs/model-selector.js";
+import {
+  buildExecutedActionsBlock,
+  buildPlanProgress,
+  buildSnippetContextBlock,
+  executeFocusedBranchActions,
+  resolveMissingSnippets,
+} from "../libs/plan-executor.js";
 
 const WORKSPACE_SUMMARY_PROMPT_BUDGET_CAP_TOKENS = 2200;
 const WORKSPACE_SUMMARY_CONTEXT_BUDGET_RATIO = 0.18;
@@ -76,6 +83,7 @@ function buildCompactWorkspaceSummaryContext(workspaceContext, planResult = unde
     capabilitySummary: truncateText(workspaceContext.capabilitySummary, 520),
     navigationSummary: truncateText(workspaceContext.navigationSummary, 360),
     navigationBlock: truncateText(workspaceContext.navigationBlock, 640),
+    executedActionsBlock: truncateText(workspaceContext.executedActionsBlock, 1400),
     helperScript: workspaceContext.helperScript
       ? {
           language: workspaceContext.helperScript.language ?? null,
@@ -151,6 +159,9 @@ function buildWorkspaceSummaryDataset(task, workspaceContext, planResult, option
       `Next suggested sub-prompt branch: ${workspaceContext.taskPlanNextSubpromptBranch}`,
       180,
     );
+  }
+  if (workspaceContext?.executedActionsBlock) {
+    pushLines(workspaceContext.executedActionsBlock, 1400);
   }
   if (workspaceContext?.navigationBlock ?? workspaceContext?.navigationSummary) {
     lines.push("Navigation summary:");
@@ -397,6 +408,83 @@ export async function handleWorkspaceCommand(context) {
       });
     }
   }
+  if (planResult && !fastMode) {
+    const actionSegments =
+      Array.isArray(planResult.focusSegments) && planResult.focusSegments.length
+        ? planResult.focusSegments
+        : Array.isArray(planResult.segments)
+          ? planResult.segments.slice(0, 6)
+          : [];
+    if (actionSegments.length) {
+      let previousProgress = null;
+      try {
+        previousProgress = await stateManager.loadPlanProgress(planResult.planId);
+      } catch {
+        previousProgress = null;
+      }
+      const execution = await executeFocusedBranchActions({
+        segments: actionSegments,
+        cwd,
+        sessionDeadline,
+        logger: verbose ? (message) => console.warn(message) : null,
+      });
+      const executedBlock = buildExecutedActionsBlock(execution.results);
+      if (executedBlock) {
+        workspaceContext = { ...workspaceContext, executedActionsBlock: executedBlock };
+      }
+      const progress = buildPlanProgress({
+        planId: planResult.planId,
+        focusBranch: planResult.focusBranch ?? null,
+        results: execution.results,
+        previous: previousProgress,
+      });
+      try {
+        const saved = await stateManager.savePlanProgress(planResult.planId, progress);
+        if (verbose && saved?.path) {
+          const rel = path.relative(cwd, saved.path) || saved.path;
+          console.log(`[MiniPhi][Plan] Progress saved to ${rel}`);
+        }
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            `[MiniPhi][Plan] Unable to save plan progress: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      }
+      if (execution.executedCount > 0) {
+        console.log(
+          `[MiniPhi][Plan] Executed ${execution.executedCount} plan action(s) from branch ${planResult.focusBranch ?? "auto"}.`,
+        );
+      }
+      if (progress.firstIncompleteBranch) {
+        console.log(
+          `[MiniPhi][Plan] First incomplete branch: ${progress.firstIncompleteBranch} (resume with --plan-branch ${progress.firstIncompleteBranch}).`,
+        );
+      }
+      if (promptJournal) {
+        await promptJournal.appendStep(promptJournalId, {
+          label: "plan-actions",
+          status: "recorded",
+          operations: execution.results.map((entry) => ({
+            type: entry.action?.type ?? "unmapped",
+            status: entry.status,
+            summary: `step ${entry.branch ?? "?"}: ${entry.title ?? ""}`.trim(),
+            target:
+              entry.action?.target ?? entry.action?.term ?? entry.action?.command ?? null,
+            error: entry.error ?? null,
+          })),
+          metadata: {
+            mode: "workspace",
+            planId: planResult.planId ?? null,
+            focusBranch: planResult.focusBranch ?? null,
+            executedCount: execution.executedCount,
+            firstIncompleteBranch: progress.firstIncompleteBranch ?? null,
+          },
+          workspaceSummary: workspaceContext?.summary ?? null,
+        });
+      }
+    }
+  }
   console.log(`[MiniPhi][Workspace] cwd: ${cwd}`);
   console.log(`[MiniPhi][Workspace] task: ${task}`);
   if (workspaceContext?.summary) {
@@ -431,18 +519,53 @@ export async function handleWorkspaceCommand(context) {
       },
     );
     if (datasetLines.length) {
-      try {
-        const taskIntent = classifyTaskIntent({
-          task,
-          mode: "workspace",
-          workspaceContext: summaryWorkspaceContext,
-        });
-        const planSubContext = summaryWorkspaceContext?.taskPlanFocusBranch
-          ? `plan-${summaryWorkspaceContext.taskPlanFocusBranch}`
-          : summaryWorkspaceContext?.taskPlanBranch
-            ? `plan-${summaryWorkspaceContext.taskPlanBranch}`
-            : "workspace-summary";
-        summaryResult = await analyzer.analyzeDatasetLines(datasetLines, task, {
+      const taskIntent = classifyTaskIntent({
+        task,
+        mode: "workspace",
+        workspaceContext: summaryWorkspaceContext,
+      });
+      const planSubContext = summaryWorkspaceContext?.taskPlanFocusBranch
+        ? `plan-${summaryWorkspaceContext.taskPlanFocusBranch}`
+        : summaryWorkspaceContext?.taskPlanBranch
+          ? `plan-${summaryWorkspaceContext.taskPlanBranch}`
+          : "workspace-summary";
+      const summaryPromptMetadata = {
+        mode: "workspace",
+        subContext: planSubContext,
+        cwd,
+        promptJournalId: promptJournalId ?? null,
+        taskType: taskIntent.intent,
+        workspaceType:
+          summaryWorkspaceContext?.classification?.domain ??
+          summaryWorkspaceContext?.classification?.label ??
+          null,
+        workspaceSummary: summaryWorkspaceContext?.summary ?? null,
+        workspaceHint: summaryWorkspaceContext?.hintBlock ?? null,
+        workspaceDirectives: summaryWorkspaceContext?.planDirectives ?? null,
+        workspaceManifest: (summaryWorkspaceContext?.manifestPreview ?? [])
+          .slice(0, 5)
+          .map((entry) => entry.path),
+        workspaceReadmeSnippet: summaryWorkspaceContext?.readmeSnippet ?? null,
+        taskPlanId: planResult?.planId ?? null,
+        taskPlanOutline: planResult?.outline ?? null,
+        taskPlanBranch: summaryWorkspaceContext?.taskPlanBranch ?? null,
+        taskPlanFocusBranch: summaryWorkspaceContext?.taskPlanFocusBranch ?? null,
+        taskPlanFocusReason: summaryWorkspaceContext?.taskPlanFocusReason ?? null,
+        taskPlanFocusSegmentBlock:
+          summaryWorkspaceContext?.taskPlanFocusSegmentBlock ?? null,
+        taskPlanNextSubpromptBranch:
+          summaryWorkspaceContext?.taskPlanNextSubpromptBranch ?? null,
+        taskPlanSource: summaryWorkspaceContext?.taskPlanSource ?? null,
+        workspaceConnections: summaryWorkspaceContext?.connections?.hotspots ?? null,
+        workspaceConnectionGraph: summaryWorkspaceContext?.connectionGraphic ?? null,
+        capabilitySummary: summaryWorkspaceContext?.capabilitySummary ?? null,
+        capabilities: summaryWorkspaceContext?.capabilityDetails ?? null,
+        navigationSummary: summaryWorkspaceContext?.navigationSummary ?? null,
+        navigationBlock: summaryWorkspaceContext?.navigationBlock ?? null,
+        helperScript: summaryWorkspaceContext?.helperScript ?? null,
+      };
+      const runWorkspaceSummary = (lines, { scope = "workspace-summary", extraMetadata = null } = {}) =>
+        analyzer.analyzeDatasetLines(lines, task, {
           summaryLevels,
           streamOutput,
           verbose,
@@ -451,53 +574,21 @@ export async function handleWorkspaceCommand(context) {
           promptBudgetCapTokens: WORKSPACE_SUMMARY_PROMPT_BUDGET_CAP_TOKENS,
           contextBudgetRatio: WORKSPACE_SUMMARY_CONTEXT_BUDGET_RATIO,
           promptContext: {
-            scope: "workspace-summary",
+            scope,
             label: task,
             mainPromptId: promptGroupId,
-            metadata: {
-              mode: "workspace",
-              subContext: planSubContext,
-              cwd,
-              promptJournalId: promptJournalId ?? null,
-              taskType: taskIntent.intent,
-              workspaceType:
-                summaryWorkspaceContext?.classification?.domain ??
-                summaryWorkspaceContext?.classification?.label ??
-                null,
-              workspaceSummary: summaryWorkspaceContext?.summary ?? null,
-              workspaceHint: summaryWorkspaceContext?.hintBlock ?? null,
-              workspaceDirectives: summaryWorkspaceContext?.planDirectives ?? null,
-              workspaceManifest: (summaryWorkspaceContext?.manifestPreview ?? [])
-                .slice(0, 5)
-                .map((entry) => entry.path),
-              workspaceReadmeSnippet: summaryWorkspaceContext?.readmeSnippet ?? null,
-              taskPlanId: planResult?.planId ?? null,
-              taskPlanOutline: planResult?.outline ?? null,
-              taskPlanBranch: summaryWorkspaceContext?.taskPlanBranch ?? null,
-              taskPlanFocusBranch: summaryWorkspaceContext?.taskPlanFocusBranch ?? null,
-              taskPlanFocusReason: summaryWorkspaceContext?.taskPlanFocusReason ?? null,
-              taskPlanFocusSegmentBlock:
-                summaryWorkspaceContext?.taskPlanFocusSegmentBlock ?? null,
-              taskPlanNextSubpromptBranch:
-                summaryWorkspaceContext?.taskPlanNextSubpromptBranch ?? null,
-              taskPlanSource: summaryWorkspaceContext?.taskPlanSource ?? null,
-              workspaceConnections: summaryWorkspaceContext?.connections?.hotspots ?? null,
-              workspaceConnectionGraph: summaryWorkspaceContext?.connectionGraphic ?? null,
-              capabilitySummary: summaryWorkspaceContext?.capabilitySummary ?? null,
-              capabilities: summaryWorkspaceContext?.capabilityDetails ?? null,
-              navigationSummary: summaryWorkspaceContext?.navigationSummary ?? null,
-              navigationBlock: summaryWorkspaceContext?.navigationBlock ?? null,
-              helperScript: summaryWorkspaceContext?.helperScript ?? null,
-            },
+            metadata: { ...summaryPromptMetadata, ...(extraMetadata ?? {}) },
           },
-          datasetLabel: "workspace-summary",
-          sourceLabel: "workspace-summary",
+          datasetLabel: scope,
+          sourceLabel: scope,
           fallbackCache: stateManager,
           fallbackCacheContext: {
             promptJournalId,
-            mode: "workspace-summary",
+            mode: scope,
           },
         });
+      try {
+        summaryResult = await runWorkspaceSummary(datasetLines);
       } catch (error) {
         if (isLmStudioProtocolError?.(error)) {
           await handleLmStudioProtocolFailure({
@@ -550,6 +641,69 @@ export async function handleWorkspaceCommand(context) {
           startedAt: summaryResult.startedAt ?? null,
           finishedAt: summaryResult.finishedAt ?? null,
         });
+      }
+
+      // Missing-snippet round-trip: when the model asks for repo-relative
+      // files, fetch them and re-prompt once instead of dying on stdout.
+      const missingSnippets = Array.isArray(summaryResult?.analysis?.missing_snippets)
+        ? summaryResult.analysis.missing_snippets
+        : [];
+      const sessionExhausted =
+        Number.isFinite(sessionDeadline) && sessionDeadline > 0 && Date.now() >= sessionDeadline;
+      if (
+        Boolean(summaryResult?.analysis?.needs_more_context) &&
+        missingSnippets.length &&
+        !fastMode &&
+        !sessionExhausted
+      ) {
+        const { resolved } = await resolveMissingSnippets({ snippets: missingSnippets, cwd });
+        if (resolved.length) {
+          const snippetBlock = buildSnippetContextBlock(resolved);
+          const snippetPaths = resolved.map((entry) => entry.path);
+          console.log(
+            `[MiniPhi][Workspace] Auto-fetched ${resolved.length} requested snippet(s): ${snippetPaths.join(", ")}; re-prompting once.`,
+          );
+          const retryDataset = [...datasetLines, ...snippetBlock.split(/\r?\n/)];
+          let retryResult = null;
+          try {
+            retryResult = await runWorkspaceSummary(retryDataset, {
+              scope: "workspace-summary-snippets",
+              extraMetadata: { snippetRoundTrip: true, snippetPaths },
+            });
+          } catch (error) {
+            if (verbose) {
+              console.warn(
+                `[MiniPhi][Workspace] Snippet re-prompt failed: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          }
+          if (promptJournal) {
+            await promptJournal.appendStep(promptJournalId, {
+              label: "workspace-summary-snippets",
+              status: retryResult?.analysis ? "completed" : "failed",
+              response: retryResult?.analysis ?? null,
+              schemaId: retryResult?.schemaId ?? null,
+              operations: [
+                {
+                  type: "missing-snippets-roundtrip",
+                  status: retryResult?.analysis ? "completed" : "failed",
+                  summary: `Auto-fetched ${snippetPaths.join(", ")}`,
+                },
+              ],
+              metadata: {
+                mode: "workspace",
+                snippetRoundTrip: true,
+                snippetPaths,
+                fallbackReason: retryResult?.analysisDiagnostics?.fallbackReason ?? null,
+              },
+              workspaceSummary: workspaceContext?.summary ?? null,
+            });
+          }
+          if (retryResult?.analysis && !retryResult.analysisDiagnostics?.fallbackReason) {
+            retryResult.snippetRoundTrip = { snippetPaths, requested: missingSnippets };
+            summaryResult = retryResult;
+          }
+        }
       }
     }
   }

@@ -572,6 +572,36 @@ export default class MiniPhiMemory extends MemoryStoreBase {
     return { id: planId, path: filePath };
   }
 
+  _planProgressPath(planId) {
+    const normalized =
+      typeof planId === "string" && planId.trim().length ? planId.trim() : String(planId ?? "plan");
+    const safeSlug = this._slugify(normalized);
+    const hashSuffix = this._hashText(normalized).slice(0, 8);
+    return path.join(this.promptDecompositionsDir, `${safeSlug}-${hashSuffix}-progress.json`);
+  }
+
+  /**
+   * Persists per-branch plan execution status next to the decomposition so
+   * follow-up runs can resume from the first incomplete branch.
+   */
+  async savePlanProgress(planId, progress) {
+    if (!planId || !progress || typeof progress !== "object") {
+      return null;
+    }
+    await this.prepare();
+    const filePath = this._planProgressPath(planId);
+    await this._writeJSON(filePath, { ...progress, planId });
+    return { id: planId, path: filePath };
+  }
+
+  async loadPlanProgress(planId) {
+    if (!planId) {
+      return null;
+    }
+    await this.prepare();
+    return this._readJSON(this._planProgressPath(planId), null);
+  }
+
   async loadLatestPromptDecomposition(options = undefined) {
     const promptId = options?.promptId ?? options?.mainPromptId ?? null;
     const mode = options?.mode ?? null;

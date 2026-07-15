@@ -75,25 +75,31 @@ Slices (in order):
      (telemetry in `.miniphi/prompt-exchanges/decompositions/`), and ended with a schema-valid
      log-analysis JSON footer. Full per-run history: git log of this file.
 
-2) Plan execution bridge — **ACTIVE**
+2) Plan execution bridge — **ACTIVE** (core landed 2026-07-15)
    - Problem: decomposition now yields actionable trees whose leaves name concrete files and
      commands, but nothing consumes them; likewise the analyzer's `missing_snippets` requests
      die on stdout.
-   - Scope:
-     - Execute leaf steps of the focused branch: map step descriptions/`recommendation` and
-       `recommended_tools` onto the default agent commands (list_dir/read_file/search_text/
-       run_cmd), gated by the existing command-policy and danger levels.
-     - Auto-fetch `missing_snippets` that resolve to repo-relative paths, attach them as fixed
-       references, and re-prompt once instead of only printing the request.
-     - Persist per-branch execution status (done/failed/blocked + stop reason) next to the plan
-       so `--plan-branch` resumes from the first incomplete branch by default.
-   - Caps: reuse decomposition budgets (max actions per branch, session deadline, recursion
-     depth); every executed action logged to the prompt journal.
-   - Proof run: one live `miniphi "<task>"` against this repo where at least one branch executes
-     end-to-end (search/read + follow-up prompt with fetched context) without manual patching.
-   - Exit criteria: plan progress artifact written under `.miniphi/`; `missing_snippets`
-     round-trip proven (request -> auto-fetch -> re-prompt -> non-fallback JSON); unit tests
-     cover action mapping and the snippet round-trip with stubbed clients.
+   - Landed (workspace flow, `src/libs/plan-executor.js` + `src/commands/workspace.js`):
+     - Focused-branch leaf steps map deterministically onto read-only native actions
+       (read_file/list_dir/search_text) with budgets, session-deadline checks, and dedup of
+       identical actions across sibling branches; `run_cmd` recommendations stay deferred until
+       a policy-gated `runCommand` is injected. Outputs feed the workspace-summary prompt.
+     - Repo-relative `missing_snippets` are auto-fetched (path-escape safe) and the summary
+       re-prompts once (`workspace-summary-snippets`); executed actions often pre-feed enough
+       context that the model no longer asks — the desired steady state.
+     - Per-branch progress persists via `MiniPhiMemory.savePlanProgress`
+       (`decompositions/<slug>-progress.json`, `firstIncompleteBranch`); CLI prints the resume
+       hint; the journal records a `plan-actions` step.
+     - Proof run (2026-07-15): live `miniphi` run expanded 4 branches, executed 4 plan actions,
+       persisted progress, and returned a non-fallback JSON footer with
+       `needs_more_context: false`. Regression: `unit-tests-js/plan-executor.test.js` (9 tests).
+   - Remaining before close:
+     - Default `--plan-branch` to `firstIncompleteBranch` when resuming with a saved progress
+       artifact (currently only a printed hint).
+     - Extend executor wiring to `run`/`analyze-file`; inject policy-gated `runCommand` in run
+       mode so command recommendations execute under CommandAuthorizationManager.
+     - One live run where the `missing_snippets` re-prompt fires end-to-end
+       (request -> auto-fetch -> re-prompt -> non-fallback JSON).
 
 3) Reliable edit pipeline
    - Scope: bring the guarded writer (diff summary + rollback, today recompose-only) into the
