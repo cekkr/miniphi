@@ -169,6 +169,11 @@
             "maximum": 1,
             "description": "Selection importance for note/boost (0..1)."
           },
+          "offset": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "For expand: start the loaded window at this character of the node, to page past content you have already seen."
+          },
           "from": {
             "type": ["string", "null"],
             "description": "Source node id for link."

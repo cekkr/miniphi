@@ -204,14 +204,27 @@ Slices (in order):
      3. Graph-only content: with the answer held **only** in a digested research node (on no disk,
         so no read/search could reach it), the model emitted `expand`, received the window, and
         wrote the correct value — `completed`.
-   - Fixes made during the proofs (each regression-covered): an `expand` that cannot fit now
-     returns the largest window the budget allows instead of silently staying a digest; repeated
-     no-op ops are reported back (`noops`) instead of looking applied; corrective feedback moved
-     from the droppable `scratch` layer into retained-with-TTL nodes after a live run showed the
-     nudge itself being demoted to a stub; a turn that only reshapes context earns a bounded
-     re-prompt instead of counting as "no actions"; `list_dir "/"` resolves to the workspace root.
-   - Regression: `unit-tests-js/context-graph.test.js` (19), `agent-context-layers.test.js` (11),
-     live-gated `agent-context-graph.live.test.js` (2).
+   - Fixes made during the proofs (each regression-covered):
+     - An `expand` that cannot fit returns the largest window the budget allows instead of silently
+       staying a digest, and `{"op":"expand","offset":N}` pages that window through a long node so
+       its tail stays reachable. Before paging existed, a model that needed a value ~6k chars into a
+       file wrote a fabricated placeholder instead.
+     - Read output is truncated **once**, with its `[output truncated]` marker intact. A second
+       blind 1200-char slice in the session used to cut the marker off, so the model believed it had
+       seen a whole file — the direct cause of that fabricated placeholder.
+     - Repeated no-op ops are reported back (`noops`) instead of looking applied; only a repeat at
+       the *same* offset is a no-op.
+     - Corrective feedback (schema violations, duplicate/invalid actions, rejected ops, and the
+       reform gap note) moved from the droppable `scratch` layer into retained-with-TTL nodes after
+       live runs showed the nudge itself being demoted to a stub under exactly the budget pressure
+       it was meant to correct. Retained layers are population-capped so they cannot grow unbounded.
+     - A turn that only reshapes context earns a bounded re-prompt instead of counting as
+       "no actions"; `list_dir "/"` resolves to the workspace root.
+   - Regression: `unit-tests-js/context-graph.test.js` (22), `agent-context-layers.test.js` (11),
+     live-gated `agent-context-graph.live.test.js` (2, both passing against `gpt-oss-20b`). Full
+     offline suite after the slice: 212 tests, 204 passing, 8 live-gated skips, 0 failures.
+     Run live files alone — concurrent long generations wedge LM Studio on the reference host
+     (`fetch failed` on the chat route while `/api/v0/models` still answers; it recovers on its own).
    - Remaining before close:
      1. Bring the layered context into the **headless** flows (`workspace`, `run`, `analyze-file`)
         so plan-executor outputs and analyzer snippets become nodes instead of ad-hoc blocks.

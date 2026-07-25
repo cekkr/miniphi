@@ -89,6 +89,8 @@ stubs under "Context index". Reshape it instead of guessing:
   {"op":"expand","node":"c7"}            load a stub/digest in full (stays loaded
                                          until you collapse or drop it; if it does
                                          not fit you get the largest window that does)
+  {"op":"expand","node":"c7","offset":4000}  page that window further into a long
+                                         node, starting at the given character
   {"op":"pin","node":"c7"}               keep a node in every future prompt
   {"op":"boost","node":"c7","importance":0.9}  raise its selection priority
   {"op":"collapse","node":"c7","text":"3-line gist"}  replace it with your own digest
@@ -242,6 +244,7 @@ export default class ContextGraph {
       ttlTurns: Number.isFinite(spec.ttlTurns) && spec.ttlTurns > 0 ? Math.floor(spec.ttlTurns) : null,
       tokens: estimateTokens(text),
       expandRequested: false,
+      expandOffset: 0,
     };
     this.nodes.set(node.id, node);
     this.revision += 1;
@@ -484,12 +487,19 @@ export default class ContextGraph {
       }
       // An explicit `expand` must always yield more than the default digest, so
       // a node the model asked for takes whatever budget is left as a window
-      // instead of silently staying collapsed.
+      // instead of silently staying collapsed. `expandOffset` pages that window
+      // through the node so content past the head stays reachable.
       if (node.expandRequested) {
         const remaining = budget - used;
         if (remaining >= MIN_PARTIAL_TOKENS) {
-          const slice = node.text.slice(0, remaining * 4 - 80);
-          const text = `${slice}\n[window: ${node.text.length - slice.length} more chars; collapse or drop other nodes to load them]`;
+          const start = Math.min(Math.max(0, node.expandOffset ?? 0), Math.max(0, node.text.length - 1));
+          const slice = node.text.slice(start, start + remaining * 4 - 120);
+          const after = node.text.length - (start + slice.length);
+          const header = start > 0 ? `[window from char ${start} of ${node.text.length}]\n` : "";
+          const footer = after > 0
+            ? `\n[window: ${after} more chars after char ${start + slice.length}; re-expand with a higher "offset", or collapse/drop other nodes to load more]`
+            : "";
+          const text = `${header}${slice}${footer}`;
           const tokens = estimateTokens(text);
           used += tokens;
           included.push({ node, text, tokens, score, form: "partial" });
@@ -682,20 +692,33 @@ export default class ContextGraph {
         node.importance = next;
         return { ok: true, op, nodeId: node.id, detail: `importance=${node.importance.toFixed(2)}` };
       }
-      case "expand":
-        if (node.expandRequested) {
+      case "expand": {
+        const offset = Number.isFinite(raw.offset) && raw.offset > 0 ? Math.floor(raw.offset) : 0;
+        // Re-expanding at a new offset pages the window through a long node; only
+        // a repeat at the same offset is a no-op.
+        if (node.expandRequested && offset === (node.expandOffset ?? 0)) {
           return {
             ok: false,
             noop: true,
             op,
             nodeId: node.id,
-            error: `node "${node.id}" is already expanded (loaded as far as the budget allows); use it, or collapse/drop another node to make room`,
+            error: `node "${node.id}" is already expanded at offset ${offset} (loaded as far as the budget allows); use it, page further with a higher "offset", or collapse/drop another node to make room`,
+          };
+        }
+        if (offset >= node.text.length) {
+          return {
+            ok: false,
+            op,
+            nodeId: node.id,
+            error: `offset ${offset} is past the end of node "${node.id}" (${node.text.length} chars)`,
           };
         }
         node.expandRequested = true;
+        node.expandOffset = offset;
         node.state = "active";
         node.importance = clamp01(Math.max(node.importance, 0.9), 0.9);
-        return { ok: true, op, nodeId: node.id };
+        return { ok: true, op, nodeId: node.id, detail: offset ? `offset=${offset}` : null };
+      }
       case "collapse": {
         const digest = typeof raw.text === "string" && raw.text.trim()
           ? raw.text.trim()
@@ -822,14 +845,19 @@ export default class ContextGraph {
       entry.node.importance = clamp01(Math.max(entry.node.importance, 0.9), 0.9);
       expanded.push(entry.node.id);
     }
+    // The gap note is the point of the reform turn — the model must see which gap
+    // it declared and what was expanded for it. In a droppable layer it would be
+    // demoted to a stub under exactly the budget pressure that caused the gap, so
+    // it is retained with a TTL instead.
     const note = this.add({
-      layer: "scratch",
+      layer: "contract",
       label: "context gap",
       text: gap
-        ? `Reported context gap: ${gap}${expanded.length ? `\nExpanded: ${expanded.join(", ")}` : "\nNo stored node matched; gather it with an action."}`
-        : "Context reported as insufficient without a stated gap.",
-      importance: 0.95,
+        ? `Reported context gap: ${gap}${expanded.length ? `\nExpanded for you: ${expanded.join(", ")} — use it now.` : "\nNo stored node matched; gather it with a read_file/search_text/web_research action."}`
+        : "Context reported as insufficient without a stated gap. State the gap in `context_gap` or gather context with an action.",
+      importance: 1,
       kind: "context-gap",
+      ttlTurns: 1,
       turn,
     });
     this.revision += 1;

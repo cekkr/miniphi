@@ -29,6 +29,7 @@ const DEFAULT_MAX_CONTEXT_REFORMS = 3;
 const DEFAULT_MAX_CONTEXT_ONLY_TURNS = 3;
 const MAX_PINNED_FILE_BYTES = 6000;
 const MAX_RESEARCH_OUTPUT_CHARS = 6000;
+const MAX_READONLY_OUTPUT_CHARS = 6000;
 
 const SYSTEM_PROMPT = `You are MiniPhi, a local coding agent operating inside the operator's repository.
 Work in turns. Each turn respond with ONLY a JSON object matching the provided schema (no prose, no markdown fences).
@@ -646,7 +647,11 @@ export default class AgentSession extends EventEmitter {
     let output = "";
     let status = "executed";
     try {
-      output = await executeReadonly({ action, cwd: this.cwd });
+      // Truncate exactly once, with the marker intact: the context graph is what
+      // demotes long output now, and a second blind slice used to cut off the
+      // "[output truncated]" notice — leaving the model to believe it had seen the
+      // whole file (observed live 2026-07-25: it invented a placeholder value).
+      output = await executeReadonly({ action, cwd: this.cwd, maxOutputChars: MAX_READONLY_OUTPUT_CHARS });
     } catch (error) {
       status = "failed";
       output = error instanceof Error ? error.message : String(error);
@@ -659,7 +664,7 @@ export default class AgentSession extends EventEmitter {
     this._remember({
       layer: "evidence",
       label: describeAction(action),
-      text: `${describeAction(action)} ->\n${String(output).slice(0, 1200)}`,
+      text: `${describeAction(action)} ->\n${output}`,
       importance: status === "failed" ? 0.85 : 0.7,
       kind: "readonly",
     });

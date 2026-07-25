@@ -213,8 +213,43 @@ test("an expand that cannot fit yields the largest window the budget allows", ()
   assert.equal(windowed.form, "partial");
   assert.ok(windowed.tokens > digestForm.tokens, "the window is larger than the digest it replaced");
   assert.ok(selection.usedTokens <= selection.budgetTokens, "the window still respects the budget");
-  assert.match(windowed.text, /\[window: \d+ more chars; collapse or drop other nodes to load them\]/);
+  assert.match(
+    windowed.text,
+    /\[window: \d+ more chars after char \d+; re-expand with a higher "offset", or collapse\/drop other nodes to load more\]/,
+  );
   assert.match(graph.render(), /read_file huge\.js \(L0, window\)/);
+});
+
+test("expand pages a long node with an offset so its tail stays reachable", () => {
+  // Live finding (2026-07-25): with only a head window available, a model that
+  // needed a value ~6k chars into a file fabricated a placeholder instead.
+  const graph = new ContextGraph({ budgetTokens: 400, digestChars: 200 });
+  graph.add({ layer: "mission", label: "task", text: "Task: page" });
+  const long = graph.add({
+    layer: "evidence",
+    label: "read_file long.js",
+    text: `${"head".repeat(500)}NEEDLE_AT_THE_TAIL${"tail".repeat(500)}`,
+  });
+
+  graph.applyOps([{ op: "expand", node: long.id }]);
+  const head = graph.select().included.find((entry) => entry.node.id === long.id);
+  assert.equal(head.form, "partial");
+  assert.doesNotMatch(head.text, /NEEDLE_AT_THE_TAIL/, "the head window cannot reach the needle");
+  assert.match(head.text, /\[window: \d+ more chars after char \d+; re-expand with a higher "offset"/);
+
+  const paged = graph.applyOps([{ op: "expand", node: long.id, offset: 1900 }]);
+  assert.equal(paged.applied[0].detail, "offset=1900");
+  const windowed = graph.select().included.find((entry) => entry.node.id === long.id);
+  assert.match(windowed.text, /^\[window from char 1900 of \d+\]/);
+  assert.match(windowed.text, /NEEDLE_AT_THE_TAIL/, "paging reaches content past the head");
+
+  // Re-expanding at the same offset is the only no-op; a new offset is real work.
+  const repeat = graph.applyOps([{ op: "expand", node: long.id, offset: 1900 }]);
+  assert.equal(repeat.applied.length, 0);
+  assert.match(repeat.noops[0].error, /already expanded at offset 1900/);
+  const past = graph.applyOps([{ op: "expand", node: long.id, offset: 999999 }]);
+  assert.equal(past.applied.length, 0);
+  assert.match(past.rejected[0].error, /past the end of node/);
 });
 
 test("applyOps covers the context language and reports rejections", () => {
@@ -302,9 +337,12 @@ test("reform expands nodes matching the reported gap and records the gap", () =>
   assert.ok(reform.expanded.includes(parser.id));
   assert.equal(graph.get(parser.id).expandRequested, true);
   const note = graph.get(reform.noteId);
-  assert.equal(note.layer, "scratch");
+  // The gap note must be retained (never demoted to a stub under the very budget
+  // pressure that caused the gap) and must expire after it has had its turn.
+  assert.equal(note.layer, "contract");
+  assert.equal(note.ttlTurns, 1);
   assert.match(note.text, /Reported context gap/);
-  assert.match(note.text, /Expanded/);
+  assert.match(note.text, /Expanded for you/);
 
   const empty = new ContextGraph({ budgetTokens: 300 });
   empty.add({ layer: "evidence", label: "unrelated", text: "nothing to match" });
