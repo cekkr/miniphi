@@ -51,8 +51,24 @@ Optional:
 2. **Run miniPhi inside your project**
    ```bash
    cd /path/to/my-project
-   miniphi "Create a README.md for this project"
+   miniphi
    ```
+   Running `miniphi` with no arguments opens the **interactive agent UI** (the primary interface). You:
+   - **pick the files** to put in scope (fuzzy filter, Space to toggle, Enter to confirm — or Esc to skip),
+   - **describe the task** in a prompt box,
+   - **watch progress in real time** as the agent reads/searches the repo and plans,
+   - **approve each change**: proposed file writes/edits show a diff and wait for you (`y` once · `a` for the session · `n` reject), and edits are applied through a guarded writer with rollback.
+
+   You can also seed the task directly — it still opens the UI:
+   ```bash
+   miniphi "Add input validation to the CLI parser and a unit test for it"
+   ```
+
+   Prefer the classic non-interactive pipeline (or running in CI/scripts)? Add `--headless` (it's also implied automatically when stdout is not a TTY), or use any explicit subcommand below.
+
+### Interactive UI vs. direct commands
+
+The UI is the front door for everyday use, but **every direct subcommand and flag stays available** for scripting and automation. Use `miniphi ui [--task "…"]` to launch the UI explicitly, `--headless`/`--no-ui` to force the non-interactive flow, and the subcommands below for targeted, scriptable runs.
 
 ### Common workflows
 
@@ -165,8 +181,10 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 
 These are the commands most people start with:
 
+- `miniphi` / `miniphi ui`  
+  Open the **interactive agent UI**: pick files, prompt, watch live progress, and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out.
 - `miniphi "<task>"`  
-  Workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
+  On a TTY this opens the interactive UI seeded with the task. With `--headless` (or a non-TTY), it runs the classic workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  
   Execute a command and analyze the output.
 - `miniphi analyze-file --file <path> --task "<objective>"`  

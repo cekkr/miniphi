@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Agent Action Turn",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "summary",
+    "summary_updates",
+    "actions",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repeat the operator task in <= 12 words."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Natural-language status of what you are doing this turn."
+    },
+    "summary_updates": {
+      "type": "array",
+      "description": "Short chronological progress updates (can be empty).",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "actions": {
+      "type": "array",
+      "description": "Ordered actions to perform this turn. Emit a single `finish` action (no others) when the task is complete.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "reason"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "read_file",
+              "list_dir",
+              "search_text",
+              "write_file",
+              "edit_file",
+              "run_cmd",
+              "finish"
+            ],
+            "description": "The action kind. read_file/list_dir/search_text are auto-run; write_file/edit_file/run_cmd require operator approval; finish ends the session."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why this action is needed (shown to the operator)."
+          },
+          "path": {
+            "type": ["string", "null"],
+            "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file (never absolute, no `..`)."
+          },
+          "content": {
+            "type": ["string", "null"],
+            "description": "Full file content for write_file, or the whole-file replacement for edit_file when no anchor is given."
+          },
+          "anchor": {
+            "type": ["string", "null"],
+            "description": "For edit_file: the exact existing text to locate and replace. Must occur exactly once in the file."
+          },
+          "replacement": {
+            "type": ["string", "null"],
+            "description": "For edit_file: the text that replaces `anchor`."
+          },
+          "term": {
+            "type": ["string", "null"],
+            "description": "Search term for search_text."
+          },
+          "command": {
+            "type": ["string", "null"],
+            "description": "Shell command for run_cmd."
+          },
+          "danger": {
+            "type": ["string", "null"],
+            "enum": ["low", "mid", "high", null],
+            "description": "Operator-facing risk hint for write_file/edit_file/run_cmd."
+          },
+          "expected_hash": {
+            "type": ["string", "null"],
+            "description": "Optional sha256 of the file content you last read, guarding edit_file against concurrent changes."
+          }
+        }
+      }
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "True when you cannot proceed without more of the repo.",
+      "default": false
+    },
+    "missing_snippets": {
+      "type": "array",
+      "description": "Minimal repo-relative files/snippets required before proceeding (e.g. src/index.js).",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}

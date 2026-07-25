@@ -277,6 +277,15 @@ async function searchTextInWorkspace(term, cwd, { maxMatches = SEARCH_MAX_MATCHE
   return matches;
 }
 
+/**
+ * Executes a single read-only workspace action (read_file/list_dir/search_text)
+ * natively (no shell). Exported so the interactive agent executor can reuse the
+ * exact same bounded, path-checked primitives the plan flow relies on.
+ */
+export async function executeReadonlyAction(action, cwd, { maxOutputChars = DEFAULT_MAX_OUTPUT_CHARS } = {}) {
+  return executeAction(action, cwd, { maxOutputChars });
+}
+
 async function executeAction(action, cwd, { maxOutputChars }) {
   if (action.type === "read_file") {
     const raw = await fs.readFile(path.resolve(cwd, action.target), "utf8");

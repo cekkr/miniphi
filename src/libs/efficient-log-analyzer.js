@@ -266,6 +266,8 @@ export default class EfficientLogAnalyzer {
       datasetHint = null,
       promptBudgetCapTokens = null,
       contextBudgetRatio = null,
+      onToken = null,
+      onThink = null,
     } = options ?? {};
 
     const normalizedLines = Array.isArray(lines)
@@ -460,12 +462,19 @@ export default class EfficientLogAnalyzer {
               prompt,
               (token) => {
                 analysis += token;
-                if (streamOutput) {
+                // A UI (or any caller) can capture tokens via `onToken`; the
+                // default remains raw stdout streaming so headless output is
+                // unchanged.
+                if (typeof onToken === "function") {
+                  onToken(token);
+                } else if (streamOutput) {
                   process.stdout.write(token);
                 }
               },
               (thought) => {
-                if (verbose) {
+                if (typeof onThink === "function") {
+                  onThink(thought);
+                } else if (verbose) {
                   console.log("\n[Reasoning Block]\n");
                   console.log(thought);
                   console.log("\n[Solution Stream]");
