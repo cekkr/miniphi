@@ -55,6 +55,16 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
   const implicitRootList = normalizeAgentAction({ type: "list_dir", reason: "inspect root" }, cwd);
   assert.equal(implicitRootList.ok, true);
   assert.equal(implicitRootList.action.path, ".");
+  // Models write the workspace root as "/" (seen live with gpt-oss-20b); it means
+  // the sandbox root, and must resolve there rather than being rejected.
+  for (const rootPath of ["/", "\\", "./", "./."]) {
+    const listed = normalizeAgentAction({ type: "list_dir", path: rootPath, reason: "inspect root" }, cwd);
+    assert.equal(listed.ok, true, `list_dir "${rootPath}" should resolve to the workspace root`);
+    assert.equal(listed.action.path, ".");
+  }
+  // The same strings stay rejected for path-scoped actions: they are not files.
+  assert.equal(normalizeAgentAction({ type: "read_file", path: "/", reason: "x" }, cwd).ok, false);
+  assert.equal(normalizeAgentAction({ type: "write_file", path: "/", content: "x", reason: "x" }, cwd).ok, false);
 
   const write = normalizeAgentAction(
     { type: "write_file", path: "out.txt", content: "hi", reason: "create", danger: "weird" },

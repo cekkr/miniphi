@@ -6,6 +6,8 @@
 
 miniPhi is a workspace-aware assistant: it scans the current folder (your repo), compresses long command output or log files into smaller, high-signal chunks, then asks a locally loaded model to plan, analyze, or draft edits. Every run leaves an audit trail under `.miniphi/` so you can revisit what happened later.
 
+Because a local model's context window is small (LM Studio typically loads models at 8k–16k tokens), miniPhi does not keep one growing conversation. It keeps a **layered context**: your task and the session rules are always loaded, while file contents, search results and research are ranked by importance and sub-task and shrunk to summaries — or listed by id — when they don't fit. The model can then reshape its own context, asking for exactly the piece it needs. See [Layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window).
+
 ## What you can use it for
 
 - **Repo onboarding:** “what’s in this project?”, “what scripts exist?”, “where is feature X implemented?”
@@ -69,6 +71,30 @@ Optional:
 ### Interactive UI vs. direct commands
 
 The UI is the front door for everyday use, but **every direct subcommand and flag stays available** for scripting and automation. Use `miniphi ui [--task "…"]` to launch the UI explicitly, `--headless`/`--no-ui` to force the non-interactive flow, and the subcommands below for targeted, scriptable runs.
+
+### Layered context: how miniPhi fits big repos in a small window
+
+Local models have small context windows, so miniPhi budgets every prompt instead of appending to a
+transcript. The context is a graph of layered pieces:
+
+| Layer | What it holds | Under pressure |
+| --- | --- | --- |
+| Mission | your task and the workspace root | always sent |
+| Contract | session rules, budgets, corrections ("you already did that") | always sent |
+| Plan | decisions, applied edits, finished sub-task outcomes | shrinks last |
+| Sub-task | the goal of the sub-task being worked on | shrinks last |
+| Evidence | file contents, search hits, research results | summarized, then listed by id |
+| Scratch | passing notes | dropped first |
+
+The budget is derived from the model's **loaded** context length, so it adapts to whatever LM Studio
+has in memory (override with `--context-budget <tokens>`). Anything that doesn't fit is not lost: it
+becomes a short digest, or a one-line entry in a "Context index" carrying its id — and the model can
+ask for it back, pin what matters, discard what it's done with, or open and close sub-tasks that
+collapse their evidence into a single conclusion when finished. If it reports that the loaded context
+isn't precise enough, miniPhi reforms the graph around the stated gap and re-asks once.
+
+Everything is auditable: the graph is saved to `.miniphi/agent-sessions/<id>/context-graph.json`, and
+the session result records how much was loaded, digested, or reshaped.
 
 ### Common workflows
 
@@ -192,7 +218,7 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 These are the commands most people start with:
 
 - `miniphi` / `miniphi ui`  
-  Open the **interactive agent UI**: pick files, prompt, watch live progress (including bounded `web_research` actions), and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out.
+  Open the **interactive agent UI**: pick files, prompt, watch live progress (including bounded `web_research` actions), and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out. Prompts are assembled from the [layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window); size it explicitly with `--context-budget <tokens>` if you want to override the auto-detected window.
 - `miniphi "<task>"`  
   On a TTY this opens the interactive UI seeded with the task. With `--headless` (or a non-TTY), it runs the classic workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  

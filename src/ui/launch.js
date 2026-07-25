@@ -19,6 +19,8 @@ import WebResearcher from "../libs/web-researcher.js";
  * @param {Function} [options.webResearch] Optional web researcher override for tests.
  * @param {number} [options.sessionDeadline] Absolute ms deadline.
  * @param {string} [options.model] Model id override.
+ * @param {number} [options.contextLength] Loaded LM Studio context window, used to size the context budget.
+ * @param {number} [options.contextBudgetTokens] Explicit context-graph budget (wins over contextLength).
  * @returns {Promise<object>} the finished session result.
  */
 export async function launchAgentUi(options = undefined) {
@@ -32,6 +34,8 @@ export async function launchAgentUi(options = undefined) {
     sessionDeadline = null,
     model = null,
     temperature = undefined,
+    contextLength = null,
+    contextBudgetTokens = null,
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
@@ -47,6 +51,8 @@ export async function launchAgentUi(options = undefined) {
     sessionDeadline,
     model,
     temperature,
+    contextLength,
+    contextBudgetTokens,
   });
   // Wire the UI approver after construction so it can emit on the session.
   session.approver = createUiApprover(session);

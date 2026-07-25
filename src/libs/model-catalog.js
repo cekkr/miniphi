@@ -25,6 +25,9 @@ export function normalizeCatalogEntry(entry) {
     ? entry.capabilities.filter((cap) => typeof cap === "string")
     : [];
   const maxContext = Number(entry.max_context_length ?? entry.loaded_context_length);
+  // The *loaded* window is the real prompt limit for a JIT-loaded model; the
+  // maximum only says what the model could do if it were loaded larger.
+  const loadedContext = Number(entry.loaded_context_length);
   return {
     id,
     type: typeof entry.type === "string" ? entry.type : "llm",
@@ -33,6 +36,7 @@ export function normalizeCatalogEntry(entry) {
     quantization: typeof entry.quantization === "string" ? entry.quantization : null,
     state: typeof entry.state === "string" ? entry.state : "unknown",
     maxContextLength: Number.isFinite(maxContext) && maxContext > 0 ? maxContext : null,
+    loadedContextLength: Number.isFinite(loadedContext) && loadedContext > 0 ? loadedContext : null,
     capabilities,
   };
 }
@@ -213,6 +217,43 @@ export async function fetchModelCatalog({ restClient, includeEmbeddings = false 
   return {
     source,
     models: normalizeModelCatalog(payload, { includeEmbeddings }),
+  };
+}
+
+/**
+ * Resolves the real context window for one model id from the live inventory.
+ * `loadedContextLength` is what a prompt must fit into right now; MiniPhi uses it
+ * to size the context-graph budget instead of trusting a static default.
+ * Returns null when LM Studio is unreachable or the model is unknown.
+ */
+export async function resolveContextWindow({ restClient, modelId = null } = {}) {
+  if (!restClient) {
+    return null;
+  }
+  let catalog;
+  try {
+    catalog = await fetchModelCatalog({ restClient, includeEmbeddings: true });
+  } catch {
+    return null;
+  }
+  const wanted = typeof modelId === "string" && modelId.trim() ? modelId.trim() : null;
+  const model = wanted
+    ? catalog.models.find((entry) => entry.id === wanted) ?? null
+    : catalog.models.find((entry) => entry.state === "loaded") ?? null;
+  if (!model) {
+    return null;
+  }
+  return {
+    modelId: model.id,
+    state: model.state,
+    loadedContextLength: model.loadedContextLength,
+    maxContextLength: model.maxContextLength,
+    // Only the loaded window is a fact. For a not-yet-loaded model LM Studio
+    // picks the window at JIT-load time (often far below the maximum), so the
+    // maximum must never be used as a prompt budget — callers fall back to the
+    // conservative default instead.
+    contextLength: model.loadedContextLength ?? null,
+    jitUnknown: model.state !== "loaded" || model.loadedContextLength === null,
   };
 }
 

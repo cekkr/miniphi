@@ -112,14 +112,19 @@ export function normalizeAgentAction(rawAction, cwd) {
   }
 
   // The workspace root is a valid list target, but resolveWorkspacePath
-  // intentionally returns null for paths that collapse to the root.
+  // intentionally returns null for paths that collapse to the root. Models also
+  // write the root as "/" or "\" meaning "the workspace" (seen live with
+  // gpt-oss-20b, 2026-07-25); those resolve to the sandbox root, not the disk root.
   const rootList =
     type === "list_dir" &&
     (rawAction.path === undefined ||
       rawAction.path === null ||
       rawAction.path === "." ||
       rawAction.path === "./" ||
-      rawAction.path === "");
+      rawAction.path === "" ||
+      rawAction.path === "/" ||
+      rawAction.path === "\\" ||
+      rawAction.path === "./.");
   // Remaining types (read_file/list_dir/write_file/edit_file) are path-scoped.
   const relPath = rootList ? "." : resolveWorkspacePath(rawAction.path, cwd);
   if (!relPath) {

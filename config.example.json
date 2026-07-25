@@ -35,6 +35,9 @@
     "chunkSize": 2000,
     "sessionTimeoutSeconds": 1800
   },
+  "context": {
+    "budgetTokens": null
+  },
   "rlRouter": {
     "enabled": false,
     "statePath": ".miniphi/indices/prompt-router.json",

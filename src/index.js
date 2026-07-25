@@ -64,7 +64,7 @@ import {
 import { resolveLmStudioTransportPreference } from "./libs/lmstudio-transport.js";
 import { LMStudioRestClient } from "./libs/lmstudio-api.js";
 import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
-import { resolveAutoModel } from "./libs/model-catalog.js";
+import { resolveAutoModel, resolveContextWindow } from "./libs/model-catalog.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import {
   buildLineRangeFromChunk,
@@ -1072,6 +1072,27 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
   const sessionDeadline =
     Number.isFinite(sessionSeconds) && sessionSeconds > 0 ? Date.now() + sessionSeconds * 1000 : null;
 
+  // The context-graph budget follows the model's real (loaded) window; an
+  // explicit --context-budget wins, and an unknown window keeps the
+  // conservative default rather than trusting max_context_length.
+  const contextBudgetOverride =
+    parseNumericSetting(options["context-budget"], "--context-budget") ??
+    parseNumericSetting(configData?.context?.budgetTokens, "config.context.budgetTokens") ??
+    null;
+  let contextLength = null;
+  if (!contextBudgetOverride) {
+    const window = await resolveContextWindow({
+      restClient,
+      modelId: modelSelection.modelKey,
+    }).catch(() => null);
+    contextLength = window?.contextLength ?? null;
+    if (verbose && window) {
+      console.warn(
+        `[MiniPhi] Context window for ${window.modelId}: loaded=${window.loadedContextLength ?? "unknown"}, max=${window.maxContextLength ?? "unknown"}`,
+      );
+    }
+  }
+
   const { launchAgentUi } = await import("./ui/launch.js");
   await launchAgentUi({
     client: restClient,
@@ -1081,6 +1102,8 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
     runCommand,
     sessionDeadline,
     model: modelSelection.modelKey,
+    contextLength,
+    contextBudgetTokens: contextBudgetOverride,
   });
 }
 
@@ -2980,6 +3003,8 @@ Options:
   --prompt-journal [id]        Mirror each Phi/API step + operations into .miniphi/prompt-exchanges/stepwise
   --prompt-journal-status <s>  Finalize the journal as active|paused|completed|closed (default: completed)
   --session-timeout <s>        Hard limit (seconds) for the entire MiniPhi run (optional)
+  --context-budget <tokens>    Context-graph prompt budget for the interactive agent
+                               (default: derived from the model's loaded context window)
   --no-navigator               Skip navigator prompts and follow-up commands
   --debug-lm                   Print each objective + prompt when scoring is running
   --command-policy <mode>      Command authorization: ask | session | allow | deny (default: ask)

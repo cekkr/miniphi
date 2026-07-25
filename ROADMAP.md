@@ -21,6 +21,10 @@ forward-looking.
   completion. Ask shallow, then expand flagged branches with focused follow-up prompts under
   budget/depth/session caps. (This turned decomposition from always-failing to a proven
   21-step depth-3 plan on a 30B local model.)
+- Context is budgeted, layered, and reshapeable — never a growing transcript. Every prompt is a
+  selection over the context graph (priority / importance / subtask level) sized to the model's
+  loaded window; what does not fit degrades to a digest or a requestable stub, and the model can
+  reform its own context through `context_ops` instead of guessing.
 - Two-tier testing: `npm test` is offline and deterministic (stubbed REST clients);
   live behavior is gated behind `MINIPHI_LMSTUDIO_INTEGRATION=1` and asserts on *executed*
   model output (generated code is imported and behaviorally tested), not just JSON shape.
@@ -52,8 +56,11 @@ Known gaps (drive the slices below):
   run/workspace analyzer flow still has no `edit_file` action (live proof pending for both).
 - `model-presets.js` defaults drift from installed models (default preset model is not even
   installed on the reference host); auto-selection exists but is opt-in.
-- Models are JIT-loaded at the server default context (8192 on the reference host); MiniPhi
-  cannot yet size context deliberately (LM Studio `/api/v1/models/load` exists for this).
+- Models are JIT-loaded at the server default context (8192–16384 on the reference hosts); MiniPhi
+  now *sizes its prompts* to that window (slice 5) but still cannot *choose* it
+  (LM Studio `/api/v1/models/load` exists for this — v0.2).
+- The layered context graph is wired into the interactive agent only; the headless
+  `workspace`/`run`/`analyze-file` flows still assemble ad-hoc prompt blocks.
 - "Idle vs stall" is indistinguishable to the operator: when nothing is computing, a static
   screen / silent stdout looks the same whether MiniPhi is *waiting for input* or *hung*. See the
   detailed future-fix note under v0.1 slice 5.
@@ -161,7 +168,61 @@ Slices (in order):
      `npm run sample:lmstudio-json-series`.
    - Exit criteria: docs match CLI behavior and sample runs complete without manual patching.
 
-5) Idle-vs-stall observability — **NOTE / future fix (not started)**
+5) Multi-layered context + context graph language — **CORE LANDED 2026-07-25 (live-proven)**
+   - Problem: LM Studio prompts are hard-capped by the model's *loaded* context window (8k–16k on
+     the reference hosts), yet the agent appended every observation to one flat transcript and fed
+     the last N entries. Long tasks therefore lost the task itself, corrective nudges, or the file
+     under edit — whichever fell off the window — and there was no way to re-establish the context
+     needed to continue a sub-conversation.
+   - Delivered (`src/libs/context-graph.js` + `src/agent/agent-session.js`):
+     - Context is a graph of layered nodes selected per prompt against a token budget on three
+       axes: **priority** (layer: mission/contract > plan > subtask > evidence > scratch),
+       **importance** (0..1, decayed per turn, boostable), and **subtask level** (depth in the task
+       tree). `mission`/`contract` are retained invariants; everything else degrades to a digest,
+       then to a one-line stub in a requestable "Context index".
+     - The budget follows reality: `deriveContextBudget` sizes it from `loaded_context_length`
+       (`resolveContextWindow` in `model-catalog.js`) minus the system-prompt/schema/output
+       reserve; an unknown window keeps the conservative default instead of trusting
+       `max_context_length`. Override with `--context-budget` / `config.context.budgetTokens`.
+     - **Context graph language**: the `agent-action` schema gained `context_ops` /
+       `context_sufficient` / `context_gap` (also standalone in `docs/prompts/context-ops.schema.json`)
+       so the model reshapes its own context — `expand`, `pin`, `boost`, `collapse`, `drop`,
+       `note`, `link`, `open_subtask`, `close_subtask`, `focus`. Ops are applied deterministically;
+       rejections and no-ops are fed back so the model learns the language across turns.
+     - Sub-conversations: `open_subtask` scopes gathered evidence to a level; `close_subtask`
+       collapses it into one parent-level outcome node, and `buildSubConversation(id)` rebuilds the
+       minimal context (invariants + ancestor spine + own evidence) to resume a branch.
+     - `context_sufficient: false` triggers a bounded deterministic **reform** (keyword-matched
+       expansion of the nodes covering the stated gap) and one re-prompt; graph state persists to
+       `.miniphi/agent-sessions/<id>/context-graph.json` with stable node ids.
+   - Live proofs (2026-07-25, `gpt-oss-20b` at 16384 loaded context, budget forced to 700 tokens):
+     1. Wire contract: LM Studio accepted the extended schema and returned
+        `{"op":"expand","node":"c3"}` selecting the *relevant* digested node out of two.
+     2. Task under pressure: with two files larger than the whole budget, the run ended
+        `completed` having written the value buried in the right one; the mission and contract
+        layers stayed loaded while evidence was demoted.
+     3. Graph-only content: with the answer held **only** in a digested research node (on no disk,
+        so no read/search could reach it), the model emitted `expand`, received the window, and
+        wrote the correct value — `completed`.
+   - Fixes made during the proofs (each regression-covered): an `expand` that cannot fit now
+     returns the largest window the budget allows instead of silently staying a digest; repeated
+     no-op ops are reported back (`noops`) instead of looking applied; corrective feedback moved
+     from the droppable `scratch` layer into retained-with-TTL nodes after a live run showed the
+     nudge itself being demoted to a stub; a turn that only reshapes context earns a bounded
+     re-prompt instead of counting as "no actions"; `list_dir "/"` resolves to the workspace root.
+   - Regression: `unit-tests-js/context-graph.test.js` (19), `agent-context-layers.test.js` (11),
+     live-gated `agent-context-graph.live.test.js` (2).
+   - Remaining before close:
+     1. Bring the layered context into the **headless** flows (`workspace`, `run`, `analyze-file`)
+        so plan-executor outputs and analyzer snippets become nodes instead of ad-hoc blocks.
+     2. Resume a persisted graph across sessions (`ContextGraph.fromJSON` is covered; nothing wires
+        it into `AgentSession` startup yet).
+     3. A live run where the model drives `open_subtask`/`close_subtask` through a multi-file task.
+   - Exit criteria: a live task larger than the loaded context window completes without prompt
+     overflow, with the graph showing demotion + at least one model-driven reform, and the same
+     session resumable from its persisted graph.
+
+6) Idle-vs-stall observability — **DEFERRED to v0.2** (note kept; superseded in priority by slice 5)
    - Problem: when no computation is running, the operator cannot tell whether MiniPhi is
      *waiting for input* or *stalled/hung*. A static UI frame or silent stdout looks identical for:
      an unanswered permission prompt, the empty task box / file picker, a long in-flight model
@@ -192,6 +253,7 @@ Slices (in order):
    - Exit criteria: at any moment the operator can tell from the screen (or headless output)
      whether MiniPhi is computing, waiting on them, or stalled; a hung model turn is reported
      within a bounded time rather than appearing as indefinite "thinking".
+   - Deferred 2026-07-25 to make room for the multi-layered context slice (one-in-one-out rule).
 
 ### v0.2 Reliability, reuse, and model management
 Objective: make the agent predictable across sessions, workloads, and model inventories.

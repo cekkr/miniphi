@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Context Graph Operations",
+  "description": "The context graph language: operations a model emits to reshape its own layered context when the loaded context is not precise enough for the current task or subtask. Kept inline (no $ref) because MiniPhi validates responses with its own schema walker.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["context_ops", "context_sufficient"],
+  "properties": {
+    "context_sufficient": {
+      "type": "boolean",
+      "description": "False when the loaded context cannot answer the current step; MiniPhi then reforms the graph and re-prompts once.",
+      "default": true
+    },
+    "context_gap": {
+      "type": ["string", "null"],
+      "description": "What is missing or imprecise, in concrete terms (node ids, symbols, file paths). Used to reform the graph."
+    },
+    "context_ops": {
+      "type": "array",
+      "description": "Ordered operations applied to the context graph after this turn (max 12).",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op"],
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "pin",
+              "unpin",
+              "boost",
+              "expand",
+              "collapse",
+              "drop",
+              "note",
+              "link",
+              "open_subtask",
+              "close_subtask",
+              "focus"
+            ],
+            "description": "expand loads a stub/digest back in full; pin keeps a node in every prompt; boost raises its selection score; collapse replaces it with your digest; drop discards it; note records a durable fact; link relates two nodes; open_subtask/close_subtask scope a sub-conversation; focus switches to an existing subtask."
+          },
+          "node": {
+            "type": ["string", "null"],
+            "description": "Target node id as shown in [brackets] (required by pin/unpin/boost/expand/collapse/drop/focus)."
+          },
+          "label": {
+            "type": ["string", "null"],
+            "description": "Short label for note/open_subtask."
+          },
+          "text": {
+            "type": ["string", "null"],
+            "description": "Body for note, digest text for collapse, goal for open_subtask, outcome for close_subtask."
+          },
+          "layer": {
+            "type": ["string", "null"],
+            "enum": ["plan", "subtask", "evidence", "scratch", null],
+            "description": "Layer for note (mission/contract are runtime-owned and cannot be written by the model)."
+          },
+          "importance": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Selection importance for note/boost (0..1)."
+          },
+          "from": {
+            "type": ["string", "null"],
+            "description": "Source node id for link."
+          },
+          "to": {
+            "type": ["string", "null"],
+            "description": "Target node id for link."
+          },
+          "relation": {
+            "type": ["string", "null"],
+            "enum": [
+              "derived_from",
+              "supports",
+              "refines",
+              "supersedes",
+              "answers",
+              "blocks",
+              "child_of",
+              null
+            ],
+            "description": "Edge relation for link."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Why this reshaping is needed (recorded in telemetry)."
+          }
+        }
+      }
+    }
+  }
+}
