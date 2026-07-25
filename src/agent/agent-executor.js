@@ -8,8 +8,14 @@ import { summarizeDiff } from "../libs/recompose-utils.js";
 const DEFAULT_MAX_OUTPUT_CHARS = 1500;
 
 export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_text"]);
+export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
 export const MUTATING_ACTION_TYPES = new Set(["write_file", "edit_file", "run_cmd"]);
-const KNOWN_ACTION_TYPES = new Set([...READONLY_ACTION_TYPES, ...MUTATING_ACTION_TYPES, "finish"]);
+const KNOWN_ACTION_TYPES = new Set([
+  ...READONLY_ACTION_TYPES,
+  ...RESEARCH_ACTION_TYPES,
+  ...MUTATING_ACTION_TYPES,
+  "finish",
+]);
 
 const hashText = (text) => createHash("sha256").update(text ?? "", "utf8").digest("hex");
 
@@ -21,6 +27,9 @@ const hashText = (text) => createHash("sha256").update(text ?? "", "utf8").diges
 export function classifyActionType(type) {
   if (READONLY_ACTION_TYPES.has(type)) {
     return "readonly";
+  }
+  if (RESEARCH_ACTION_TYPES.has(type)) {
+    return "research";
   }
   if (MUTATING_ACTION_TYPES.has(type)) {
     return "mutating";
@@ -36,7 +45,7 @@ export function describeAction(action) {
   if (!action || typeof action !== "object") {
     return "(invalid action)";
   }
-  const target = action.path ?? action.term ?? action.command ?? "";
+  const target = action.path ?? action.term ?? action.query ?? action.command ?? "";
   return `${action.type}${target ? ` ${target}` : ""}`.trim();
 }
 
@@ -80,6 +89,19 @@ export function normalizeAgentAction(rawAction, cwd) {
     return { ok: true, action, category };
   }
 
+  if (type === "web_research") {
+    const query = typeof rawAction.query === "string" ? rawAction.query.trim() : "";
+    if (!query) {
+      return { ok: false, error: "web_research requires a non-empty query" };
+    }
+    const parsedMaxResults = Number(rawAction.max_results);
+    action.query = query;
+    action.maxResults = Number.isFinite(parsedMaxResults)
+      ? Math.max(1, Math.min(10, Math.floor(parsedMaxResults)))
+      : 5;
+    return { ok: true, action, category };
+  }
+
   if (type === "run_cmd") {
     const command = typeof rawAction.command === "string" ? rawAction.command.trim() : "";
     if (!command) {
@@ -89,8 +111,17 @@ export function normalizeAgentAction(rawAction, cwd) {
     return { ok: true, action, category };
   }
 
+  // The workspace root is a valid list target, but resolveWorkspacePath
+  // intentionally returns null for paths that collapse to the root.
+  const rootList =
+    type === "list_dir" &&
+    (rawAction.path === undefined ||
+      rawAction.path === null ||
+      rawAction.path === "." ||
+      rawAction.path === "./" ||
+      rawAction.path === "");
   // Remaining types (read_file/list_dir/write_file/edit_file) are path-scoped.
-  const relPath = resolveWorkspacePath(rawAction.path, cwd);
+  const relPath = rootList ? "." : resolveWorkspacePath(rawAction.path, cwd);
   if (!relPath) {
     return {
       ok: false,

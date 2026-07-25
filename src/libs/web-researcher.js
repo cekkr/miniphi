@@ -2,10 +2,16 @@ import { randomUUID } from "crypto";
 
 const DEFAULT_PROVIDER = "duckduckgo";
 const DEFAULT_MAX_RESULTS = 6;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 export default class WebResearcher {
   constructor(options = {}) {
     this.userAgent = options.userAgent ?? "MiniPhi-WebResearcher/1.0";
+    const parsedTimeout = Number(options.timeoutMs);
+    this.timeoutMs =
+      Number.isFinite(parsedTimeout) && parsedTimeout > 0
+        ? Math.floor(parsedTimeout)
+        : DEFAULT_TIMEOUT_MS;
   }
 
   async search(query, options = {}) {
@@ -78,6 +84,7 @@ export default class WebResearcher {
       headers: {
         "User-Agent": this.userAgent,
       },
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) {
       const body = await response.text();
@@ -99,6 +106,7 @@ export default class WebResearcher {
         "User-Agent": this.userAgent,
         Accept: "text/html,application/xhtml+xml",
       },
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) {
       const body = await response.text();

@@ -126,14 +126,24 @@ Slices (in order):
      `write_file slug.js`, the guard applied it (`written`, correct content), and the run finished
      `completed` in 3 turns. **Anti-stall fix made during the proof:** without it the model
      re-proposed the identical write every turn (guard returned `unchanged`) and spun to
-     `max-turns`; the loop now dedupes repeated identical read/edit actions and auto-finishes
-     `completed` after 2 no-progress turns (regression: `agent-session.test.js` "dedupes repeated
-     identical writes").
+     `max-turns`; the loop now dedupes repeated identical read/edit actions and only
+     auto-finishes after 2 no-progress turns when a write succeeded and optional validation
+     passed (regression: `agent-session.test.js` "dedupes repeated identical writes").
+   - Live from-scratch proof (2026-07-25, `gpt-oss-20b`): the exact basketball-page
+     prompt ran in an empty workspace after bounded DuckDuckGo library research, wrote
+     `index.html` through the guarded writer, passed structured workspace validation, and
+     passed Chromium page-error + visible-frame-change checks. The proof added agent-native
+     `web_research`, preflight/post-edit validation feedback, transient LM retry, root
+     `list_dir`, nested-directory writes, same-turn mutation conflict protection, and
+     no-progress/research-loop caps. Regression:
+     `unit-tests-js/agent-project-creation.live.test.js` plus the agent executor/session suites.
    - Next steps to close (in order):
      1. Live **anchored `edit_file`** on an existing repo file: prove the diff guard applies a
         unique-anchor edit, then a hash-mismatch case rolls back (offline-covered today, not live).
      2. Wire a **post-edit validation command** into the agent finish path (policy-gated
         `run_cmd`, e.g. the file's test/lint) and record its result in the session `result.json`.
+        The generic validation callback/result persistence and browser-backed live proof are
+        landed; command-policy integration remains.
      3. Extend the same guarded `write_file`/`edit_file` action into the **headless**
         run/workspace analyzer flow (interactive path is the proven reference).
    - Exit criteria: diff guard blocks mismatched writes, rollback path verified, and a validation

@@ -18,12 +18,17 @@ const AGENT_SCHEMA_ID = "agent-action";
 const DEFAULT_MAX_TURNS = 12;
 const DEFAULT_MAX_ACTIONS_PER_TURN = 6;
 const DEFAULT_TEMPERATURE = 0.2;
+const DEFAULT_MODEL_REQUEST_RETRIES = 1;
+const DEFAULT_MAX_WEB_RESEARCH_ACTIONS = 3;
 const MAX_OBSERVATIONS_FED = 24;
 const MAX_PINNED_FILE_BYTES = 6000;
+const MAX_RESEARCH_OUTPUT_CHARS = 6000;
 
 const SYSTEM_PROMPT = `You are MiniPhi, a local coding agent operating inside the operator's repository.
 Work in turns. Each turn respond with ONLY a JSON object matching the provided schema (no prose, no markdown fences).
 Use read_file/list_dir/search_text to gather context (these run automatically, no approval needed).
+Use web_research for current library choices, unfamiliar APIs, or best-practice comparisons (it runs automatically and returns bounded JSON search results). When the task asks you to choose libraries, research before deciding unless no external library is needed; explain that choice in your summary.
+Never repeat an action after MiniPhi reports it as duplicate or skipped-budget. Use the existing observation and move to implementation.
 Propose changes with write_file (full file content) or edit_file (a unique anchor + replacement, or a full content replacement). write_file, edit_file and run_cmd require operator approval and may be rejected.
 When the task is complete, respond with a single finish action and a clear summary of what changed.
 Only touch files inside the workspace; never invent paths. Keep edits minimal and correct.`;
@@ -47,6 +52,20 @@ export default class AgentSession extends EventEmitter {
     this.approver =
       typeof options?.approver === "function" ? options.approver : async () => ({ approved: false });
     this.runCommand = typeof options?.runCommand === "function" ? options.runCommand : null;
+    this.webResearch = typeof options?.webResearch === "function" ? options.webResearch : null;
+    this.validateWorkspace =
+      typeof options?.validateWorkspace === "function" ? options.validateWorkspace : null;
+    this.requireWebResearch = Boolean(options?.requireWebResearch);
+    this.maxWebResearchActions =
+      Number.isFinite(options?.maxWebResearchActions) && options.maxWebResearchActions > 0
+        ? Math.floor(options.maxWebResearchActions)
+        : DEFAULT_MAX_WEB_RESEARCH_ACTIONS;
+    this.initialResearchQueries = Array.isArray(options?.initialResearchQueries)
+      ? options.initialResearchQueries
+          .filter((query) => typeof query === "string" && query.trim())
+          .map((query) => query.trim())
+          .slice(0, this.maxWebResearchActions)
+      : [];
     this.maxTurns = Number.isFinite(options?.maxTurns) && options.maxTurns > 0 ? options.maxTurns : DEFAULT_MAX_TURNS;
     this.maxActionsPerTurn =
       Number.isFinite(options?.maxActionsPerTurn) && options.maxActionsPerTurn > 0
@@ -65,6 +84,9 @@ export default class AgentSession extends EventEmitter {
     // same read/edit is deduped instead of spinning until the turn budget.
     this._actionSignatures = new Set();
     this._progressThisTurn = false;
+    this._webResearchCompleted = false;
+    this._webResearchCount = 0;
+    this._lastValidation = null;
   }
 
   cancel() {
@@ -152,9 +174,17 @@ export default class AgentSession extends EventEmitter {
     const userBody = [
       `Task: ${task}`,
       `Workspace root: ${this.cwd}`,
+      this.requireWebResearch && !this._webResearchCompleted
+        ? "Session requirement: perform at least one successful web_research action before proposing writes or commands."
+        : null,
+      this._webResearchCount >= this.maxWebResearchActions
+        ? "Web research budget exhausted. Do not request more research; choose from the gathered results and implement the task now."
+        : `Web research budget: ${this.maxWebResearchActions - this._webResearchCount} action(s) remaining.`,
       recent ? `Observations so far:\n${recent}` : "No observations yet. Start by gathering the context you need.",
       "Respond with the next turn as JSON.",
-    ].join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     return [
       { role: "system", content: `${SYSTEM_PROMPT}\n\nJSON schema:\n${schemaBlock}` },
       { role: "user", content: userBody },
@@ -173,6 +203,28 @@ export default class AgentSession extends EventEmitter {
     return message?.content ?? "";
   }
 
+  async _requestTurnWithRetry(messages, responseFormat) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= DEFAULT_MODEL_REQUEST_RETRIES; attempt += 1) {
+      if (this._budgetExhausted()) {
+        throw new Error("session-timeout");
+      }
+      try {
+        return await this._requestTurn(messages, responseFormat);
+      } catch (error) {
+        lastError = error;
+        if (attempt < DEFAULT_MODEL_REQUEST_RETRIES) {
+          this._log(
+            `[AgentSession] model request failed; retrying once: ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+        }
+      }
+    }
+    throw lastError ?? new Error("model request failed");
+  }
+
   _fallbackTurn(task, reason) {
     return {
       task: String(task).slice(0, 80),
@@ -189,7 +241,7 @@ export default class AgentSession extends EventEmitter {
     const messages = this._buildMessages(task);
     let text = "";
     try {
-      text = await this._requestTurn(messages, responseFormat);
+      text = await this._requestTurnWithRetry(messages, responseFormat);
     } catch (error) {
       return this._fallbackTurn(task, `model request failed: ${error instanceof Error ? error.message : error}`);
     }
@@ -200,7 +252,7 @@ export default class AgentSession extends EventEmitter {
     // One compact nudge before giving up, per the JSON-first contract.
     this.observations.push("Your last reply was not valid JSON for the schema. Reply again with ONLY the JSON object.");
     try {
-      const retryText = await this._requestTurn(this._buildMessages(task), responseFormat);
+      const retryText = await this._requestTurnWithRetry(this._buildMessages(task), responseFormat);
       const retryValidation = this.schemaRegistry.validate(AGENT_SCHEMA_ID, retryText);
       if (retryValidation?.valid && retryValidation.parsed) {
         return retryValidation.parsed;
@@ -323,6 +375,66 @@ export default class AgentSession extends EventEmitter {
     await this._appendTranscript({ kind: "command", ...result });
   }
 
+  async _handleResearchRequired({ action, turn }) {
+    const result = {
+      turn,
+      action: {
+        type: action.type,
+        path: action.path,
+        command: action.command,
+      },
+      status: "research-required",
+      error: "complete a web_research action before writes or commands",
+    };
+    this.emit("action-result", result);
+    this.observations.push(
+      `${describeAction(action)} -> research-required: perform web_research first, then reconsider the library choice before retrying this action.`,
+    );
+    // This is an intentional policy gate, not an idle duplicate. Keep the
+    // bounded loop alive so the next turn can satisfy the requirement.
+    this._progressThisTurn = true;
+    await this._appendTranscript({ kind: "action-result", ...result });
+  }
+
+  async _validateCurrentWorkspace({ task, turn }) {
+    let validation;
+    try {
+      validation = await this.validateWorkspace({
+        cwd: this.cwd,
+        task,
+        turn,
+        edits: [...this.appliedEdits],
+      });
+    } catch (error) {
+      validation = {
+        valid: false,
+        summary: "Workspace validation failed to run.",
+        issues: [error instanceof Error ? error.message : String(error)],
+      };
+    }
+    const normalized = {
+      valid: Boolean(validation?.valid),
+      summary:
+        typeof validation?.summary === "string"
+          ? validation.summary
+          : validation?.valid
+            ? "Workspace validation passed."
+            : "Workspace validation found issues.",
+      issues: Array.isArray(validation?.issues)
+        ? validation.issues.map((issue) => String(issue)).slice(0, 12)
+        : [],
+    };
+    this._lastValidation = normalized;
+    this.emit("validation", { turn, ...normalized });
+    await this._appendTranscript({ kind: "validation", turn, ...normalized });
+    if (!normalized.valid) {
+      this.observations.push(
+        `Workspace validation JSON:\n${JSON.stringify(normalized, null, 2)}\nFix these issues before finishing.`,
+      );
+    }
+    return normalized;
+  }
+
   async _handleReadonly({ action, turn }) {
     // Skip repeated identical reads/searches: they add no new context and would
     // otherwise let the model keep the loop alive without progress.
@@ -353,6 +465,91 @@ export default class AgentSession extends EventEmitter {
     await this._appendTranscript({ kind: "readonly", ...result });
   }
 
+  async _handleResearch({ action, turn }) {
+    const signature = `${action.type}:${action.query}`;
+    if (this._webResearchCount >= this.maxWebResearchActions) {
+      const result = {
+        turn,
+        action: { type: action.type, query: action.query, maxResults: action.maxResults },
+        status: "skipped-budget",
+        error: `web research limit reached (${this.maxWebResearchActions})`,
+      };
+      this.emit("action-result", result);
+      this.observations.push(
+        `${describeAction(action)} -> skipped-budget: research limit reached. Your next turn MUST implement with write_file/edit_file or finish; do not request web_research again.`,
+      );
+      // A policy response should receive a follow-up turn without being treated
+      // as an idle duplicate. The session turn cap still prevents a loop.
+      this._progressThisTurn = true;
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    if (this._actionSignatures.has(signature)) {
+      const result = {
+        turn,
+        action: { type: action.type, query: action.query },
+        status: "duplicate",
+      };
+      this.emit("action-result", result);
+      this.observations.push(`${describeAction(action)} -> already researched (skipped); use the existing results.`);
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    this._actionSignatures.add(signature);
+    this._webResearchCount += 1;
+    this.emit("action-start", { turn, action, description: describeAction(action) });
+
+    let output = "";
+    let status = "executed";
+    if (typeof this.webResearch !== "function") {
+      status = "unavailable";
+      output = JSON.stringify({
+        query: action.query,
+        results: [],
+        error: "web research is not configured for this agent session",
+      });
+    } else {
+      try {
+        const report = await this.webResearch(action.query, { maxResults: action.maxResults });
+        output =
+          typeof report === "string"
+            ? report
+            : JSON.stringify(
+                {
+                  query: report?.query ?? action.query,
+                  provider: report?.provider ?? null,
+                  fetched_at: report?.fetchedAt ?? null,
+                  results: Array.isArray(report?.results) ? report.results : [],
+                },
+                null,
+                2,
+              );
+      } catch (error) {
+        status = "failed";
+        output = JSON.stringify({
+          query: action.query,
+          results: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (status === "executed") {
+      this._progressThisTurn = true;
+      this._webResearchCompleted = true;
+    }
+    const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
+    const result = {
+      turn,
+      action: { type: action.type, query: action.query, maxResults: action.maxResults },
+      status,
+      output: boundedOutput,
+    };
+    this.emit("action-result", result);
+    this.observations.push(`${describeAction(action)} -> ${status}\n${boundedOutput}`);
+    await this._appendTranscript({ kind: "research", ...result });
+  }
+
   /**
    * Runs the full task loop and resolves with a result summary. Also emits a
    * `done` event with the same payload.
@@ -368,11 +565,26 @@ export default class AgentSession extends EventEmitter {
       selectedFiles,
       startedAt: new Date().toISOString(),
     });
+    for (const query of this.initialResearchQueries) {
+      await this._handleResearch({
+        turn: 0,
+        action: {
+          type: "web_research",
+          query,
+          maxResults: 5,
+          reason: "preflight library research",
+        },
+      });
+    }
+    if (typeof this.validateWorkspace === "function") {
+      await this._validateCurrentWorkspace({ task, turn: 0 });
+    }
 
     let stopReason = "completed";
     let finalSummary = "";
     let turn = 0;
     let idleTurns = 0;
+    let validationNoActionTurns = 0;
 
     for (turn = 1; turn <= this.maxTurns; turn += 1) {
       if (this.cancelled) {
@@ -410,6 +622,7 @@ export default class AgentSession extends EventEmitter {
       const actions = Array.isArray(turnData.actions) ? turnData.actions.slice(0, this.maxActionsPerTurn) : [];
       let finished = false;
       this._progressThisTurn = false;
+      const mutationPathsThisTurn = new Set();
       for (const rawAction of actions) {
         if (this.cancelled || this._budgetExhausted()) {
           break;
@@ -426,12 +639,56 @@ export default class AgentSession extends EventEmitter {
           finalSummary = turnData.summary ?? finalSummary;
           break;
         }
+        if (
+          (action.type === "write_file" || action.type === "edit_file") &&
+          mutationPathsThisTurn.has(action.path)
+        ) {
+          const result = {
+            turn,
+            action: { type: action.type, path: action.path },
+            status: "conflicting-action",
+            error: "multiple mutations target the same path in one turn",
+          };
+          this.emit("action-result", result);
+          this.observations.push(
+            `${describeAction(action)} -> conflicting-action: combine all changes for ${action.path} into one write_file or edit_file action on the next turn.`,
+          );
+          await this._appendTranscript({ kind: "action-result", ...result });
+          continue;
+        }
+        if (action.type === "write_file" || action.type === "edit_file") {
+          mutationPathsThisTurn.add(action.path);
+        }
+        if (
+          category === "mutating" &&
+          this.requireWebResearch &&
+          !this._webResearchCompleted
+        ) {
+          await this._handleResearchRequired({ action, turn });
+          continue;
+        }
         if (category === "readonly") {
           await this._handleReadonly({ action, turn });
+        } else if (category === "research") {
+          await this._handleResearch({ action, turn });
         } else if (action.type === "run_cmd") {
           await this._handleCommand({ action, turn });
         } else {
           await this._handleMutation({ action, turn });
+        }
+      }
+
+      if (
+        typeof this.validateWorkspace === "function" &&
+        (finished || this._progressThisTurn) &&
+        this.appliedEdits.some((entry) => entry.status === "written")
+      ) {
+        const validation = await this._validateCurrentWorkspace({ task, turn });
+        if (validation.valid) {
+          finished = true;
+          finalSummary = validation.summary || finalSummary;
+        } else {
+          finished = false;
         }
       }
 
@@ -440,10 +697,23 @@ export default class AgentSession extends EventEmitter {
         break;
       }
       if (!actions.length) {
+        if (
+          typeof this.validateWorkspace === "function" &&
+          this._lastValidation &&
+          !this._lastValidation.valid &&
+          validationNoActionTurns < 1
+        ) {
+          validationNoActionTurns += 1;
+          this.observations.push(
+            "You emitted no actions while workspace validation still has issues. Your next turn MUST contain concrete write_file/edit_file fixes for the validation JSON.",
+          );
+          continue;
+        }
         // Model produced no actionable steps; avoid spinning.
         stopReason = "no-actions";
         break;
       }
+      validationNoActionTurns = 0;
       // If the model keeps re-proposing already-applied work (all no-ops), the
       // workspace is already in the desired state — finish cleanly rather than
       // burning the turn budget waiting for an explicit `finish`.
@@ -452,7 +722,10 @@ export default class AgentSession extends EventEmitter {
       } else {
         idleTurns += 1;
         if (idleTurns >= 2) {
-          stopReason = "completed";
+          const hasWrittenEdit = this.appliedEdits.some((entry) => entry.status === "written");
+          const validationAllowsCompletion =
+            typeof this.validateWorkspace !== "function" || this._lastValidation?.valid === true;
+          stopReason = hasWrittenEdit && validationAllowsCompletion ? "completed" : "no-progress";
           break;
         }
       }
@@ -469,6 +742,7 @@ export default class AgentSession extends EventEmitter {
       summary: finalSummary,
       turns: Math.min(turn, this.maxTurns),
       edits: this.appliedEdits,
+      validation: this._lastValidation,
     };
     await this._persist("result.json", { ...result, finishedAt: new Date().toISOString() });
     this.emit("done", result);

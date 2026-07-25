@@ -122,6 +122,9 @@ export async function writeFileWithGuard(options = {}) {
   }
 
   try {
+    if (!exists) {
+      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+    }
     await fs.promises.writeFile(targetPath, normalizedContent, encoding);
   } catch (error) {
     const rollbackResult = await attemptRollback({

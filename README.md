@@ -13,7 +13,7 @@ miniPhi is a workspace-aware assistant: it scans the current folder (your repo),
 - **Change planning:** produce step-by-step plans grounded in the actual workspace layout.
 - **Drafting edits:** propose patches, refactors, docs updates, or helper scripts based on the repo snapshot.
 - **Nitpicking loops:** pit two local models against each other to improve long-form drafts.
-- **Web snapshots (optional):** capture page text via headless browsing for blind fact-finding.
+- **Web research (optional):** let the agent search for current libraries and capture page text via headless browsing.
 
 > miniPhi is intentionally **local-first**. It’s not a hosted chatbot: you run LM Studio and you own the artifacts it writes.
 
@@ -56,7 +56,7 @@ Optional:
    Running `miniphi` with no arguments opens the **interactive agent UI** (the primary interface). You:
    - **pick the files** to put in scope (fuzzy filter, Space to toggle, Enter to confirm — or Esc to skip),
    - **describe the task** in a prompt box,
-   - **watch progress in real time** as the agent reads/searches the repo and plans,
+   - **watch progress in real time** as the agent reads/searches the repo, optionally researches library choices, and plans,
    - **approve each change**: proposed file writes/edits show a diff and wait for you (`y` once · `a` for the session · `n` reject), and edits are applied through a guarded writer with rollback.
 
    You can also seed the task directly — it still opens the UI:
@@ -132,6 +132,16 @@ miniphi benchmark general --task "Assess general agent readiness" --cmd "node -v
 
 Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context, and benchmark summaries include adaptive per-stage timeout budgets/resolved timeout telemetry. If both navigator and decomposer time out, MiniPhi still sends one ultra-compact `assessment-only` LM request instead of skipping assessment entirely.
 
+Run the opt-in from-scratch project test (PowerShell example). It performs bounded web research, creates an animated basketball page in an empty workspace, validates it in Chromium, and preserves the project and screenshot under the selected output folder:
+
+```powershell
+$env:MINIPHI_AGENT_PROJECT_INTEGRATION = "1"
+$env:LMSTUDIO_REST_URL = "http://127.0.0.1:1234"
+$env:MINIPHI_LIVE_MODEL = "gpt-oss-20b"
+$env:MINIPHI_BASKETBALL_OUTPUT = "$PWD\.miniphi\live-tests"
+node --test unit-tests-js/agent-project-creation.live.test.js
+```
+
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
 ```bash
@@ -171,7 +181,7 @@ For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluato
 
 miniPhi stores reproducible artifacts in two places:
 
-- **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, helper scripts, reports, recompose edit logs/rollbacks)
+- **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, agent-session transcripts/validation/rollbacks, helper scripts, reports, recompose edit logs/rollbacks)
 - **Project-local (extra):** `.miniphi/web/` for browser snapshots and `.miniphi/nitpick/` for writer/critic sessions
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
@@ -182,7 +192,7 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 These are the commands most people start with:
 
 - `miniphi` / `miniphi ui`  
-  Open the **interactive agent UI**: pick files, prompt, watch live progress, and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out.
+  Open the **interactive agent UI**: pick files, prompt, watch live progress (including bounded `web_research` actions), and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out.
 - `miniphi "<task>"`  
   On a TTY this opens the interactive UI seeded with the task. With `--headless` (or a non-TTY), it runs the classic workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  

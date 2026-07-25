@@ -4,6 +4,7 @@ import App from "./app.js";
 import AgentSession from "../agent/agent-session.js";
 import { createUiApprover } from "../agent/approvers.js";
 import { scanWorkspaceFiles } from "./file-scan.js";
+import WebResearcher from "../libs/web-researcher.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -15,6 +16,7 @@ import { scanWorkspaceFiles } from "./file-scan.js";
  * @param {string} [options.baseDir] The `.miniphi` dir for session persistence.
  * @param {string} [options.initialTask] Pre-seeded task (skips the picker).
  * @param {Function} [options.runCommand] Policy-gated command runner for run_cmd.
+ * @param {Function} [options.webResearch] Optional web researcher override for tests.
  * @param {number} [options.sessionDeadline] Absolute ms deadline.
  * @param {string} [options.model] Model id override.
  * @returns {Promise<object>} the finished session result.
@@ -26,17 +28,22 @@ export async function launchAgentUi(options = undefined) {
     baseDir = null,
     initialTask = "",
     runCommand = null,
+    webResearch = null,
     sessionDeadline = null,
     model = null,
     temperature = undefined,
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
+  const researcher = webResearch ? null : new WebResearcher();
   const session = new AgentSession({
     client,
     cwd,
     baseDir,
     runCommand,
+    webResearch:
+      webResearch ??
+      ((query, researchOptions) => researcher.search(query, researchOptions)),
     sessionDeadline,
     model,
     temperature,

@@ -17,6 +17,7 @@ import {
 test("classifyActionType buckets actions for the session loop", () => {
   assert.equal(classifyActionType("read_file"), "readonly");
   assert.equal(classifyActionType("search_text"), "readonly");
+  assert.equal(classifyActionType("web_research"), "research");
   assert.equal(classifyActionType("write_file"), "mutating");
   assert.equal(classifyActionType("run_cmd"), "mutating");
   assert.equal(classifyActionType("finish"), "finish");
@@ -33,6 +34,7 @@ test("normalizeAgentAction rejects unsafe paths and malformed actions", () => {
   assert.equal(normalizeAgentAction({ type: "bogus", reason: "x" }, cwd).ok, false);
   assert.equal(normalizeAgentAction({ type: "search_text", term: "  ", reason: "x" }, cwd).ok, false);
   assert.equal(normalizeAgentAction({ type: "run_cmd", command: "", reason: "x" }, cwd).ok, false);
+  assert.equal(normalizeAgentAction({ type: "web_research", query: "", reason: "x" }, cwd).ok, false);
   assert.equal(normalizeAgentAction({ type: "write_file", path: "a.js", reason: "x" }, cwd).ok, false);
   assert.equal(
     normalizeAgentAction({ type: "edit_file", path: "a.js", reason: "x" }, cwd).ok,
@@ -47,6 +49,12 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
   assert.equal(read.ok, true);
   assert.equal(read.action.path, "src/index.js");
   assert.equal(read.category, "readonly");
+  const rootList = normalizeAgentAction({ type: "list_dir", path: ".", reason: "inspect root" }, cwd);
+  assert.equal(rootList.ok, true);
+  assert.equal(rootList.action.path, ".");
+  const implicitRootList = normalizeAgentAction({ type: "list_dir", reason: "inspect root" }, cwd);
+  assert.equal(implicitRootList.ok, true);
+  assert.equal(implicitRootList.action.path, ".");
 
   const write = normalizeAgentAction(
     { type: "write_file", path: "out.txt", content: "hi", reason: "create", danger: "weird" },
@@ -61,6 +69,15 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
   );
   assert.equal(edit.ok, true);
   assert.equal(edit.action.anchor, "old");
+
+  const research = normalizeAgentAction(
+    { type: "web_research", query: "  JavaScript 2D physics library  ", max_results: 50, reason: "compare" },
+    cwd,
+  );
+  assert.equal(research.ok, true);
+  assert.equal(research.category, "research");
+  assert.equal(research.action.query, "JavaScript 2D physics library");
+  assert.equal(research.action.maxResults, 10);
 
   assert.equal(describeAction(write.action), "write_file out.txt");
 });
@@ -138,6 +155,30 @@ test("commitMutation writes through the guard and keeps a rollback copy", async 
   }
 });
 
+test("commitMutation creates parent directories for a new nested file", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const action = normalizeAgentAction(
+      {
+        type: "write_file",
+        path: "src/animation/ball.js",
+        content: "export const gravity = 0.5;\n",
+        reason: "create nested module",
+      },
+      workspace,
+    ).action;
+    const { proposal } = await buildMutationProposal({ action, cwd: workspace });
+    const result = await commitMutation({ proposal, cwd: workspace });
+    assert.equal(result.status, "written");
+    assert.equal(
+      await fs.readFile(path.join(workspace, "src", "animation", "ball.js"), "utf8"),
+      "export const gravity = 0.5;\n",
+    );
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
 test("commitMutation returns hash-mismatch when the file changed since preview", async () => {
   const workspace = await createTempWorkspace();
   try {
@@ -190,6 +231,7 @@ test("agent-action schema accepts a valid turn and rejects malformed ones", () =
     summary_updates: ["reading target"],
     actions: [
       { type: "read_file", path: "src/index.js", reason: "understand exports" },
+      { type: "web_research", query: "JavaScript animation libraries", max_results: 3, reason: "compare options" },
       { type: "write_file", path: "src/slug.js", content: "export const slug = () => {};\n", reason: "add helper", danger: "low" },
     ],
     needs_more_context: false,
