@@ -47,6 +47,7 @@ test("Cheetah context configuration is opt-in and supports environment overrides
           database: "ctx_dev",
           required: true,
           recallLimit: 12,
+          referenceLimit: 24,
         },
       },
     },
@@ -62,6 +63,7 @@ test("Cheetah context configuration is opt-in and supports environment overrides
   assert.equal(config.projectId, null);
   assert.equal(config.required, false);
   assert.equal(config.recallLimit, 12);
+  assert.equal(config.referenceLimit, 24);
 
   const derived = resolveCheetahContextConfig(
     {
@@ -226,7 +228,19 @@ test("CheetahContextEngine mirrors layered nodes and recalls local stable ids", 
         const payload = Buffer.from(
           JSON.stringify({
             associations: [
-              { id: engine._externalId(evidence.id), score: 0.9 },
+              {
+                id: engine._externalId(evidence.id),
+                score: 0.9,
+                distance: 1,
+                references: [
+                  {
+                    id: evidence.references[0].id,
+                    text: evidence.references[0].text,
+                    source: "runtime",
+                    ordinal: 0
+                  },
+                ],
+              },
               { id: "another-session:c99", score: 0.8 },
             ],
           }),
@@ -254,6 +268,9 @@ test("CheetahContextEngine mirrors layered nodes and recalls local stable ids", 
   assert.ok(selection.preferredNodeIds.includes(subtask.id));
   assert.ok(selection.preferredNodeIds.includes(evidence.id));
   assert.equal(selection.preferredNodeIds.includes("c99"), false, "other sessions stay isolated");
+  assert.equal(selection.referenceCandidates.length, 1);
+  assert.equal(selection.referenceCandidates[0].sourceNodeId, evidence.id);
+  assert.equal(selection.referenceCandidates[0].text, evidence.references[0].text);
 
   const syncCommands = calls[0];
   assert.equal(
@@ -264,14 +281,26 @@ test("CheetahContextEngine mirrors layered nodes and recalls local stable ids", 
     syncCommands.some((command) => command.startsWith("GRAPH_EDGE_SET_BATCH ")),
     "local and structural relations are mirrored as a batch",
   );
+  const evidenceCommand = syncCommands.find(
+    (command) =>
+      command.startsWith(`GRAPH_NODE_SET id=${engine._externalId(evidence.id)} `),
+  );
+  const encodedReferences = evidenceCommand.match(/ references=([^ ]+)$/)?.[1];
+  assert.deepEqual(
+    JSON.parse(Buffer.from(encodedReferences, "base64").toString("utf8")),
+    evidence.references,
+  );
   assert.match(calls[1][0], /^GRAPH_RECALL seeds=/);
   assert.match(calls[1][0], /direction=both/);
+  assert.match(calls[1][0], /references=1/);
+  assert.match(calls[1][0], /reference_limit=48/);
 
   const stats = engine.stats();
   assert.equal(stats.available, true);
   assert.equal(stats.queries, 1);
   assert.equal(stats.nodesMirrored, 3);
   assert.equal(stats.recalledNodes, 1);
+  assert.equal(stats.recalledReferences, 1);
 });
 
 test("optional Cheetah failures fall back without mutating the local graph", async () => {

@@ -8,6 +8,7 @@ const DEFAULT_PORT = 4455;
 const DEFAULT_DATABASE = "miniphi_context";
 const DEFAULT_TIMEOUT_MS = 2500;
 const DEFAULT_RECALL_LIMIT = 32;
+const DEFAULT_REFERENCE_LIMIT = 48;
 const DEFAULT_RECALL_HOPS = 2;
 const DEFAULT_RECALL_PRECISION = 0.05;
 const DEFAULT_FAILURE_COOLDOWN_MS = 10000;
@@ -276,6 +277,10 @@ export function resolveCheetahContextConfig(configData = undefined, env = proces
       false,
     ),
     recallLimit: toPositiveInteger(cheetah.recallLimit, DEFAULT_RECALL_LIMIT),
+    referenceLimit: Math.min(
+      256,
+      toPositiveInteger(cheetah.referenceLimit, DEFAULT_REFERENCE_LIMIT),
+    ),
     recallHops: toPositiveInteger(cheetah.recallHops, DEFAULT_RECALL_HOPS),
     recallPrecision: toBoundedNumber(
       cheetah.recallPrecision,
@@ -294,10 +299,10 @@ export function resolveCheetahContextConfig(configData = undefined, env = proces
  * Mirrors MiniPhi's layered graph into Cheetah and asks GRAPH_RECALL which
  * nodes should receive an external relevance boost for the next render.
  *
- * The full text stays in ContextGraph and its JSON audit trail. Cheetah stores
- * graph metadata only (stable local id, layer, label, state, importance and
- * turn), which keeps prompts reconstructable even when the optional service is
- * offline.
+ * Full context blocks stay in ContextGraph and its JSON audit trail. Cheetah
+ * stores graph metadata plus bounded, complete reference sentences. Recall can
+ * therefore return readable evidence instead of only word-like labels while
+ * the local graph remains the authoritative, reconstructable memory.
  */
 export class CheetahContextEngine {
   constructor(options = undefined) {
@@ -307,6 +312,10 @@ export class CheetahContextEngine {
         : `agent-${Date.now()}`;
     this.required = Boolean(options?.required);
     this.recallLimit = toPositiveInteger(options?.recallLimit, DEFAULT_RECALL_LIMIT);
+    this.referenceLimit = Math.min(
+      256,
+      toPositiveInteger(options?.referenceLimit, DEFAULT_REFERENCE_LIMIT),
+    );
     this.recallHops = toPositiveInteger(options?.recallHops, DEFAULT_RECALL_HOPS);
     this.recallPrecision = toBoundedNumber(
       options?.recallPrecision,
@@ -352,6 +361,8 @@ export class CheetahContextEngine {
       nodesDeleted: 0,
       edgesMirrored: 0,
       recalledNodes: 0,
+      referencesMirrored: 0,
+      recalledReferences: 0,
       lastError: null,
     };
   }
@@ -387,9 +398,37 @@ export class CheetahContextEngine {
       ok: false,
       engine: "cheetah",
       preferredNodeIds: [],
+      referenceCandidates: [],
       fallback: "memory",
       error: message,
     };
+  }
+
+  _nodeReferences(node) {
+    return (Array.isArray(node?.references) ? node.references : [])
+      .filter(
+        (reference) =>
+          reference &&
+          typeof reference.id === "string" &&
+          typeof reference.text === "string" &&
+          reference.text.trim() &&
+          !(
+            node.kind === "mission" &&
+            reference.text.toLowerCase().includes("workspace root:")
+          ),
+      )
+      .slice(0, 64)
+      .map((reference, ordinal) => ({
+        id: reference.id,
+        text: reference.text.trim(),
+        source:
+          typeof reference.source === "string" && reference.source.trim()
+            ? reference.source.trim()
+            : `miniphi:${node.id}`,
+        ordinal: Number.isFinite(reference.ordinal)
+          ? Math.max(0, Math.floor(reference.ordinal))
+          : ordinal,
+      }));
   }
 
   _nodeCommand(node) {
@@ -410,7 +449,8 @@ export class CheetahContextEngine {
       project_reference: this.projectReference,
       session_reference: this.sessionReference,
     });
-    return `GRAPH_NODE_SET id=${this._externalId(node.id)} labels=${labels.join(",")} props=${props}`;
+    const references = encodeJSON(this._nodeReferences(node));
+    return `GRAPH_NODE_SET id=${this._externalId(node.id)} labels=${labels.join(",")} props=${props} references=${references}`;
   }
 
   _collectEdges(graph, liveNodes) {
@@ -477,7 +517,9 @@ export class CheetahContextEngine {
         (nodeId) => `GRAPH_NODE_DEL id=${this._externalId(nodeId)} cascade=1`,
       );
       const nodeCommands = [];
+      let referencesMirrored = 0;
       for (const node of liveNodes.values()) {
+        const references = this._nodeReferences(node);
         const fingerprint = JSON.stringify([
           node.layer,
           node.label,
@@ -487,9 +529,11 @@ export class CheetahContextEngine {
           node.subtaskId,
           node.parentSubtaskId,
           node.kind,
+          references,
         ]);
         if (this._nodeFingerprints.get(node.id) !== fingerprint) {
           nodeCommands.push(this._nodeCommand(node));
+          referencesMirrored += references.length;
           this._nodeFingerprints.set(node.id, fingerprint);
         }
       }
@@ -538,11 +582,13 @@ export class CheetahContextEngine {
       this._stats.lastError = null;
       this._stats.syncs += 1;
       this._stats.nodesMirrored += nodeCommands.length;
+      this._stats.referencesMirrored += referencesMirrored;
       this._stats.nodesDeleted += deletedNodeIds.length;
       this._stats.edgesMirrored += changedEdges.length;
       return {
         ok: true,
         nodesMirrored: nodeCommands.length,
+        referencesMirrored,
         nodesDeleted: deletedNodeIds.length,
         edgesMirrored: changedEdges.length,
       };
@@ -573,7 +619,7 @@ export class CheetahContextEngine {
   async recall(graph, { focusId = undefined } = {}) {
     const seeds = this._seedNodeIds(graph, focusId);
     if (!seeds.length) {
-      return { ok: true, preferredNodeIds: [] };
+      return { ok: true, preferredNodeIds: [], referenceCandidates: [] };
     }
     const command = [
       `GRAPH_RECALL seeds=${seeds.map((id) => this._externalId(id)).join(",")}`,
@@ -583,6 +629,8 @@ export class CheetahContextEngine {
       "direction=both",
       "expand=none",
       "include_seeds=1",
+      "references=1",
+      `reference_limit=${this.referenceLimit}`,
     ].join(" ");
     try {
       const [response] = await this.client.execute([command]);
@@ -590,22 +638,75 @@ export class CheetahContextEngine {
         throw new Error(`Cheetah context recall failed: ${response?.raw ?? "no response"}`);
       }
       const payload = decodeCheetahPayload(response);
-      const recalled = Array.isArray(payload?.associations)
-        ? payload.associations
-            .map((entry) => this._localId(entry?.id))
-            .filter((id) => id && graph.nodes.get(id)?.state !== "dropped")
-        : [];
+      const associations = Array.isArray(payload?.associations) ? payload.associations : [];
+      const recalled = associations
+        .map((entry) => this._localId(entry?.id))
+        .filter((id) => id && graph.nodes.get(id)?.state !== "dropped");
+      const referenceCandidates = [];
+      const seenReferences = new Set();
+      for (const association of associations) {
+        const localId = this._localId(association?.id);
+        if (!localId || graph.nodes.get(localId)?.state === "dropped") {
+          continue;
+        }
+        for (const reference of Array.isArray(association?.references)
+          ? association.references
+          : []) {
+          const text = typeof reference?.text === "string" ? reference.text.trim() : "";
+          const referenceId =
+            typeof reference?.id === "string" && reference.id.trim()
+              ? reference.id.trim()
+              : null;
+          if (!text || !referenceId) {
+            continue;
+          }
+          const candidateId = `${localId}:${referenceId}`;
+          if (seenReferences.has(candidateId) || seenReferences.has(text)) {
+            continue;
+          }
+          seenReferences.add(candidateId);
+          seenReferences.add(text);
+          referenceCandidates.push({
+            id: candidateId,
+            referenceId,
+            text,
+            sourceNodeId: localId,
+            source:
+              typeof reference.source === "string" && reference.source.trim()
+                ? reference.source.trim()
+                : `miniphi:${localId}`,
+            ordinal: Number.isFinite(reference.ordinal)
+              ? Math.max(0, Math.floor(reference.ordinal))
+              : 0,
+            score: Number.isFinite(association.score) ? association.score : 0,
+            novelty: Number.isFinite(association.novelty) ? association.novelty : 0,
+            distance: Number.isFinite(association.distance) ? association.distance : 0,
+            sourceCount: Number.isFinite(association.source_count)
+              ? association.source_count
+              : 0,
+          });
+          if (referenceCandidates.length >= this.referenceLimit) {
+            break;
+          }
+        }
+        if (referenceCandidates.length >= this.referenceLimit) {
+          break;
+        }
+      }
       const preferredNodeIds = [...new Set([...seeds, ...recalled])];
       this._stats.available = true;
       this._stats.lastError = null;
       this._stats.queries += 1;
       this._stats.recalledNodes += recalled.length;
+      this._stats.recalledReferences += referenceCandidates.length;
       return {
         ok: true,
         engine: "cheetah",
         preferredNodeIds,
+        referenceCandidates,
         seeds,
         recalled: recalled.length,
+        references: referenceCandidates.length,
       };
     } catch (error) {
       // The server may have restarted with an empty data directory while this
@@ -624,6 +725,7 @@ export class CheetahContextEngine {
         ok: false,
         engine: "cheetah",
         preferredNodeIds: [],
+        referenceCandidates: [],
         fallback: "memory",
         error: synced?.error ?? this._stats.lastError,
       };

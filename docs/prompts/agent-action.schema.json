@@ -55,46 +55,46 @@
             "description": "Why this action is needed (shown to the operator)."
           },
           "path": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file (never absolute, no `..`)."
           },
           "content": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Full file content for write_file, or the whole-file replacement for edit_file when no anchor is given."
           },
           "anchor": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "For edit_file: the complete exact existing substring to replace, not the start of a range. Only these literal characters are removed, so include the whole old function/block when replacing a function/block. Must occur exactly once."
           },
           "replacement": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "For edit_file: the text inserted in place of the complete literal `anchor`. Do not repeat surrounding source that is outside the anchor."
           },
           "term": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Search term for search_text."
           },
           "query": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Search query for web_research. Use it before choosing unfamiliar or time-sensitive libraries."
           },
           "max_results": {
-            "type": ["integer", "null"],
+            "type": "integer",
             "minimum": 1,
             "maximum": 10,
             "description": "Maximum web results to return for web_research (default 5)."
           },
           "command": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Shell command for run_cmd."
           },
           "danger": {
-            "type": ["string", "null"],
-            "enum": ["low", "mid", "high", null],
+            "type": "string",
+            "enum": ["low", "mid", "high"],
             "description": "Operator-facing risk hint for write_file/edit_file/run_cmd."
           },
           "expected_hash": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Optional sha256 of the file content you last read, guarding edit_file against concurrent changes."
           }
         }
@@ -117,7 +117,7 @@
       "default": true
     },
     "context_gap": {
-      "type": ["string", "null"],
+      "type": "string",
       "description": "Concrete description of what is missing or imprecise (node ids, symbols, file paths) when context_sufficient is false."
     },
     "context_ops": {
@@ -147,43 +147,43 @@
             "description": "expand loads a stub/digest back in full; pin keeps a node in every prompt; boost raises its selection score; collapse replaces it with your digest; drop discards it; note records a durable fact; link relates two nodes; open_subtask/close_subtask scope a sub-conversation; focus switches to an existing subtask."
           },
           "node": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Target node id as shown in [brackets] (required by pin/unpin/boost/expand/collapse/drop/focus)."
           },
           "label": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Short label for note/open_subtask."
           },
           "text": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Body for note, digest text for collapse, goal for open_subtask, outcome for close_subtask."
           },
           "layer": {
-            "type": ["string", "null"],
-            "enum": ["plan", "subtask", "evidence", "scratch", null],
+            "type": "string",
+            "enum": ["plan", "subtask", "evidence", "scratch"],
             "description": "Layer for note (mission/contract are runtime-owned)."
           },
           "importance": {
-            "type": ["number", "null"],
+            "type": "number",
             "minimum": 0,
             "maximum": 1,
             "description": "Selection importance for note/boost (0..1)."
           },
           "offset": {
-            "type": ["integer", "null"],
+            "type": "integer",
             "minimum": 0,
             "description": "For expand: start the loaded window at this character of the node, to page past content you have already seen."
           },
           "from": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Source node id for link."
           },
           "to": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Target node id for link."
           },
           "relation": {
-            "type": ["string", "null"],
+            "type": "string",
             "enum": [
               "derived_from",
               "supports",
@@ -191,13 +191,12 @@
               "supersedes",
               "answers",
               "blocks",
-              "child_of",
-              null
+              "child_of"
             ],
             "description": "Edge relation for link."
           },
           "reason": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Why this reshaping is needed (recorded in telemetry)."
           }
         }

@@ -69,6 +69,37 @@ test("estimateTokens and autoDigest bound context text", () => {
   assert.equal(autoDigest("short", 120), "short");
 });
 
+test("context nodes persist complete reference sentences and backfill legacy memory", () => {
+  const graph = new ContextGraph();
+  const prose = graph.add({
+    layer: "evidence",
+    label: "deployment note",
+    text: "The production deployment token is 5821. Keep it private.",
+    source: "operator-note",
+  });
+  const fragment = graph.add({
+    layer: "evidence",
+    label: "tool output",
+    text: "TOKEN=5821",
+  });
+
+  assert.deepEqual(
+    prose.references.map((reference) => reference.text),
+    [
+      "The production deployment token is 5821.",
+      "Keep it private.",
+    ],
+  );
+  assert.match(fragment.references[0].text, /^The context node "tool output" contains/);
+  assert.equal(graph.stats().references, 3);
+
+  const snapshot = graph.toJSON();
+  delete snapshot.nodes[0].references;
+  const restored = ContextGraph.fromJSON(snapshot);
+  assert.equal(restored.get(prose.id).references[0].text, "The production deployment token is 5821.");
+  assert.deepEqual(restored.get(fragment.id).references, fragment.references);
+});
+
 test("select keeps mission and contract while demoting low-priority evidence", () => {
   const graph = new ContextGraph({ budgetTokens: 200 });
   graph.add({ layer: "mission", label: "operator task", text: "Task: add validation", pinned: true });

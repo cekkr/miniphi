@@ -49,6 +49,7 @@
       "timeoutMs": 2500,
       "required": false,
       "recallLimit": 32,
+      "referenceLimit": 48,
       "recallHops": 2,
       "recallPrecision": 0.05,
       "failureCooldownMs": 10000

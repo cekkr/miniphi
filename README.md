@@ -105,16 +105,22 @@ ask for it back, pin what matters, discard what it's done with, or open and clos
 collapse their evidence into a single conclusion when finished. If it reports that the loaded context
 isn't precise enough, miniPhi reforms the graph around the stated gap and re-asks once.
 
-Everything is auditable: the graph is saved to `.miniphi/agent-sessions/<id>/context-graph.json`, and
-the session result records how much was loaded, digested, or reshaped.
+Everything is auditable: the graph and its bounded complete-sentence references are saved to
+`.miniphi/agent-sessions/<id>/context-graph.json`, and the session result records how much was
+loaded, digested, or reshaped.
 
 #### Optional Cheetah graph-query engine
 
 The interactive agent can use the Cheetah submodule as an alternative graph-query engine for each
 LM Studio prompt and focused sub-task prompt. MiniPhi keeps the full context and deterministic token
-budget in its local `ContextGraph`; Cheetah receives metadata and graph relations, runs bounded
-`GRAPH_RECALL`, and returns stable node ids that receive a query-time relevance boost. Full file,
-research, and prompt text is not copied into Cheetah.
+budget in its local `ContextGraph`; every node also stores bounded, self-contained reference
+sentences. Cheetah receives graph metadata, relations, and those sentences — never the full file or
+prompt block — then `GRAPH_RECALL references=1` returns associated sentences rather than only labels
+or word-like ids. The same LM Studio model selected for the session chooses and orders a small set of
+returned sentence ids with strict `response_format=json_schema`; invalid replies are retried once and
+then use a deterministic ranking fallback. The exact candidates, raw replies/reasoning, tool-call fields,
+schema result, and final selection are written to
+`.miniphi/agent-sessions/<id>/context-references.json`.
 When local context is superseded (for example, after a guarded edit or a newer validation result),
 MiniPhi drops the stale local node and removes its mirrored Cheetah node and edges before the next
 recall. The exact guarded post-edit source becomes the authoritative file context.
@@ -140,7 +146,8 @@ Then opt in through `config.json`:
       "database": null,
       "projectId": null,
       "timeoutMs": 2500,
-      "required": false
+      "required": false,
+      "referenceLimit": 48
     }
   }
 }
@@ -151,8 +158,9 @@ project-specific database name (`miniphi_context_p_<hash>`). Every mirrored node
 that project reference and a hashed session reference, so two projects remain isolated even if an
 operator deliberately configures one shared database or reuses a session name. Set `projectId` to a
 stable repository identifier if the same graph should survive moving the workspace; set `database`
-only when you intentionally need a fixed database. Neither the workspace path nor prompt text is
-stored in Cheetah.
+only when you intentionally need a fixed database. The workspace path and full prompt/file blocks
+are not stored in Cheetah; only the bounded complete reference sentences visible in the local audit
+are mirrored.
 
 With `required: false` (the default), a timeout or unavailable Cheetah server falls back to the
 in-memory selector and records the failure in

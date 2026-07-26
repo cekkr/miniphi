@@ -13,25 +13,27 @@ import { LMStudioRestClient } from "../src/libs/lmstudio-api.js";
  *
  * This test expects both services to be running. Every LM Studio turn still
  * uses AgentSession's exact agent-action schema + response_format=json_schema;
- * Cheetah only supplies graph-recalled stable node ids to the prompt selector.
+ * Cheetah supplies graph-recalled stable node ids plus complete reference
+ * sentences; the same session model selects sentence ids with the strict
+ * context-reference-selection schema before the agent-action turn.
  *
  * MINIPHI_LMSTUDIO_INTEGRATION=1 \
  * MINIPHI_CHEETAH_INTEGRATION=1 \
  * LMSTUDIO_REST_URL=http://127.0.0.1:1234 \
- * MINIPHI_LIVE_MODEL=qwen2.5-coder-7b-instruct \
+ * MINIPHI_LIVE_MODEL=qwen/qwen3-4b-thinking-2507 \
  * node --test unit-tests-js/agent-cheetah-context.live.test.js
  */
 const LIVE =
   process.env.MINIPHI_LMSTUDIO_INTEGRATION === "1" &&
   process.env.MINIPHI_CHEETAH_INTEGRATION === "1";
 const BASE_URL = process.env.LMSTUDIO_REST_URL ?? "http://127.0.0.1:1234";
-const MODEL = process.env.MINIPHI_LIVE_MODEL ?? "qwen2.5-coder-7b-instruct";
+const MODEL = process.env.MINIPHI_LIVE_MODEL ?? "qwen/qwen3-4b-thinking-2507";
 const CHEETAH_HOST = process.env.MINIPHI_CHEETAH_HOST ?? "127.0.0.1";
 const CHEETAH_PORT = Number(process.env.MINIPHI_CHEETAH_PORT ?? 4455);
 const TIMEOUT_MS = 300000;
 
 test(
-  "live: Cheetah recall selects context for a schema-valid LM Studio edit",
+  "live: Cheetah recall and the same LM select complete sentences for an edit",
   {
     skip: LIVE
       ? false
@@ -55,6 +57,7 @@ test(
         timeoutMs: 5000,
       });
       const events = [];
+      const referenceEvents = [];
       const session = new AgentSession({
         client,
         cwd: workspace,
@@ -63,8 +66,10 @@ test(
         model: MODEL,
         contextEngine,
         contextBudgetTokens: 700,
-        maxTurns: 5,
+        maxTurns: 3,
+        maxTurnTokens: 768,
         maxActionsPerTurn: 2,
+        contextReferenceTimeoutMs: 60000,
         approver: createHeadlessApprover({ policy: "allow" }),
         initialResearchQueries: ["fixture Cheetah context token"],
         webResearch: async (query) => ({
@@ -73,17 +78,24 @@ test(
           results: [
             {
               title: "authoritative context",
-              snippet: "CHEETAH_CONTEXT_TOKEN=7419",
+              snippet: "The authoritative deployment token is CHEETAH_CONTEXT_TOKEN=7419.",
             },
           ],
         }),
         sessionDeadline: Date.now() + TIMEOUT_MS - 30000,
       });
       session.on("context-engine", (event) => events.push(event));
+      session.on("context-references", (event) => referenceEvents.push(event));
 
       const result = await session.submitTask(
-        "Create PROOF.md containing exactly CHEETAH_CONTEXT_TOKEN=7419 from the authoritative context already gathered, then finish.",
+        "Create PROOF.md containing exactly the deployment token from the authoritative complete reference sentence already gathered, then finish.",
         [],
+      );
+      const referenceAudit = JSON.parse(
+        await fs.readFile(
+          path.join(workspace, ".miniphi", "agent-sessions", session.sessionId, "context-references.json"),
+          "utf8",
+        ),
       );
       const proof = await fs
         .readFile(path.join(workspace, "PROOF.md"), "utf8")
@@ -102,6 +114,13 @@ test(
               preferred: event.preferredNodeIds?.length ?? 0,
               fallback: event.fallback ?? null,
             })),
+            referenceEvents,
+            referenceSelections: referenceAudit.selections.map((selection) => ({
+              model: selection.model,
+              candidates: selection.candidates.length,
+              selectedReferenceIds: selection.selectedReferenceIds,
+              fallback: selection.fallback,
+            })),
             proof,
           },
           null,
@@ -116,9 +135,35 @@ test(
       assert.equal(result.context.engine.available, true);
       assert.equal(result.context.engine.sessionFallbacks, 0);
       assert.ok(result.context.engine.queries >= 1);
+      assert.ok(result.context.engine.recalledReferences >= 1);
+      assert.ok(result.context.references.selections >= 1);
+      assert.ok(
+        referenceAudit.selections.some((selection) =>
+          selection.candidates.some((candidate) =>
+            candidate.sentence.includes("CHEETAH_CONTEXT_TOKEN=7419"),
+          ),
+        ),
+        "the local audit must retain the complete recalled sentence",
+      );
+      assert.ok(
+        referenceAudit.selections.every(
+          (selection) =>
+            selection.model === MODEL &&
+            selection.attempts.every(
+              (attempt) =>
+                attempt.request.response_format.type === "json_schema" &&
+                attempt.request.tool_definitions === null,
+            ),
+        ),
+        "reference composition must use the same model and exact JSON schema",
+      );
       assert.ok(
         events.some((event) => event.ok && event.preferredNodeIds?.length),
         "at least one LM Studio prompt must receive graph-recalled context ids",
+      );
+      assert.ok(
+        referenceEvents.some((event) => event.selected > 0),
+        "at least one prompt must receive selected complete sentence references",
       );
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });

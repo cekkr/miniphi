@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "context-reference-selection@v1",
+  "title": "Context reference sentence selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "selected_references",
+    "needs_more_context",
+    "missing_snippets",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "context-reference-selection@v1"
+    },
+    "selected_references": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "needs_more_context": {
+      "type": "boolean"
+    },
+    "missing_snippets": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "stop_reason": {
+      "type": "string"
+    }
+  }
+}

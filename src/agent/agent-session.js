@@ -9,6 +9,7 @@ import ContextGraph, {
   deriveContextBudget,
   estimateTokens,
 } from "../libs/context-graph.js";
+import ContextReferenceComposer from "../libs/context-reference-composer.js";
 import {
   buildMutationProposal,
   classifyActionType,
@@ -44,6 +45,9 @@ write_file replaces the entire target: never use it with partial content for an 
 After a validation failure caused by one of your edits, read the current changed file before repairing it unless its exact post-edit content is already loaded below. Never reconstruct a current file from an older snapshot.
 When the task is complete, respond with a single finish action and a clear summary of what changed.
 Only touch files inside the workspace; never invent paths. Keep edits minimal and correct.
+When a "Cheetah-recalled complete sentence references" block is present, treat
+its sentences as grounded memory. Use the reference ids for traceability and do
+not combine isolated labels or keyword fragments into unsupported facts.
 
 ${CONTEXT_LANGUAGE_GUIDE}`;
 
@@ -86,6 +90,10 @@ export default class AgentSession extends EventEmitter {
         ? options.maxActionsPerTurn
         : DEFAULT_MAX_ACTIONS_PER_TURN;
     this.temperature = Number.isFinite(options?.temperature) ? options.temperature : DEFAULT_TEMPERATURE;
+    this.maxTurnTokens =
+      Number.isFinite(options?.maxTurnTokens) && options.maxTurnTokens > 0
+        ? Math.floor(options.maxTurnTokens)
+        : -1;
     this.model = typeof options?.model === "string" && options.model.trim() ? options.model.trim() : null;
     this.modelSelection =
       options?.modelSelection && typeof options.modelSelection === "object"
@@ -109,6 +117,16 @@ export default class AgentSession extends EventEmitter {
             cwd: this.cwd,
           })
         : null);
+    this.contextReferenceComposer =
+      options?.contextReferenceComposer ??
+      new ContextReferenceComposer({
+        client: this.client,
+        schemaRegistry: this.schemaRegistry,
+        model: this.model,
+        reasoning: this.reasoning,
+        budgetTokens: options?.contextReferenceBudgetTokens,
+        timeoutMs: options?.contextReferenceTimeoutMs,
+      });
 
     // Multi-layered context. The prompt budget follows the model's *loaded*
     // context window (LM Studio JIT-loads small windows), minus the fixed cost
@@ -156,6 +174,8 @@ export default class AgentSession extends EventEmitter {
     this._contextEngineLastSelection = null;
     this._contextEngineSelections = 0;
     this._contextEngineFallbacks = 0;
+    this._contextReferenceSelections = [];
+    this._contextReferenceCache = new Map();
   }
 
   cancel() {
@@ -175,6 +195,9 @@ export default class AgentSession extends EventEmitter {
       throw new Error("model is required to configure an agent session.");
     }
     this.model = model.trim();
+    if (this.contextReferenceComposer) {
+      this.contextReferenceComposer.model = this.model;
+    }
     this.modelSelection =
       selection && typeof selection === "object"
         ? { ...selection, resolvedModel: this.model }
@@ -204,6 +227,9 @@ export default class AgentSession extends EventEmitter {
     }
     this.reasoning =
       reasoning && typeof reasoning === "object" ? { ...reasoning } : null;
+    if (this.contextReferenceComposer) {
+      this.contextReferenceComposer.reasoning = this.reasoning;
+    }
     if (typeof this.client?.setDefaultReasoning === "function") {
       this.client.setDefaultReasoning(this.reasoning);
     }
@@ -417,7 +443,12 @@ export default class AgentSession extends EventEmitter {
 
   async _selectContextEngine() {
     if (!this.contextEngine || typeof this.contextEngine.select !== "function") {
-      return [];
+      return {
+        ok: true,
+        engine: "memory",
+        preferredNodeIds: [],
+        referenceCandidates: [],
+      };
     }
     try {
       const selection = await this.contextEngine.select(this.context, {
@@ -436,9 +467,15 @@ export default class AgentSession extends EventEmitter {
             ? this.contextEngine.stats()
             : null,
       });
-      return Array.isArray(selection?.preferredNodeIds)
-        ? selection.preferredNodeIds
-        : [];
+      return {
+        ...(selection ?? {}),
+        preferredNodeIds: Array.isArray(selection?.preferredNodeIds)
+          ? selection.preferredNodeIds
+          : [],
+        referenceCandidates: Array.isArray(selection?.referenceCandidates)
+          ? selection.referenceCandidates
+          : [],
+      };
     } catch (error) {
       this._contextEngineFallbacks += 1;
       const message = error instanceof Error ? error.message : String(error);
@@ -453,8 +490,65 @@ export default class AgentSession extends EventEmitter {
       if (this.contextEngine?.required) {
         throw error;
       }
-      return [];
+      return {
+        ok: false,
+        engine: "cheetah",
+        preferredNodeIds: [],
+        referenceCandidates: [],
+        fallback: "memory",
+        error: message,
+      };
     }
+  }
+
+  async _composeContextReferences(task, candidates) {
+    if (
+      !this.contextReferenceComposer ||
+      typeof this.contextReferenceComposer.compose !== "function" ||
+      !Array.isArray(candidates) ||
+      !candidates.length
+    ) {
+      return { block: "", selected: [] };
+    }
+    const cacheKey = JSON.stringify(
+      candidates.map((candidate) => [
+        candidate.id,
+        candidate.text,
+        candidate.score,
+        candidate.source,
+      ]),
+    );
+    if (this._contextReferenceCache.has(cacheKey)) {
+      return this._contextReferenceCache.get(cacheKey);
+    }
+    const composed = await this.contextReferenceComposer.compose({
+      task,
+      candidates,
+      turn: this.context.turn,
+      sessionDeadline: this.sessionDeadline,
+    });
+    const block = this.contextReferenceComposer.render(composed.selected);
+    const selection = {
+      block,
+      selected: composed.selected,
+      fallback: composed.audit?.fallback ?? null,
+    };
+    this._contextReferenceCache.clear();
+    this._contextReferenceCache.set(cacheKey, selection);
+    this._contextReferenceSelections.push(composed.audit);
+    await this._persist("context-references.json", {
+      schemaVersion: "context-reference-memory@v1",
+      sessionId: this.sessionId,
+      selections: this._contextReferenceSelections,
+    });
+    this.emit("context-references", {
+      turn: this.context.turn,
+      candidates: candidates.length,
+      selected: composed.selected.length,
+      fallback: selection.fallback,
+      referenceIds: composed.selected.map((reference) => reference.id),
+    });
+    return selection;
   }
 
   async _buildMessages(task) {
@@ -471,17 +565,27 @@ export default class AgentSession extends EventEmitter {
           kind: "policy",
         })?.id ?? null;
     }
-    const preferredNodeIds = await this._selectContextEngine();
+    const engineSelection = await this._selectContextEngine();
+    const referenceSelection = await this._composeContextReferences(
+      task,
+      engineSelection.referenceCandidates,
+    );
+    const referenceTokens = estimateTokens(referenceSelection.block);
+    const graphBudgetTokens = Math.max(
+      64,
+      this.contextBudgetTokens - referenceTokens,
+    );
     const contextBlock = this.context.nodes.size
       ? this.context.render({
-          budgetTokens: this.contextBudgetTokens,
-          preferredNodeIds,
+          budgetTokens: graphBudgetTokens,
+          preferredNodeIds: engineSelection.preferredNodeIds,
         })
       : "No context gathered yet. Start by gathering what you need.";
     const userBody = [
       contextBlock,
+      referenceSelection.block || null,
       "Respond with the next turn as JSON.",
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
     return [
       { role: "system", content: `${SYSTEM_PROMPT}\n\nJSON schema:\n${schemaBlock}` },
       { role: "user", content: userBody },
@@ -492,7 +596,7 @@ export default class AgentSession extends EventEmitter {
     const completion = await this.client.createChatCompletion({
       messages,
       temperature: this.temperature,
-      max_tokens: -1,
+      max_tokens: this.maxTurnTokens,
       response_format: responseFormat,
       ...(this.model ? { model: this.model } : {}),
       ...(this.reasoning?.model?.resolved &&
@@ -1284,6 +1388,13 @@ export default class AgentSession extends EventEmitter {
         opsRejected: this._contextOpsRejected,
         opsNoop: this._contextOpsNoop,
         contextOnlyTurns: this._contextOnlyTurns,
+        references: {
+          selections: this._contextReferenceSelections.length,
+          selected:
+            this._contextReferenceSelections.at(-1)?.selectedReferenceIds?.length ?? 0,
+          fallbacks: this._contextReferenceSelections.filter((entry) => entry?.fallback)
+            .length,
+        },
         engine: contextEngineStats,
       },
     };

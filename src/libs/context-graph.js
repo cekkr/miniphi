@@ -1,3 +1,8 @@
+import {
+  buildCompleteReferenceSentences,
+  normalizeReferenceSentences,
+} from "./context-reference-memory.js";
+
 /**
  * Multi-layered context graph.
  *
@@ -218,6 +223,8 @@ export default class ContextGraph {
   add(spec = {}) {
     const layer = CONTEXT_LAYERS[spec.layer] ? spec.layer : "evidence";
     const text = typeof spec.text === "string" ? spec.text : "";
+    const label = typeof spec.label === "string" && spec.label.trim() ? spec.label.trim() : layer;
+    const source = typeof spec.source === "string" ? spec.source : "runtime";
     const id = typeof spec.id === "string" && spec.id.trim() && !this.nodes.has(spec.id.trim())
       ? spec.id.trim()
       : this._nextNodeId();
@@ -225,8 +232,11 @@ export default class ContextGraph {
     const node = {
       id,
       layer,
-      label: typeof spec.label === "string" && spec.label.trim() ? spec.label.trim() : layer,
+      label,
       text,
+      references: Array.isArray(spec.references)
+        ? normalizeReferenceSentences(spec.references, { label, source })
+        : buildCompleteReferenceSentences({ text, label, source }),
       digest: typeof spec.digest === "string" && spec.digest ? spec.digest : null,
       priority: Number.isFinite(spec.priority) ? Math.floor(spec.priority) : CONTEXT_LAYERS[layer].priority,
       importance: clamp01(spec.importance, layer === "evidence" ? 0.6 : 0.8),
@@ -236,7 +246,7 @@ export default class ContextGraph {
       subtaskId: subtaskId ?? null,
       parentSubtaskId: spec.parentSubtaskId ?? null,
       kind: typeof spec.kind === "string" ? spec.kind : null,
-      source: typeof spec.source === "string" ? spec.source : "runtime",
+      source,
       turn: Number.isFinite(spec.turn) ? Math.floor(spec.turn) : this.turn,
       // Corrective feedback ("you repeated that", "that was not JSON") must be
       // impossible to demote in the turn it applies to, but must not accumulate
@@ -259,13 +269,33 @@ export default class ContextGraph {
     if (!node) {
       return null;
     }
+    let rebuildReferences = false;
     if (typeof patch.text === "string") {
       node.text = patch.text;
       node.tokens = estimateTokens(patch.text);
       node.state = "active";
+      rebuildReferences = true;
     }
     if (typeof patch.label === "string" && patch.label.trim()) {
       node.label = patch.label.trim();
+      rebuildReferences = true;
+    }
+    if (typeof patch.source === "string" && patch.source.trim()) {
+      node.source = patch.source.trim();
+      rebuildReferences = true;
+    }
+    if (Array.isArray(patch.references)) {
+      node.references = normalizeReferenceSentences(patch.references, {
+        label: node.label,
+        source: node.source,
+      });
+      rebuildReferences = false;
+    } else if (rebuildReferences) {
+      node.references = buildCompleteReferenceSentences({
+        text: node.text,
+        label: node.label,
+        source: node.source,
+      });
     }
     if (patch.importance !== undefined) {
       node.importance = clamp01(patch.importance, node.importance);
@@ -904,8 +934,10 @@ export default class ContextGraph {
     let active = 0;
     let dropped = 0;
     let digestedNodes = 0;
+    let references = 0;
     for (const node of this.nodes.values()) {
       byLayer[node.layer] = (byLayer[node.layer] ?? 0) + 1;
+      references += Array.isArray(node.references) ? node.references.length : 0;
       if (node.state === "dropped") {
         dropped += 1;
       } else if (node.state === "digested") {
@@ -923,6 +955,7 @@ export default class ContextGraph {
       dropped,
       pinned: [...this.nodes.values()].filter((node) => node.pinned).length,
       edges: this.edges.length,
+      references,
       byLayer,
       budgetTokens: this.budgetTokens,
       focusId: this.focusId,
@@ -958,7 +991,21 @@ export default class ContextGraph {
     graph._subtaskSeq = Number.isFinite(data?.subtaskSeq) ? data.subtaskSeq : 0;
     for (const node of Array.isArray(data?.nodes) ? data.nodes : []) {
       if (node && typeof node.id === "string") {
-        graph.nodes.set(node.id, { ...node, tokens: estimateTokens(node.text ?? "") });
+        const label = typeof node.label === "string" && node.label.trim() ? node.label : node.layer;
+        const source = typeof node.source === "string" && node.source.trim() ? node.source : "runtime";
+        graph.nodes.set(node.id, {
+          ...node,
+          label,
+          source,
+          references: Array.isArray(node.references)
+            ? normalizeReferenceSentences(node.references, { label, source })
+            : buildCompleteReferenceSentences({
+                text: node.text ?? "",
+                label,
+                source,
+              }),
+          tokens: estimateTokens(node.text ?? ""),
+        });
       }
     }
     graph.edges = (Array.isArray(data?.edges) ? data.edges : []).filter(

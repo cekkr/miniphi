@@ -139,12 +139,24 @@ test("AgentSession uses an external graph query result and persists engine telem
       required: false,
       async select(graph) {
         queries += 1;
+        const readonlyNode = [...graph.nodes.values()].find(
+          (node) => node.kind === "readonly",
+        );
         return {
           ok: true,
           engine: "cheetah",
-          preferredNodeIds: [...graph.nodes.values()]
-            .filter((node) => node.kind === "readonly")
-            .map((node) => node.id),
+          preferredNodeIds: readonlyNode ? [readonlyNode.id] : [],
+          referenceCandidates: readonlyNode
+            ? [
+                {
+                  id: `${readonlyNode.id}:${readonlyNode.references[0].id}`,
+                  text: readonlyNode.references[0].text,
+                  sourceNodeId: readonlyNode.id,
+                  source: "fixture",
+                  score: 0.9,
+                },
+              ]
+            : [],
         };
       },
       async sync() {
@@ -166,6 +178,39 @@ test("AgentSession uses an external graph query result and persists engine telem
       baseDir: path.join(workspace, ".miniphi"),
       sessionId: "cheetah-engine",
       contextEngine,
+      contextReferenceComposer: {
+        async compose({ candidates, turn: selectionTurn }) {
+          const selected = candidates.map((candidate) => ({
+            id: candidate.id,
+            sentence: candidate.text,
+            source: candidate.source,
+          }));
+          return {
+            selected,
+            response: {
+              schema_version: "context-reference-selection@v1",
+              selected_references: selected.map((reference) => reference.id),
+              needs_more_context: false,
+              missing_snippets: [],
+              stop_reason: "",
+            },
+            audit: {
+              schemaVersion: "context-reference-selection@v1",
+              turn: selectionTurn,
+              model: "fixture",
+              candidates,
+              attempts: [],
+              fallback: null,
+              selectedReferenceIds: selected.map((reference) => reference.id),
+            },
+          };
+        },
+        render(selected) {
+          return `### Cheetah-recalled complete sentence references\n${selected
+            .map((reference) => `- [${reference.id}] ${reference.sentence}`)
+            .join("\n")}`;
+        },
+      },
       approver: createHeadlessApprover({ policy: "allow" }),
     });
 
@@ -176,6 +221,12 @@ test("AgentSession uses an external graph query result and persists engine telem
     assert.match(userMessage(client, 1), /graph recall 1/);
     assert.equal(result.context.engine.engine, "cheetah");
     assert.equal(result.context.engine.selections, 2);
+    assert.equal(result.context.references.selections, 1);
+    assert.match(
+      userMessage(client, 1),
+      /### Cheetah-recalled complete sentence references/,
+    );
+    assert.match(userMessage(client, 1), /export const a = 1;/);
 
     const telemetry = JSON.parse(
       await fs.readFile(
@@ -191,6 +242,20 @@ test("AgentSession uses an external graph query result and persists engine telem
     );
     assert.equal(telemetry.engine, "cheetah");
     assert.equal(telemetry.available, true);
+    const references = JSON.parse(
+      await fs.readFile(
+        path.join(
+          workspace,
+          ".miniphi",
+          "agent-sessions",
+          "cheetah-engine",
+          "context-references.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.equal(references.selections.length, 1);
+    assert.equal(references.selections[0].selectedReferenceIds.length, 1);
   } finally {
     await removeTempWorkspace(workspace);
   }

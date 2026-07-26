@@ -195,6 +195,22 @@ Slices (in order):
      - `context_sufficient: false` triggers a bounded deterministic **reform** (keyword-matched
        expansion of the nodes covering the stated gap) and one re-prompt; graph state persists to
        `.miniphi/agent-sessions/<id>/context-graph.json` with stable node ids.
+     - **Complete reference sentences (2026-07-26):** every local node derives bounded,
+       self-contained reference sentences (terse source/tool fragments are quoted inside a
+       grammatical source-labelled sentence) and persists them beside the full node. The Cheetah
+       adapter mirrors only those sentences plus graph metadata, requests them with
+       `GRAPH_RECALL references=1`, and reserves prompt budget for the selected sentence block.
+       `ContextReferenceComposer` uses the exact session model and strict
+       `context-reference-selection` JSON schema to select/order grounded ids without rewriting
+       evidence; invalid responses retry once and then use a bounded lexical + association-score
+       fallback. Full candidates, raw response/tool fields, validation, and selected ids persist in
+       `.miniphi/agent-sessions/<id>/context-references.json`.
+     - Local validation on 2026-07-26 passed the real Cheetah TCP sentence wire (2 nodes /
+       2 references / 0 fallbacks) and all 62 focused context-agent regressions. The requested
+       `qwen/qwen3-4b-thinking-2507` run exposed and closed nullable-schema incompatibility, then
+       left the LM Studio worker stuck in `processingPrompt` after recalling 12 references with
+       no graph fallback; the full same-model edit proof remains open until that live test
+       completes on a healthy worker.
    - Live proofs (2026-07-25, `gpt-oss-20b` at 16384 loaded context, budget forced to 700 tokens):
      1. Wire contract: LM Studio accepted the extended schema and returned
         `{"op":"expand","node":"c3"}` selecting the *relevant* digested node out of two.

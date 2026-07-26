@@ -12,7 +12,7 @@
       "default": true
     },
     "context_gap": {
-      "type": ["string", "null"],
+      "type": "string",
       "description": "What is missing or imprecise, in concrete terms (node ids, symbols, file paths). Used to reform the graph."
     },
     "context_ops": {
@@ -42,43 +42,43 @@
             "description": "expand loads a stub/digest back in full; pin keeps a node in every prompt; boost raises its selection score; collapse replaces it with your digest; drop discards it; note records a durable fact; link relates two nodes; open_subtask/close_subtask scope a sub-conversation; focus switches to an existing subtask."
           },
           "node": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Target node id as shown in [brackets] (required by pin/unpin/boost/expand/collapse/drop/focus)."
           },
           "label": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Short label for note/open_subtask."
           },
           "text": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Body for note, digest text for collapse, goal for open_subtask, outcome for close_subtask."
           },
           "layer": {
-            "type": ["string", "null"],
-            "enum": ["plan", "subtask", "evidence", "scratch", null],
+            "type": "string",
+            "enum": ["plan", "subtask", "evidence", "scratch"],
             "description": "Layer for note (mission/contract are runtime-owned and cannot be written by the model)."
           },
           "importance": {
-            "type": ["number", "null"],
+            "type": "number",
             "minimum": 0,
             "maximum": 1,
             "description": "Selection importance for note/boost (0..1)."
           },
           "offset": {
-            "type": ["integer", "null"],
+            "type": "integer",
             "minimum": 0,
             "description": "For expand: start the loaded window at this character of the node, to page past content you have already seen."
           },
           "from": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Source node id for link."
           },
           "to": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Target node id for link."
           },
           "relation": {
-            "type": ["string", "null"],
+            "type": "string",
             "enum": [
               "derived_from",
               "supports",
@@ -86,13 +86,12 @@
               "supersedes",
               "answers",
               "blocks",
-              "child_of",
-              null
+              "child_of"
             ],
             "description": "Edge relation for link."
           },
           "reason": {
-            "type": ["string", "null"],
+            "type": "string",
             "description": "Why this reshaping is needed (recorded in telemetry)."
           }
         }
