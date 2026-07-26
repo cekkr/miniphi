@@ -1,4 +1,7 @@
 import net from "node:net";
+import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import path from "node:path";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4455;
@@ -44,6 +47,44 @@ const normalizeDatabase = (value) => {
   }
   return candidate;
 };
+
+const normalizeOptionalString = (value) =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+const hashReference = (namespace, value) =>
+  `${namespace}_${createHash("sha256").update(value, "utf8").digest("hex").slice(0, 20)}`;
+
+/**
+ * Returns an opaque, stable project namespace without persisting the workspace
+ * path in Cheetah. An explicit project id survives workspace moves; otherwise
+ * the canonical workspace path deliberately creates a new namespace.
+ */
+export function deriveCheetahProjectReference({
+  workspaceRoot = process.cwd(),
+  projectId = null,
+} = {}) {
+  const explicit = normalizeOptionalString(projectId);
+  if (explicit) {
+    return hashReference("p", `project-id\0${explicit}`);
+  }
+  const resolved = path.resolve(normalizeOptionalString(workspaceRoot) ?? process.cwd());
+  let canonical = resolved;
+  try {
+    canonical = realpathSync.native(resolved);
+  } catch {
+    // New workspaces may not exist when configuration is assembled. The
+    // resolved absolute path is still deterministic and project-specific.
+  }
+  return hashReference("p", `workspace\0${canonical}`);
+}
+
+export function deriveCheetahDatabaseName(projectReference) {
+  const reference = normalizeOptionalString(projectReference);
+  if (!reference || !/^p_[a-f0-9]{20}$/.test(reference)) {
+    throw new Error("a valid Cheetah project reference is required");
+  }
+  return normalizeDatabase(`${DEFAULT_DATABASE}_${reference}`);
+}
 
 const normalizeLabel = (value, fallback = "context") => {
   const normalized = String(value ?? "")
@@ -219,8 +260,12 @@ export function resolveCheetahContextConfig(configData = undefined, env = proces
     enabled,
     host: String(env.MINIPHI_CHEETAH_HOST ?? cheetah.host ?? DEFAULT_HOST).trim() || DEFAULT_HOST,
     port: toPositiveInteger(env.MINIPHI_CHEETAH_PORT ?? cheetah.port, DEFAULT_PORT),
-    database: normalizeDatabase(
-      env.MINIPHI_CHEETAH_DATABASE ?? cheetah.database ?? DEFAULT_DATABASE,
+    database:
+      normalizeOptionalString(env.MINIPHI_CHEETAH_DATABASE ?? cheetah.database) === null
+        ? null
+        : normalizeDatabase(env.MINIPHI_CHEETAH_DATABASE ?? cheetah.database),
+    projectId: normalizeOptionalString(
+      env.MINIPHI_CHEETAH_PROJECT_ID ?? cheetah.projectId,
     ),
     timeoutMs: toPositiveInteger(
       env.MINIPHI_CHEETAH_TIMEOUT_MS ?? cheetah.timeoutMs,
@@ -274,15 +319,25 @@ export class CheetahContextEngine {
       DEFAULT_FAILURE_COOLDOWN_MS,
     );
     this.logger = typeof options?.logger === "function" ? options.logger : null;
+    this.projectReference = deriveCheetahProjectReference({
+      workspaceRoot: options?.workspaceRoot,
+      projectId: options?.projectId,
+    });
+    this.sessionReference = hashReference(
+      "s",
+      `session\0${this.sessionId}`,
+    );
+    const database = normalizeOptionalString(options?.database)
+      ? normalizeDatabase(options.database)
+      : deriveCheetahDatabaseName(this.projectReference);
     this.client =
       options?.client ??
       new CheetahTcpClient({
         host: options?.host,
         port: options?.port,
-        database: options?.database,
+        database,
         timeoutMs: options?.timeoutMs,
       });
-    this._sessionKey = Buffer.from(this.sessionId, "utf8").toString("base64url");
     this._nodeFingerprints = new Map();
     this._edgeFingerprints = new Map();
     this._cooldownUntil = 0;
@@ -294,6 +349,7 @@ export class CheetahContextEngine {
       queries: 0,
       fallbacks: 0,
       nodesMirrored: 0,
+      nodesDeleted: 0,
       edgesMirrored: 0,
       recalledNodes: 0,
       lastError: null,
@@ -301,11 +357,11 @@ export class CheetahContextEngine {
   }
 
   _externalId(localId) {
-    return `miniphi:${this._sessionKey}:${localId}`;
+    return `miniphi:${this.projectReference}:${this.sessionReference}:${localId}`;
   }
 
   _localId(externalId) {
-    const prefix = `miniphi:${this._sessionKey}:`;
+    const prefix = `miniphi:${this.projectReference}:${this.sessionReference}:`;
     return typeof externalId === "string" && externalId.startsWith(prefix)
       ? externalId.slice(prefix.length)
       : null;
@@ -351,6 +407,8 @@ export class CheetahContextEngine {
       importance: node.importance,
       turn: node.turn,
       subtask_id: node.subtaskId ?? null,
+      project_reference: this.projectReference,
+      session_reference: this.sessionReference,
     });
     return `GRAPH_NODE_SET id=${this._externalId(node.id)} labels=${labels.join(",")} props=${props}`;
   }
@@ -412,6 +470,12 @@ export class CheetahContextEngine {
           .filter((node) => node.state !== "dropped")
           .map((node) => [node.id, node]),
       );
+      const deletedNodeIds = [...this._nodeFingerprints.keys()].filter(
+        (nodeId) => !liveNodes.has(nodeId),
+      );
+      const deleteCommands = deletedNodeIds.map(
+        (nodeId) => `GRAPH_NODE_DEL id=${this._externalId(nodeId)} cascade=1`,
+      );
       const nodeCommands = [];
       for (const node of liveNodes.values()) {
         const fingerprint = JSON.stringify([
@@ -440,7 +504,7 @@ export class CheetahContextEngine {
         }
       }
 
-      const commands = [...nodeCommands];
+      const commands = [...deleteCommands, ...nodeCommands];
       for (let index = 0; index < changedEdges.length; index += MAX_EDGE_BATCH_SIZE) {
         const batch = changedEdges.slice(index, index + MAX_EDGE_BATCH_SIZE);
         commands.push(
@@ -460,15 +524,26 @@ export class CheetahContextEngine {
           throw new Error(`Cheetah context sync partially failed: ${partialBatch.raw}`);
         }
       }
+      for (const nodeId of deletedNodeIds) {
+        const externalId = this._externalId(nodeId);
+        this._nodeFingerprints.delete(nodeId);
+        for (const edgeKey of this._edgeFingerprints.keys()) {
+          if (edgeKey.includes(`${externalId}\u0000`)) {
+            this._edgeFingerprints.delete(edgeKey);
+          }
+        }
+      }
 
       this._stats.available = true;
       this._stats.lastError = null;
       this._stats.syncs += 1;
       this._stats.nodesMirrored += nodeCommands.length;
+      this._stats.nodesDeleted += deletedNodeIds.length;
       this._stats.edgesMirrored += changedEdges.length;
       return {
         ok: true,
         nodesMirrored: nodeCommands.length,
+        nodesDeleted: deletedNodeIds.length,
         edgesMirrored: changedEdges.length,
       };
     } catch (error) {
@@ -518,7 +593,7 @@ export class CheetahContextEngine {
       const recalled = Array.isArray(payload?.associations)
         ? payload.associations
             .map((entry) => this._localId(entry?.id))
-            .filter((id) => id && graph.nodes.has(id))
+            .filter((id) => id && graph.nodes.get(id)?.state !== "dropped")
         : [];
       const preferredNodeIds = [...new Set([...seeds, ...recalled])];
       this._stats.available = true;
@@ -562,6 +637,8 @@ export class CheetahContextEngine {
       host: this.client?.host ?? null,
       port: this.client?.port ?? null,
       database: this.client?.database ?? null,
+      projectReference: this.projectReference,
+      sessionReference: this.sessionReference,
     };
   }
 }
@@ -575,10 +652,11 @@ export function createCheetahContextEngineFactory({
   if (!config.enabled) {
     return null;
   }
-  return ({ sessionId }) =>
+  return ({ sessionId, cwd }) =>
     new CheetahContextEngine({
       ...config,
       sessionId,
+      workspaceRoot: cwd,
       logger,
     });
 }

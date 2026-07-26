@@ -5,7 +5,10 @@ import ContextGraph from "../src/libs/context-graph.js";
 import {
   CheetahContextEngine,
   CheetahTcpClient,
+  createCheetahContextEngineFactory,
   decodeCheetahPayload,
+  deriveCheetahDatabaseName,
+  deriveCheetahProjectReference,
   parseCheetahResponse,
   resolveCheetahContextConfig,
 } from "../src/libs/cheetah-context-engine.js";
@@ -56,8 +59,90 @@ test("Cheetah context configuration is opt-in and supports environment overrides
   assert.equal(config.host, "127.0.0.2");
   assert.equal(config.port, 4555);
   assert.equal(config.database, "ctx_dev");
+  assert.equal(config.projectId, null);
   assert.equal(config.required, false);
   assert.equal(config.recallLimit, 12);
+
+  const derived = resolveCheetahContextConfig(
+    {
+      context: {
+        engine: "cheetah",
+        cheetah: {},
+      },
+    },
+    {},
+  );
+  assert.equal(derived.database, null, "the engine derives a project-specific database");
+});
+
+test("project-derived databases and graph ids isolate reused session ids", () => {
+  const sessionId = "reused-session";
+  const first = new CheetahContextEngine({
+    sessionId,
+    workspaceRoot: "/tmp/miniphi-project-alpha",
+  });
+  const second = new CheetahContextEngine({
+    sessionId,
+    workspaceRoot: "/tmp/miniphi-project-beta",
+  });
+
+  assert.notEqual(first.projectReference, second.projectReference);
+  assert.notEqual(first.client.database, second.client.database);
+  assert.equal(first.client.database, deriveCheetahDatabaseName(first.projectReference));
+  assert.equal(second.client.database, deriveCheetahDatabaseName(second.projectReference));
+  assert.notEqual(first._externalId("c1"), second._externalId("c1"));
+  assert.equal(first._localId(second._externalId("c1")), null);
+  assert.equal(second._localId(first._externalId("c1")), null);
+});
+
+test("explicit shared databases retain project isolation and project ids survive moves", () => {
+  const sharedClient = (database) => ({
+    host: "fixture",
+    port: 4455,
+    database,
+    async execute() {
+      return [];
+    },
+  });
+  const first = new CheetahContextEngine({
+    client: sharedClient("shared_context"),
+    sessionId: "same-session",
+    workspaceRoot: "/tmp/first-project",
+  });
+  const second = new CheetahContextEngine({
+    client: sharedClient("shared_context"),
+    sessionId: "same-session",
+    workspaceRoot: "/tmp/second-project",
+  });
+  assert.equal(first.client.database, second.client.database);
+  assert.notEqual(first._externalId("c7"), second._externalId("c7"));
+  assert.equal(first._localId(second._externalId("c7")), null);
+
+  const stableA = deriveCheetahProjectReference({
+    workspaceRoot: "/tmp/old-location",
+    projectId: "cekkr/miniphi",
+  });
+  const stableB = deriveCheetahProjectReference({
+    workspaceRoot: "/tmp/new-location",
+    projectId: "cekkr/miniphi",
+  });
+  assert.equal(stableA, stableB);
+});
+
+test("the Cheetah engine factory scopes its database to the session workspace", () => {
+  const factory = createCheetahContextEngineFactory({
+    configData: {
+      context: {
+        engine: "cheetah",
+        cheetah: {},
+      },
+    },
+    env: {},
+  });
+  const first = factory({ sessionId: "factory-session", cwd: "/tmp/factory-one" });
+  const second = factory({ sessionId: "factory-session", cwd: "/tmp/factory-two" });
+  assert.notEqual(first.stats().projectReference, second.stats().projectReference);
+  assert.notEqual(first.stats().database, second.stats().database);
 });
 
 test("CheetahTcpClient selects a database and frames one response per command", async () => {
@@ -217,6 +302,54 @@ test("optional Cheetah failures fall back without mutating the local graph", asy
   assert.deepEqual(selection.preferredNodeIds, []);
   assert.deepEqual(graph.toJSON(), before);
   assert.equal(engine.stats().fallbacks, 1);
+});
+
+test("Cheetah sync deletes context nodes that were dropped locally", async () => {
+  const graph = new ContextGraph();
+  graph.add({
+    layer: "mission",
+    label: "task",
+    text: "Task: keep current context only",
+    kind: "mission",
+  });
+  const stale = graph.add({
+    layer: "evidence",
+    label: "read_file old.js",
+    text: "stale source",
+  });
+  const calls = [];
+  const engine = new CheetahContextEngine({
+    client: {
+      host: "fixture",
+      port: 4455,
+      database: "fixture",
+      async execute(commands) {
+        calls.push(commands);
+        return commands.map((command) =>
+          success(
+            command.startsWith("GRAPH_EDGE_SET_BATCH")
+              ? { requested: 1, applied: 1, failed: 0 }
+              : {},
+          ),
+        );
+      },
+    },
+    sessionId: "drop-stale-context",
+  });
+
+  await engine.sync(graph);
+  graph.update(stale.id, { state: "dropped" });
+  const result = await engine.sync(graph);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nodesDeleted, 1);
+  assert.ok(
+    calls[1].some(
+      (command) =>
+        command === `GRAPH_NODE_DEL id=${engine._externalId(stale.id)} cascade=1`,
+    ),
+  );
+  assert.equal(engine.stats().nodesDeleted, 1);
 });
 
 test("a failed recall invalidates mirror fingerprints for server-restart recovery", async () => {

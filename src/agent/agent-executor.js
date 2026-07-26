@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { createHash } from "crypto";
+import { spawnSync } from "child_process";
 import { resolveWorkspacePath, executeReadonlyAction } from "../libs/plan-executor.js";
 import { writeFileWithGuard } from "../libs/file-edit-guard.js";
 import { summarizeDiff } from "../libs/recompose-utils.js";
@@ -18,6 +19,32 @@ const KNOWN_ACTION_TYPES = new Set([
 ]);
 
 const hashText = (text) => createHash("sha256").update(text ?? "", "utf8").digest("hex");
+
+const validateJavaScriptSyntax = (filePath, content) => {
+  const extension = path.extname(filePath).toLowerCase();
+  if (![".js", ".mjs", ".cjs"].includes(extension)) {
+    return null;
+  }
+  const args =
+    extension === ".cjs"
+      ? ["--check"]
+      : ["--input-type=module", "--check"];
+  const checked = spawnSync(process.execPath, args, {
+    input: content,
+    encoding: "utf8",
+    timeout: 5000,
+    maxBuffer: 256 * 1024,
+  });
+  if (!checked.error && checked.status === 0) {
+    return null;
+  }
+  const detail = String(
+    checked.stderr || checked.stdout || checked.error?.message || "syntax check failed",
+  )
+    .trim()
+    .slice(0, 1200);
+  return `proposed ${filePath} has invalid JavaScript syntax; no file was changed:\n${detail}`;
+};
 
 /**
  * Buckets an action type into the interaction category the session uses to
@@ -214,6 +241,15 @@ export async function buildMutationProposal({ action, cwd }) {
     }
   } else {
     return { ok: false, status: "unsupported", error: `not a file mutation: ${action.type}` };
+  }
+
+  const syntaxError = validateJavaScriptSyntax(action.path, afterContent ?? "");
+  if (syntaxError) {
+    return {
+      ok: false,
+      status: "invalid-content",
+      error: syntaxError,
+    };
   }
 
   const proposal = {

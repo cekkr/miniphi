@@ -64,11 +64,11 @@
           },
           "anchor": {
             "type": ["string", "null"],
-            "description": "For edit_file: the exact existing text to locate and replace. Must occur exactly once in the file."
+            "description": "For edit_file: the complete exact existing substring to replace, not the start of a range. Only these literal characters are removed, so include the whole old function/block when replacing a function/block. Must occur exactly once."
           },
           "replacement": {
             "type": ["string", "null"],
-            "description": "For edit_file: the text that replaces `anchor`."
+            "description": "For edit_file: the text inserted in place of the complete literal `anchor`. Do not repeat surrounding source that is outside the anchor."
           },
           "term": {
             "type": ["string", "null"],

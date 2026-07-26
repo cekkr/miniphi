@@ -41,7 +41,8 @@
     "cheetah": {
       "host": "127.0.0.1",
       "port": 4455,
-      "database": "miniphi_context",
+      "database": null,
+      "projectId": null,
       "timeoutMs": 2500,
       "required": false,
       "recallLimit": 32,

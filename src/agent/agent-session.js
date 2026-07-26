@@ -27,9 +27,11 @@ const DEFAULT_MODEL_REQUEST_RETRIES = 1;
 const DEFAULT_MAX_WEB_RESEARCH_ACTIONS = 3;
 const DEFAULT_MAX_CONTEXT_REFORMS = 3;
 const DEFAULT_MAX_CONTEXT_ONLY_TURNS = 3;
+const MAX_ACTION_SCAN_MULTIPLIER = 3;
 const MAX_PINNED_FILE_BYTES = 6000;
 const MAX_RESEARCH_OUTPUT_CHARS = 6000;
 const MAX_READONLY_OUTPUT_CHARS = 6000;
+const MAX_MUTATION_CONTEXT_CHARS = 12000;
 
 const SYSTEM_PROMPT = `You are MiniPhi, a local coding agent operating inside the operator's repository.
 Work in turns. Each turn respond with ONLY a JSON object matching the provided schema (no prose, no markdown fences).
@@ -37,6 +39,9 @@ Use read_file/list_dir/search_text to gather context (these run automatically, n
 Use web_research for current library choices, unfamiliar APIs, or best-practice comparisons (it runs automatically and returns bounded JSON search results). When the task asks you to choose libraries, research before deciding unless no external library is needed; explain that choice in your summary.
 Never repeat an action after MiniPhi reports it as duplicate or skipped-budget. Use the existing observation and move to implementation.
 Propose changes with write_file (full file content) or edit_file (a unique anchor + replacement, or a full content replacement). write_file, edit_file and run_cmd require operator approval and may be rejected.
+An edit_file anchor selects only that exact literal substring; MiniPhi replaces only those characters and leaves all surrounding text untouched. If replacement repeats an existing function/block, the anchor must include that complete function/block. To append safely, anchor the exact end block and include that block once followed by the addition.
+write_file replaces the entire target: never use it with partial content for an existing file. Prefer a small anchored edit_file for existing files, preserve imports/exports and unrelated behavior, and do not introduce dependencies that are absent from the workspace.
+After a validation failure caused by one of your edits, read the current changed file before repairing it unless its exact post-edit content is already loaded below. Never reconstruct a current file from an older snapshot.
 When the task is complete, respond with a single finish action and a clear summary of what changed.
 Only touch files inside the workspace; never invent paths. Keep edits minimal and correct.
 
@@ -209,7 +214,15 @@ export default class AgentSession extends EventEmitter {
    * transcript, so priority/importance/subtask level decide whether it is later
    * sent in full, as a digest, or as a requestable stub.
    */
-  _remember({ layer = "evidence", label, text, importance = undefined, pinned = false, kind = null } = {}) {
+  _remember({
+    layer = "evidence",
+    label,
+    text,
+    importance = undefined,
+    pinned = false,
+    kind = null,
+    ttlTurns = null,
+  } = {}) {
     if (typeof text !== "string" || !text.trim()) {
       return null;
     }
@@ -220,8 +233,45 @@ export default class AgentSession extends EventEmitter {
       importance,
       pinned,
       kind,
+      ttlTurns,
       turn: this.context.turn,
     });
+  }
+
+  /**
+   * A successful write makes earlier reads and edit snapshots for that file
+   * stale. Keeping both versions under context pressure makes a local model
+   * repair the old source instead of the file that is actually on disk.
+   */
+  _retireSupersededFileContext(filePath) {
+    const staleLabels = new Set([
+      `read_file ${filePath}`,
+      `requested ${filePath}`,
+      `operator-selected ${filePath}`,
+    ]);
+    for (const node of this.context.nodes.values()) {
+      const staleEdit =
+        node.kind === "edit" &&
+        (node.label === `written ${filePath}` || node.label === `unchanged ${filePath}`);
+      if (
+        node.state !== "dropped" &&
+        (staleLabels.has(node.label) || staleEdit)
+      ) {
+        this.context.update(node.id, {
+          state: "dropped",
+          importance: 0,
+          pinned: false,
+        });
+      }
+    }
+    // Read/search deduplication is version-sensitive. Once a file changes, a
+    // new read of that path and a new workspace search can return new evidence.
+    this._actionSignatures.delete(`read_file:${filePath}`);
+    for (const signature of this._actionSignatures) {
+      if (signature.startsWith("search_text:")) {
+        this._actionSignatures.delete(signature);
+      }
+    }
   }
 
   /** Flat view of the live context, kept for logging/debugging convenience. */
@@ -289,6 +339,9 @@ export default class AgentSession extends EventEmitter {
 
   _buildPolicyText() {
     return [
+      this._lastValidation && !this._lastValidation.valid
+        ? `Workspace validation has ${this._lastValidation.issues.length} unresolved issue(s). Your next JSON turn MUST contain concrete read_file, search_text, write_file, or edit_file actions that address them. A summary describing intended changes is not progress and must never be returned with an empty actions array.`
+        : null,
       this.requireWebResearch && !this._webResearchCompleted
         ? "Session requirement: perform at least one successful web_research action before proposing writes or commands."
         : null,
@@ -481,6 +534,10 @@ export default class AgentSession extends EventEmitter {
       this._actionSignatures.add(signature);
     }
     if (!proposalResult.ok) {
+      const repairHint =
+        proposalResult.status === "invalid-content"
+          ? " The anchor is a literal exact replacement, not a range starting at that line. Use an anchor covering the complete old block, append after an exact end block, or send one full-file edit_file content replacement based on the current file."
+          : "";
       const result = {
         turn,
         action: { type: action.type, path: action.path },
@@ -491,7 +548,7 @@ export default class AgentSession extends EventEmitter {
       this._remember({
         layer: "contract",
         label: `${result.status} ${describeAction(action)}`,
-        text: `${describeAction(action)} -> ${result.status}: ${result.error}`,
+        text: `${describeAction(action)} -> ${result.status}: ${result.error}${repairHint}`,
         importance: 0.9,
         ttlTurns: 1,
       });
@@ -533,6 +590,7 @@ export default class AgentSession extends EventEmitter {
     this.emit("action-result", result);
     if (guard.status === "written") {
       this._progressThisTurn = true;
+      this._retireSupersededFileContext(proposal.path);
     }
     const nudge =
       guard.status === "unchanged"
@@ -540,10 +598,22 @@ export default class AgentSession extends EventEmitter {
         : "";
     // Applied edits are durable progress facts, so they live in the plan layer
     // and outrank raw evidence when the budget tightens.
+    const currentContent =
+      proposal.afterContent.length > MAX_MUTATION_CONTEXT_CHARS
+        ? `${proposal.afterContent.slice(0, MAX_MUTATION_CONTEXT_CHARS)}\n[output truncated at ${MAX_MUTATION_CONTEXT_CHARS} chars; read_file to load the current file again]`
+        : proposal.afterContent;
     this._remember({
       layer: "plan",
       label: `${guard.status} ${proposal.path}`,
-      text: `${describeAction(action)} -> ${guard.status}${nudge}`,
+      text: [
+        `${describeAction(action)} -> ${guard.status}${nudge}`,
+        proposal.diff ? `Applied diff:\n${proposal.diff}` : null,
+        guard.status === "written"
+          ? `Current ${proposal.path} after the guarded write:\n${currentContent}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
       importance: 0.9,
       kind: "edit",
     });
@@ -661,6 +731,19 @@ export default class AgentSession extends EventEmitter {
     this._lastValidation = normalized;
     this.emit("validation", { turn, ...normalized });
     await this._appendTranscript({ kind: "validation", turn, ...normalized });
+
+    // A validator reports the complete current issue set. Older validation
+    // nodes describe previous file versions and must not remain pinned beside
+    // the authoritative result or crowd it out under a tight context budget.
+    for (const node of this.context.nodes.values()) {
+      if (node.kind === "validation") {
+        this.context.update(node.id, {
+          state: "dropped",
+          pinned: false,
+          importance: 0,
+        });
+      }
+    }
     if (!normalized.valid) {
       // Validation issues are the current definition of "done"; pin them so no
       // amount of budget pressure can hide them from the next turn.
@@ -672,14 +755,6 @@ export default class AgentSession extends EventEmitter {
         pinned: true,
         kind: "validation",
       });
-    } else {
-      // A passing run supersedes earlier pinned failures.
-      for (const node of this.context.nodes.values()) {
-        if (node.kind === "validation") {
-          node.pinned = false;
-          node.importance = 0.3;
-        }
-      }
     }
     return normalized;
   }
@@ -916,7 +991,15 @@ export default class AgentSession extends EventEmitter {
         }
       }
 
-      const actions = Array.isArray(turnData.actions) ? turnData.actions.slice(0, this.maxActionsPerTurn) : [];
+      // Scan beyond the execution cap so invalid or same-path conflicting
+      // proposals cannot crowd a later independent action out of the turn.
+      // The scan itself stays bounded against oversized model arrays.
+      const actions = Array.isArray(turnData.actions)
+        ? turnData.actions.slice(
+            0,
+            this.maxActionsPerTurn * MAX_ACTION_SCAN_MULTIPLIER,
+          )
+        : [];
       // A declared context gap is handled before spending the turn: reform the
       // graph and re-prompt, so an imprecise context is repaired instead of
       // producing a guessed edit.
@@ -929,6 +1012,7 @@ export default class AgentSession extends EventEmitter {
       let finished = false;
       this._progressThisTurn = false;
       const mutationPathsThisTurn = new Set();
+      let executableActions = 0;
       for (const rawAction of actions) {
         if (this.cancelled || this._budgetExhausted()) {
           break;
@@ -972,6 +1056,10 @@ export default class AgentSession extends EventEmitter {
           await this._appendTranscript({ kind: "action-result", ...result });
           continue;
         }
+        if (executableActions >= this.maxActionsPerTurn) {
+          break;
+        }
+        executableActions += 1;
         if (action.type === "write_file" || action.type === "edit_file") {
           mutationPathsThisTurn.add(action.path);
         }

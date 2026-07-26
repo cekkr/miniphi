@@ -145,19 +145,68 @@ test("buildMutationProposal handles anchored edits, misses, and ambiguity", asyn
   }
 });
 
+test("buildMutationProposal rejects invalid JavaScript before it can reach the write guard", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const target = path.join(workspace, "module.js");
+    const original = [
+      "export function value() {",
+      "  return 1;",
+      "}",
+      "",
+    ].join("\n");
+    await fs.writeFile(target, original, "utf8");
+    const action = normalizeAgentAction(
+      {
+        type: "edit_file",
+        path: "module.js",
+        anchor: "export function value() {",
+        replacement: [
+          "export function value() {",
+          "  return 2;",
+          "}",
+        ].join("\n"),
+        reason: "replace too little of the original function",
+      },
+      workspace,
+    ).action;
+
+    const result = await buildMutationProposal({ action, cwd: workspace });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "invalid-content");
+    assert.match(result.error, /invalid JavaScript syntax/);
+    assert.equal(await fs.readFile(target, "utf8"), original);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
 test("commitMutation writes through the guard and keeps a rollback copy", async () => {
   const workspace = await createTempWorkspace();
   const rollbackDir = path.join(workspace, ".miniphi", "rollbacks");
   try {
-    await fs.writeFile(path.join(workspace, "a.js"), "old\n", "utf8");
+    await fs.writeFile(
+      path.join(workspace, "a.js"),
+      "export const value = \"old\";\n",
+      "utf8",
+    );
     const action = normalizeAgentAction(
-      { type: "write_file", path: "a.js", content: "new\n", reason: "overwrite" },
+      {
+        type: "write_file",
+        path: "a.js",
+        content: "export const value = \"new\";\n",
+        reason: "overwrite",
+      },
       workspace,
     ).action;
     const { proposal } = await buildMutationProposal({ action, cwd: workspace });
     const result = await commitMutation({ proposal, cwd: workspace, rollbackDir });
     assert.equal(result.status, "written");
-    assert.equal(await fs.readFile(path.join(workspace, "a.js"), "utf8"), "new\n");
+    assert.equal(
+      await fs.readFile(path.join(workspace, "a.js"), "utf8"),
+      "export const value = \"new\";\n",
+    );
     const rollbacks = await fs.readdir(rollbackDir);
     assert.equal(rollbacks.length, 1, "one rollback copy for the overwrite");
   } finally {

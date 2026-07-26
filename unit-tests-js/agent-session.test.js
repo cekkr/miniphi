@@ -88,6 +88,77 @@ test("AgentSession runs read -> approved write -> finish and applies the edit", 
   }
 });
 
+test("AgentSession replaces stale file context with the guarded post-edit source", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspace, "src", "state.js"),
+      "export const state = \"old\";\n",
+      "utf8",
+    );
+    const client = scriptedClient([
+      turn([{ type: "read_file", path: "src/state.js", reason: "inspect" }]),
+      turn([
+        {
+          type: "edit_file",
+          path: "src/state.js",
+          content: "export const state = \"current\";\n",
+          reason: "update state",
+        },
+      ]),
+      turn([{ type: "read_file", path: "src/state.js", reason: "verify current source" }]),
+      turn([{ type: "finish", reason: "done" }]),
+    ]);
+    const actionResults = [];
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: null,
+      approver: createHeadlessApprover({ policy: "allow" }),
+    });
+    session.on("action-result", (entry) => actionResults.push(entry));
+
+    const result = await session.submitTask("Update the state");
+
+    assert.equal(result.status, "completed");
+    assert.match(
+      client.calls[2][1].content,
+      /Current src\/state\.js after the guarded write:/,
+    );
+    assert.match(client.calls[3][1].content, /state = "current"/);
+    const fileReads = [...session.context.nodes.values()].filter(
+      (node) => node.label === "read_file src/state.js",
+    );
+    assert.equal(fileReads.filter((node) => node.state === "dropped").length, 1);
+    assert.equal(fileReads.filter((node) => node.state === "active").length, 1);
+    assert.equal(
+      actionResults.filter(
+        (entry) =>
+          entry.action?.type === "read_file" && entry.status === "executed",
+      ).length,
+      2,
+      "a successful write must invalidate the cached pre-edit read",
+    );
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("AgentSession forwards corrective-feedback TTLs into the context graph", () => {
+  const session = new AgentSession({
+    client: scriptedClient([]),
+    baseDir: null,
+  });
+  const node = session._remember({
+    layer: "contract",
+    label: "bounded correction",
+    text: "Use the validation result on the next turn.",
+    ttlTurns: 2,
+  });
+  assert.equal(node.ttlTurns, 2);
+});
+
 test("AgentSession feeds structured web research into the next model turn", async () => {
   const workspace = await createTempWorkspace();
   try {
@@ -386,21 +457,32 @@ test("AgentSession feeds workspace validation issues back and auto-finishes when
     assert.equal(result.status, "completed");
     assert.equal(result.turns, 3);
     assert.equal(result.validation.valid, true);
+    assert.match(
+      client.calls[0][1].content,
+      /summary describing intended changes is not progress/i,
+    );
     assert.match(client.calls[1][1].content, /identify the ball as a basketball/);
     assert.match(client.calls[1][1].content, /add gravity/);
     assert.match(client.calls[2][1].content, /MUST contain concrete write_file\/edit_file fixes/);
+    assert.ok(
+      [...session.context.nodes.values()]
+        .filter((node) => node.kind === "validation")
+        .every((node) => node.state === "dropped"),
+      "a passing validation must retire every obsolete validation failure",
+    );
   } finally {
     await removeTempWorkspace(workspace);
   }
 });
 
-test("AgentSession rejects multiple mutations to the same path in one turn", async () => {
+test("AgentSession rejects same-path conflicts without starving later independent actions", async () => {
   const workspace = await createTempWorkspace();
   try {
     const client = scriptedClient([
       turn([
         { type: "write_file", path: "index.html", content: "first\n", reason: "create" },
         { type: "write_file", path: "index.html", content: "second\n", reason: "style" },
+        { type: "write_file", path: "notes.txt", content: "kept\n", reason: "document" },
       ]),
       turn([{ type: "finish", reason: "done" }], { summary: "Kept one coherent write" }),
     ]);
@@ -409,6 +491,7 @@ test("AgentSession rejects multiple mutations to the same path in one turn", asy
       client,
       cwd: workspace,
       baseDir: null,
+      maxActionsPerTurn: 2,
       approver: createHeadlessApprover({ policy: "allow" }),
     });
     session.on("action-result", (result) => statuses.push(result.status));
@@ -417,6 +500,7 @@ test("AgentSession rejects multiple mutations to the same path in one turn", asy
     assert.equal(result.status, "completed");
     assert.ok(statuses.includes("conflicting-action"));
     assert.equal(await fs.readFile(path.join(workspace, "index.html"), "utf8"), "first\n");
+    assert.equal(await fs.readFile(path.join(workspace, "notes.txt"), "utf8"), "kept\n");
   } finally {
     await removeTempWorkspace(workspace);
   }
