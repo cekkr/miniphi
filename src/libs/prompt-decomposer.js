@@ -151,6 +151,20 @@ export default class PromptDecomposer {
       Number.isFinite(parsedExpansions) && parsedExpansions >= 0
         ? Math.floor(parsedExpansions)
         : DEFAULT_MAX_EXPANSIONS;
+    const parsedExpansionTokens = Number(options?.expansionMaxTokens);
+    this.expansionMaxTokens =
+      Number.isFinite(parsedExpansionTokens)
+        ? Math.floor(parsedExpansionTokens)
+        : -1;
+    const parsedExpansionTimeBudget = Number(options?.expansionTimeBudgetMs);
+    this.expansionTimeBudgetMs =
+      Number.isFinite(parsedExpansionTimeBudget) && parsedExpansionTimeBudget >= 0
+        ? Math.floor(parsedExpansionTimeBudget)
+        : null;
+    this.reasoning =
+      options?.reasoning && typeof options.reasoning === "object"
+        ? { ...options.reasoning }
+        : null;
     this.disabled = false;
     this.disableNotice = null;
   }
@@ -211,6 +225,7 @@ export default class PromptDecomposer {
     let responseText = "";
     let responseToolCalls = null;
     let responseToolDefinitions = null;
+    let responseReasoning = null;
     let promptRecord = null;
     let normalizedPlan = null;
     let schemaValidation = null;
@@ -270,6 +285,7 @@ export default class PromptDecomposer {
         responseFormat: responseFormatForRun,
         schemaValidation: validationResult.validation,
         requestTimeoutMs,
+        reasoning: completion?.miniphi_reasoning ?? null,
       };
     };
 
@@ -286,6 +302,7 @@ export default class PromptDecomposer {
         requestMessages = response.messages;
         responseToolCalls = response.toolCalls;
         responseToolDefinitions = response.toolDefinitions;
+        responseReasoning = response.reasoning;
         normalizedPlan = this._parsePlan(responseText, payload, response.schemaValidation);
         attemptHistory.push({
           mode: modeLabel,
@@ -370,6 +387,8 @@ export default class PromptDecomposer {
       responsePayload.tool_calls = responseToolCalls ?? null;
       responsePayload.tool_definitions = responseToolDefinitions ?? null;
       responsePayload.branch_expansions = branchExpansions ?? null;
+      responsePayload.reasoning = this.reasoning;
+      responsePayload.reasoning_request = responseReasoning;
       const stopInfo = buildStopReasonInfo({
         error: errorMessage,
         fallbackReason: normalizedPlan?.stopReason ?? null,
@@ -387,6 +406,8 @@ export default class PromptDecomposer {
           request_mode: requestMode ?? null,
           decomposition_attempts: attemptHistory,
           branch_expansions: branchExpansions ?? null,
+          reasoning: this.reasoning,
+          reasoning_request: responseReasoning,
           request_timeout_ms:
             (Array.isArray(attemptHistory)
               ? attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms
@@ -424,6 +445,7 @@ export default class PromptDecomposer {
       resolvedTimeoutMs ??
       attemptHistory.find((entry) => Number.isFinite(entry?.timeout_ms))?.timeout_ms ??
       null;
+    normalizedPlan.reasoning = this.reasoning;
 
     if (payload.storage) {
       try {
@@ -451,6 +473,7 @@ export default class PromptDecomposer {
             extra: payload.metadata ?? null,
             planBranch: payload.planBranch ?? null,
             branchExpansions: normalizedPlan.branchExpansions ?? null,
+            reasoning: this.reasoning,
           },
         });
       } catch (error) {
@@ -817,7 +840,14 @@ export default class PromptDecomposer {
    */
   async _expandPlanBranches(normalizedPlan, payload, { schemaBlock, responseFormat }) {
     const expansions = [];
-    const budget = { remaining: this.maxExpansions, halted: false };
+    const budget = {
+      remaining: this.maxExpansions,
+      halted: false,
+      deadline:
+        Number.isFinite(this.expansionTimeBudgetMs) && this.expansionTimeBudgetMs > 0
+          ? Date.now() + this.expansionTimeBudgetMs
+          : null,
+    };
     await this._expandStepsRecursive(normalizedPlan.plan.steps, {
       normalizedPlan,
       payload,
@@ -847,6 +877,10 @@ export default class PromptDecomposer {
           expansions.push({ branch: step.id, title: step.title, status: "skipped-depth" });
         } else if (budget.remaining <= 0) {
           expansions.push({ branch: step.id, title: step.title, status: "skipped-budget" });
+        } else if (Number.isFinite(budget.deadline) && Date.now() >= budget.deadline) {
+          expansions.push({ branch: step.id, title: step.title, status: "skipped-profile-time" });
+          budget.halted = true;
+          return;
         } else if (this._sessionBudgetExhausted(payload?.sessionDeadline)) {
           expansions.push({ branch: step.id, title: step.title, status: "skipped-session" });
           budget.halted = true;
@@ -918,18 +952,20 @@ export default class PromptDecomposer {
     let children = null;
     let stopExpansion = false;
     let validationStatus = null;
+    let reasoningRequest = null;
     try {
       const requestTimeoutMs = this._resolveRequestTimeout(payload?.sessionDeadline);
       const completion = await this._withTimeout(
         this.restClient.createChatCompletion({
           messages,
           temperature: this.temperature,
-          max_tokens: -1,
+          max_tokens: this.expansionMaxTokens,
           response_format: responseFormat,
         }),
         requestTimeoutMs,
       );
       responseText = completion?.choices?.[0]?.message?.content ?? "";
+      reasoningRequest = completion?.miniphi_reasoning ?? null;
       const validationResult = validateJsonObjectAgainstSchema(
         this._resolveSchemaDefinition(),
         responseText,
@@ -961,6 +997,7 @@ export default class PromptDecomposer {
       childCount: children ? children.length : 0,
       error: errorMessage,
       validation_status: validationStatus,
+      reasoning: reasoningRequest,
     };
     this._log(
       children
@@ -982,6 +1019,8 @@ export default class PromptDecomposer {
             promptJournalId: payload.promptJournalId ?? null,
             status: telemetry.status,
             child_count: telemetry.childCount,
+            reasoning: this.reasoning,
+            reasoning_request: reasoningRequest,
           },
           request: {
             endpoint: "/chat/completions",
@@ -994,6 +1033,7 @@ export default class PromptDecomposer {
             children,
             tool_calls: null,
             tool_definitions: null,
+            reasoning_request: reasoningRequest,
           },
           error: errorMessage,
         });

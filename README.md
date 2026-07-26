@@ -241,6 +241,22 @@ picker use the relevant category score as their primary ranking evidence too. An
 override still wins. Bare `miniphi` also exposes an **Easy benchmark** button and the cached score
 table on its home screen.
 
+Choose how much reasoning MiniPhi spends with one profile:
+
+```bash
+miniphi "Refactor the parser" --reasoning low
+miniphi workspace --task "Plan the migration" --reasoning high --headless
+```
+
+`off`, `low`, `medium`, and `high` allow 0, 1, 2, and 4 focused planning
+subprompts respectively; `high` is the default. MiniPhi also requests the
+closest reasoning effort advertised by the selected LM Studio model. If the
+model does not expose adjustable reasoning—or the compatible strict-JSON route
+rejects the setting—MiniPhi keeps the decomposition profile, retries once
+without the model parameter, and records that fallback. The terminal UI asks
+for the profile after model selection and previews its budgets. Explicit
+`--max-plan-expansions` and `--no-plan-expansion` overrides still win.
+
 Run the opt-in from-scratch project test (PowerShell example). It performs bounded web research, creates an animated basketball page in an empty workspace, validates it in Chromium, and preserves the project and screenshot under the selected output folder:
 
 ```powershell

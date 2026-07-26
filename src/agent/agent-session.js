@@ -91,6 +91,14 @@ export default class AgentSession extends EventEmitter {
       options?.modelSelection && typeof options.modelSelection === "object"
         ? { ...options.modelSelection }
         : null;
+    this.reasoning =
+      options?.reasoning && typeof options.reasoning === "object"
+        ? { ...options.reasoning }
+        : null;
+    this.reasoningRequests = [];
+    if (this.reasoning && typeof this.client?.setDefaultReasoning === "function") {
+      this.client.setDefaultReasoning(this.reasoning);
+    }
     this.sessionDeadline = Number.isFinite(options?.sessionDeadline) ? options.sessionDeadline : null;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
     this.contextEngine =
@@ -188,6 +196,18 @@ export default class AgentSession extends EventEmitter {
       contextBudgetTokens: this.contextBudgetTokens,
       selection: this.modelSelection,
     };
+  }
+
+  configureReasoning(reasoning = null) {
+    if (this.context.nodes.size > 0) {
+      throw new Error("The reasoning profile cannot change after the task has started.");
+    }
+    this.reasoning =
+      reasoning && typeof reasoning === "object" ? { ...reasoning } : null;
+    if (typeof this.client?.setDefaultReasoning === "function") {
+      this.client.setDefaultReasoning(this.reasoning);
+    }
+    return this.reasoning;
   }
 
   /** Resolve a pending UI permission request (delegates to the UI approver). */
@@ -475,7 +495,17 @@ export default class AgentSession extends EventEmitter {
       max_tokens: -1,
       response_format: responseFormat,
       ...(this.model ? { model: this.model } : {}),
+      ...(this.reasoning?.model?.resolved &&
+        typeof this.client?.setDefaultReasoning !== "function"
+        ? { reasoning: this.reasoning.model.resolved }
+        : {}),
     });
+    if (completion?.miniphi_reasoning) {
+      this.reasoningRequests.push({
+        ...completion.miniphi_reasoning,
+        at: new Date().toISOString(),
+      });
+    }
     const message = completion?.choices?.[0]?.message ?? null;
     return message?.content ?? "";
   }
@@ -964,6 +994,7 @@ export default class AgentSession extends EventEmitter {
       selectedFiles,
       model: this.model,
       modelSelection: this.modelSelection,
+      reasoning: this.reasoning,
       startedAt: new Date().toISOString(),
     });
     for (const query of this.initialResearchQueries) {
@@ -1240,6 +1271,10 @@ export default class AgentSession extends EventEmitter {
       model: {
         id: this.model,
         selection: this.modelSelection,
+      },
+      reasoning: {
+        resolution: this.reasoning,
+        requests: this.reasoningRequests,
       },
       context: {
         ...this.context.stats(),

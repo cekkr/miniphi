@@ -124,6 +124,7 @@ async function createLmStudioRuntime({
   restBaseUrl = null,
   wsBaseUrl = null,
   routerConfig = null,
+  reasoning = null,
 }) {
   const transportPreference = resolveLmStudioTransportPreference(configData);
   const forceRestTransport = transportPreference.forceRest;
@@ -212,7 +213,10 @@ async function createLmStudioRuntime({
   try {
     const restOverrides = restBaseUrl ? { baseUrl: restBaseUrl } : undefined;
     restClient = new LMStudioRestClient(
-      buildRestClientOptions(configData, modelSelection, restOverrides),
+      buildRestClientOptions(configData, modelSelection, {
+        ...(restOverrides ?? {}),
+        ...(reasoning ? { defaultReasoning: reasoning } : {}),
+      }),
     );
     lmStudioCompatibility = await checkLmStudioCompatibility(restClient, manager, { verbose });
     if (!transportLockedToWs && typeof lmStudioCompatibility?.preferRest === "boolean") {
@@ -255,6 +259,9 @@ async function createLmStudioRuntime({
   if (restClient) {
     if (typeof restClient.setDefaultModel === "function") {
       restClient.setDefaultModel(modelKey, resolvedContextLength);
+    }
+    if (typeof restClient.setDefaultReasoning === "function") {
+      restClient.setDefaultReasoning(reasoning);
     }
     phi4.setRestClient(restClient, { preferRestTransport });
   }

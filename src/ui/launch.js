@@ -29,6 +29,7 @@ import {
  * @param {Array<object>} [options.modelCatalog] Normalized live LM Studio inventory.
  * @param {string} [options.modelCatalogSource] Inventory route used for discovery.
  * @param {string} [options.requestedModel] Config/CLI model request (`auto` or an id).
+ * @param {string} [options.reasoningProfile] Initial reasoning profile.
  * @returns {Promise<object>} the finished session result.
  */
 export async function launchAgentUi(options = undefined) {
@@ -48,6 +49,7 @@ export async function launchAgentUi(options = undefined) {
     modelCatalog = [],
     modelCatalogSource = null,
     requestedModel = "auto",
+    reasoningProfile = "high",
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
@@ -97,6 +99,7 @@ export async function launchAgentUi(options = undefined) {
       benchmarkIndex=${benchmarkIndex}
       runEasyBenchmark=${(onProgress) =>
         benchmarkRunner.run({ onProgress })}
+      initialReasoningProfile=${reasoningProfile}
     />`,
   );
   await app.waitUntilExit();

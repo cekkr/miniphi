@@ -73,6 +73,11 @@ import { loadFreshModelBenchmarkIndex } from "./libs/model-benchmarks.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import { createCheetahContextEngineFactory } from "./libs/cheetah-context-engine.js";
 import {
+  findCatalogModel,
+  normalizeReasoningProfile,
+  resolveReasoningProfile,
+} from "./libs/reasoning-profile.js";
+import {
   buildLineRangeFromChunk,
   buildTruncationChunkKey,
   computeTruncationProgress,
@@ -1028,6 +1033,11 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
             ? process.env.MINIPHI_MODEL.trim()
             : null;
   const baseOverrides = lmStudioEndpoints?.restBaseUrl ? { baseUrl: lmStudioEndpoints.restBaseUrl } : {};
+  const reasoningProfile = normalizeReasoningProfile(
+    options.reasoning ??
+      configData?.reasoning?.profile ??
+      configData?.defaults?.reasoningProfile,
+  );
 
   let liveCatalog = null;
   try {
@@ -1145,6 +1155,7 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
     modelCatalog: liveCatalog?.models ?? [],
     modelCatalogSource: liveCatalog?.source ?? null,
     requestedModel: requestedModel ?? "auto",
+    reasoningProfile,
   });
 }
 
@@ -1207,6 +1218,18 @@ async function main() {
   }
   const configData = configResult?.data ?? {};
   const configPath = configResult?.path ?? null;
+  let requestedReasoningProfile;
+  try {
+    requestedReasoningProfile = normalizeReasoningProfile(
+      options.reasoning ??
+        configData?.reasoning?.profile ??
+        configData?.defaults?.reasoningProfile,
+    );
+  } catch (error) {
+    console.error(`[MiniPhi] ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+    return;
+  }
   const lmStudioEndpoints = resolveLmStudioEndpoints(configData);
   if (configPath && verbose) {
     const relPath = path.relative(process.cwd(), configPath) || configPath;
@@ -1445,6 +1468,66 @@ async function main() {
     contextIsExplicit: contextLengthExplicit,
   });
   contextLength = modelSelection.contextLength;
+  let reasoningCatalogModel = autoModelInfo?.model ?? null;
+  const commandUsesReasoning =
+    command === "run" ||
+    command === "analyze-file" ||
+    command === "workspace" ||
+    command === "recompose" ||
+    command === "benchmark" ||
+    command === "nitpick";
+  if (!reasoningCatalogModel && commandUsesReasoning) {
+    try {
+      const reasoningInventoryClient = new LMStudioRestClient(
+        buildRestClientOptions(configData, modelSelection, {
+          ...(lmStudioEndpoints?.restBaseUrl
+            ? { baseUrl: lmStudioEndpoints.restBaseUrl }
+            : {}),
+          timeoutMs: 10000,
+        }),
+      );
+      const reasoningCatalog = await fetchModelCatalog({
+        restClient: reasoningInventoryClient,
+      });
+      reasoningCatalogModel = findCatalogModel(
+        reasoningCatalog.models,
+        modelSelection.modelKey,
+      );
+    } catch (error) {
+      if (verbose) {
+        console.warn(
+          `[MiniPhi] Reasoning capability discovery unavailable: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+  const explicitMaxPlanExpansions =
+    parseNumericSetting(options["max-plan-expansions"], "--max-plan-expansions") ??
+    configData.prompt?.decomposer?.maxExpansions;
+  const reasoning = resolveReasoningProfile({
+    profile: requestedReasoningProfile,
+    source:
+      typeof options.reasoning === "string"
+        ? "cli"
+        : configData?.reasoning?.profile || configData?.defaults?.reasoningProfile
+          ? "config"
+          : "default",
+    model: reasoningCatalogModel,
+    maxExpansions: explicitMaxPlanExpansions,
+    maxDepth: configData.prompt?.decomposer?.maxDepth,
+    expandSubprompts:
+      options["no-plan-expansion"] ||
+      configData.prompt?.decomposer?.expandSubprompts === false
+        ? false
+        : undefined,
+  });
+  if (verbose) {
+    console.log(
+      `[MiniPhi] Reasoning ${reasoning.profile}: ${reasoning.agent.maxExpansions} branch expansion(s), depth ${reasoning.agent.maxDepth}; model effort ${reasoning.model.resolved ?? "unsupported"}.`,
+    );
+  }
   const resolvedSystemPrompt = promptDefaults.system ?? modelSelection.systemPrompt ?? undefined;
     if (verbose) {
       const modelLabel = modelSelection.preset?.label ?? modelSelection.modelKey;
@@ -1795,6 +1878,7 @@ async function main() {
       restBaseUrl: resolvedLmStudioBaseUrl,
       wsBaseUrl: resolvedLmStudioWsBase,
       routerConfig,
+      reasoning,
     });
   if (
     Number.isFinite(lmStudioRuntime?.resolvedContextLength) &&
@@ -2398,16 +2482,15 @@ async function main() {
     new PromptDecomposer({
       restClient,
       logger: verbose ? (message) => console.warn(message) : null,
-      maxDepth: configData.prompt?.decomposer?.maxDepth,
       maxActions: configData.prompt?.decomposer?.maxActions,
       timeoutMs: decomposerTimeoutMs,
       schemaRegistry,
-      expandSubprompts:
-        !options["no-plan-expansion"] &&
-        configData.prompt?.decomposer?.expandSubprompts !== false,
-      maxExpansions:
-        parseNumericSetting(options["max-plan-expansions"], "--max-plan-expansions") ??
-        configData.prompt?.decomposer?.maxExpansions,
+      expandSubprompts: reasoning.agent.expandSubprompts,
+      maxExpansions: reasoning.agent.maxExpansions,
+      maxDepth: reasoning.agent.maxDepth,
+      expansionMaxTokens: reasoning.agent.expansionMaxTokens,
+      expansionTimeBudgetMs: reasoning.agent.expansionTimeBudgetMs,
+      reasoning,
     });
   const emitDecomposerNoticeIfNeeded = () => {
     if (promptDecomposer && typeof promptDecomposer.consumeDisableNotice === "function") {
@@ -2433,6 +2516,7 @@ async function main() {
   const archiveMetadata = {
     promptId,
     model: modelSelection.modelKey,
+    reasoning,
     contextLength,
   };
     let resourceMonitor;
@@ -3043,6 +3127,7 @@ Options:
   --summary-levels <n>         Depth for recursive summarization (default: 3)
   --context-length <tokens>    Override model context length (default: model preset)
   --model <id|auto>            LM Studio model key or alias; "auto" picks the best installed model for the task
+  --reasoning <level>          Reasoning profile: off, low, medium, or high (default: high)
   --headless, --no-ui          Skip the interactive UI; run the classic non-interactive pipeline (implied when stdout is not a TTY)
   --no-plan-expansion          Disable recursive plan-branch expansion prompts
   --max-plan-expansions <n>    Cap follow-up branch expansion prompts per plan (default: 4)

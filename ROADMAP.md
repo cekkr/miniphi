@@ -355,7 +355,7 @@ Ordered slices:
      UI show the same normalized inventory; a real UI run selects/loads a model, completes a
      schema-valid edit, and records the model instance and route without leaking loaded instances.
 
-2) Multi-level reasoning profile (default `high`)
+2) Multi-level reasoning profile (default `high`) — **IMPLEMENTED 2026-07-26**
    - Add one normalized profile to config, direct CLI flows, and the interactive UI:
      `off|low|medium|high`, defaulting to `high`. Explicit low-level overrides such as
      `--max-plan-expansions` remain authoritative and are recorded beside the resolved profile.
@@ -375,6 +375,22 @@ Ordered slices:
    - Exit proof: the same deterministic task runs at low/medium/high, produces monotonically
      increasing allowed subprompt budgets, and records the resolved model/decomposer settings;
      live runs cover one effort-capable and one effort-incapable model with no schema regression.
+   - Landed: shared profile resolution, inventory-aware exact/on-off model effort mapping,
+     strict-schema REST injection with one setting-specific fallback and per-model support cache,
+     `0/1/2/4` decomposer expansion budgets plus depth/token/time caps, CLI/config wiring,
+     prompt/session/result instrumentation, and a terminal reasoning picker after model selection.
+     Deterministic regression coverage proves monotonic budgets, override precedence, supported
+     and unsupported models, strict `response_format=json_schema` retention, bounded REST fallback,
+     ignored-`off` detection, and the complete UI selection path.
+   - Live proof (`http://192.168.1.5:1234`): a temporarily loaded
+     `qwen2.5-coder-7b-instruct` advertised no adjustable effort, therefore received no model
+     parameter while retaining the `high` four-subprompt agent budget, returned schema-valid JSON,
+     and was unloaded by exact instance id. Loaded `glm-4.7-flash` advertised `off|on`, but the
+     compatible endpoint ignored `reasoning=off`; MiniPhi detected 512 returned reasoning tokens,
+     marked the setting ignored/unsupported, and cached that result instead of falsely reporting
+     successful model-side control. A future server/model combination that honors effort on the
+     strict-schema endpoint is still needed to close the positive model-effort half of the live exit
+     proof.
 
 3) Hardware-aware LM Studio model benchmark + cache — **IN PROGRESS
    (Easy core + selector/UI integration landed 2026-07-26)**

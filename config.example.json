@@ -25,6 +25,9 @@
     "timeoutSeconds": 600,
     "noTokenTimeoutSeconds": 600
   },
+  "reasoning": {
+    "profile": "high"
+  },
   "defaults": {
     "task": "Provide a precise technical analysis of the captured output.",
     "model": "mistralai/devstral-small-2-2512",

@@ -61,6 +61,11 @@ test("App drives prompt -> running -> approve modal -> done and applies the edit
 
       // Prompt phase is focused with the initial task; Enter starts the run.
       app.stdin.write("\r");
+      const sawReasoning = await waitFor(() =>
+        /Choose reasoning effort/.test(app.lastFrame() ?? ""),
+      );
+      assert.equal(sawReasoning, true);
+      app.stdin.write("\r");
 
       const sawModal = await waitFor(() => /Permission required/.test(app.lastFrame() ?? ""));
       assert.equal(sawModal, true, "permission modal should appear for the write");
@@ -165,6 +170,12 @@ test("App resolves UI Auto selection after task entry and sends the concrete mod
       assert.equal(sawPicker, true);
 
       app.stdin.write("\r");
+      const sawReasoning = await waitFor(() =>
+        /Choose reasoning effort/.test(app.lastFrame() ?? ""),
+      );
+      assert.equal(sawReasoning, true);
+      assert.match(app.lastFrame(), /Model effort unsupported/);
+      app.stdin.write("\r");
       const sawDone = await waitFor(() => /completed/.test(app.lastFrame() ?? ""));
       assert.equal(sawDone, true);
       assert.equal(requests[0].model, "qwen-coder-7b");
@@ -173,6 +184,8 @@ test("App resolves UI Auto selection after task entry and sends the concrete mod
       assert.equal(session.modelSelection.resolvedModel, "qwen-coder-7b");
       assert.equal(session.modelSelection.benchmark.category, "coding");
       assert.equal(session.modelSelection.benchmark.score, 98);
+      assert.equal(session.reasoning.profile, "high");
+      assert.equal(session.reasoning.agent.maxExpansions, 4);
     } finally {
       app.unmount();
     }

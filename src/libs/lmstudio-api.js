@@ -230,6 +230,7 @@ export class LMStudioRestClient {
    *   apiVersion?: string,
    *   timeoutMs?: number,
    *   defaultModel?: string,
+   *   defaultReasoning?: object | null,
    *   apiToken?: string,
    *   fetchImpl?: typeof fetch
    * }} [options]
@@ -262,6 +263,11 @@ export class LMStudioRestClient {
     this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
     this.executionRegister = options?.executionRegister ?? null;
     this.executionContext = options?.executionContext ?? null;
+    this.defaultReasoning =
+      options?.defaultReasoning && typeof options.defaultReasoning === "object"
+        ? { ...options.defaultReasoning }
+        : null;
+    this.reasoningSupport = new Map();
 
     if (!this.fetchImpl) {
       throw new Error(
@@ -431,7 +437,67 @@ export class LMStudioRestClient {
         delete body.context_length;
       }
     }
-    return this._post("/chat/completions", body, timeoutMs);
+    const model = body.model ?? this.defaultModel;
+    const explicitReasoning =
+      Object.prototype.hasOwnProperty.call(restPayload, "reasoning")
+        ? restPayload.reasoning
+        : undefined;
+    const configuredEffort =
+      explicitReasoning ??
+      (this.reasoningSupport.get(model) === false
+        ? null
+        : this.defaultReasoning?.model?.resolved ?? this.defaultReasoning?.resolved ?? null);
+    const reasoningMetadata = {
+      profile: this.defaultReasoning?.profile ?? null,
+      requested:
+        explicitReasoning ??
+        this.defaultReasoning?.model?.requested ??
+        this.defaultReasoning?.requested ??
+        null,
+      sent: configuredEffort,
+      supported: configuredEffort
+        ? true
+        : this.defaultReasoning?.model?.supported === false
+          ? false
+          : this.reasoningSupport.has(model)
+            ? this.reasoningSupport.get(model)
+            : null,
+      fallback: false,
+      ignored: false,
+      error: null,
+    };
+    if (configuredEffort) {
+      body.reasoning = configuredEffort;
+    }
+    try {
+      const completion = await this._post("/chat/completions", body, timeoutMs);
+      const reasoningTokens = Number(
+        completion?.usage?.completion_tokens_details?.reasoning_tokens ??
+          completion?.usage?.completionTokensDetails?.reasoningTokens,
+      );
+      if (configuredEffort === "off" && Number.isFinite(reasoningTokens) && reasoningTokens > 0) {
+        reasoningMetadata.supported = false;
+        reasoningMetadata.ignored = true;
+        reasoningMetadata.error =
+          `LM Studio returned ${reasoningTokens} reasoning token(s) after reasoning=off`;
+        this.reasoningSupport.set(model, false);
+      } else if (configuredEffort) {
+        this.reasoningSupport.set(model, true);
+      }
+      return this._attachReasoningMetadata(completion, reasoningMetadata);
+    } catch (error) {
+      if (!configuredEffort || !this._isUnsupportedReasoningError(error)) {
+        throw error;
+      }
+      this.reasoningSupport.set(model, false);
+      delete body.reasoning;
+      reasoningMetadata.supported = false;
+      reasoningMetadata.fallback = true;
+      reasoningMetadata.error =
+        error instanceof Error ? error.message : String(error);
+      const completion = await this._post("/chat/completions", body, timeoutMs);
+      return this._attachReasoningMetadata(completion, reasoningMetadata);
+    }
   }
 
   /**
@@ -501,6 +567,45 @@ export class LMStudioRestClient {
     this.defaultModel = model;
     this.hasExplicitContextLength = Number.isFinite(contextLength);
     this.defaultContextLength = contextLength ?? DEFAULT_CONTEXT_LENGTH;
+  }
+
+  /**
+   * Configures the profile resolved from LM Studio's model inventory. The
+   * compatible strict-schema endpoint may still reject the setting, so
+   * createChatCompletion performs one bounded retry and remembers that result.
+   */
+  setDefaultReasoning(reasoning = null) {
+    this.defaultReasoning =
+      reasoning && typeof reasoning === "object" ? { ...reasoning } : null;
+  }
+
+  getReasoningSupport(model = this.defaultModel) {
+    return this.reasoningSupport.has(model)
+      ? this.reasoningSupport.get(model)
+      : null;
+  }
+
+  _isUnsupportedReasoningError(error) {
+    const message = [
+      error instanceof Error ? error.message : String(error ?? ""),
+      typeof error?.body === "string" ? error.body : JSON.stringify(error?.body ?? ""),
+    ].join(" ");
+    return (
+      /\breasoning(?:_effort)?\b/i.test(message) &&
+      /\b(unsupported|unknown|unrecognized|unexpected|invalid|not allowed|extra field|option)\b/i.test(
+        message,
+      )
+    );
+  }
+
+  _attachReasoningMetadata(completion, metadata) {
+    if (!completion || typeof completion !== "object" || Array.isArray(completion)) {
+      return completion;
+    }
+    return {
+      ...completion,
+      miniphi_reasoning: metadata,
+    };
   }
 
   /**

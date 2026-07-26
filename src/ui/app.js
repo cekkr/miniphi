@@ -3,6 +3,7 @@ import { html, Box, Text, useState, useEffect, useRef, useMemo } from "./ink-ele
 import { BRAND } from "./theme.js";
 import FilePicker from "./components/file-picker.js";
 import ModelPicker from "./components/model-picker.js";
+import ReasoningPicker from "./components/reasoning-picker.js";
 import PromptInput from "./components/prompt-input.js";
 import ProgressPane from "./components/progress-pane.js";
 import PermissionModal from "./components/permission-modal.js";
@@ -31,6 +32,7 @@ export default function App({
   requestedModel = "auto",
   benchmarkIndex = null,
   runEasyBenchmark = null,
+  initialReasoningProfile = "high",
 }) {
   const { exit } = useApp();
   const [phase, setPhase] = useState(initialTask ? "prompt" : startPhase);
@@ -44,6 +46,9 @@ export default function App({
   const [benchmarks, setBenchmarks] = useState(benchmarkIndex);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [benchmarkStatus, setBenchmarkStatus] = useState("");
+  const [reasoningModel, setReasoningModel] = useState(
+    modelCatalog.find((entry) => entry?.id === session.model) ?? null,
+  );
   const startedRef = useRef(false);
   const modelSelection = useMemo(
     () =>
@@ -184,7 +189,7 @@ export default function App({
           const trimmed = (value || "").trim();
           if (!trimmed) return;
           setTask(trimmed);
-          setPhase(modelSelection.choices.length ? "model" : "running");
+          setPhase(modelSelection.choices.length ? "model" : "reasoning");
         }}
       />
     </${Box}>`;
@@ -216,9 +221,23 @@ export default function App({
               loadConfig: model.loadedInstances?.[0]?.config ?? null,
             },
           });
+          setReasoningModel(model);
+          setPhase("reasoning");
+        }}
+        onSkip=${() => setPhase("reasoning")}
+      />
+    </${Box}>`;
+  }
+
+  if (phase === "reasoning") {
+    return html`<${Box} flexDirection="column">${header}
+      <${ReasoningPicker}
+        selectedValue=${initialReasoningProfile}
+        model=${reasoningModel}
+        onSubmit=${(reasoning) => {
+          session.configureReasoning(reasoning);
           setPhase("running");
         }}
-        onSkip=${() => setPhase("running")}
       />
     </${Box}>`;
   }
