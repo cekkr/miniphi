@@ -22,6 +22,9 @@ import WebResearcher from "../libs/web-researcher.js";
  * @param {number} [options.contextLength] Loaded LM Studio context window, used to size the context budget.
  * @param {number} [options.contextBudgetTokens] Explicit context-graph budget (wins over contextLength).
  * @param {Function} [options.contextEngineFactory] Optional context-query engine factory.
+ * @param {Array<object>} [options.modelCatalog] Normalized live LM Studio inventory.
+ * @param {string} [options.modelCatalogSource] Inventory route used for discovery.
+ * @param {string} [options.requestedModel] Config/CLI model request (`auto` or an id).
  * @returns {Promise<object>} the finished session result.
  */
 export async function launchAgentUi(options = undefined) {
@@ -38,6 +41,9 @@ export async function launchAgentUi(options = undefined) {
     contextLength = null,
     contextBudgetTokens = null,
     contextEngineFactory = null,
+    modelCatalog = [],
+    modelCatalogSource = null,
+    requestedModel = "auto",
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
@@ -56,6 +62,11 @@ export async function launchAgentUi(options = undefined) {
     contextLength,
     contextBudgetTokens,
     contextEngineFactory,
+    modelSelection: {
+      requested: requestedModel,
+      resolvedModel: model,
+      source: modelCatalogSource,
+    },
   });
   // Wire the UI approver after construction so it can emit on the session.
   session.approver = createUiApprover(session);
@@ -67,6 +78,9 @@ export async function launchAgentUi(options = undefined) {
       files=${files}
       initialTask=${initialTask}
       startPhase=${startPhase}
+      modelCatalog=${modelCatalog}
+      modelCatalogSource=${modelCatalogSource}
+      requestedModel=${requestedModel}
     />`,
   );
   await app.waitUntilExit();

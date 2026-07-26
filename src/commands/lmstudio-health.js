@@ -12,6 +12,17 @@ import {
   isLmStudioStatusEndpointUnsupported,
 } from "../libs/lmstudio-status-utils.js";
 
+async function listModelsForHealth(restClient) {
+  if (typeof restClient?.listModelsNativeV1 === "function") {
+    try {
+      return await restClient.listModelsNativeV1();
+    } catch {
+      // Older servers may not expose native v1; retain the bounded v0 fallback.
+    }
+  }
+  return restClient.listModels();
+}
+
 export async function probeLmStudioHealth({
   configData,
   modelSelection,
@@ -41,14 +52,14 @@ export async function probeLmStudioHealth({
     if (status?.ok === false && isLmStudioStatusEndpointUnsupported(status)) {
       warning = status.error ?? "Status endpoint unsupported";
       try {
-        modelsFallback = await restClient.listModels();
+        modelsFallback = await listModelsForHealth(restClient);
         ok = true;
       } catch (modelError) {
         error = modelError;
       }
     } else if (status?.ok === false) {
       try {
-        modelsFallback = await restClient.listModels();
+        modelsFallback = await listModelsForHealth(restClient);
         ok = true;
         warning = status?.error ?? "Status endpoint unavailable; /models succeeded.";
       } catch (modelError) {

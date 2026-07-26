@@ -16,6 +16,13 @@ function buildRestClientOptions(configData, modelSelection = undefined, override
   if (candidateBase) {
     options.baseUrl = normalizeLmStudioHttpUrl(candidateBase);
   }
+  if (
+    typeof options.apiToken === "undefined" &&
+    typeof configData?.lmStudio?.apiToken === "string" &&
+    configData.lmStudio.apiToken.trim()
+  ) {
+    options.apiToken = configData.lmStudio.apiToken.trim();
+  }
   if (typeof options.timeoutMs === "undefined") {
     const promptTimeoutSeconds =
       configData?.lmStudio?.prompt?.timeoutSeconds ??

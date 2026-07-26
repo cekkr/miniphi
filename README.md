@@ -54,6 +54,10 @@ Optional:
 1. **Start LM Studio**
    - Download a model.
    - Enable the local server (usually `http://127.0.0.1:1234`).
+   - MiniPhi scans the current native
+     [LM Studio REST API](https://lmstudio.ai/docs/developer/rest) model inventory. If the server
+     requires authentication, set `LMSTUDIO_API_TOKEN` (tokens are redacted from MiniPhi's
+     request instrumentation).
 
 2. **Run miniPhi inside your project**
    ```bash
@@ -63,6 +67,9 @@ Optional:
    Running `miniphi` with no arguments opens the **interactive agent UI** (the primary interface). You:
    - **pick the files** to put in scope (fuzzy filter, Space to toggle, Enter to confirm — or Esc to skip),
    - **describe the task** in a prompt box,
+   - **choose the model** after the task is known: `Auto` ranks the live LM Studio inventory for
+     that task, or select an exact installed model; loaded state, context, and capabilities are
+     shown before the run,
    - **watch progress in real time** as the agent reads/searches the repo, optionally researches library choices, and plans,
    - **approve each change**: proposed file writes/edits show a diff and wait for you (`y` once · `a` for the session · `n` reject), and edits are applied through a guarded writer with rollback.
 
@@ -287,7 +294,10 @@ These are the commands most people start with:
 - `miniphi lmstudio-health`  
   Fast REST probe with stop reasons stored under `.miniphi/health/`.
 - `miniphi models [--task "<objective>"] [--json]`  
-  List the models installed in LM Studio ranked for the task; pass `--model auto` to any command to let MiniPhi pick the best installed model automatically.
+  List models from native `/api/v1/models`, normalized with quantization, capabilities, loaded
+  instances/context, and task ranking. Pass `--model auto` to let MiniPhi choose automatically.
+  Lifecycle changes are explicit: `--load <model-id> [--context-length <tokens>]` loads one model,
+  while `--unload <instance-id>` unloads only that exact instance.
 - `miniphi web-browse --url "<https://example.com>"`  
   Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
 - `miniphi nitpick --task "<long-form writing task>"`  

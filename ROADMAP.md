@@ -56,9 +56,9 @@ Known gaps (drive the slices below):
   run/workspace analyzer flow still has no `edit_file` action (live proof pending for both).
 - `model-presets.js` defaults drift from installed models (default preset model is not even
   installed on the reference host); auto-selection exists but is opt-in.
-- Models are JIT-loaded at the server default context (8192–16384 on the reference hosts); MiniPhi
-  now *sizes its prompts* to that window (slice 5) but still cannot *choose* it
-  (LM Studio `/api/v1/models/load` exists for this — v0.2).
+- Normal agent runs still JIT-load at the server default context (8192–16384 on the reference
+  hosts); MiniPhi now *sizes its prompts* to that window (slice 5), and explicit native-v1
+  load/unload is available under `models`, but task-aware automatic loading/restoration is not.
 - The layered context graph is wired into the interactive agent only; the headless
   `workspace`/`run`/`analyze-file` flows still assemble ad-hoc prompt blocks.
 - "Idle vs stall" is indistinguishable to the operator: when nothing is computing, a static
@@ -299,23 +299,54 @@ Exit criteria:
 
 Ordered slices:
 
-1) Current LM Studio REST adapter + model selection in CLI/UI
-   - Replace the older API assumptions and scattered endpoint notes with the official REST
-     reference above as the source of truth. Add a versioned adapter for `GET /api/v1/models`,
+1) Current LM Studio REST adapter + model selection in CLI/UI — **IN PROGRESS
+   (v1 discovery/UI choice + explicit lifecycle landed 2026-07-26)**
+   - Landed:
+     - `LMStudioRestClient` implements authenticated native `GET /api/v1/models`,
+       `POST /api/v1/models/load`, and `POST /api/v1/models/unload`; authorization headers are
+       redacted from execution instrumentation and legacy/OpenAI-compatible fallbacks stay
+       bounded.
+     - `model-catalog.js` normalizes the observed v1 contract (`key`, structured quantization and
+       capabilities including reasoning options, variants, loaded instances/config/TTL, loaded
+       and maximum context). `models` ranks this inventory and exposes explicit
+       `--load <model> [--context-length <n>]` / `--unload <instance-id>` lifecycle actions.
+     - The interactive UI now asks for the task before showing `Auto` plus manual model choices;
+       loaded state, context, capabilities, score reasons, resolved model, instance/load snapshot,
+       and inventory source flow into `AgentSession` persistence. Headless behavior is unchanged.
+     - Offline regressions cover v1 normalization/preference/fallback, exact lifecycle request
+       bodies, auth redaction, task-aware UI ranking/picker behavior, and the concrete selected
+       model sent by the agent. Live validation against `192.168.1.5:1234` discovered 13 models
+       (12 chat-capable), correctly identified the loaded 16k-context instance, passed `models`
+       plus `lmstudio-health`, then temporarily loaded Qwen 2.5 Coder at 4k, received
+       schema-valid JSON through the compatible inference route, and unloaded exactly the returned
+       instance; a final inventory check confirmed the operator's original GLM instance was the
+       only model left loaded.
+   - Remaining before close:
+     - Task-aware automatic load configuration with memory estimation and best-effort restoration
+       of pre-existing loaded state; the current lifecycle path is deliberately explicit only.
+     - Persist a full bounded inventory snapshot per run (the selected model/load snapshot is
+       persisted today) and surface benchmark freshness after the benchmark slice exists.
+     - Prove a real interactive guarded edit after choosing a model from the new picker, plus the
+       current/fallback server fixture pair described by the exit proof.
+   - Target contract: replace the remaining older API assumptions and scattered endpoint notes
+     with the official REST reference above as the source of truth. Add a versioned adapter for
+     `GET /api/v1/models`,
      `POST /api/v1/models/load`, `POST /api/v1/models/unload`, and the relevant inference
      endpoint(s), retaining bounded `/api/v0`/OpenAI-compatible fallback only for detected older
      servers or features not yet available on native v1.
-   - Normalize model key/type, quantization, size, maximum context, loaded instances and their
-     actual context/load configuration, and advertised capabilities such as vision and tool use.
+   - Catalog contract (landed): normalize model key/type, quantization, size, maximum context,
+     loaded instances and their actual context/load configuration, and advertised capabilities
+     such as vision and tool use.
      Embedding and other non-chat models stay visible but are never ranked as chat candidates.
-   - Make model scanning useful: `--model auto` and `defaults.model: "auto"` rank the live v1
-     inventory; the interactive UI adds an `Auto`/manual model option showing loaded state,
-     context, capabilities, memory fit, and benchmark freshness before a run. Persist the selected
-     model, instance/load configuration, selection reason, inventory snapshot, and fallback route
-     in the session result.
-   - Adopt deliberate load/unload with task-appropriate context and memory checks. Never unload an
-     operator-loaded instance implicitly: lifecycle-changing benchmark/orchestration runs must be
-     explicitly enabled and restore the prior loaded-model state on a best-effort basis.
+   - Selection contract (partially landed): `--model auto` and `defaults.model: "auto"` rank the
+     live v1 inventory; the interactive UI adds an `Auto`/manual model option showing loaded
+     state, context, capabilities, memory fit, and benchmark freshness before a run. Persist the
+     selected model, instance/load configuration, selection reason, inventory snapshot, and
+     fallback route in the session result.
+   - Lifecycle target: adopt deliberate load/unload with task-appropriate context and memory
+     checks. Never unload an operator-loaded instance implicitly: lifecycle-changing
+     benchmark/orchestration runs must be explicitly enabled and restore the prior loaded-model
+     state on a best-effort basis.
    - Keep JSON-first behavior as the gate: do not move a prompt to `/api/v1/chat` (or any other
      route) unless that exact server/endpoint/model combination accepts
      `response_format=json_schema` and returns schema-valid JSON. Otherwise keep schema-bound

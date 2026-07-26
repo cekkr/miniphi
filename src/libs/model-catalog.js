@@ -6,8 +6,96 @@ const CODING_ID_PATTERN = /coder|devstral|codestral|starcoder|code-?llama|deepse
 const REASONING_ID_PATTERN = /reasoning|phi-?4|(?:^|[-/])r1(?:$|[-.])|qwq|think/i;
 const MOE_ACTIVE_PATTERN = /(\d+(?:\.\d+)?)b-a(\d+(?:\.\d+)?)b/i;
 const PARAM_COUNT_PATTERN = /(\d+(?:\.\d+)?)\s*b(?:$|[-._ ])/i;
+const EMBEDDING_TYPES = new Set(["embedding", "embeddings"]);
 // Rough GGUF Q4 footprint: weights (~0.62 GB/B) plus KV-cache/runtime headroom.
 const GB_PER_BILLION_PARAMS_Q4 = 0.75;
+
+function normalizeLoadConfig(rawConfig) {
+  if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(rawConfig).filter(([, value]) => {
+      if (
+        value === null ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        return true;
+      }
+      // Keep short scalar runtime identifiers/settings, but exclude nested
+      // prompt templates and other unbounded server configuration blobs.
+      return typeof value === "string" && value.length <= 256;
+    }),
+  );
+}
+
+function normalizeLoadedInstances(entry) {
+  if (!Array.isArray(entry?.loaded_instances)) {
+    return [];
+  }
+  return entry.loaded_instances
+    .filter((instance) => instance && typeof instance === "object")
+    .map((instance) => {
+      const config = normalizeLoadConfig(instance.config);
+      const contextLength = Number(config.context_length);
+      return {
+        id:
+          typeof instance.id === "string" && instance.id.trim()
+            ? instance.id.trim()
+            : null,
+        contextLength:
+          Number.isFinite(contextLength) && contextLength > 0
+            ? contextLength
+            : null,
+        config,
+        remainingTtlSeconds: Number.isFinite(Number(instance.remaining_ttl_seconds))
+          ? Number(instance.remaining_ttl_seconds)
+          : null,
+      };
+    });
+}
+
+function normalizeCapabilities(entry) {
+  const raw = entry?.capabilities;
+  const legacy = Array.isArray(raw)
+    ? raw.filter((capability) => typeof capability === "string")
+    : [];
+  const details = raw && !Array.isArray(raw) && typeof raw === "object" ? raw : {};
+  const reasoning =
+    details.reasoning && typeof details.reasoning === "object"
+      ? {
+          allowedOptions: Array.isArray(details.reasoning.allowed_options)
+            ? details.reasoning.allowed_options.filter(
+                (option) => typeof option === "string" && option.trim(),
+              )
+            : [],
+          default:
+            typeof details.reasoning.default === "string"
+              ? details.reasoning.default
+              : null,
+        }
+      : null;
+  const capabilities = new Set(legacy);
+  if (details.vision === true) {
+    capabilities.add("vision");
+  }
+  if (details.trained_for_tool_use === true) {
+    capabilities.add("tool_use");
+  }
+  if (reasoning) {
+    capabilities.add("reasoning");
+  }
+  return {
+    capabilities: [...capabilities],
+    capabilityDetails: {
+      vision: details.vision === true || capabilities.has("vision"),
+      trainedForToolUse:
+        details.trained_for_tool_use === true || capabilities.has("tool_use"),
+      reasoning,
+    },
+  };
+}
 
 /**
  * Normalizes one raw model entry from /api/v0/models, /api/v1/models, or the
@@ -17,27 +105,83 @@ export function normalizeCatalogEntry(entry) {
   if (!entry || typeof entry !== "object") {
     return null;
   }
-  const id = typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : null;
+  const idCandidate = entry.id ?? entry.key;
+  const id =
+    typeof idCandidate === "string" && idCandidate.trim()
+      ? idCandidate.trim()
+      : null;
   if (!id) {
     return null;
   }
-  const capabilities = Array.isArray(entry.capabilities)
-    ? entry.capabilities.filter((cap) => typeof cap === "string")
-    : [];
+  const type =
+    typeof entry.type === "string" && entry.type.trim()
+      ? entry.type.trim().toLowerCase()
+      : "llm";
+  const loadedInstances = normalizeLoadedInstances(entry);
+  const loadedWindows = loadedInstances
+    .map((instance) => instance.contextLength)
+    .filter((value) => Number.isFinite(value) && value > 0);
   const maxContext = Number(entry.max_context_length ?? entry.loaded_context_length);
   // The *loaded* window is the real prompt limit for a JIT-loaded model; the
   // maximum only says what the model could do if it were loaded larger.
-  const loadedContext = Number(entry.loaded_context_length);
+  // When several instances share a model key, use the smallest loaded window
+  // so an ambiguous request cannot be budgeted above one live instance.
+  const loadedContext = Number(
+    entry.loaded_context_length ??
+      (loadedWindows.length ? Math.min(...loadedWindows) : null),
+  );
+  const rawQuantization = entry.quantization;
+  const quantization =
+    typeof rawQuantization === "string"
+      ? rawQuantization
+      : typeof rawQuantization?.name === "string"
+        ? rawQuantization.name
+        : null;
+  const { capabilities, capabilityDetails } = normalizeCapabilities(entry);
+  const state =
+    loadedInstances.length > 0
+      ? "loaded"
+      : Array.isArray(entry.loaded_instances)
+        ? "not-loaded"
+        : typeof entry.state === "string"
+          ? entry.state
+          : "unknown";
   return {
     id,
-    type: typeof entry.type === "string" ? entry.type : "llm",
+    type,
+    displayName:
+      typeof entry.display_name === "string" ? entry.display_name : id,
     publisher: typeof entry.publisher === "string" ? entry.publisher : null,
-    arch: typeof entry.arch === "string" ? entry.arch : null,
-    quantization: typeof entry.quantization === "string" ? entry.quantization : null,
-    state: typeof entry.state === "string" ? entry.state : "unknown",
+    arch:
+      typeof entry.arch === "string"
+        ? entry.arch
+        : typeof entry.architecture === "string"
+          ? entry.architecture
+          : null,
+    quantization,
+    quantizationBits: Number.isFinite(Number(rawQuantization?.bits_per_weight))
+      ? Number(rawQuantization.bits_per_weight)
+      : null,
+    sizeBytes: Number.isFinite(Number(entry.size_bytes))
+      ? Number(entry.size_bytes)
+      : null,
+    paramsString:
+      typeof entry.params_string === "string" ? entry.params_string : null,
+    format: typeof entry.format === "string" ? entry.format : null,
+    state,
     maxContextLength: Number.isFinite(maxContext) && maxContext > 0 ? maxContext : null,
     loadedContextLength: Number.isFinite(loadedContext) && loadedContext > 0 ? loadedContext : null,
+    loadedInstanceId: loadedInstances[0]?.id ?? null,
+    loadedInstances,
     capabilities,
+    capabilityDetails,
+    variants: Array.isArray(entry.variants)
+      ? entry.variants.filter((variant) => typeof variant === "string")
+      : [],
+    selectedVariant:
+      typeof entry.selected_variant === "string" ? entry.selected_variant : null,
+    description:
+      typeof entry.description === "string" ? entry.description : null,
   };
 }
 
@@ -56,7 +200,7 @@ export function normalizeModelCatalog(payload, { includeEmbeddings = false } = {
   return rawList
     .map((entry) => normalizeCatalogEntry(entry))
     .filter((model) => model !== null)
-    .filter((model) => includeEmbeddings || model.type !== "embeddings");
+    .filter((model) => includeEmbeddings || !EMBEDDING_TYPES.has(model.type));
 }
 
 /**
@@ -64,15 +208,18 @@ export function normalizeModelCatalog(payload, { includeEmbeddings = false } = {
  * "qwen3-coder-30b-a3b-instruct". For MoE ids ("30b-a3b") both total and
  * active counts are returned; memory sizing uses the total.
  */
-export function estimateModelParams(id) {
-  if (typeof id !== "string") {
+export function estimateModelParams(id, paramsString = null) {
+  const source = [id, paramsString]
+    .filter((value) => typeof value === "string" && value.trim())
+    .join(" ");
+  if (!source) {
     return { totalB: null, activeB: null };
   }
-  const moe = id.match(MOE_ACTIVE_PATTERN);
+  const moe = source.match(MOE_ACTIVE_PATTERN);
   if (moe) {
     return { totalB: Number(moe[1]), activeB: Number(moe[2]) };
   }
-  const plain = id.match(PARAM_COUNT_PATTERN);
+  const plain = source.match(PARAM_COUNT_PATTERN);
   if (plain) {
     const totalB = Number(plain[1]);
     return { totalB, activeB: totalB };
@@ -111,7 +258,7 @@ export function scoreModelForTask(
   { intent = "general", requiredContextLength = null, availableMemoryGb = null } = {},
 ) {
   const reasons = [];
-  if (!model || model.type === "embeddings") {
+  if (!model || EMBEDDING_TYPES.has(model.type)) {
     return { score: -Infinity, reasons: ["not a chat-capable model"] };
   }
   const purpose = classifyModelPurpose(model);
@@ -142,7 +289,7 @@ export function scoreModelForTask(
     reasons.push("supports tool use");
   }
 
-  const params = estimateModelParams(model.id);
+  const params = estimateModelParams(model.id, model.paramsString);
   if (Number.isFinite(params.totalB)) {
     const memoryGb = Number.isFinite(availableMemoryGb)
       ? availableMemoryGb
@@ -194,30 +341,49 @@ export function selectBestModelForTask(models, options = undefined) {
 }
 
 /**
- * Fetches the live model inventory through an LMStudioRestClient, preferring
- * the richer native models endpoint and falling back to the OpenAI-compat
- * /v1/models list when the native route is unavailable.
+ * Fetches the live model inventory through an LMStudioRestClient. Current
+ * native v1 is preferred, then the legacy native v0 route, then the
+ * OpenAI-compatible /v1/models list.
  */
 export async function fetchModelCatalog({ restClient, includeEmbeddings = false } = {}) {
   if (!restClient) {
     throw new Error("restClient is required to fetch the model catalog.");
   }
-  let payload = null;
-  let source = "native";
-  try {
-    payload = await restClient.listModels();
-  } catch (nativeError) {
-    source = "openai-compat";
+  const attempts = [];
+  const routes = [
+    {
+      source: "native-v1",
+      method: "listModelsNativeV1",
+    },
+    {
+      source: "native-v0",
+      method: "listModels",
+    },
+    {
+      source: "openai-compat",
+      method: "listModelsV1",
+    },
+  ];
+  for (const route of routes) {
+    if (typeof restClient[route.method] !== "function") {
+      continue;
+    }
     try {
-      payload = await restClient.listModelsV1();
-    } catch {
-      throw nativeError;
+      const payload = await restClient[route.method]();
+      return {
+        source: route.source,
+        models: normalizeModelCatalog(payload, { includeEmbeddings }),
+        attempts,
+      };
+    } catch (error) {
+      attempts.push({
+        source: route.source,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
-  return {
-    source,
-    models: normalizeModelCatalog(payload, { includeEmbeddings }),
-  };
+  const firstError = attempts[0]?.error ?? "No supported LM Studio model-list route is available.";
+  throw new Error(firstError);
 }
 
 /**
@@ -248,6 +414,8 @@ export async function resolveContextWindow({ restClient, modelId = null } = {}) 
     state: model.state,
     loadedContextLength: model.loadedContextLength,
     maxContextLength: model.maxContextLength,
+    loadedInstanceId: model.loadedInstanceId,
+    loadedInstances: model.loadedInstances,
     // Only the loaded window is a fact. For a not-yet-loaded model LM Studio
     // picks the window at JIT-load time (often far below the maximum), so the
     // maximum must never be used as a prompt budget — callers fall back to the

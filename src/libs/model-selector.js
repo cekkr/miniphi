@@ -17,12 +17,15 @@ const WRITING_KEYWORDS = [
 const RESEARCH_KEYWORDS = ["research", "search", "sources", "citations", "evidence", "browse"];
 const CODING_KEYWORDS = [
   "code",
+  "implement",
   "refactor",
   "bug",
   "fix",
   "function",
   "class",
   "module",
+  "parser",
+  "test",
   "tests",
   "lint",
   "compile",
@@ -144,4 +147,3 @@ export function selectNitpickModels({
     workspaceType: intentInfo.workspaceType ?? null,
   };
 }
-

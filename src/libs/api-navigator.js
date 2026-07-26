@@ -810,7 +810,10 @@ export default class ApiNavigator {
     const runner =
       normalizedLang === "python"
         ? await this._resolvePythonRunner()
-        : { command: "node", args: ["--experimental-default-type=commonjs"], label: "node" };
+        // Helper snapshots use a .cjs extension, which already forces CommonJS
+        // independently of the workspace package type. The old experimental
+        // flag is rejected by current Node releases.
+        : { command: "node", args: [], label: "node" };
     if (!runner?.command) {
       return {
         command: "(python not found)",

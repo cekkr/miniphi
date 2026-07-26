@@ -64,7 +64,11 @@ import {
 import { resolveLmStudioTransportPreference } from "./libs/lmstudio-transport.js";
 import { LMStudioRestClient } from "./libs/lmstudio-api.js";
 import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
-import { resolveAutoModel, resolveContextWindow } from "./libs/model-catalog.js";
+import {
+  fetchModelCatalog,
+  resolveAutoModel,
+  resolveContextWindow,
+} from "./libs/model-catalog.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import { createCheetahContextEngineFactory } from "./libs/cheetah-context-engine.js";
 import {
@@ -1024,6 +1028,25 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
             : null;
   const baseOverrides = lmStudioEndpoints?.restBaseUrl ? { baseUrl: lmStudioEndpoints.restBaseUrl } : {};
 
+  let liveCatalog = null;
+  try {
+    const inventoryClient = new LMStudioRestClient(
+      buildRestClientOptions(configData, undefined, {
+        ...baseOverrides,
+        timeoutMs: 10000,
+      }),
+    );
+    liveCatalog = await fetchModelCatalog({ restClient: inventoryClient });
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        `[MiniPhi] Live model inventory unavailable: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+  }
+
   let autoInfo = null;
   if (requestedModel && requestedModel.toLowerCase() === "auto") {
     try {
@@ -1110,6 +1133,9 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
     contextLength,
     contextBudgetTokens: contextBudgetOverride,
     contextEngineFactory,
+    modelCatalog: liveCatalog?.models ?? [],
+    modelCatalogSource: liveCatalog?.source ?? null,
+    requestedModel: requestedModel ?? "auto",
   });
 }
 
@@ -2958,6 +2984,8 @@ Usage:
   node src/index.js analyze-file --file ./logs/output.log --task "Summarize log"
   node src/index.js lmstudio-health --timeout 10
   node src/index.js models --task "Refactor the parser" [--json]
+  node src/index.js models --load qwen2.5-coder-7b-instruct --context-length 16384
+  node src/index.js models --unload qwen2.5-coder-7b-instruct
   node src/index.js web-research "phi-4 roadmap" --max-results 5
   node src/index.js web-browse --url "https://example.com" --max-chars 4000
   node src/index.js history-notes --label "post benchmark"
@@ -3069,6 +3097,14 @@ LM Studio health:
   --label <text>               Optional label stored with the health snapshot
   --json                       Print a JSON summary for CI-friendly checks
   --no-save                    Do not store the health snapshot under .miniphi/health
+
+LM Studio models:
+  models [--task <text>]       Scan native /api/v1/models and rank chat models for a task
+  --json                       Print normalized inventory, capabilities, load state, and ranking
+  --load <model-id>            Explicitly load one model through /api/v1/models/load
+  --unload <instance-id>       Explicitly unload one exact loaded instance
+  --context-length <tokens>    Optional context length used with --load
+  --timeout <s>                Model inventory/lifecycle REST timeout
 
 Web browse:
   --url <text>                 URL to open (can be repeated or passed as positional)
@@ -3182,4 +3218,3 @@ if (invokedDirectly) {
 }
 
 export { extractImplicitWorkspaceTask, parseDirectFileReferences };
-

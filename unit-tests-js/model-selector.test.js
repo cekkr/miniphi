@@ -9,6 +9,10 @@ import { DEFAULT_MODEL_KEY } from "../src/libs/model-presets.js";
 
 test("classifyTaskIntent detects coding, writing, research, and analysis tasks", () => {
   assert.equal(classifyTaskIntent({ task: "Fix the bug in the parser module" }).intent, "coding");
+  assert.equal(
+    classifyTaskIntent({ task: "Implement and test a JavaScript parser" }).intent,
+    "coding",
+  );
   assert.equal(classifyTaskIntent({ task: "Draft an overview of the release" }).intent, "writing");
   assert.equal(
     classifyTaskIntent({ task: "Research sources and citations for the memo" }).intent,

@@ -18,8 +18,8 @@ function formatContext(maxContextLength) {
   return String(maxContextLength);
 }
 
-function formatParams(id) {
-  const params = estimateModelParams(id);
+function formatParams(model) {
+  const params = estimateModelParams(model.id, model.paramsString);
   if (!Number.isFinite(params.totalB)) {
     return "?";
   }
@@ -29,10 +29,30 @@ function formatParams(id) {
   return `${params.totalB}B`;
 }
 
+function requireStringOption(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} requires a non-empty value.`);
+  }
+  return value.trim();
+}
+
+function parseOptionalContextLength(value) {
+  if (value === undefined || value === null || value === false) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error("--context-length must be a positive integer.");
+  }
+  return parsed;
+}
+
 /**
  * `node src/index.js models [--task "<task>"] [--json]` lists the live LM
  * Studio model inventory and ranks each model for the given task so operators
  * (and `--model auto`) can see which model MiniPhi would pick and why.
+ * Explicit `--load <model>` / `--unload <instance-id>` actions expose the v1
+ * lifecycle without ever unloading another instance implicitly.
  */
 export async function handleModelsCommand({
   options,
@@ -65,6 +85,52 @@ export async function handleModelsCommand({
         ? positionals.join(" ").trim()
         : null;
   const jsonOutput = Boolean(options.json);
+  let lifecycle = null;
+
+  try {
+    if (options.load && options.unload) {
+      throw new Error("--load and --unload are mutually exclusive.");
+    }
+    if (options.load) {
+      const model = requireStringOption(options.load, "--load");
+      const contextLength = parseOptionalContextLength(options["context-length"]);
+      const response = await restClient.loadModelV1({
+        model,
+        ...(contextLength ? { context_length: contextLength } : {}),
+        echo_load_config: true,
+      });
+      lifecycle = {
+        action: "load",
+        target: model,
+        response,
+      };
+    } else if (options.unload) {
+      const instanceId = requireStringOption(options.unload, "--unload");
+      const response = await restClient.unloadModelV1({
+        instance_id: instanceId,
+      });
+      lifecycle = {
+        action: "unload",
+        target: instanceId,
+        response,
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify(
+          { ok: false, base_url: restClient.baseUrl ?? null, error: message, models: [] },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(`[MiniPhi][Models] Lifecycle action failed: ${message}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
 
   let catalog;
   try {
@@ -93,6 +159,7 @@ export async function handleModelsCommand({
           task: taskText,
           intent,
           recommended: ranked[0]?.model.id ?? null,
+          lifecycle,
           models: ranked.map(({ model, score, reasons }) => ({
             ...model,
             score: Number(score.toFixed(2)),
@@ -109,13 +176,24 @@ export async function handleModelsCommand({
   console.log(
     `[MiniPhi][Models] ${ranked.length} chat-capable models at ${restClient.baseUrl} (intent: ${intent}${taskText ? ` for "${taskText}"` : ""})`,
   );
+  if (lifecycle) {
+    console.log(
+      `[MiniPhi][Models] ${lifecycle.action === "load" ? "Loaded model" : "Unloaded instance"} ${lifecycle.target}`,
+    );
+  }
   ranked.forEach(({ model, score, reasons }, index) => {
     const marker = index === 0 ? "*" : " ";
     const bits = [
       `ctx=${formatContext(model.maxContextLength)}`,
-      `params=${formatParams(model.id)}`,
+      `params=${formatParams(model)}`,
       model.quantization ? `quant=${model.quantization}` : null,
       `state=${model.state}`,
+      model.loadedContextLength
+        ? `loaded-ctx=${formatContext(model.loadedContextLength)}`
+        : null,
+      model.capabilities.length
+        ? `caps=${model.capabilities.join(",")}`
+        : null,
       `score=${score.toFixed(1)}`,
     ].filter(Boolean);
     console.log(` ${marker} ${model.id} (${bits.join(" | ")})`);

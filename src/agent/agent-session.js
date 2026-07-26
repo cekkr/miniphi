@@ -87,6 +87,10 @@ export default class AgentSession extends EventEmitter {
         : DEFAULT_MAX_ACTIONS_PER_TURN;
     this.temperature = Number.isFinite(options?.temperature) ? options.temperature : DEFAULT_TEMPERATURE;
     this.model = typeof options?.model === "string" && options.model.trim() ? options.model.trim() : null;
+    this.modelSelection =
+      options?.modelSelection && typeof options.modelSelection === "object"
+        ? { ...options.modelSelection }
+        : null;
     this.sessionDeadline = Number.isFinite(options?.sessionDeadline) ? options.sessionDeadline : null;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
     this.contextEngine =
@@ -104,7 +108,9 @@ export default class AgentSession extends EventEmitter {
     this.contextLength = Number.isFinite(options?.contextLength) && options.contextLength > 0
       ? Math.floor(options.contextLength)
       : null;
-    this.contextBudgetTokens = Number.isFinite(options?.contextBudgetTokens) && options.contextBudgetTokens > 0
+    this._hasExplicitContextBudget =
+      Number.isFinite(options?.contextBudgetTokens) && options.contextBudgetTokens > 0;
+    this.contextBudgetTokens = this._hasExplicitContextBudget
       ? Math.floor(options.contextBudgetTokens)
       : deriveContextBudget({
           contextLength: this.contextLength,
@@ -146,6 +152,42 @@ export default class AgentSession extends EventEmitter {
 
   cancel() {
     this.cancelled = true;
+  }
+
+  /**
+   * Selects the model before the first turn. The UI uses this after the
+   * operator chooses Auto/manual from the live catalog. Once context exists,
+   * changing models would invalidate prompt-budget assumptions and is rejected.
+   */
+  configureModel({ model, contextLength = null, selection = null } = {}) {
+    if (this.context.nodes.size > 0) {
+      throw new Error("The session model cannot change after the task has started.");
+    }
+    if (typeof model !== "string" || !model.trim()) {
+      throw new Error("model is required to configure an agent session.");
+    }
+    this.model = model.trim();
+    this.modelSelection =
+      selection && typeof selection === "object"
+        ? { ...selection, resolvedModel: this.model }
+        : { requested: this.model, resolvedModel: this.model };
+    this.contextLength =
+      Number.isFinite(contextLength) && contextLength > 0
+        ? Math.floor(contextLength)
+        : null;
+    if (!this._hasExplicitContextBudget) {
+      this.contextBudgetTokens = deriveContextBudget({
+        contextLength: this.contextLength,
+        reservedTokens: this._estimateFixedPromptTokens(),
+      });
+      this.context.budgetTokens = this.contextBudgetTokens;
+    }
+    return {
+      model: this.model,
+      contextLength: this.contextLength,
+      contextBudgetTokens: this.contextBudgetTokens,
+      selection: this.modelSelection,
+    };
   }
 
   /** Resolve a pending UI permission request (delegates to the UI approver). */
@@ -920,6 +962,8 @@ export default class AgentSession extends EventEmitter {
       task,
       cwd: this.cwd,
       selectedFiles,
+      model: this.model,
+      modelSelection: this.modelSelection,
       startedAt: new Date().toISOString(),
     });
     for (const query of this.initialResearchQueries) {
@@ -1193,6 +1237,10 @@ export default class AgentSession extends EventEmitter {
       turns: Math.min(turn, this.maxTurns),
       edits: this.appliedEdits,
       validation: this._lastValidation,
+      model: {
+        id: this.model,
+        selection: this.modelSelection,
+      },
       context: {
         ...this.context.stats(),
         contextLength: this.contextLength,

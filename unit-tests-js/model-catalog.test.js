@@ -75,6 +75,60 @@ const NATIVE_MODELS_PAYLOAD = {
   ],
 };
 
+const NATIVE_V1_MODELS_PAYLOAD = {
+  models: [
+    {
+      type: "llm",
+      publisher: "Generals",
+      key: "glm-4.7-flash",
+      display_name: "GLM 4.7 Flash",
+      architecture: "deepseek2",
+      quantization: {
+        name: "Q4_K_M",
+        bits_per_weight: 4,
+      },
+      size_bytes: 18132721120,
+      params_string: "30B",
+      loaded_instances: [
+        {
+          id: "glm-4.7-flash",
+          config: {
+            context_length: 16384,
+            flash_attention: false,
+            num_experts: 4,
+            prompt_template: {
+              type: "jinja",
+              template: "x".repeat(1000),
+            },
+          },
+          remaining_ttl_seconds: 2100,
+        },
+      ],
+      max_context_length: 202752,
+      format: "gguf",
+      capabilities: {
+        vision: false,
+        trained_for_tool_use: true,
+        reasoning: {
+          allowed_options: ["off", "on"],
+          default: "on",
+        },
+      },
+    },
+    {
+      type: "embedding",
+      publisher: "nomic-ai",
+      key: "text-embedding-nomic",
+      loaded_instances: [],
+      max_context_length: 2048,
+      quantization: {
+        name: "Q4_K_M",
+        bits_per_weight: 4,
+      },
+    },
+  ],
+};
+
 const SCORE_OPTS = { availableMemoryGb: 64 };
 
 test("normalizeModelCatalog keeps chat models and drops embeddings", () => {
@@ -95,6 +149,28 @@ test("normalizeModelCatalog tolerates OpenAI-compat lists with minimal fields", 
   assert.equal(models[0].state, "unknown");
 });
 
+test("normalizeModelCatalog preserves native v1 identity, load config, and capabilities", () => {
+  const models = normalizeModelCatalog(NATIVE_V1_MODELS_PAYLOAD);
+  assert.equal(models.length, 1);
+  const model = models[0];
+  assert.equal(model.id, "glm-4.7-flash");
+  assert.equal(model.displayName, "GLM 4.7 Flash");
+  assert.equal(model.arch, "deepseek2");
+  assert.equal(model.quantization, "Q4_K_M");
+  assert.equal(model.quantizationBits, 4);
+  assert.equal(model.sizeBytes, 18132721120);
+  assert.equal(model.state, "loaded");
+  assert.equal(model.loadedContextLength, 16384);
+  assert.equal(model.loadedInstanceId, "glm-4.7-flash");
+  assert.equal(model.loadedInstances[0].config.num_experts, 4);
+  assert.equal(model.loadedInstances[0].config.prompt_template, undefined);
+  assert.deepEqual(model.capabilities, ["tool_use", "reasoning"]);
+  assert.deepEqual(model.capabilityDetails.reasoning, {
+    allowedOptions: ["off", "on"],
+    default: "on",
+  });
+});
+
 test("estimateModelParams parses plain and MoE parameter counts", () => {
   assert.deepEqual(estimateModelParams("qwen3-coder-30b-a3b-instruct"), {
     totalB: 30,
@@ -103,6 +179,10 @@ test("estimateModelParams parses plain and MoE parameter counts", () => {
   assert.deepEqual(estimateModelParams("qwen2.5-coder-7b-instruct"), { totalB: 7, activeB: 7 });
   assert.deepEqual(estimateModelParams("gpt-oss-20b"), { totalB: 20, activeB: 20 });
   assert.deepEqual(estimateModelParams("glm-4.7-flash"), { totalB: null, activeB: null });
+  assert.deepEqual(estimateModelParams("glm-4.7-flash", "30B"), {
+    totalB: 30,
+    activeB: 30,
+  });
 });
 
 test("classifyModelPurpose recognizes coding and reasoning families", () => {
@@ -181,6 +261,28 @@ test("fetchModelCatalog falls back to the OpenAI-compat list", async () => {
   assert.equal(catalog.source, "openai-compat");
   assert.equal(catalog.models.length, 1);
   assert.equal(catalog.models[0].id, "compat-model");
+});
+
+test("fetchModelCatalog prefers the current native v1 inventory", async () => {
+  const calls = [];
+  const restClient = {
+    async listModelsNativeV1() {
+      calls.push("native-v1");
+      return NATIVE_V1_MODELS_PAYLOAD;
+    },
+    async listModels() {
+      calls.push("native-v0");
+      return NATIVE_MODELS_PAYLOAD;
+    },
+    async listModelsV1() {
+      calls.push("openai-compat");
+      return { data: [] };
+    },
+  };
+  const catalog = await fetchModelCatalog({ restClient });
+  assert.equal(catalog.source, "native-v1");
+  assert.deepEqual(calls, ["native-v1"]);
+  assert.equal(catalog.models[0].id, "glm-4.7-flash");
 });
 
 test("fetchModelCatalog surfaces the native error when both endpoints fail", async () => {

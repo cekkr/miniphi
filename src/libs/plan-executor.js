@@ -60,7 +60,11 @@ export function resolveWorkspacePath(candidate, cwd) {
   if (path.isAbsolute(trimmed) || /^[A-Za-z]:/.test(trimmed)) {
     return null;
   }
-  const resolved = path.resolve(cwd, trimmed);
+  // Model output frequently uses Windows separators even when MiniPhi runs on
+  // POSIX. Normalize them before resolution so the same safe repo-relative
+  // path has one canonical representation on every host.
+  const normalizedCandidate = trimmed.replace(/\\/g, "/");
+  const resolved = path.resolve(cwd, normalizedCandidate);
   const relative = path.relative(path.resolve(cwd), resolved);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     return null;

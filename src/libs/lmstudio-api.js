@@ -219,8 +219,9 @@ export class LMStudioManager {
 }
 
 /**
- * Lightweight REST client for LM Studio's native /api/v0 endpoints.
- * Complements the SDK-based LMStudioManager with diagnostics and non-SDK workflows.
+ * Lightweight REST client for LM Studio's native v1/v0 and
+ * OpenAI-compatible endpoints. Complements the SDK-based LMStudioManager with
+ * diagnostics, capability discovery, lifecycle, and non-SDK workflows.
  */
 export class LMStudioRestClient {
   /**
@@ -229,6 +230,7 @@ export class LMStudioRestClient {
    *   apiVersion?: string,
    *   timeoutMs?: number,
    *   defaultModel?: string,
+   *   apiToken?: string,
    *   fetchImpl?: typeof fetch
    * }} [options]
    */
@@ -250,6 +252,13 @@ export class LMStudioRestClient {
     // context and LM Studio rejects the request with 400.
     this.hasExplicitContextLength = Number.isFinite(options?.defaultContextLength);
     this.defaultContextLength = options?.defaultContextLength ?? DEFAULT_CONTEXT_LENGTH;
+    this.apiToken =
+      typeof options?.apiToken === "string" && options.apiToken.trim()
+        ? options.apiToken.trim()
+        : typeof process.env.LMSTUDIO_API_TOKEN === "string" &&
+            process.env.LMSTUDIO_API_TOKEN.trim()
+          ? process.env.LMSTUDIO_API_TOKEN.trim()
+          : null;
     this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
     this.executionRegister = options?.executionRegister ?? null;
     this.executionContext = options?.executionContext ?? null;
@@ -280,6 +289,15 @@ export class LMStudioRestClient {
   }
 
   /**
+   * Lists the full native v1 inventory, including variants, loaded instances,
+   * load configuration, and structured capabilities.
+   * @returns {Promise<object>}
+   */
+  async listModelsNativeV1() {
+    return this._requestApiVersion("v1", "/models");
+  }
+
+  /**
    * Lists models via the OpenAI-compatible /v1/models endpoint (when available).
    * Useful when /api/v0/models is disabled or trimmed for compatibility.
    * @returns {Promise<object>}
@@ -287,6 +305,49 @@ export class LMStudioRestClient {
   async listModelsV1() {
     const url = this._buildCompatUrl("/v1/models");
     return this._execute(url, { method: "GET" });
+  }
+
+  /**
+   * Explicitly loads one model through the native v1 lifecycle API.
+   * This method never unloads an existing instance implicitly.
+   *
+   * @param {{
+   *   model: string,
+   *   context_length?: number,
+   *   eval_batch_size?: number,
+   *   flash_attention?: boolean,
+   *   num_experts?: number,
+   *   offload_kv_cache_to_gpu?: boolean,
+   *   echo_load_config?: boolean
+   * }} payload
+   */
+  async loadModelV1(payload) {
+    if (!payload || typeof payload.model !== "string" || !payload.model.trim()) {
+      throw new Error("model is required to load a model through LM Studio v1.");
+    }
+    return this._postApiVersion("v1", "/models/load", {
+      ...payload,
+      model: payload.model.trim(),
+    });
+  }
+
+  /**
+   * Explicitly unloads one exact loaded instance through the native v1 API.
+   * Requiring the instance id prevents a broad model-family unload.
+   *
+   * @param {{ instance_id: string }} payload
+   */
+  async unloadModelV1(payload) {
+    if (
+      !payload ||
+      typeof payload.instance_id !== "string" ||
+      !payload.instance_id.trim()
+    ) {
+      throw new Error("instance_id is required to unload a model through LM Studio v1.");
+    }
+    return this._postApiVersion("v1", "/models/unload", {
+      instance_id: payload.instance_id.trim(),
+    });
   }
 
   /**
@@ -451,12 +512,29 @@ export class LMStudioRestClient {
     return this._execute(url, { method: "GET" });
   }
 
+  async _requestApiVersion(apiVersion, path) {
+    const url = this._buildApiUrl(apiVersion, path);
+    return this._execute(url, { method: "GET" });
+  }
+
   /**
    * @param {string} path
    * @param {Record<string, unknown>} body
    */
   async _post(path, body, timeoutMs = undefined) {
     const url = this._buildUrl(path);
+    return this._execute(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      timeoutMs,
+    });
+  }
+
+  async _postApiVersion(apiVersion, path, body, timeoutMs = undefined) {
+    const url = this._buildApiUrl(apiVersion, path);
     return this._execute(url, {
       method: "POST",
       headers: {
@@ -494,6 +572,7 @@ export class LMStudioRestClient {
     let recorded = false;
     const requestHeaders = {
       Accept: "application/json",
+      ...(this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : {}),
       ...(restInit.headers ?? {}),
     };
     const requestSnapshot = this._buildRequestSnapshot(
@@ -605,7 +684,15 @@ export class LMStudioRestClient {
     if (!url) {
       return null;
     }
-    const headers = init?.headers ?? null;
+    const headers =
+      init?.headers && typeof init.headers === "object"
+        ? Object.fromEntries(
+            Object.entries(init.headers).map(([key, value]) => [
+              key,
+              key.toLowerCase() === "authorization" ? "[redacted]" : value,
+            ]),
+          )
+        : null;
     const body = typeof init?.body === "string" ? init.body : init?.body ?? null;
     return {
       url,
@@ -675,8 +762,24 @@ export class LMStudioRestClient {
       return maybePath;
     }
 
+    return this._buildApiUrl(this.apiVersion, maybePath);
+  }
+
+  /**
+   * Builds a native LM Studio REST URL for an explicit API version.
+   * @param {string} apiVersion
+   * @param {string} maybePath
+   */
+  _buildApiUrl(apiVersion, maybePath) {
+    if (!maybePath) {
+      throw new Error("Path is required.");
+    }
+    if (/^https?:\/\//i.test(maybePath)) {
+      return maybePath;
+    }
+    const normalizedVersion = this._normalizeApiVersion(apiVersion);
     const relativePath = maybePath.startsWith("/") ? maybePath.slice(1) : maybePath;
-    return `${this.baseUrl}/api/${this.apiVersion}/${relativePath}`;
+    return `${this.baseUrl}/api/${normalizedVersion}/${relativePath}`;
   }
 
   /**

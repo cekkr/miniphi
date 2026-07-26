@@ -82,3 +82,89 @@ test("App drives prompt -> running -> approve modal -> done and applies the edit
     await removeTempWorkspace(workspace);
   }
 });
+
+test("App resolves UI Auto selection after task entry and sends the concrete model", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const requests = [];
+    const client = {
+      async createChatCompletion(payload) {
+        requests.push(payload);
+        return {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify(
+                  turn([{ type: "finish", reason: "done" }], "Done"),
+                ),
+              },
+            },
+          ],
+        };
+      },
+    };
+    const session = new AgentSession({ client, cwd: workspace, baseDir: null });
+    const modelCatalog = [
+      {
+        id: "general-7b",
+        type: "llm",
+        arch: "llama",
+        quantization: "Q4_K_M",
+        state: "loaded",
+        loadedContextLength: 8192,
+        maxContextLength: 131072,
+        loadedInstanceId: "general-7b",
+        loadedInstances: [
+          {
+            id: "general-7b",
+            contextLength: 8192,
+            config: { context_length: 8192 },
+          },
+        ],
+        capabilities: [],
+      },
+      {
+        id: "qwen-coder-7b",
+        type: "llm",
+        arch: "qwen2",
+        quantization: "Q4_K_M",
+        state: "not-loaded",
+        loadedContextLength: null,
+        maxContextLength: 131072,
+        loadedInstanceId: null,
+        loadedInstances: [],
+        capabilities: ["tool_use"],
+      },
+    ];
+    const app = render(
+      html`<${App}
+        session=${session}
+        files=${[]}
+        initialTask=${"Refactor the parser"}
+        modelCatalog=${modelCatalog}
+        modelCatalogSource=${"native-v1"}
+        requestedModel=${"auto"}
+      />`,
+    );
+    try {
+      await delay();
+      app.stdin.write("\r");
+      const sawPicker = await waitFor(() =>
+        /Auto → qwen-coder-7b/.test(app.lastFrame() ?? ""),
+      );
+      assert.equal(sawPicker, true);
+
+      app.stdin.write("\r");
+      const sawDone = await waitFor(() => /completed/.test(app.lastFrame() ?? ""));
+      assert.equal(sawDone, true);
+      assert.equal(requests[0].model, "qwen-coder-7b");
+      assert.equal(session.modelSelection.requested, "auto");
+      assert.equal(session.modelSelection.source, "native-v1");
+      assert.equal(session.modelSelection.resolvedModel, "qwen-coder-7b");
+    } finally {
+      app.unmount();
+    }
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});

@@ -1,10 +1,12 @@
 import { useApp, useInput } from "ink";
-import { html, Box, Text, useState, useEffect, useRef } from "./ink-elements.js";
+import { html, Box, Text, useState, useEffect, useRef, useMemo } from "./ink-elements.js";
 import { BRAND } from "./theme.js";
 import FilePicker from "./components/file-picker.js";
+import ModelPicker from "./components/model-picker.js";
 import PromptInput from "./components/prompt-input.js";
 import ProgressPane from "./components/progress-pane.js";
 import PermissionModal from "./components/permission-modal.js";
+import { buildUiModelSelection } from "./model-selection.js";
 
 function describePayloadAction(action) {
   if (!action || typeof action !== "object") return "action";
@@ -13,11 +15,19 @@ function describePayloadAction(action) {
 }
 
 /**
- * Root MiniPhi UI. Phases: pick files → enter task → run (with inline permission
- * modals) → done. Subscribes to the injected AgentSession's events and reflects
- * them as a live progress log.
+ * Root MiniPhi UI. Phases: pick files → enter task → choose Auto/manual model
+ * → run (with inline permission modals) → done. Subscribes to the injected
+ * AgentSession's events and reflects them as a live progress log.
  */
-export default function App({ session, files = [], initialTask = "", startPhase = "prompt" }) {
+export default function App({
+  session,
+  files = [],
+  initialTask = "",
+  startPhase = "prompt",
+  modelCatalog = [],
+  modelCatalogSource = null,
+  requestedModel = "auto",
+}) {
   const { exit } = useApp();
   const [phase, setPhase] = useState(initialTask ? "prompt" : startPhase);
   const [task, setTask] = useState(initialTask);
@@ -28,6 +38,16 @@ export default function App({ session, files = [], initialTask = "", startPhase 
   const [pending, setPending] = useState(null);
   const [result, setResult] = useState(null);
   const startedRef = useRef(false);
+  const modelSelection = useMemo(
+    () =>
+      buildUiModelSelection({
+        models: modelCatalog,
+        task,
+        requestedModel,
+        source: modelCatalogSource,
+      }),
+    [modelCatalog, modelCatalogSource, requestedModel, task],
+  );
 
   const appendLog = (entry) => setLog((prev) => [...prev, entry]);
 
@@ -115,8 +135,40 @@ export default function App({ session, files = [], initialTask = "", startPhase 
           const trimmed = (value || "").trim();
           if (!trimmed) return;
           setTask(trimmed);
+          setPhase(modelSelection.choices.length ? "model" : "running");
+        }}
+      />
+    </${Box}>`;
+  }
+
+  if (phase === "model") {
+    return html`<${Box} flexDirection="column">${header}
+      <${ModelPicker}
+        choices=${modelSelection.choices}
+        selectedValue=${modelSelection.selectedValue}
+        intent=${modelSelection.intent}
+        onSubmit=${(choice) => {
+          const model = choice.model ?? {};
+          session.configureModel({
+            model: choice.resolvedModel,
+            contextLength: model.loadedContextLength,
+            selection: {
+              requested: choice.requested,
+              source: choice.source,
+              intent: choice.intent,
+              score: Number.isFinite(choice.score) ? choice.score : null,
+              reasons: choice.reasons ?? [],
+              state: model.state ?? "unknown",
+              loadedInstanceId: model.loadedInstanceId ?? null,
+              loadedContextLength: model.loadedContextLength ?? null,
+              maxContextLength: model.maxContextLength ?? null,
+              capabilities: model.capabilities ?? [],
+              loadConfig: model.loadedInstances?.[0]?.config ?? null,
+            },
+          });
           setPhase("running");
         }}
+        onSkip=${() => setPhase("running")}
       />
     </${Box}>`;
   }
