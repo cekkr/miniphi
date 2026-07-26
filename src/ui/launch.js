@@ -21,6 +21,7 @@ import WebResearcher from "../libs/web-researcher.js";
  * @param {string} [options.model] Model id override.
  * @param {number} [options.contextLength] Loaded LM Studio context window, used to size the context budget.
  * @param {number} [options.contextBudgetTokens] Explicit context-graph budget (wins over contextLength).
+ * @param {Function} [options.contextEngineFactory] Optional context-query engine factory.
  * @returns {Promise<object>} the finished session result.
  */
 export async function launchAgentUi(options = undefined) {
@@ -36,6 +37,7 @@ export async function launchAgentUi(options = undefined) {
     temperature = undefined,
     contextLength = null,
     contextBudgetTokens = null,
+    contextEngineFactory = null,
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
@@ -53,6 +55,7 @@ export async function launchAgentUi(options = undefined) {
     temperature,
     contextLength,
     contextBudgetTokens,
+    contextEngineFactory,
   });
   // Wire the UI approver after construction so it can emit on the session.
   session.approver = createUiApprover(session);

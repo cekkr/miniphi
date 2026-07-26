@@ -405,7 +405,14 @@ export default class ContextGraph {
    * Scores a node for the current focus. Layer priority dominates, then
    * importance, then recency, then how close the node is to the focused subtask.
    */
-  scoreNode(node, { focusId = undefined, focusPath = null } = {}) {
+  scoreNode(
+    node,
+    {
+      focusId = undefined,
+      focusPath = null,
+      preferredNodeIds = null,
+    } = {},
+  ) {
     if (node.state === "dropped") {
       return -Infinity;
     }
@@ -429,6 +436,12 @@ export default class ContextGraph {
     if (node.pinned) {
       score += 1000;
     }
+    // An external graph engine (currently Cheetah) may recall nodes connected
+    // to the mission/focused subtask. The boost only affects this selection;
+    // it never mutates durable importance or overrides a pinned invariant.
+    if (preferredNodeIds?.has(node.id)) {
+      score += 12;
+    }
     return score;
   }
 
@@ -437,15 +450,29 @@ export default class ContextGraph {
    * if pathologically large); everything else is included in full, demoted to a
    * digest, or reduced to a stub the model can request back by id.
    */
-  select({ budgetTokens = undefined, focusId = undefined } = {}) {
+  select({
+    budgetTokens = undefined,
+    focusId = undefined,
+    preferredNodeIds = undefined,
+  } = {}) {
     const budget = Number.isFinite(budgetTokens) && budgetTokens > 0
       ? Math.floor(budgetTokens)
       : this.budgetTokens;
     const focus = focusId === undefined ? this.focusId : focusId;
     const focusPath = this.focusPath(focus);
+    const preferred = preferredNodeIds instanceof Set
+      ? preferredNodeIds
+      : new Set(Array.isArray(preferredNodeIds) ? preferredNodeIds : []);
     const candidates = [...this.nodes.values()]
       .filter((node) => node.state !== "dropped")
-      .map((node) => ({ node, score: this.scoreNode(node, { focusId: focus, focusPath }) }))
+      .map((node) => ({
+        node,
+        score: this.scoreNode(node, {
+          focusId: focus,
+          focusPath,
+          preferredNodeIds: preferred,
+        }),
+      }))
       .sort((a, b) => {
         if (b.score !== a.score) {
           return b.score - a.score;
@@ -527,6 +554,7 @@ export default class ContextGraph {
       usedTokens: used,
       focusId: focus,
       focusPath,
+      preferredNodeIds: [...preferred].filter((id) => this.nodes.has(id)),
       included,
       digested,
       stubs,
@@ -534,13 +562,18 @@ export default class ContextGraph {
   }
 
   /** Renders a selection as the prompt context block. */
-  render({ budgetTokens = undefined, focusId = undefined, selection = null } = {}) {
-    const picked = selection ?? this.select({ budgetTokens, focusId });
+  render({
+    budgetTokens = undefined,
+    focusId = undefined,
+    preferredNodeIds = undefined,
+    selection = null,
+  } = {}) {
+    const picked = selection ?? this.select({ budgetTokens, focusId, preferredNodeIds });
     const focusNode = picked.focusId ? this.nodes.get(picked.focusId) : null;
     const lines = [
       `## Context (revision ${this.revision} | budget ${picked.budgetTokens} tokens | used ~${picked.usedTokens}${
         focusNode ? ` | focus [${focusNode.id}] ${focusNode.label} (subtask level ${focusNode.level})` : " | focus: root task"
-      })`,
+      }${picked.preferredNodeIds?.length ? ` | graph recall ${picked.preferredNodeIds.length}` : ""})`,
     ];
 
     for (const layerName of CONTEXT_LAYER_NAMES) {

@@ -98,6 +98,34 @@ test("higher priority layers win the budget over lower ones", () => {
   assert.deepEqual(full, ["plan step"], "the plan layer outranks evidence and scratch at equal size");
 });
 
+test("external graph recall boosts a node for one selection without mutating importance", () => {
+  const graph = new ContextGraph({ budgetTokens: 310, digestChars: 80 });
+  const localFavorite = graph.add({
+    layer: "evidence",
+    label: "local favorite",
+    text: filler("favorite", 900),
+    importance: 0.9,
+  });
+  const recalled = graph.add({
+    layer: "evidence",
+    label: "Cheetah-recalled evidence",
+    text: filler("recalled", 900),
+    importance: 0.3,
+  });
+  const originalImportance = recalled.importance;
+
+  const localSelection = graph.select();
+  const recalledSelection = graph.select({ preferredNodeIds: [recalled.id] });
+  assert.equal(localSelection.included[0].node.id, localFavorite.id);
+  assert.equal(recalledSelection.included[0].node.id, recalled.id);
+  assert.deepEqual(recalledSelection.preferredNodeIds, [recalled.id]);
+  assert.equal(recalled.importance, originalImportance, "query-time recall is not a durable boost");
+  assert.match(
+    graph.render({ selection: recalledSelection }),
+    /graph recall 1/,
+  );
+});
+
 test("pinned nodes are never demoted and cannot be dropped when retained", () => {
   const graph = new ContextGraph({ budgetTokens: 120 });
   graph.add({ layer: "evidence", label: "pinned validation", text: filler("validation", 2000), pinned: true });

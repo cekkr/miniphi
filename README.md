@@ -101,6 +101,47 @@ isn't precise enough, miniPhi reforms the graph around the stated gap and re-ask
 Everything is auditable: the graph is saved to `.miniphi/agent-sessions/<id>/context-graph.json`, and
 the session result records how much was loaded, digested, or reshaped.
 
+#### Optional Cheetah graph-query engine
+
+The interactive agent can use the Cheetah submodule as an alternative graph-query engine for each
+LM Studio prompt and focused sub-task prompt. MiniPhi keeps the full context and deterministic token
+budget in its local `ContextGraph`; Cheetah receives metadata and graph relations, runs bounded
+`GRAPH_RECALL`, and returns stable node ids that receive a query-time relevance boost. Full file,
+research, and prompt text is not copied into Cheetah.
+
+Build and start Cheetah on loopback:
+
+```bash
+git submodule update --init --recursive thirds/cheetah
+cd thirds/cheetah
+go build -o cheetah-server ./src
+CHEETAH_HEADLESS=1 CHEETAH_LISTEN_ADDR=127.0.0.1:4455 ./cheetah-server
+```
+
+Then opt in through `config.json`:
+
+```json
+{
+  "context": {
+    "engine": "cheetah",
+    "cheetah": {
+      "host": "127.0.0.1",
+      "port": 4455,
+      "database": "miniphi_context",
+      "timeoutMs": 2500,
+      "required": false
+    }
+  }
+}
+```
+
+With `required: false` (the default), a timeout or unavailable Cheetah server falls back to the
+in-memory selector and records the failure in
+`.miniphi/agent-sessions/<id>/context-engine.json`. Set `required: true` only when a missing graph
+service should stop the model turn. Environment overrides are `MINIPHI_CONTEXT_ENGINE=cheetah`,
+`MINIPHI_CHEETAH_HOST`, `MINIPHI_CHEETAH_PORT`, `MINIPHI_CHEETAH_DATABASE`,
+`MINIPHI_CHEETAH_TIMEOUT_MS`, and `MINIPHI_CHEETAH_REQUIRED`.
+
 ### Common workflows
 
 Analyze a command (runs the command, compresses output, asks the model to explain what happened):

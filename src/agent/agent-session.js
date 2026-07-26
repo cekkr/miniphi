@@ -84,6 +84,14 @@ export default class AgentSession extends EventEmitter {
     this.model = typeof options?.model === "string" && options.model.trim() ? options.model.trim() : null;
     this.sessionDeadline = Number.isFinite(options?.sessionDeadline) ? options.sessionDeadline : null;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
+    this.contextEngine =
+      options?.contextEngine ??
+      (typeof options?.contextEngineFactory === "function"
+        ? options.contextEngineFactory({
+            sessionId: this.sessionId,
+            cwd: this.cwd,
+          })
+        : null);
 
     // Multi-layered context. The prompt budget follows the model's *loaded*
     // context window (LM Studio JIT-loads small windows), minus the fixed cost
@@ -126,6 +134,9 @@ export default class AgentSession extends EventEmitter {
     this._webResearchCompleted = false;
     this._webResearchCount = 0;
     this._lastValidation = null;
+    this._contextEngineLastSelection = null;
+    this._contextEngineSelections = 0;
+    this._contextEngineFallbacks = 0;
   }
 
   cancel() {
@@ -289,7 +300,49 @@ export default class AgentSession extends EventEmitter {
       .join("\n");
   }
 
-  _buildMessages(task) {
+  async _selectContextEngine() {
+    if (!this.contextEngine || typeof this.contextEngine.select !== "function") {
+      return [];
+    }
+    try {
+      const selection = await this.contextEngine.select(this.context, {
+        focusId: this.context.focusId,
+      });
+      this._contextEngineLastSelection = selection ?? null;
+      this._contextEngineSelections += 1;
+      if (selection?.fallback) {
+        this._contextEngineFallbacks += 1;
+      }
+      this.emit("context-engine", {
+        turn: this.context.turn,
+        ...(selection ?? {}),
+        stats:
+          typeof this.contextEngine.stats === "function"
+            ? this.contextEngine.stats()
+            : null,
+      });
+      return Array.isArray(selection?.preferredNodeIds)
+        ? selection.preferredNodeIds
+        : [];
+    } catch (error) {
+      this._contextEngineFallbacks += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit("context-engine", {
+        turn: this.context.turn,
+        ok: false,
+        engine: "cheetah",
+        fallback: this.contextEngine?.required ? null : "memory",
+        error: message,
+      });
+      this._log(`[AgentSession] context engine failed: ${message}`);
+      if (this.contextEngine?.required) {
+        throw error;
+      }
+      return [];
+    }
+  }
+
+  async _buildMessages(task) {
     const schemaBlock = this.schemaRegistry.buildInstructionBlock(AGENT_SCHEMA_ID) ?? "";
     // The policy node is mutable (research budget changes per turn). Re-seed it if
     // the retained-layer cap ever evicted it, so policies are never silently lost.
@@ -303,8 +356,12 @@ export default class AgentSession extends EventEmitter {
           kind: "policy",
         })?.id ?? null;
     }
+    const preferredNodeIds = await this._selectContextEngine();
     const contextBlock = this.context.nodes.size
-      ? this.context.render({ budgetTokens: this.contextBudgetTokens })
+      ? this.context.render({
+          budgetTokens: this.contextBudgetTokens,
+          preferredNodeIds,
+        })
       : "No context gathered yet. Start by gathering what you need.";
     const userBody = [
       contextBlock,
@@ -363,9 +420,10 @@ export default class AgentSession extends EventEmitter {
   }
 
   async _getTurn(task, responseFormat) {
-    const messages = this._buildMessages(task);
+    let messages = null;
     let text = "";
     try {
+      messages = await this._buildMessages(task);
       text = await this._requestTurnWithRetry(messages, responseFormat);
     } catch (error) {
       return this._fallbackTurn(task, `model request failed: ${error instanceof Error ? error.message : error}`);
@@ -383,7 +441,8 @@ export default class AgentSession extends EventEmitter {
       ttlTurns: 1,
     });
     try {
-      const retryText = await this._requestTurnWithRetry(this._buildMessages(task), responseFormat);
+      const retryMessages = await this._buildMessages(task);
+      const retryText = await this._requestTurnWithRetry(retryMessages, responseFormat);
       const retryValidation = this.schemaRegistry.validate(AGENT_SCHEMA_ID, retryText);
       if (retryValidation?.valid && retryValidation.parsed) {
         return retryValidation.parsed;
@@ -1014,6 +1073,30 @@ export default class AgentSession extends EventEmitter {
       stopReason = "max-turns";
     }
 
+    if (this.contextEngine && typeof this.contextEngine.sync === "function") {
+      try {
+        await this.contextEngine.sync(this.context);
+      } catch (error) {
+        this._contextEngineFallbacks += 1;
+        this._log(
+          `[AgentSession] final context-engine sync failed: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+    const contextEngineStats =
+      this.contextEngine && typeof this.contextEngine.stats === "function"
+        ? {
+            ...this.contextEngine.stats(),
+            selections: this._contextEngineSelections,
+            sessionFallbacks: this._contextEngineFallbacks,
+          }
+        : {
+            engine: "memory",
+            selections: 0,
+            sessionFallbacks: 0,
+          };
     const result = {
       sessionId: this.sessionId,
       status: stopReason === "completed" ? "completed" : "stopped",
@@ -1030,9 +1113,11 @@ export default class AgentSession extends EventEmitter {
         opsRejected: this._contextOpsRejected,
         opsNoop: this._contextOpsNoop,
         contextOnlyTurns: this._contextOnlyTurns,
+        engine: contextEngineStats,
       },
     };
     await this._persistContextGraph();
+    await this._persist("context-engine.json", contextEngineStats);
     await this._persist("result.json", { ...result, finishedAt: new Date().toISOString() });
     this.emit("done", result);
     return result;

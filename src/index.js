@@ -66,6 +66,7 @@ import { LMStudioRestClient } from "./libs/lmstudio-api.js";
 import { buildRestClientOptions } from "./libs/lmstudio-client-options.js";
 import { resolveAutoModel, resolveContextWindow } from "./libs/model-catalog.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
+import { createCheetahContextEngineFactory } from "./libs/cheetah-context-engine.js";
 import {
   buildLineRangeFromChunk,
   buildTruncationChunkKey,
@@ -1094,6 +1095,10 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
   }
 
   const { launchAgentUi } = await import("./ui/launch.js");
+  const contextEngineFactory = createCheetahContextEngineFactory({
+    configData,
+    logger: verbose ? (message) => console.warn(message) : null,
+  });
   await launchAgentUi({
     client: restClient,
     cwd,
@@ -1104,6 +1109,7 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
     model: modelSelection.modelKey,
     contextLength,
     contextBudgetTokens: contextBudgetOverride,
+    contextEngineFactory,
   });
 }
 
@@ -3176,5 +3182,4 @@ if (invokedDirectly) {
 }
 
 export { extractImplicitWorkspaceTask, parseDirectFileReferences };
-
 

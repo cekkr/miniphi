@@ -125,6 +125,77 @@ test("AgentSession renders a layered context block instead of a flat transcript"
   }
 });
 
+test("AgentSession uses an external graph query result and persists engine telemetry", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    await fs.writeFile(path.join(workspace, "a.js"), "export const a = 1;\n", "utf8");
+    const client = scriptedClient([
+      turn([{ type: "read_file", path: "a.js", reason: "inspect" }]),
+      turn([{ type: "finish", reason: "done" }], { summary: "looked at a.js" }),
+    ]);
+    let queries = 0;
+    let syncs = 0;
+    const contextEngine = {
+      required: false,
+      async select(graph) {
+        queries += 1;
+        return {
+          ok: true,
+          engine: "cheetah",
+          preferredNodeIds: [...graph.nodes.values()]
+            .filter((node) => node.kind === "readonly")
+            .map((node) => node.id),
+        };
+      },
+      async sync() {
+        syncs += 1;
+        return { ok: true };
+      },
+      stats() {
+        return {
+          engine: "cheetah",
+          available: true,
+          queries,
+          syncs,
+        };
+      },
+    };
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: path.join(workspace, ".miniphi"),
+      sessionId: "cheetah-engine",
+      contextEngine,
+      approver: createHeadlessApprover({ policy: "allow" }),
+    });
+
+    const result = await session.submitTask("Inspect a.js", []);
+    assert.equal(result.status, "completed");
+    assert.equal(queries, 2);
+    assert.equal(syncs, 1, "the completed graph is flushed once before result persistence");
+    assert.match(userMessage(client, 1), /graph recall 1/);
+    assert.equal(result.context.engine.engine, "cheetah");
+    assert.equal(result.context.engine.selections, 2);
+
+    const telemetry = JSON.parse(
+      await fs.readFile(
+        path.join(
+          workspace,
+          ".miniphi",
+          "agent-sessions",
+          "cheetah-engine",
+          "context-engine.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.equal(telemetry.engine, "cheetah");
+    assert.equal(telemetry.available, true);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
 test("a tight context budget demotes bulky evidence but keeps the mission and the task", async () => {
   const workspace = await createTempWorkspace();
   try {

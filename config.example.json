@@ -36,7 +36,19 @@
     "sessionTimeoutSeconds": 1800
   },
   "context": {
-    "budgetTokens": null
+    "budgetTokens": null,
+    "engine": "memory",
+    "cheetah": {
+      "host": "127.0.0.1",
+      "port": 4455,
+      "database": "miniphi_context",
+      "timeoutMs": 2500,
+      "required": false,
+      "recallLimit": 32,
+      "recallHops": 2,
+      "recallPrecision": 0.05,
+      "failureCooldownMs": 10000
+    }
   },
   "rlRouter": {
     "enabled": false,
