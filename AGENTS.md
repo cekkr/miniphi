@@ -4,6 +4,7 @@
 - Every LM Studio prompt must declare the exact JSON schema and use `response_format=json_schema`; reject non-JSON responses and re-prompt or emit deterministic fallback JSON. Navigator now falls back to a deterministic JSON block with `stop_reason` after timeouts, and decomposer emits a fallback plan when schema fields are missing.
 - JSON request payloads and JSON responses are mandatory; never use narrative-only exchanges for chunk selection, truncation plans, or missing snippet requests.
 - Prompt/response instrumentation must retain response text, tool_calls, and tool_definitions so evaluation datasets can score tool-call accuracy and task adherence (see `thirds/ai-agent-evals`).
+- Treat `thirds/cheetah` as the alternative graph-query engine for selecting and handling context supplied to LM Studio prompt and subprompt calls. The in-process `ContextGraph` remains the current default until the Cheetah adapter is wired and validated.
 - Keep scope focused on a local file-manipulation agent for coding projects; defer broad research or multi-agent exploration until the v0.1 exit criteria are met.
 - Roadmap items need explicit exit criteria; if a new item is added, remove or defer a lower-priority one.
 - Prevent infinite loops: cap recursive prompts and retries, enforce helper timeouts, and persist a clear stop reason in `.miniphi/`.
@@ -16,6 +17,20 @@
 ## High priority references
 
 - `OPTIMIZATIONS.md` is the optimization roadmap for cross-cutting improvements across the entire `src/` runtime pipeline.
+- `thirds/cheetah` is the Cheetah submodule and upstream home for reusable graph-query engine work.
+
+## Cheetah submodule workflow
+
+- Before inspecting, building, testing, or editing Cheetah, always initialize it and fast-forward its `main` branch:
+  ```bash
+  git submodule update --init --recursive thirds/cheetah
+  git -C thirds/cheetah switch main
+  git -C thirds/cheetah pull --ff-only origin main
+  ```
+- Read and follow `thirds/cheetah/AGENTS.md` before changing that repository.
+- Implement general-purpose Cheetah fixes and features directly in `thirds/cheetah`; run its tests and commit those changes inside the Cheetah repository, not as ordinary MiniPhi files.
+- After a Cheetah commit, record the new submodule commit in MiniPhi separately. Keep MiniPhi-specific adapters, configuration, prompt/subprompt integration, and compatibility tests in this repository.
+- Do not duplicate reusable graph-query engine fixes in MiniPhi. Upstream them to Cheetah first, then update the submodule pointer.
 
 
 ## What goes where

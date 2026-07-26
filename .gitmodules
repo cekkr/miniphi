@@ -1,0 +1,4 @@
+[submodule "thirds/cheetah"]
+	path = thirds/cheetah
+	url = https://github.com/cekkr/cheetah.git
+	branch = main

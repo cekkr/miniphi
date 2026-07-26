@@ -39,9 +39,14 @@ npm install
 
 Optional:
 - If you want the `miniphi` command on your PATH while developing, use `npm link`.
-- If you need submodules for benchmarks/dev tooling, clone with:
+- Cheetah is included at `thirds/cheetah` as the development target for an alternative graph-query
+  engine for LM Studio prompt and subprompt context handling. Clone with submodules enabled:
   ```bash
   git clone https://github.com/cekkr/miniphi.git --recurse-submodules
+  ```
+  Existing clones can initialize it with:
+  ```bash
+  git submodule update --init --recursive thirds/cheetah
   ```
 
 ## Get started
