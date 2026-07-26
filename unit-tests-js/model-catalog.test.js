@@ -316,6 +316,39 @@ test("resolveAutoModel classifies the task and returns the best live model", asy
   assert.ok(Array.isArray(resolved.ranked) && resolved.ranked.length === 4);
 });
 
+test("resolveAutoModel automatically consumes fresh benchmark results", async () => {
+  const restClient = {
+    async listModels() {
+      return NATIVE_MODELS_PAYLOAD;
+    },
+  };
+  let loadedFor = null;
+  const resolved = await resolveAutoModel({
+    restClient,
+    task: "Refactor the parser module",
+    availableMemoryGb: 64,
+    loadBenchmarkResults: async (models) => {
+      loadedFor = models.map((model) => model.id);
+      return Object.fromEntries(
+        models.map((model) => [
+          model.id,
+          {
+            status: "completed",
+            revision: "fixture@v1",
+            scores: {
+              coding: model.id === "gemma-4-26b-a4b-it" ? 99 : 20,
+              overall: 50,
+            },
+          },
+        ]),
+      );
+    },
+  });
+  assert.equal(resolved.modelKey, "gemma-4-26b-a4b-it");
+  assert.equal(resolved.ranked[0].benchmark.category, "coding");
+  assert.equal(loadedFor.length, 4);
+});
+
 test("resolveAutoModel returns null when LM Studio is unreachable", async () => {
   const logs = [];
   const restClient = {

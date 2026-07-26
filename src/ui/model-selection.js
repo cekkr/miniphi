@@ -18,10 +18,11 @@ export function buildUiModelSelection({
   task = null,
   requestedModel = "auto",
   source = null,
+  benchmarkResults = null,
 } = {}) {
   const requested = normalizeRequestedModel(requestedModel);
   const { intent } = classifyTaskIntent({ task });
-  const ranked = rankModelsForTask(models, { intent });
+  const ranked = rankModelsForTask(models, { intent, benchmarkResults });
   const recommended = ranked[0] ?? null;
   const choices = [];
 
@@ -33,6 +34,7 @@ export function buildUiModelSelection({
       model: recommended.model,
       score: recommended.score,
       reasons: recommended.reasons,
+      benchmark: recommended.benchmark,
       intent,
       source,
       auto: true,
@@ -47,6 +49,7 @@ export function buildUiModelSelection({
       model: entry.model,
       score: entry.score,
       reasons: entry.reasons,
+      benchmark: entry.benchmark,
       intent,
       source,
       auto: false,

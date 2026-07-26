@@ -1,3 +1,4 @@
+import path from "node:path";
 import { resolveDurationMs } from "../libs/cli-utils.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 import { LMStudioRestClient } from "../libs/lmstudio-api.js";
@@ -7,6 +8,7 @@ import {
   rankModelsForTask,
 } from "../libs/model-catalog.js";
 import { classifyTaskIntent } from "../libs/model-selector.js";
+import { loadFreshModelBenchmarkIndex } from "../libs/model-benchmarks.js";
 
 function formatContext(maxContextLength) {
   if (!Number.isFinite(maxContextLength)) {
@@ -147,7 +149,15 @@ export async function handleModelsCommand({
   }
 
   const { intent } = classifyTaskIntent({ task: taskText });
-  const ranked = rankModelsForTask(catalog.models, { intent });
+  const benchmarkIndex = await loadFreshModelBenchmarkIndex({
+    cwd: path.resolve(options.cwd ?? process.cwd()),
+    restClient,
+    models: catalog.models,
+  });
+  const ranked = rankModelsForTask(catalog.models, {
+    intent,
+    benchmarkResults: benchmarkIndex.results,
+  });
 
   if (jsonOutput) {
     console.log(
@@ -160,10 +170,13 @@ export async function handleModelsCommand({
           intent,
           recommended: ranked[0]?.model.id ?? null,
           lifecycle,
-          models: ranked.map(({ model, score, reasons }) => ({
+          benchmark_cache: benchmarkIndex.path,
+          benchmark_stale_count: benchmarkIndex.staleCount,
+          models: ranked.map(({ model, score, reasons, benchmark }) => ({
             ...model,
             score: Number(score.toFixed(2)),
             reasons,
+            benchmark,
           })),
         },
         null,
@@ -181,7 +194,7 @@ export async function handleModelsCommand({
       `[MiniPhi][Models] ${lifecycle.action === "load" ? "Loaded model" : "Unloaded instance"} ${lifecycle.target}`,
     );
   }
-  ranked.forEach(({ model, score, reasons }, index) => {
+  ranked.forEach(({ model, score, reasons, benchmark }, index) => {
     const marker = index === 0 ? "*" : " ";
     const bits = [
       `ctx=${formatContext(model.maxContextLength)}`,
@@ -195,6 +208,7 @@ export async function handleModelsCommand({
         ? `caps=${model.capabilities.join(",")}`
         : null,
       `score=${score.toFixed(1)}`,
+      benchmark ? `benchmark=${benchmark.category}:${benchmark.score}` : null,
     ].filter(Boolean);
     console.log(` ${marker} ${model.id} (${bits.join(" | ")})`);
     if (verbose && reasons.length) {

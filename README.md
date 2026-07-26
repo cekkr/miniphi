@@ -224,6 +224,23 @@ miniphi benchmark general --task "Assess general agent readiness" --cmd "node -v
 
 Use `--live-lm-plan-timeout` if you need a shorter/longer decomposition timeout during live benchmark runs. In live benchmark mode, navigator/decomposer/assessment now retry once with compact requests when full requests time out or overflow context, and benchmark summaries include adaptive per-stage timeout budgets/resolved timeout telemetry. If both navigator and decomposer time out, MiniPhi still sends one ultra-compact `assessment-only` LM request instead of skipping assessment entirely.
 
+Score the installed LM Studio chat models with the compact deterministic suite:
+
+```bash
+miniphi benchmark models --easy
+miniphi benchmark models --show
+```
+
+The suite checks strict JSON, reasoning, coding, context retrieval, constrained writing,
+source choice, tool planning, and latency. Results are cached under
+`.miniphi/benchmarks/models/` using the benchmark definition, model artifact/load configuration,
+LM Studio endpoint/runtime details, and available hardware identity. A matching second run makes
+no inference calls. Once fresh scores exist, headless task flows without an explicit configured
+model implicitly use Auto; explicit `--model auto`, `models --task`, and the interactive model
+picker use the relevant category score as their primary ranking evidence too. An explicit model
+override still wins. Bare `miniphi` also exposes an **Easy benchmark** button and the cached score
+table on its home screen.
+
 Run the opt-in from-scratch project test (PowerShell example). It performs bounded web research, creates an animated basketball page in an empty workspace, validates it in Chromium, and preserves the project and screenshot under the selected output folder:
 
 ```powershell
@@ -284,7 +301,7 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 These are the commands most people start with:
 
 - `miniphi` / `miniphi ui`  
-  Open the **interactive agent UI**: pick files, prompt, watch live progress (including bounded `web_research` actions), and approve guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out. Prompts are assembled from the [layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window); size it explicitly with `--context-budget <tokens>` if you want to override the auto-detected window.
+  Open the **interactive agent UI**. Its home screen starts a task or runs the Easy model benchmark and displays cached scores; task flow then picks files, prompts, shows benchmark-informed model choices/live progress (including bounded `web_research` actions), and approves guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out. Prompts are assembled from the [layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window); size it explicitly with `--context-budget <tokens>` if you want to override the auto-detected window.
 - `miniphi "<task>"`  
   On a TTY this opens the interactive UI seeded with the task. With `--headless` (or a non-TTY), it runs the classic workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  
@@ -298,6 +315,12 @@ These are the commands most people start with:
   instances/context, and task ranking. Pass `--model auto` to let MiniPhi choose automatically.
   Lifecycle changes are explicit: `--load <model-id> [--context-length <tokens>]` loads one model,
   while `--unload <instance-id>` unloads only that exact instance.
+- `miniphi benchmark models --easy`
+  Run the cache-aware per-model score suite serially. Use `--models <id,id>` to limit it,
+  `--refresh` to rerun matching entries, `--show` to inspect the table without inference, and
+  `--json` for machine-readable trials/scores. Fresh category scores automatically guide
+  task-aware model selection; after the first benchmark, headless tasks with no explicit model
+  automatically opt into that evidence.
 - `miniphi web-browse --url "<https://example.com>"`  
   Capture page text via a headless browser and store the snapshot under `.miniphi/web/`.
 - `miniphi nitpick --task "<long-form writing task>"`  
@@ -311,7 +334,7 @@ These are the commands most people start with:
 - `npm run ci:migrate-stop-reasons`  
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
-  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
+  Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark models` produces model-selection evidence; `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 

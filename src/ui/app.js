@@ -6,6 +6,7 @@ import ModelPicker from "./components/model-picker.js";
 import PromptInput from "./components/prompt-input.js";
 import ProgressPane from "./components/progress-pane.js";
 import PermissionModal from "./components/permission-modal.js";
+import BenchmarkDashboard from "./components/benchmark-dashboard.js";
 import { buildUiModelSelection } from "./model-selection.js";
 
 function describePayloadAction(action) {
@@ -15,9 +16,10 @@ function describePayloadAction(action) {
 }
 
 /**
- * Root MiniPhi UI. Phases: pick files → enter task → choose Auto/manual model
- * → run (with inline permission modals) → done. Subscribes to the injected
- * AgentSession's events and reflects them as a live progress log.
+ * Root MiniPhi UI. Phases: home/easy benchmark table → pick files → enter task
+ * → choose benchmark-informed Auto/manual model → run (with inline permission
+ * modals) → done. Subscribes to the injected AgentSession's events and
+ * reflects them as a live progress log.
  */
 export default function App({
   session,
@@ -27,6 +29,8 @@ export default function App({
   modelCatalog = [],
   modelCatalogSource = null,
   requestedModel = "auto",
+  benchmarkIndex = null,
+  runEasyBenchmark = null,
 }) {
   const { exit } = useApp();
   const [phase, setPhase] = useState(initialTask ? "prompt" : startPhase);
@@ -37,6 +41,9 @@ export default function App({
   const [tick, setTick] = useState(0);
   const [pending, setPending] = useState(null);
   const [result, setResult] = useState(null);
+  const [benchmarks, setBenchmarks] = useState(benchmarkIndex);
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const [benchmarkStatus, setBenchmarkStatus] = useState("");
   const startedRef = useRef(false);
   const modelSelection = useMemo(
     () =>
@@ -45,8 +52,9 @@ export default function App({
         task,
         requestedModel,
         source: modelCatalogSource,
+        benchmarkResults: benchmarks?.results ?? null,
       }),
-    [modelCatalog, modelCatalogSource, requestedModel, task],
+    [benchmarks, modelCatalog, modelCatalogSource, requestedModel, task],
   );
 
   const appendLog = (entry) => setLog((prev) => [...prev, entry]);
@@ -112,6 +120,47 @@ export default function App({
     </${Box}>
   `;
 
+  if (phase === "home") {
+    return html`<${Box} flexDirection="column">${header}
+      <${BenchmarkDashboard}
+        benchmarkIndex=${benchmarks}
+        running=${benchmarkRunning}
+        status=${benchmarkStatus}
+        onStart=${() => setPhase(files.length ? "picker" : "prompt")}
+        onRunEasy=${async () => {
+          if (!runEasyBenchmark || benchmarkRunning) return;
+          setBenchmarkRunning(true);
+          setBenchmarkStatus("Scanning LM Studio models…");
+          try {
+            const benchmarkResult = await runEasyBenchmark((event) => {
+              if (event.type === "model-start") {
+                setBenchmarkStatus(`Testing ${event.modelId}…`);
+              } else if (event.type === "cache-hit") {
+                setBenchmarkStatus(`Using cached score for ${event.modelId}…`);
+              } else if (event.type === "trial-start") {
+                setBenchmarkStatus(`${event.modelId}: ${event.trialId}`);
+              }
+            });
+            setBenchmarks(benchmarkResult.index);
+            const completed = benchmarkResult.results.filter(
+              (entry) => entry.status === "completed",
+            ).length;
+            setBenchmarkStatus(
+              `Benchmarks ready: ${completed}/${benchmarkResult.modelCount} model(s). Auto now uses these scores.`,
+            );
+          } catch (error) {
+            setBenchmarkStatus(
+              `Failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          } finally {
+            setBenchmarkRunning(false);
+          }
+        }}
+        onQuit=${exit}
+      />
+    </${Box}>`;
+  }
+
   if (phase === "picker") {
     return html`<${Box} flexDirection="column">${header}
       <${FilePicker}
@@ -158,6 +207,7 @@ export default function App({
               intent: choice.intent,
               score: Number.isFinite(choice.score) ? choice.score : null,
               reasons: choice.reasons ?? [],
+              benchmark: choice.benchmark ?? null,
               state: model.state ?? "unknown",
               loadedInstanceId: model.loadedInstanceId ?? null,
               loadedContextLength: model.loadedContextLength ?? null,

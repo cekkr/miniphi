@@ -69,6 +69,7 @@ import {
   resolveAutoModel,
   resolveContextWindow,
 } from "./libs/model-catalog.js";
+import { loadFreshModelBenchmarkIndex } from "./libs/model-benchmarks.js";
 import { extractLmStudioContextLength } from "./libs/lmstudio-status-utils.js";
 import { createCheetahContextEngineFactory } from "./libs/cheetah-context-engine.js";
 import {
@@ -1057,6 +1058,14 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
         restClient: probe,
         task: initialTask || null,
         mode: "workspace",
+        loadBenchmarkResults: async (models) =>
+          (
+            await loadFreshModelBenchmarkIndex({
+              cwd: options.cwd ? path.resolve(options.cwd) : process.cwd(),
+              restClient: probe,
+              models,
+            })
+          ).results,
         logger: verbose ? (message) => console.warn(message) : null,
       });
     } catch (error) {
@@ -1365,8 +1374,15 @@ async function main() {
           : typeof process.env.MINIPHI_MODEL === "string" && process.env.MINIPHI_MODEL.trim()
             ? process.env.MINIPHI_MODEL.trim()
             : null;
-  const autoModelRequested =
+  const explicitAutoModelRequested =
     typeof requestedModel === "string" && requestedModel.trim().toLowerCase() === "auto";
+  const benchmarkAutoCandidate =
+    requestedModel === null &&
+    (command === "run" ||
+      command === "analyze-file" ||
+      command === "workspace");
+  const autoModelRequested =
+    explicitAutoModelRequested || benchmarkAutoCandidate;
   let autoModelInfo = null;
   if (autoModelRequested) {
     try {
@@ -1385,8 +1401,24 @@ async function main() {
         command: typeof options.cmd === "string" ? options.cmd : null,
         mode: command,
         requiredContextLength: contextLengthExplicit ? contextLength : null,
+        loadBenchmarkResults: async (models) =>
+          (
+            await loadFreshModelBenchmarkIndex({
+              cwd: options.cwd ? path.resolve(options.cwd) : process.cwd(),
+              restClient: autoRestClient,
+              models,
+            })
+          ).results,
         logger: verbose ? (message) => console.warn(message) : null,
       });
+      if (
+        benchmarkAutoCandidate &&
+        (autoModelInfo?.benchmarkCount ?? 0) === 0
+      ) {
+        // Preserve the configured default until the operator has produced
+        // benchmark evidence. After that first run, Auto becomes implicit.
+        autoModelInfo = null;
+      }
     } catch (error) {
       if (verbose) {
         console.warn(
@@ -1399,14 +1431,16 @@ async function main() {
       console.log(
         `[MiniPhi] Auto-selected model ${autoModelInfo.modelKey} (intent: ${autoModelInfo.intent}${reasonNote})`,
       );
-    } else {
+    } else if (explicitAutoModelRequested) {
       console.warn(
         "[MiniPhi] --model auto could not pick a live model; falling back to the configured default.",
       );
     }
   }
   const modelSelection = resolveModelConfig({
-    model: autoModelInfo?.modelKey ?? (autoModelRequested ? null : requestedModel),
+    model:
+      autoModelInfo?.modelKey ??
+      (explicitAutoModelRequested ? null : requestedModel),
     contextLength,
     contextIsExplicit: contextLengthExplicit,
   });
@@ -3179,6 +3213,16 @@ Recompose benchmarks:
   --help                       Show this help message
 
 Benchmark helper:
+  benchmark models             Score LM Studio chat models with the Easy deterministic suite
+    --easy                     Run the compact reasoning/coding/context/writing/research/tool suite
+    --models <id,id>           Limit the run to exact model ids (default: all chat models)
+    --show                     Show the fresh cached comparison table without inference
+    --refresh                  Ignore matching cache entries and rerun selected models
+    --benchmark-context-length <n>  Temporary load context (default: 4096)
+    --model-timeout <s>        Timeout for each schema-bound trial (default: 30)
+    --model-timeout-ms <ms>    Millisecond timeout override
+    --cwd <path>               Cache root workspace (default: current directory)
+    --json                     Emit the score table and raw run metadata as JSON
   benchmark recompose [sample]  Run timestamped benchmark batches (defaults to hello-flow sample)
     --sample <path>             Override sample directory
     --benchmark-root <path>     Directory used to store timestamped runs (default: samples/benchmark/recompose)

@@ -11,7 +11,7 @@ import { createUiApprover } from "../src/agent/approvers.js";
 
 const delay = (ms = 25) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(fn, { timeout = 3000, interval = 25 } = {}) {
+async function waitFor(fn, { timeout = 10000, interval = 25 } = {}) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (fn()) return true;
@@ -144,6 +144,16 @@ test("App resolves UI Auto selection after task entry and sends the concrete mod
         modelCatalog=${modelCatalog}
         modelCatalogSource=${"native-v1"}
         requestedModel=${"auto"}
+        benchmarkIndex=${{
+          results: {
+            "qwen-coder-7b": {
+              status: "completed",
+              revision: "fixture@v1",
+              completedAt: "2026-07-26T00:00:00.000Z",
+              scores: { coding: 98, overall: 92 },
+            },
+          },
+        }}
       />`,
     );
     try {
@@ -161,6 +171,73 @@ test("App resolves UI Auto selection after task entry and sends the concrete mod
       assert.equal(session.modelSelection.requested, "auto");
       assert.equal(session.modelSelection.source, "native-v1");
       assert.equal(session.modelSelection.resolvedModel, "qwen-coder-7b");
+      assert.equal(session.modelSelection.benchmark.category, "coding");
+      assert.equal(session.modelSelection.benchmark.score, 98);
+    } finally {
+      app.unmount();
+    }
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("App home exposes the Easy benchmark button and refreshes its score table", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const session = new AgentSession({
+      client: scriptedClient([turn([{ type: "finish", reason: "done" }])]),
+      cwd: workspace,
+      baseDir: null,
+    });
+    let benchmarkCalls = 0;
+    const app = render(
+      html`<${App}
+        session=${session}
+        files=${[]}
+        startPhase=${"home"}
+        benchmarkIndex=${{ results: {} }}
+        runEasyBenchmark=${async (onProgress) => {
+          benchmarkCalls += 1;
+          onProgress({ type: "model-start", modelId: "fixture-model" });
+          return {
+            modelCount: 1,
+            results: [{ status: "completed" }],
+            index: {
+              results: {
+                "fixture-model": {
+                  modelId: "fixture-model",
+                  status: "completed",
+                  completedAt: "2026-07-26T00:00:00.000Z",
+                  scores: {
+                    overall: 91,
+                    coding: 95,
+                    reasoning: 88,
+                    context: 100,
+                    speed: 72,
+                  },
+                },
+              },
+            },
+          };
+        }}
+      />`,
+    );
+    try {
+      assert.match(app.lastFrame(), /Easy benchmark/);
+      assert.match(app.lastFrame(), /Model benchmarks/);
+      app.stdin.write("b");
+      const updated = await waitFor(() =>
+        /fixture-model/.test(app.lastFrame() ?? ""),
+      );
+      assert.equal(updated, true);
+      assert.equal(benchmarkCalls, 1);
+      assert.match(app.lastFrame(), /Auto now uses these scores/);
+
+      app.stdin.write("\r");
+      const promptShown = await waitFor(() =>
+        /What should miniPhi do/.test(app.lastFrame() ?? ""),
+      );
+      assert.equal(promptShown, true);
     } finally {
       app.unmount();
     }

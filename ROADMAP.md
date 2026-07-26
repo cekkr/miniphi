@@ -324,8 +324,8 @@ Ordered slices:
    - Remaining before close:
      - Task-aware automatic load configuration with memory estimation and best-effort restoration
        of pre-existing loaded state; the current lifecycle path is deliberately explicit only.
-     - Persist a full bounded inventory snapshot per run (the selected model/load snapshot is
-       persisted today) and surface benchmark freshness after the benchmark slice exists.
+     - Persist a full bounded inventory snapshot per run (the selected model/load snapshot and
+       benchmark evidence/freshness are persisted today).
      - Prove a real interactive guarded edit after choosing a model from the new picker, plus the
        current/fallback server fixture pair described by the exit proof.
    - Target contract: replace the remaining older API assumptions and scattered endpoint notes
@@ -376,7 +376,50 @@ Ordered slices:
      increasing allowed subprompt budgets, and records the resolved model/decomposer settings;
      live runs cover one effort-capable and one effort-incapable model with no schema regression.
 
-3) Hardware-aware LM Studio model benchmark + cache
+3) Hardware-aware LM Studio model benchmark + cache — **IN PROGRESS
+   (Easy core + selector/UI integration landed 2026-07-26)**
+   - Landed:
+     - `benchmark models --easy` scans native v1 chat models serially (or exact `--models`),
+       temporarily loads an unloaded model at a bounded 4k context, and unloads only the exact
+       instance it created. Existing operator-loaded instances are reused and never unloaded.
+     - Six deterministic text trials currently score reasoning, coding execution, context
+       retrieval, constrained writing, research source choice, and tool planning. Every attempt
+       embeds `model-benchmark-trial@v1`, sends `response_format=json_schema`, rejects narrative
+       or schema-invalid output, retries once, and retains response text, tool calls, tool
+       definitions, separated reasoning text, finish reason, usage, latency, validation status,
+       and a deterministic failure record.
+     - Raw attempts and normalized category/quality/speed/overall scores persist under
+       `.miniphi/benchmarks/models/`. The cache key covers the suite/schema revision, normalized
+       model artifact, resolved load config, endpoint/runtime/hardware fingerprint, and context;
+       `--refresh` bypasses it and `--show` reads the fresh table without inference.
+     - Fresh task-category scores are no longer passive reports: they are primary evidence for
+       headless `--model auto`, `models --task`, and UI Auto/manual rankings, with inventory
+       heuristics retained as a bounded tie-break/fallback. After the first fresh benchmark,
+       headless task flows with no explicit configured model implicitly enable Auto; an explicit
+       model continues to win.
+     - Bare terminal UI now opens a home screen with Start task, an `Easy benchmark` button
+       (`B`/`E`), progress, and the fresh model score table. A completed run updates the table and
+       model picker immediately.
+     - Fixture proofs cover strict JSON retry, exact temporary-instance cleanup, category-driven
+       ranking, definition/hardware invalidation, CLI JSON/table output, and a second unchanged run
+       performing zero prompt calls.
+     - Live proof against `192.168.1.5:1234`: the already-loaded `glm-4.7-flash` correctly scored
+       0 for schema quality because every compatible-route completion exhausted its cap entirely
+       on reasoning tokens and returned empty content; the cached rerun completed in 1.2 seconds
+       without inference. MiniPhi then temporarily loaded `qwen2.5-coder-7b-instruct` at 4k,
+       passed all six schema-bound trials (quality 100, overall 90), and unloaded its exact
+       instance. Final native-v1 inventory contained only the operator's original GLM 16k
+       instance; `models --task "Refactor parser"` then recommended Qwen from its cached coding
+       score rather than the inventory-name heuristic.
+   - Remaining before close:
+     - Expand the Easy exact-answer probes into repeatable guarded-edit/test execution,
+       schema/tool-call accuracy, multi-length context/context-graph, warm-up/throughput, and
+       timeout-rate suites.
+     - Record observable server-side CPU/RAM/GPU/VRAM/load peaks and LM Studio/backend/driver
+       versions; remote-unavailable values are explicit today, while the local parameter-size
+       estimate still needs replacement with measured telemetry.
+     - Capability-gate and fixture-test vision/image-generation suites, resumable partial model
+       runs, per-model deadlines, and canonical skip reasons.
    - Add an internal `benchmark models` workflow that scans the configured `/api/v1/models`
      inventory and tests every selected/applicable local model one at a time. Capability-gated
      suites cover:

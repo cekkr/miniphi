@@ -9,6 +9,14 @@ import { runGeneralPurposeBenchmark } from "../libs/benchmark-general.js";
 import { createRecomposeHarness } from "../libs/recompose-harness.js";
 import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
+import {
+  DEFAULT_MODEL_BENCHMARK_CONTEXT_LENGTH,
+  DEFAULT_MODEL_BENCHMARK_TIMEOUT_MS,
+  ModelBenchmarkRunner,
+  loadFreshModelBenchmarkIndex,
+  modelBenchmarkTableRows,
+} from "../libs/model-benchmarks.js";
+import { fetchModelCatalog } from "../libs/model-catalog.js";
 
 export async function handleBenchmarkCommand(context) {
   const {
@@ -36,6 +44,86 @@ export async function handleBenchmarkCommand(context) {
   } = context;
 
   const mode = (positionals[0] ?? options.mode ?? "recompose").toLowerCase();
+  if (mode === "models" || mode === "model") {
+    const cwd = path.resolve(options.cwd ?? process.cwd());
+    const timeoutMs =
+      resolveDurationMs({
+        secondsValue: options["model-timeout"],
+        secondsLabel: "--model-timeout",
+        millisValue: options["model-timeout-ms"],
+        millisLabel: "--model-timeout-ms",
+      }) ?? DEFAULT_MODEL_BENCHMARK_TIMEOUT_MS;
+    const benchmarkContextLength = Number(
+      options["benchmark-context-length"] ??
+        DEFAULT_MODEL_BENCHMARK_CONTEXT_LENGTH,
+    );
+    if (
+      !Number.isInteger(benchmarkContextLength) ||
+      benchmarkContextLength <= 0
+    ) {
+      throw new Error("--benchmark-context-length must be a positive integer.");
+    }
+    // Model benchmarks own the temporary load window. Build a context-neutral
+    // client even when the main runtime handed us one, otherwise its configured
+    // default context_length could exceed the benchmark's 4k load.
+    const effectiveRestClient = new LMStudioRestClient(
+      buildRestClientOptions(configData, { modelKey }, {
+        ...(restClient?.baseUrl ? { baseUrl: restClient.baseUrl } : {}),
+        ...(restClient?.apiToken ? { apiToken: restClient.apiToken } : {}),
+        timeoutMs,
+      }),
+    );
+    const catalog = await fetchModelCatalog({
+      restClient: effectiveRestClient,
+    });
+    if (options.show || options.table) {
+      const index = await loadFreshModelBenchmarkIndex({
+        cwd,
+        restClient: effectiveRestClient,
+        models: catalog.models,
+      });
+      printModelBenchmarkResult(
+        { index, results: [], modelCount: 0, catalogSource: catalog.source },
+        { json: Boolean(options.json), showOnly: true },
+      );
+      return;
+    }
+    const modelIds =
+      typeof options.models === "string" && options.models.trim()
+        ? options.models
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : null;
+    const runner = new ModelBenchmarkRunner({
+      restClient: effectiveRestClient,
+      cwd,
+      contextLength: benchmarkContextLength,
+      timeoutMs,
+    });
+    const result = await runner.run({
+      modelIds,
+      refresh: Boolean(options.refresh),
+      onProgress: options.json
+        ? null
+        : (event) => {
+            if (event.type === "model-start") {
+              console.log(`[MiniPhi][Benchmark][Models] Testing ${event.modelId}…`);
+            } else if (event.type === "cache-hit") {
+              console.log(`[MiniPhi][Benchmark][Models] Cache hit: ${event.modelId}`);
+            } else if (event.type === "trial-start" && verbose) {
+              console.log(`  ${event.trialId}`);
+            } else if (event.type === "restore-warning") {
+              console.warn(
+                `[MiniPhi][Benchmark][Models] Could not restore ${event.modelId}: ${event.error}`,
+              );
+            }
+          },
+    });
+    printModelBenchmarkResult(result, { json: Boolean(options.json) });
+    return;
+  }
+
   if (mode === "analyze") {
     const baselineDir = options.baseline ?? options.path ?? options.dir ?? positionals[1] ?? null;
     if (!baselineDir) {
@@ -127,7 +215,9 @@ export async function handleBenchmarkCommand(context) {
   }
 
   if (mode !== "recompose") {
-    throw new Error(`Unsupported benchmark mode "${mode}". Expected "recompose" or "analyze".`);
+    throw new Error(
+      `Unsupported benchmark mode "${mode}". Expected "models", "general", "recompose", or "analyze".`,
+    );
   }
 
   const planPath = options.plan ?? options["plan-file"] ?? null;
@@ -208,6 +298,72 @@ export async function handleBenchmarkCommand(context) {
   }
   const relDir = path.relative(process.cwd(), result.outputDir) || result.outputDir;
   console.log(`[MiniPhi][Benchmark] ${result.runs.length} runs saved under ${relDir}`);
+}
+
+function formatBenchmarkCell(value) {
+  return Number.isFinite(value) ? String(Math.round(value)).padStart(3) : "  –";
+}
+
+function printModelBenchmarkResult(
+  result,
+  { json = false, showOnly = false } = {},
+) {
+  const rows = modelBenchmarkTableRows(result.index);
+  if (json) {
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          mode: showOnly ? "show" : "run",
+          model_count: result.modelCount,
+          cache_path: result.index?.path ?? null,
+          stale_count: result.index?.staleCount ?? 0,
+          rows,
+          results: result.results ?? [],
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  console.log(
+    `[MiniPhi][Benchmark][Models] ${rows.length} fresh cached model score(s)${result.index?.staleCount ? `; ${result.index.staleCount} stale ignored` : ""}`,
+  );
+  if (!rows.length) {
+    console.log(
+      "[MiniPhi][Benchmark][Models] No fresh scores yet. Run `miniphi benchmark models --easy`.",
+    );
+    return;
+  }
+  console.log(
+    "Model".padEnd(38) +
+      " All Cod Rea Ctx Wri Res Tol Spd",
+  );
+  for (const row of rows) {
+    const label =
+      row.modelId.length > 37
+        ? `${row.modelId.slice(0, 34)}…`
+        : row.modelId;
+    console.log(
+      label.padEnd(38) +
+        [
+          row.overall,
+          row.coding,
+          row.reasoning,
+          row.context,
+          row.writing,
+          row.research,
+          row.toolUse,
+          row.speed,
+        ]
+          .map(formatBenchmarkCell)
+          .join(" "),
+    );
+  }
+  console.log(
+    `[MiniPhi][Benchmark][Models] Cache: ${result.index?.path ?? "unavailable"}`,
+  );
 }
 
 function resolvePlanPath(plan, candidate) {

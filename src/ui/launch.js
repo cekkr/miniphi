@@ -5,6 +5,10 @@ import AgentSession from "../agent/agent-session.js";
 import { createUiApprover } from "../agent/approvers.js";
 import { scanWorkspaceFiles } from "./file-scan.js";
 import WebResearcher from "../libs/web-researcher.js";
+import {
+  ModelBenchmarkRunner,
+  loadFreshModelBenchmarkIndex,
+} from "../libs/model-benchmarks.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -47,6 +51,15 @@ export async function launchAgentUi(options = undefined) {
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
+  const benchmarkIndex = await loadFreshModelBenchmarkIndex({
+    cwd,
+    restClient: client,
+    models: modelCatalog,
+  });
+  const benchmarkRunner = new ModelBenchmarkRunner({
+    restClient: client,
+    cwd,
+  });
   const researcher = webResearch ? null : new WebResearcher();
   const session = new AgentSession({
     client,
@@ -71,7 +84,7 @@ export async function launchAgentUi(options = undefined) {
   // Wire the UI approver after construction so it can emit on the session.
   session.approver = createUiApprover(session);
 
-  const startPhase = initialTask ? "prompt" : files.length ? "picker" : "prompt";
+  const startPhase = initialTask ? "prompt" : "home";
   const app = render(
     html`<${App}
       session=${session}
@@ -81,6 +94,9 @@ export async function launchAgentUi(options = undefined) {
       modelCatalog=${modelCatalog}
       modelCatalogSource=${modelCatalogSource}
       requestedModel=${requestedModel}
+      benchmarkIndex=${benchmarkIndex}
+      runEasyBenchmark=${(onProgress) =>
+        benchmarkRunner.run({ onProgress })}
     />`,
   );
   await app.waitUntilExit();

@@ -255,7 +255,12 @@ const INTENT_PURPOSE_SCORES = {
  */
 export function scoreModelForTask(
   model,
-  { intent = "general", requiredContextLength = null, availableMemoryGb = null } = {},
+  {
+    intent = "general",
+    requiredContextLength = null,
+    availableMemoryGb = null,
+    benchmarkResults = null,
+  } = {},
 ) {
   const reasons = [];
   if (!model || EMBEDDING_TYPES.has(model.type)) {
@@ -314,7 +319,66 @@ export function scoreModelForTask(
     reasons.push(`low-bit quantization (${model.quantization})`);
   }
 
-  return { score, reasons };
+  const benchmark = benchmarkResults?.[model.id] ?? null;
+  const intentCategory = {
+    coding: "coding",
+    analysis: "reasoning",
+    writing: "writing",
+    research: "research",
+    general: "overall",
+  }[intent] ?? "overall";
+  const benchmarkScore = Number(
+    benchmark?.scores?.[intentCategory] ?? benchmark?.scores?.overall,
+  );
+  if (
+    benchmark?.status === "completed" &&
+    Number.isFinite(benchmarkScore)
+  ) {
+    const heuristicScore = score;
+    // Fresh benchmark evidence is primary. Heuristics remain a small,
+    // deterministic tie-break for load state, fit, and declared capabilities.
+    score = benchmarkScore + Math.max(-10, Math.min(15, heuristicScore)) / 10;
+    reasons.unshift(
+      `benchmark ${intentCategory} score ${benchmarkScore}/100 (${benchmark.revision ?? "cached"})`,
+    );
+    return {
+      score,
+      reasons,
+      heuristicScore,
+      benchmark: {
+        category: intentCategory,
+        score: benchmarkScore,
+        overall: benchmark.scores?.overall ?? null,
+        completedAt: benchmark.completedAt ?? null,
+        revision: benchmark.revision ?? null,
+      },
+    };
+  }
+
+  if (
+    benchmarkResults &&
+    typeof benchmarkResults === "object" &&
+    !Array.isArray(benchmarkResults)
+  ) {
+    const heuristicScore = score;
+    score = 50 + Math.max(-10, Math.min(15, heuristicScore)) / 10;
+    reasons.unshift(
+      "no fresh benchmark score; using neutral benchmark prior plus inventory heuristics",
+    );
+    return {
+      score,
+      reasons,
+      heuristicScore,
+      benchmark: null,
+    };
+  }
+
+  return {
+    score,
+    reasons,
+    heuristicScore: score,
+    benchmark: null,
+  };
 }
 
 /**
@@ -325,8 +389,9 @@ export function rankModelsForTask(models, options = undefined) {
   const list = Array.isArray(models) ? models : [];
   return list
     .map((model) => {
-      const { score, reasons } = scoreModelForTask(model, options);
-      return { model, score, reasons };
+      const { score, reasons, heuristicScore, benchmark } =
+        scoreModelForTask(model, options);
+      return { model, score, reasons, heuristicScore, benchmark };
     })
     .filter((entry) => Number.isFinite(entry.score))
     .sort((a, b) => (b.score === a.score ? a.model.id.localeCompare(b.model.id) : b.score - a.score));
@@ -439,6 +504,8 @@ export async function resolveAutoModel({
   workspaceContext = null,
   requiredContextLength = null,
   availableMemoryGb = null,
+  benchmarkResults = null,
+  loadBenchmarkResults = null,
   logger = null,
 } = {}) {
   const log = typeof logger === "function" ? logger : () => {};
@@ -452,10 +519,24 @@ export async function resolveAutoModel({
     );
     return null;
   }
+  let effectiveBenchmarkResults = benchmarkResults;
+  if (
+    !effectiveBenchmarkResults &&
+    typeof loadBenchmarkResults === "function"
+  ) {
+    try {
+      effectiveBenchmarkResults = await loadBenchmarkResults(catalog.models);
+    } catch (error) {
+      log(
+        `[ModelCatalog] Unable to load model benchmark scores (${error instanceof Error ? error.message : error}); using inventory heuristics.`,
+      );
+    }
+  }
   const best = selectBestModelForTask(catalog.models, {
     intent,
     requiredContextLength,
     availableMemoryGb,
+    benchmarkResults: effectiveBenchmarkResults,
   });
   if (!best) {
     log("[ModelCatalog] Model catalog is empty; falling back to configured default model.");
@@ -469,5 +550,6 @@ export async function resolveAutoModel({
     model: best.model,
     ranked: best.ranked,
     source: catalog.source,
+    benchmarkCount: Object.keys(effectiveBenchmarkResults ?? {}).length,
   };
 }

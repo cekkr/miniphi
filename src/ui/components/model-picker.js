@@ -86,7 +86,10 @@ export default function ModelPicker({
             model.state ?? "unknown",
             `ctx=${formatContext(model.loadedContextLength ?? model.maxContextLength)}`,
             describeCapabilities(model),
-          ].join(" · ");
+            choice.benchmark
+              ? `bench ${choice.benchmark.category}=${choice.benchmark.score}`
+              : null,
+          ].filter(Boolean).join(" · ");
           return html`<${Text}
             key=${choice.value}
             color=${active ? "cyan" : choice.unavailable ? "yellow" : undefined}
