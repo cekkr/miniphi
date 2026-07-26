@@ -235,7 +235,7 @@ Slices (in order):
      overflow, with the graph showing demotion + at least one model-driven reform, and the same
      session resumable from its persisted graph.
 
-6) Idle-vs-stall observability — **DEFERRED to v0.2** (note kept; superseded in priority by slice 5)
+6) Idle-vs-stall observability — **DEFERRED to v0.3/backlog** (specification retained)
    - Problem: when no computation is running, the operator cannot tell whether MiniPhi is
      *waiting for input* or *stalled/hung*. A static UI frame or silent stdout looks identical for:
      an unanswered permission prompt, the empty task box / file picker, a long in-flight model
@@ -266,19 +266,30 @@ Slices (in order):
    - Exit criteria: at any moment the operator can tell from the screen (or headless output)
      whether MiniPhi is computing, waiting on them, or stalled; a hung model turn is reported
      within a bounded time rather than appearing as indefinite "thinking".
-   - Deferred 2026-07-25 to make room for the multi-layered context slice (one-in-one-out rule).
+   - Deferred 2026-07-25 to make room for the multi-layered context slice, then moved out of v0.2
+     on 2026-07-26 to make room for the model/runtime slices below (one-in-one-out rule).
 
 ### v0.2 Reliability, reuse, and model management
-Objective: make the agent predictable across sessions, workloads, and model inventories.
+Objective: make the agent capability-aware and predictable across sessions, reasoning budgets,
+hardware profiles, and local model inventories.
 
 Exit criteria:
-- Deliberate model lifecycle: adopt LM Studio `/api/v1` (`models/load`, `models/unload`) so
-  MiniPhi loads the selected model at a task-appropriate context instead of inheriting the
-  JIT default, and can unload to free memory before loading a larger model.
-- `--model auto` honored from config (`defaults.model: "auto"`) with the catalog ranking
-  persisted per run; presets reduced to fallback hints, not the source of truth.
+- LM Studio integration follows the current
+  [REST API reference](https://lmstudio.ai/docs/developer/rest): native `/api/v1` model
+  discovery/lifecycle data drives both CLI and UI selection, while every inference route still
+  proves and preserves MiniPhi's mandatory `response_format=json_schema` contract.
+- A MiniPhi reasoning profile (`off|low|medium|high`, default `high`) controls both the model's
+  reasoning setting when the selected endpoint/model supports it and the bounded number/depth of
+  decomposer subprompts. Unsupported model-side reasoning degrades deterministically to
+  decomposition-only behavior.
+- An internal, versioned benchmark evaluates every applicable model returned by the configured
+  LM Studio API, records capability-specific quality/performance/resource metrics, and reuses a
+  cached result only when the model artifact, benchmark definition, load configuration, LM Studio
+  runtime, and hardware fingerprint are unchanged.
+- Optional heterogeneous routing assigns bounded subprompts to the locally available models best
+  suited to them using fresh benchmark evidence. Single-model execution remains the default, and
+  every routed exchange retains schema validation, context budgets, provenance, and stop reasons.
 - Prompt and plan reuse reduce repeated tokens without breaking schema validity.
-- Helper and command libraries show consistent reuse across at least two different repos.
 - Offline evaluation harness (ai-agent-evals style) runs locally and records JSON compliance +
   tool-call accuracy metrics with a stored report.
 - Benchmark compendium (`dev_samples/test_tasks/`) stays in sync with `dev_samples/task-tests.md`;
@@ -286,15 +297,120 @@ Exit criteria:
 - Live `benchmark general --live-lm` retry ladders stay deterministic with persisted attempt
   telemetry and canonical stop reasons (carried over from v0.1 hardening).
 
-Nitpick exit criteria (unchanged):
-- `miniphi nitpick --task "<long-form task>" --rounds 2` completes with JSON-only
-  plan/draft/critique/revision steps and stores a session under `.miniphi/nitpick/`.
-- `miniphi nitpick --blind --task "<long-form task>"` captures research + web snapshots and
-  produces a final draft using cited sources.
+Ordered slices:
 
-Deferred within v0.2:
-- Nitpick evaluation harness; helper script lifecycle (versioning, replay, output summaries);
-  full external benchmark repo mirroring (WebArena/OSWorld-scale assets).
+1) Current LM Studio REST adapter + model selection in CLI/UI
+   - Replace the older API assumptions and scattered endpoint notes with the official REST
+     reference above as the source of truth. Add a versioned adapter for `GET /api/v1/models`,
+     `POST /api/v1/models/load`, `POST /api/v1/models/unload`, and the relevant inference
+     endpoint(s), retaining bounded `/api/v0`/OpenAI-compatible fallback only for detected older
+     servers or features not yet available on native v1.
+   - Normalize model key/type, quantization, size, maximum context, loaded instances and their
+     actual context/load configuration, and advertised capabilities such as vision and tool use.
+     Embedding and other non-chat models stay visible but are never ranked as chat candidates.
+   - Make model scanning useful: `--model auto` and `defaults.model: "auto"` rank the live v1
+     inventory; the interactive UI adds an `Auto`/manual model option showing loaded state,
+     context, capabilities, memory fit, and benchmark freshness before a run. Persist the selected
+     model, instance/load configuration, selection reason, inventory snapshot, and fallback route
+     in the session result.
+   - Adopt deliberate load/unload with task-appropriate context and memory checks. Never unload an
+     operator-loaded instance implicitly: lifecycle-changing benchmark/orchestration runs must be
+     explicitly enabled and restore the prior loaded-model state on a best-effort basis.
+   - Keep JSON-first behavior as the gate: do not move a prompt to `/api/v1/chat` (or any other
+     route) unless that exact server/endpoint/model combination accepts
+     `response_format=json_schema` and returns schema-valid JSON. Otherwise keep schema-bound
+     inference on the proven compatible route and use native v1 for discovery/lifecycle.
+   - Exit proof: against one current and one fallback-compatible LM Studio server fixture, CLI and
+     UI show the same normalized inventory; a real UI run selects/loads a model, completes a
+     schema-valid edit, and records the model instance and route without leaking loaded instances.
+
+2) Multi-level reasoning profile (default `high`)
+   - Add one normalized profile to config, direct CLI flows, and the interactive UI:
+     `off|low|medium|high`, defaulting to `high`. Explicit low-level overrides such as
+     `--max-plan-expansions` remain authoritative and are recorded beside the resolved profile.
+   - Resolve two independent controls from the profile:
+     - model effort: send LM Studio's supported reasoning setting only after capability detection
+       or one bounded probe; on an unsupported-setting error, retry once without it and cache that
+       capability result rather than repeatedly failing;
+     - agent effort: cap automatic branch-expansion subprompts at `off=0`, `low=1`, `medium=2`,
+       and `high=4` (the current maximum), with corresponding depth/token/session budgets. A model
+       without adjustable reasoning still benefits from this decomposer control.
+   - Thread the resolved profile through planner, focused subprompts, interactive turns, headless
+     flows, prompt journals, and benchmark records. Each LM Studio request continues to declare
+     its exact JSON schema; reasoning text/content is retained in instrumentation but never parsed
+     as the action payload.
+   - UI: expose the profile beside model selection, preview its subprompt/time budget, and show
+     when model-side effort is unsupported and only MiniPhi decomposition will change.
+   - Exit proof: the same deterministic task runs at low/medium/high, produces monotonically
+     increasing allowed subprompt budgets, and records the resolved model/decomposer settings;
+     live runs cover one effort-capable and one effort-incapable model with no schema regression.
+
+3) Hardware-aware LM Studio model benchmark + cache
+   - Add an internal `benchmark models` workflow that scans the configured `/api/v1/models`
+     inventory and tests every selected/applicable local model one at a time. Capability-gated
+     suites cover:
+     - reasoning and instruction following;
+     - coding, guarded-edit correctness, JSON-schema adherence, and tool-call accuracy;
+     - short, medium, and near-loaded-window context retention plus context-graph
+       expand/reform behavior;
+     - time to first token, tokens/second, total latency, and timeout/fallback rate;
+     - local CPU, RAM, GPU/VRAM, load time, and peak resource use where the host/runtime exposes
+       them (persist `unavailable` with a reason rather than estimating missing metrics);
+     - image interpretation for advertised vision models, and image generation only if a
+       discoverable LM Studio model/endpoint supports it. Non-applicable capability suites are
+       explicit skips and do not lower a model's score.
+   - Prefer executable/deterministic graders (schema validation, tests, exact retrieval, image
+     fixtures) over model self-grading. Warm-up, repeat count, seeds where supported, timeout,
+     prompt/schema versions, and load configuration are part of the benchmark definition.
+   - Cache raw trials and normalized scores under `.miniphi/benchmarks/models/`. A reusable cache
+     key includes a hash/version of all fixtures, prompts, schemas, graders and harness code; exact
+     model identity/artifact (including quantization/size); LM Studio version/backend; resolved
+     load configuration; and a privacy-preserving hardware fingerprint (OS/architecture, CPU,
+     RAM, GPU/VRAM and relevant runtime/driver versions when available). A change to any component
+     invalidates only the affected results; `--force` reruns explicitly.
+   - Benchmarking is opt-in because it may load models and consume substantial time/resources.
+     Emit progress, per-model deadlines, canonical stop/skip reasons, resumable partial results,
+     and a comparison report consumable by the selector and UI. Never run multiple heavyweight
+     local models concurrently by default.
+   - Exit proof: a fixture inventory exercises cache hit, benchmark-revision miss, hardware miss,
+     partial resume, unsupported capability skips, and resource-unavailable handling; a live run
+     benchmarks at least two distinct local models and a second unchanged run performs no model
+     inference.
+
+4) Optional benchmark-guided multi-model subprompt routing
+   - Add a model strategy shared by CLI/config/UI: `single` (default) or
+     `best-per-subprompt`. The optional strategy classifies each bounded plan branch (for example
+     reasoning, coding, context retrieval, vision, or verification), filters by required
+     capabilities and current hardware fit, then selects the best model from fresh compatible
+     benchmark results. Missing/stale evidence falls back deterministically to the primary model.
+   - Route subprompts, not an unbounded shared transcript. Every model receives a budgeted
+     `ContextGraph` projection plus the exact task schema; validated branch outcomes are collapsed
+     into model-neutral graph nodes before another model consumes them. Record model id/instance,
+     benchmark evidence, selection reason, request schema, token/resource cost, and stop reason
+     for every branch.
+   - Minimize model churn with a bounded routing plan that groups compatible branches, checks
+     memory before load, and serializes heavyweight local inference. A failed specialist is tried
+     at most once before the primary-model fallback; global recursion, retry, session, and context
+     caps still win over routing.
+   - Keep a later, separately bounded `compare` mode out of the first implementation: running the
+     same critical subprompt on multiple models and adjudicating their results may be added only
+     after `best-per-subprompt` proves a measurable quality gain over its time/resource cost.
+   - Exit proof: one mixed reasoning/coding/context task routes at least two branches to different
+     models, completes a guarded validated edit, and persists reproducible provenance. On a fixed
+     evaluation set it must improve task success or validated output quality over `single` without
+     exceeding declared time/resource caps; otherwise the feature remains experimental.
+
+Priority trade-off:
+- These four slices take the v0.2 capacity previously earmarked for idle-vs-stall observability,
+  Nitpick expansion, helper/command-library reuse, and full external benchmark mirroring. Those
+  lower-priority items move to v0.3/backlog; the existing `benchmark general` reliability work
+  remains a regression gate rather than a competing slice.
+
+Deferred from v0.2:
+- Idle-vs-stall UI/watchdog implementation (the v0.1 diagnostic note remains the specification).
+- Nitpick workflow/evaluation expansion.
+- Helper/command-library reuse and helper script lifecycle (versioning, replay, output summaries).
+- Full external benchmark repo mirroring (WebArena/OSWorld-scale assets).
 
 ### v0.3 Distribution and sustainability
 Objective: prepare MiniPhi for wider distribution and long-term maintenance.
@@ -308,7 +424,10 @@ Exit criteria:
 Focus areas:
 - Benchmarks coverage beyond Bash recomposition.
 - Telemetry and performance summaries (opt-in, local-only).
-- Deferred: fallback cache and prompt-composition heuristics to reduce repeated failures.
+- Revisit the deferred idle-vs-stall, Nitpick, and helper-reuse work after the v0.2 model/runtime
+  slices close.
+- Deferred: fallback cache and prompt-composition heuristics to reduce repeated failures; full
+  external benchmark repo mirroring.
 
 ## Testing tiers (run per slice)
 - Offline deterministic: `npm test` — no LM Studio required; live tests self-skip.
