@@ -421,6 +421,85 @@ test("AgentSession reports visual_review as unavailable when no vision model is 
   }
 });
 
+test("AgentSession runs knowledge_lookup and feeds retrieved facts into the next turn", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const client = scriptedClient([
+      turn([
+        {
+          type: "knowledge_lookup",
+          subject: "Springfield",
+          reason: "check recorded facts before asserting one",
+        },
+      ]),
+      turn([{ type: "finish", reason: "used the recorded fact" }], { summary: "Answered from the knowledge base" }),
+    ]);
+    const lookupCalls = [];
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: path.join(workspace, ".miniphi"),
+      sessionId: "test-knowledge",
+      approver: createHeadlessApprover({ policy: "allow" }),
+      knowledgeLookup: async (request) => {
+        lookupCalls.push(request);
+        return {
+          ok: true,
+          response: {
+            resolved: true,
+            nodeId: "topic:springfield",
+            facts: [{ id: "place:illinois", via: [{ type: "located_in" }] }],
+          },
+        };
+      },
+    });
+
+    const result = await session.submitTask("What do you know about Springfield?");
+
+    assert.equal(result.status, "completed");
+    assert.equal(lookupCalls.length, 1);
+    assert.equal(lookupCalls[0].subject, "Springfield");
+    assert.match(client.calls[1][1].content, /located_in/);
+    // The knowledge_lookup guide is only advertised when a lookup function is
+    // configured (the schema itself always lists knowledge_lookup as a valid
+    // action type, so this checks the guidance text, not the enum entry).
+    assert.match(client.calls[0][0].content, /knowledge base .* is available/);
+    const transcript = await fs.readFile(
+      path.join(workspace, ".miniphi", "agent-sessions", "test-knowledge", "transcript.jsonl"),
+      "utf8",
+    );
+    assert.match(transcript, /"kind":"knowledge"/);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("AgentSession reports knowledge_lookup as unavailable when no knowledge base is configured", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    const client = scriptedClient([
+      turn([{ type: "knowledge_lookup", subject: "Springfield", reason: "check recorded facts" }]),
+      turn([{ type: "finish", reason: "no knowledge base available" }]),
+    ]);
+    const statuses = [];
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: null,
+    });
+    session.on("action-result", (result) => statuses.push(result.status));
+
+    const result = await session.submitTask("What do you know about Springfield?");
+
+    assert.equal(result.status, "completed");
+    assert.ok(statuses.includes("unavailable"));
+    // Without a configured lookup function, the guide must not be advertised.
+    assert.doesNotMatch(client.calls[0][0].content, /knowledge base .* is available/);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
 test("AgentSession records a rejection and leaves files untouched", async () => {
   const workspace = await createTempWorkspace();
   try {

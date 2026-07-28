@@ -19,6 +19,7 @@ test("classifyActionType buckets actions for the session loop", () => {
   assert.equal(classifyActionType("search_text"), "readonly");
   assert.equal(classifyActionType("web_research"), "research");
   assert.equal(classifyActionType("visual_review"), "visual");
+  assert.equal(classifyActionType("knowledge_lookup"), "knowledge");
   assert.equal(classifyActionType("write_file"), "mutating");
   assert.equal(classifyActionType("run_cmd"), "mutating");
   assert.equal(classifyActionType("finish"), "finish");
@@ -36,6 +37,11 @@ test("normalizeAgentAction rejects unsafe paths and malformed actions", () => {
   assert.equal(normalizeAgentAction({ type: "search_text", term: "  ", reason: "x" }, cwd).ok, false);
   assert.equal(normalizeAgentAction({ type: "run_cmd", command: "", reason: "x" }, cwd).ok, false);
   assert.equal(normalizeAgentAction({ type: "web_research", query: "", reason: "x" }, cwd).ok, false);
+  assert.equal(
+    normalizeAgentAction({ type: "knowledge_lookup", subject: "   ", reason: "x" }, cwd).ok,
+    false,
+    "knowledge_lookup requires a non-empty subject",
+  );
   assert.equal(normalizeAgentAction({ type: "write_file", path: "a.js", reason: "x" }, cwd).ok, false);
   assert.equal(
     normalizeAgentAction({ type: "edit_file", path: "a.js", reason: "x" }, cwd).ok,
@@ -117,8 +123,23 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
     "visual_review rejects paths that escape the workspace",
   );
 
+  const knowledge = normalizeAgentAction(
+    { type: "knowledge_lookup", subject: "  Springfield  ", reason: "check for recorded facts" },
+    cwd,
+  );
+  assert.equal(knowledge.ok, true);
+  assert.equal(knowledge.category, "knowledge");
+  assert.equal(knowledge.action.subject, "Springfield");
+  assert.equal(
+    normalizeAgentAction({ type: "knowledge_lookup", subject: "x".repeat(500), reason: "x" }, cwd).action.subject
+      .length,
+    200,
+    "subject is capped at 200 chars",
+  );
+
   assert.equal(describeAction(write.action), "write_file out.txt");
   assert.equal(describeAction(visual.action), "visual_review index.html");
+  assert.equal(describeAction(knowledge.action), "knowledge_lookup Springfield");
 });
 
 test("buildMutationProposal previews new-file writes with a diff and no expectedHash", async () => {
@@ -321,6 +342,7 @@ test("agent-action schema accepts a valid turn and rejects malformed ones", () =
       { type: "read_file", path: "src/index.js", reason: "understand exports" },
       { type: "web_research", query: "JavaScript animation libraries", max_results: 3, reason: "compare options" },
       { type: "visual_review", path: "index.html", focus: "does the ball look round", reason: "check rendered quality" },
+      { type: "knowledge_lookup", subject: "Springfield", reason: "check recorded facts before asserting one" },
       { type: "write_file", path: "src/slug.js", content: "export const slug = () => {};\n", reason: "add helper", danger: "low" },
     ],
     needs_more_context: false,

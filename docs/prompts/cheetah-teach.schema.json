@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Cheetah teach turn",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "thinking",
+    "subject_name",
+    "subject_type",
+    "no_new_information",
+    "new_facts",
+    "known_facts",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "thinking": {
+      "type": "string",
+      "minLength": 1,
+      "description": "1-3 sentences reasoning about the snippet before deciding what to save. Never skip this."
+    },
+    "subject_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The main entity the snippet is about. Confirm or correct the hinted subject; do not invent an unrelated one."
+    },
+    "subject_type": {
+      "type": "string",
+      "enum": ["person", "place", "organization", "species", "work", "event", "concept", "object", "other"],
+      "description": "Kind of the subject entity."
+    },
+    "no_new_information": {
+      "type": "boolean",
+      "description": "True only when everything in the snippet is already known/redundant and nothing should be saved. If true, new_facts is ignored even if non-empty."
+    },
+    "new_facts": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "Facts you do NOT already know and are declaring must be saved. Empty when no_new_information is true.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relation", "object_name", "object_type"],
+        "properties": {
+          "relation": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Snake_case-ish verb naming the relation, e.g. 'located_in', 'born_in', 'has_occupation'."
+          },
+          "object_name": { "type": "string", "minLength": 1 },
+          "object_type": {
+            "type": "string",
+            "enum": ["person", "place", "organization", "species", "work", "event", "concept", "object", "other"]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["certain", "probable", "possible", "unlikely", "ruled_out"],
+            "description": "Omit for a flat, certain assertion. Use a hedge word only when the snippet itself hedges ('may be', 'is thought to')."
+          }
+        }
+      }
+    },
+    "known_facts": {
+      "type": "array",
+      "description": "Short phrases naming things in the snippet you recognize as already known/redundant. Transparency only; never written to the database.",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "stop_reason": { "type": "string" },
+    "stop_reason_code": { "type": ["string", "null"] },
+    "stop_reason_detail": { "type": ["string", "null"] }
+  }
+}

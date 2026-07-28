@@ -11,11 +11,13 @@ const DEFAULT_MAX_OUTPUT_CHARS = 1500;
 export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_text"]);
 export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
 export const VISUAL_ACTION_TYPES = new Set(["visual_review"]);
+export const KNOWLEDGE_ACTION_TYPES = new Set(["knowledge_lookup"]);
 export const MUTATING_ACTION_TYPES = new Set(["write_file", "edit_file", "run_cmd"]);
 const KNOWN_ACTION_TYPES = new Set([
   ...READONLY_ACTION_TYPES,
   ...RESEARCH_ACTION_TYPES,
   ...VISUAL_ACTION_TYPES,
+  ...KNOWLEDGE_ACTION_TYPES,
   ...MUTATING_ACTION_TYPES,
   "finish",
 ]);
@@ -63,6 +65,9 @@ export function classifyActionType(type) {
   if (VISUAL_ACTION_TYPES.has(type)) {
     return "visual";
   }
+  if (KNOWLEDGE_ACTION_TYPES.has(type)) {
+    return "knowledge";
+  }
   if (MUTATING_ACTION_TYPES.has(type)) {
     return "mutating";
   }
@@ -77,7 +82,7 @@ export function describeAction(action) {
   if (!action || typeof action !== "object") {
     return "(invalid action)";
   }
-  const target = action.path ?? action.term ?? action.query ?? action.command ?? "";
+  const target = action.path ?? action.term ?? action.query ?? action.subject ?? action.command ?? "";
   return `${action.type}${target ? ` ${target}` : ""}`.trim();
 }
 
@@ -140,6 +145,15 @@ export function normalizeAgentAction(rawAction, cwd) {
       return { ok: false, error: "run_cmd requires a command" };
     }
     action.command = command;
+    return { ok: true, action, category };
+  }
+
+  if (type === "knowledge_lookup") {
+    const subject = typeof rawAction.subject === "string" ? rawAction.subject.trim() : "";
+    if (!subject) {
+      return { ok: false, error: "knowledge_lookup requires a non-empty subject" };
+    }
+    action.subject = subject.slice(0, 200);
     return { ok: true, action, category };
   }
 

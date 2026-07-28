@@ -96,6 +96,7 @@ import { handleHistoryNotes } from "./commands/history-notes.js";
 import { handleLmStudioHealthCommand, probeLmStudioHealth } from "./commands/lmstudio-health.js";
 import { handleMigrateStopReasonsCommand } from "./commands/migrate-stop-reasons.js";
 import { handleModelsCommand } from "./commands/models.js";
+import { handleCheetahLearnCommand } from "./commands/cheetah-learn.js";
 import { buildPrimaryCommandContext, executePrimaryCommand } from "./commands/primary-flow.js";
 import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
@@ -120,6 +121,7 @@ const COMMANDS = new Set([
   "migrate-stop-reasons",
   "nitpick",
   "models",
+  "cheetah-learn",
   "ui",
 ]);
 
@@ -1156,6 +1158,7 @@ async function launchInteractiveUi({ configData, lmStudioEndpoints, options, ini
     modelCatalogSource: liveCatalog?.source ?? null,
     requestedModel: requestedModel ?? "auto",
     reasoningProfile,
+    configData,
   });
 }
 
@@ -1802,7 +1805,18 @@ async function main() {
     return;
   }
 
-  // "recompose" command is ONLY for development testing purposes, like "benchmark". 
+  if (command === "cheetah-learn") {
+    await handleCheetahLearnCommand({
+      options,
+      positionals,
+      verbose,
+      configData,
+      restBaseUrl: resolvedLmStudioBaseUrl,
+    });
+    return;
+  }
+
+  // "recompose" command is ONLY for development testing purposes, like "benchmark".
   if (command === "recompose") { 
     await handleRecomposeCommand({
       options,
@@ -3116,6 +3130,9 @@ Usage:
   node src/index.js recompose --sample samples/recompose/hello-flow --direction roundtrip --clean
   node src/index.js benchmark recompose --directions roundtrip,code-to-markdown --repeat 3
   node src/index.js prompt-template --baseline truncation --task "Teach me how to chunk jest logs"
+  node src/index.js cheetah-learn teach --limit 20 --base-url http://192.168.56.1:1234
+  node src/index.js cheetah-learn ask "What do you know about Springfield?"
+  node src/index.js cheetah-learn eval --teach-limit 20 --eval-limit 8
 
 Options:
   --cmd <command>              Command to execute in run mode

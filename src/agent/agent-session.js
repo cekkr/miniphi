@@ -56,6 +56,11 @@ ${CONTEXT_LANGUAGE_GUIDE}`;
 // that would just report "unavailable".
 const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. Use visual_review (path to a rendered HTML/image file, optional focus) to judge subjective visual quality that text/regex checks cannot see: does a shape look right, are colors/proportions convincing, does an animation look like it actually moved. It runs automatically like web_research and returns structured JSON (quality_score, issues, suggestions) from a model that looked at an actual screenshot; use its issues/suggestions to drive your next write_file/edit_file instead of guessing.`;
 
+// Only appended when a reachable Cheetah knowledge base was configured (see
+// AgentSession.knowledgeLookup), so the model is never told about an action
+// that would just report "unavailable".
+const KNOWLEDGE_LOOKUP_GUIDE = `A knowledge base (taught via the separate "cheetah-learn" command, e.g. from Wikipedia text) is available this session. Use knowledge_lookup (subject: an entity/topic name, e.g. "Springfield") before asserting a real-world fact you are not certain of; it runs automatically and returns structured JSON (resolved, facts, evidence) grounded in what was actually taught. resolved=false means nothing is recorded there - say so rather than guessing.`;
+
 /**
  * Drives one interactive agent task: plan → act → (approve) → apply → repeat.
  * UI-agnostic: it emits events and awaits an injected `approver`, so the same
@@ -77,6 +82,8 @@ export default class AgentSession extends EventEmitter {
     this.runCommand = typeof options?.runCommand === "function" ? options.runCommand : null;
     this.webResearch = typeof options?.webResearch === "function" ? options.webResearch : null;
     this.visionReview = typeof options?.visionReview === "function" ? options.visionReview : null;
+    this.knowledgeLookup =
+      typeof options?.knowledgeLookup === "function" ? options.knowledgeLookup : null;
     this.validateWorkspace =
       typeof options?.validateWorkspace === "function" ? options.validateWorkspace : null;
     this.requireWebResearch = Boolean(options?.requireWebResearch);
@@ -297,11 +304,13 @@ export default class AgentSession extends EventEmitter {
     }
   }
 
-  /** SYSTEM_PROMPT plus the visual_review guide, only when a vision model is configured. */
+  /** SYSTEM_PROMPT plus the visual_review/knowledge_lookup guides, only when configured. */
   _systemPrompt() {
-    return typeof this.visionReview === "function"
-      ? `${SYSTEM_PROMPT}\n\n${VISUAL_REVIEW_GUIDE}`
-      : SYSTEM_PROMPT;
+    const guides = [
+      typeof this.visionReview === "function" ? VISUAL_REVIEW_GUIDE : null,
+      typeof this.knowledgeLookup === "function" ? KNOWLEDGE_LOOKUP_GUIDE : null,
+    ].filter(Boolean);
+    return guides.length ? `${SYSTEM_PROMPT}\n\n${guides.join("\n\n")}` : SYSTEM_PROMPT;
   }
 
   /** Tokens the system prompt + schema block always cost, excluded from the context budget. */
@@ -1159,6 +1168,72 @@ export default class AgentSession extends EventEmitter {
     await this._appendTranscript({ kind: "visual", ...result });
   }
 
+  async _handleKnowledgeLookup({ action, turn }) {
+    const signature = `${action.type}:${action.subject}`;
+    if (this._actionSignatures.has(signature)) {
+      const result = { turn, action: { type: action.type, subject: action.subject }, status: "duplicate" };
+      this.emit("action-result", result);
+      this._remember({
+        layer: "contract",
+        label: `duplicate ${describeAction(action)}`,
+        text: `${describeAction(action)} -> already looked up (skipped); use the existing facts.`,
+        importance: 0.8,
+        ttlTurns: 1,
+      });
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    this._actionSignatures.add(signature);
+    this.emit("action-start", { turn, action, description: describeAction(action) });
+
+    let status = "executed";
+    let output = "";
+    if (typeof this.knowledgeLookup !== "function") {
+      status = "unavailable";
+      output = JSON.stringify({
+        subject: action.subject,
+        resolved: false,
+        error: "no knowledge base is configured for this agent session",
+      });
+    } else {
+      try {
+        const result = await this.knowledgeLookup({
+          subject: action.subject,
+          sessionDeadline: this.sessionDeadline,
+        });
+        if (!result?.ok) {
+          status = "failed";
+          output = JSON.stringify({ error: result?.error ?? "knowledge lookup failed" });
+        } else {
+          output = JSON.stringify(result.response, null, 2);
+        }
+      } catch (error) {
+        status = "failed";
+        output = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (status === "executed") {
+      this._progressThisTurn = true;
+    }
+    const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
+    const result = {
+      turn,
+      action: { type: action.type, subject: action.subject },
+      status,
+      output: boundedOutput,
+    };
+    this.emit("action-result", result);
+    this._remember({
+      layer: "evidence",
+      label: `knowledge_lookup "${action.subject}"`,
+      text: `${describeAction(action)} -> ${status}\n${boundedOutput}`,
+      importance: 0.75,
+      kind: "knowledge",
+    });
+    await this._appendTranscript({ kind: "knowledge", ...result });
+  }
+
   /**
    * Runs the full task loop and resolves with a result summary. Also emits a
    * `done` event with the same payload.
@@ -1333,6 +1408,8 @@ export default class AgentSession extends EventEmitter {
           await this._handleResearch({ action, turn });
         } else if (category === "visual") {
           await this._handleVisualReview({ action, turn });
+        } else if (category === "knowledge") {
+          await this._handleKnowledgeLookup({ action, turn });
         } else if (action.type === "run_cmd") {
           await this._handleCommand({ action, turn });
         } else {

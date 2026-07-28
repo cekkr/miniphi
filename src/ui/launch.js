@@ -12,6 +12,11 @@ import {
 import { selectVisionModel } from "../libs/model-catalog.js";
 import { createVisionReviewAction } from "../libs/vision-reviewer.js";
 import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
+import { CheetahTcpClient } from "../libs/cheetah-context-engine.js";
+import {
+  resolveKnowledgeLookupConfig,
+  createKnowledgeLookupAction,
+} from "../libs/cheetah-knowledge-client.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -33,6 +38,7 @@ import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
  * @param {string} [options.modelCatalogSource] Inventory route used for discovery.
  * @param {string} [options.requestedModel] Config/CLI model request (`auto` or an id).
  * @param {string} [options.reasoningProfile] Initial reasoning profile.
+ * @param {object} [options.configData] Loaded config.json, used to resolve optional capabilities (e.g. knowledge_lookup).
  * @returns {Promise<object>} the finished session result.
  */
 export async function launchAgentUi(options = undefined) {
@@ -53,6 +59,7 @@ export async function launchAgentUi(options = undefined) {
     modelCatalogSource = null,
     requestedModel = "auto",
     reasoningProfile = "high",
+    configData = null,
   } = options ?? {};
 
   const files = await scanWorkspaceFiles(cwd);
@@ -77,6 +84,30 @@ export async function launchAgentUi(options = undefined) {
         model: visionModel.id,
       })
     : null;
+  // Knowledge lookup (over the same Cheetah database `cheetah-learn` teaches)
+  // is opt-in via config.knowledgeLookup.enabled / MINIPHI_KNOWLEDGE_LOOKUP=1,
+  // off by default so a normal run never pays a reachability-probe cost for a
+  // service most operators haven't set up. When enabled, mirror visual_review
+  // exactly: one reachability probe, wired in only if it actually succeeds, so
+  // the model is never told about an action that would just report
+  // "unavailable" every turn.
+  const knowledgeLookupConfig = resolveKnowledgeLookupConfig(configData);
+  let knowledgeLookup = null;
+  if (knowledgeLookupConfig.enabled) {
+    const knowledgeClient = new CheetahTcpClient({
+      host: knowledgeLookupConfig.host,
+      port: knowledgeLookupConfig.port,
+      database: knowledgeLookupConfig.database,
+      timeoutMs: knowledgeLookupConfig.timeoutMs,
+    });
+    const reachable = await knowledgeClient
+      .execute(["SYSTEM_STATS"])
+      .then(() => true)
+      .catch(() => false);
+    if (reachable) {
+      knowledgeLookup = createKnowledgeLookupAction({ cheetahClient: knowledgeClient });
+    }
+  }
   const session = new AgentSession({
     client,
     cwd,
@@ -86,6 +117,7 @@ export async function launchAgentUi(options = undefined) {
       webResearch ??
       ((query, researchOptions) => researcher.search(query, researchOptions)),
     visionReview,
+    knowledgeLookup,
     sessionDeadline,
     model,
     temperature,
