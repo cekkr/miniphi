@@ -334,6 +334,93 @@ test("AgentSession caps web research loops and tells the model to implement", as
   }
 });
 
+test("AgentSession runs visual_review and feeds the vision model's critique into the next turn", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    await fs.writeFile(path.join(workspace, "index.html"), "<canvas></canvas>\n", "utf8");
+    const client = scriptedClient([
+      turn([
+        {
+          type: "visual_review",
+          path: "index.html",
+          focus: "does the ball look round and orange",
+          reason: "check rendered quality before finishing",
+        },
+      ]),
+      turn([{ type: "finish", reason: "addressed feedback" }], { summary: "Fixed the ball shading" }),
+    ]);
+    const reviewCalls = [];
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: path.join(workspace, ".miniphi"),
+      sessionId: "test-visual",
+      approver: createHeadlessApprover({ policy: "allow" }),
+      visionReview: async (request) => {
+        reviewCalls.push(request);
+        return {
+          ok: true,
+          response: {
+            matches_intent: false,
+            quality_score: 40,
+            description: "A plain gray circle with no seam detail.",
+            issues: ["The ball has no orange color or seam lines."],
+            suggestions: ["Fill the circle orange and add curved seam strokes."],
+            page_errors: [],
+          },
+        };
+      },
+    });
+
+    const result = await session.submitTask("Create a bouncing basketball page");
+
+    assert.equal(result.status, "completed");
+    assert.equal(reviewCalls.length, 1);
+    assert.equal(reviewCalls[0].path, "index.html");
+    assert.equal(reviewCalls[0].focus, "does the ball look round and orange");
+    assert.match(client.calls[1][1].content, /seam lines/);
+    assert.match(client.calls[1][1].content, /Fill the circle orange/);
+    // The vision-review guide is only advertised when a reviewer is configured
+    // (the schema itself always lists visual_review as a valid action type,
+    // so this checks the guidance text rather than the enum entry).
+    assert.match(client.calls[0][0].content, /vision-capable model is available/);
+    const transcript = await fs.readFile(
+      path.join(workspace, ".miniphi", "agent-sessions", "test-visual", "transcript.jsonl"),
+      "utf8",
+    );
+    assert.match(transcript, /"kind":"visual"/);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("AgentSession reports visual_review as unavailable when no vision model is configured", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    await fs.writeFile(path.join(workspace, "index.html"), "<canvas></canvas>\n", "utf8");
+    const client = scriptedClient([
+      turn([{ type: "visual_review", path: "index.html", reason: "check rendered quality" }]),
+      turn([{ type: "finish", reason: "no vision model available" }]),
+    ]);
+    const statuses = [];
+    const session = new AgentSession({
+      client,
+      cwd: workspace,
+      baseDir: null,
+    });
+    session.on("action-result", (result) => statuses.push(result.status));
+
+    const result = await session.submitTask("Create a bouncing basketball page");
+
+    assert.equal(result.status, "completed");
+    assert.ok(statuses.includes("unavailable"));
+    // Without a configured reviewer, the guide must not be advertised.
+    assert.doesNotMatch(client.calls[0][0].content, /vision-capable model is available/);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
 test("AgentSession records a rejection and leaves files untouched", async () => {
   const workspace = await createTempWorkspace();
   try {

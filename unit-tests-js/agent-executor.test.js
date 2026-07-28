@@ -18,6 +18,7 @@ test("classifyActionType buckets actions for the session loop", () => {
   assert.equal(classifyActionType("read_file"), "readonly");
   assert.equal(classifyActionType("search_text"), "readonly");
   assert.equal(classifyActionType("web_research"), "research");
+  assert.equal(classifyActionType("visual_review"), "visual");
   assert.equal(classifyActionType("write_file"), "mutating");
   assert.equal(classifyActionType("run_cmd"), "mutating");
   assert.equal(classifyActionType("finish"), "finish");
@@ -89,7 +90,35 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
   assert.equal(research.action.query, "JavaScript 2D physics library");
   assert.equal(research.action.maxResults, 10);
 
+  const visual = normalizeAgentAction(
+    {
+      type: "visual_review",
+      path: "index.html",
+      focus: "  does the ball look round and orange, is it moving  ",
+      reason: "check rendered quality",
+    },
+    cwd,
+  );
+  assert.equal(visual.ok, true);
+  assert.equal(visual.category, "visual");
+  assert.equal(visual.action.path, "index.html");
+  assert.equal(visual.action.focus, "does the ball look round and orange, is it moving");
+
+  const visualNoFocus = normalizeAgentAction(
+    { type: "visual_review", path: "index.html", reason: "check rendered quality" },
+    cwd,
+  );
+  assert.equal(visualNoFocus.ok, true);
+  assert.equal(visualNoFocus.action.focus, undefined);
+
+  assert.equal(
+    normalizeAgentAction({ type: "visual_review", path: "../secret.html", reason: "x" }, cwd).ok,
+    false,
+    "visual_review rejects paths that escape the workspace",
+  );
+
   assert.equal(describeAction(write.action), "write_file out.txt");
+  assert.equal(describeAction(visual.action), "visual_review index.html");
 });
 
 test("buildMutationProposal previews new-file writes with a diff and no expectedHash", async () => {
@@ -291,6 +320,7 @@ test("agent-action schema accepts a valid turn and rejects malformed ones", () =
     actions: [
       { type: "read_file", path: "src/index.js", reason: "understand exports" },
       { type: "web_research", query: "JavaScript animation libraries", max_results: 3, reason: "compare options" },
+      { type: "visual_review", path: "index.html", focus: "does the ball look round", reason: "check rendered quality" },
       { type: "write_file", path: "src/slug.js", content: "export const slug = () => {};\n", reason: "add helper", danger: "low" },
     ],
     needs_more_context: false,

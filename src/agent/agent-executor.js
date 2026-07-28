@@ -10,10 +10,12 @@ const DEFAULT_MAX_OUTPUT_CHARS = 1500;
 
 export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_text"]);
 export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
+export const VISUAL_ACTION_TYPES = new Set(["visual_review"]);
 export const MUTATING_ACTION_TYPES = new Set(["write_file", "edit_file", "run_cmd"]);
 const KNOWN_ACTION_TYPES = new Set([
   ...READONLY_ACTION_TYPES,
   ...RESEARCH_ACTION_TYPES,
+  ...VISUAL_ACTION_TYPES,
   ...MUTATING_ACTION_TYPES,
   "finish",
 ]);
@@ -57,6 +59,9 @@ export function classifyActionType(type) {
   }
   if (RESEARCH_ACTION_TYPES.has(type)) {
     return "research";
+  }
+  if (VISUAL_ACTION_TYPES.has(type)) {
+    return "visual";
   }
   if (MUTATING_ACTION_TYPES.has(type)) {
     return "mutating";
@@ -135,6 +140,22 @@ export function normalizeAgentAction(rawAction, cwd) {
       return { ok: false, error: "run_cmd requires a command" };
     }
     action.command = command;
+    return { ok: true, action, category };
+  }
+
+  if (type === "visual_review") {
+    const visualPath = resolveWorkspacePath(rawAction.path, cwd);
+    if (!visualPath) {
+      return {
+        ok: false,
+        error: `path "${rawAction.path ?? ""}" is empty, absolute, or escapes the workspace`,
+      };
+    }
+    action.path = visualPath;
+    const focus = typeof rawAction.focus === "string" ? rawAction.focus.trim() : "";
+    if (focus) {
+      action.focus = focus.slice(0, 400);
+    }
     return { ok: true, action, category };
   }
 

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "visual-review@v1",
+  "title": "MiniPhi visual review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "matches_intent",
+    "quality_score",
+    "description",
+    "issues",
+    "suggestions",
+    "needs_more_context",
+    "missing_snippets",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "visual-review@v1" },
+    "matches_intent": {
+      "type": "boolean",
+      "description": "Whether the screenshot visibly matches the requested subject/focus."
+    },
+    "quality_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Overall visual quality/fidelity score for what is actually rendered."
+    },
+    "description": {
+      "type": "string",
+      "description": "Plain description of what the image actually shows."
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Concrete visual problems you can see (shape, color, proportion, layout, motion artifacts)."
+    },
+    "suggestions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Concrete, actionable fixes to improve the rendered result."
+    },
+    "needs_more_context": { "type": "boolean" },
+    "missing_snippets": { "type": "array", "maxItems": 8, "items": { "type": "string", "minLength": 1 } },
+    "stop_reason": { "type": "string" }
+  }
+}

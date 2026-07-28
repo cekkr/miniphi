@@ -8,6 +8,7 @@ import {
   rankModelsForTask,
   resolveAutoModel,
   selectBestModelForTask,
+  selectVisionModel,
 } from "../src/libs/model-catalog.js";
 
 // Trimmed copy of a real /api/v0/models response so normalization tracks the
@@ -169,6 +170,30 @@ test("normalizeModelCatalog preserves native v1 identity, load config, and capab
     allowedOptions: ["off", "on"],
     default: "on",
   });
+});
+
+test("selectVisionModel prefers a loaded VLM and returns null when none is installed", () => {
+  const noVisionModels = [
+    { id: "qwen3-coder-30b-a3b-instruct", capabilities: ["tool_use"], state: "loaded" },
+    { id: "granite-4-h-tiny", capabilities: [], state: "not-loaded" },
+  ];
+  assert.equal(selectVisionModel(noVisionModels), null);
+  assert.equal(selectVisionModel([]), null);
+  assert.equal(selectVisionModel(undefined), null);
+
+  const withVisionModels = [
+    { id: "qwen2-vl-7b-instruct", capabilities: ["vision"], state: "not-loaded" },
+    { id: "qwen3-coder-30b-a3b-instruct", capabilities: ["tool_use"], state: "loaded" },
+    { id: "qwen3-vl-4b", capabilities: ["vision", "tool_use"], state: "loaded" },
+  ];
+  const selected = selectVisionModel(withVisionModels);
+  assert.equal(selected.id, "qwen3-vl-4b", "an already-loaded VLM is preferred over a not-loaded one");
+
+  const bothLoaded = [
+    { id: "z-vlm", capabilities: ["vision"], state: "loaded" },
+    { id: "a-vlm", capabilities: ["vision"], state: "loaded" },
+  ];
+  assert.equal(selectVisionModel(bothLoaded).id, "a-vlm", "ties break by id for deterministic output");
 });
 
 test("estimateModelParams parses plain and MoE parameter counts", () => {

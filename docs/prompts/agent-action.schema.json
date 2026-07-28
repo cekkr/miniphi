@@ -42,12 +42,13 @@
               "list_dir",
               "search_text",
               "web_research",
+              "visual_review",
               "write_file",
               "edit_file",
               "run_cmd",
               "finish"
             ],
-            "description": "The action kind. read_file/list_dir/search_text/web_research are auto-run; write_file/edit_file/run_cmd require operator approval; finish ends the session."
+            "description": "The action kind. read_file/list_dir/search_text/web_research/visual_review are auto-run; write_file/edit_file/run_cmd require operator approval; finish ends the session."
           },
           "reason": {
             "type": "string",
@@ -56,7 +57,11 @@
           },
           "path": {
             "type": "string",
-            "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file (never absolute, no `..`)."
+            "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file/visual_review (never absolute, no `..`)."
+          },
+          "focus": {
+            "type": "string",
+            "description": "For visual_review: what to look for in the rendered screenshot (e.g. 'does the ball look round and orange, is it moving'). Optional; a generic quality check is used when omitted."
           },
           "content": {
             "type": "string",

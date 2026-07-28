@@ -51,6 +51,11 @@ not combine isolated labels or keyword fragments into unsupported facts.
 
 ${CONTEXT_LANGUAGE_GUIDE}`;
 
+// Only appended when the session was configured with a vision-capable model
+// (see AgentSession.visionReview), so the model is never told about an action
+// that would just report "unavailable".
+const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. Use visual_review (path to a rendered HTML/image file, optional focus) to judge subjective visual quality that text/regex checks cannot see: does a shape look right, are colors/proportions convincing, does an animation look like it actually moved. It runs automatically like web_research and returns structured JSON (quality_score, issues, suggestions) from a model that looked at an actual screenshot; use its issues/suggestions to drive your next write_file/edit_file instead of guessing.`;
+
 /**
  * Drives one interactive agent task: plan → act → (approve) → apply → repeat.
  * UI-agnostic: it emits events and awaits an injected `approver`, so the same
@@ -71,6 +76,7 @@ export default class AgentSession extends EventEmitter {
       typeof options?.approver === "function" ? options.approver : async () => ({ approved: false });
     this.runCommand = typeof options?.runCommand === "function" ? options.runCommand : null;
     this.webResearch = typeof options?.webResearch === "function" ? options.webResearch : null;
+    this.visionReview = typeof options?.visionReview === "function" ? options.visionReview : null;
     this.validateWorkspace =
       typeof options?.validateWorkspace === "function" ? options.validateWorkspace : null;
     this.requireWebResearch = Boolean(options?.requireWebResearch);
@@ -291,10 +297,17 @@ export default class AgentSession extends EventEmitter {
     }
   }
 
+  /** SYSTEM_PROMPT plus the visual_review guide, only when a vision model is configured. */
+  _systemPrompt() {
+    return typeof this.visionReview === "function"
+      ? `${SYSTEM_PROMPT}\n\n${VISUAL_REVIEW_GUIDE}`
+      : SYSTEM_PROMPT;
+  }
+
   /** Tokens the system prompt + schema block always cost, excluded from the context budget. */
   _estimateFixedPromptTokens() {
     const schemaBlock = this.schemaRegistry?.buildInstructionBlock(AGENT_SCHEMA_ID) ?? "";
-    return estimateTokens(SYSTEM_PROMPT) + estimateTokens(schemaBlock) + 256;
+    return estimateTokens(this._systemPrompt()) + estimateTokens(schemaBlock) + 256;
   }
 
   /**
@@ -587,7 +600,7 @@ export default class AgentSession extends EventEmitter {
       "Respond with the next turn as JSON.",
     ].filter(Boolean).join("\n\n");
     return [
-      { role: "system", content: `${SYSTEM_PROMPT}\n\nJSON schema:\n${schemaBlock}` },
+      { role: "system", content: `${this._systemPrompt()}\n\nJSON schema:\n${schemaBlock}` },
       { role: "user", content: userBody },
     ];
   }
@@ -1082,6 +1095,70 @@ export default class AgentSession extends EventEmitter {
     await this._appendTranscript({ kind: "research", ...result });
   }
 
+  async _handleVisualReview({ action, turn }) {
+    const signature = `${action.type}:${action.path}:${action.focus ?? ""}`;
+    if (this._actionSignatures.has(signature)) {
+      const result = { turn, action: { type: action.type, path: action.path }, status: "duplicate" };
+      this.emit("action-result", result);
+      this._remember({
+        layer: "contract",
+        label: `duplicate ${describeAction(action)}`,
+        text: `${describeAction(action)} -> already reviewed (skipped); use the existing feedback.`,
+        importance: 0.8,
+        ttlTurns: 1,
+      });
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    this._actionSignatures.add(signature);
+    this.emit("action-start", { turn, action, description: describeAction(action) });
+
+    let status = "executed";
+    let output = "";
+    if (typeof this.visionReview !== "function") {
+      status = "unavailable";
+      output = JSON.stringify({ error: "no vision-capable model is configured for this agent session" });
+    } else {
+      try {
+        const result = await this.visionReview({
+          path: action.path,
+          absolutePath: path.resolve(this.cwd, action.path),
+          focus: action.focus ?? null,
+          sessionDeadline: this.sessionDeadline,
+        });
+        if (!result?.ok) {
+          status = "failed";
+          output = JSON.stringify({ error: result?.error ?? "visual review failed" });
+        } else {
+          output = JSON.stringify(result.response, null, 2);
+        }
+      } catch (error) {
+        status = "failed";
+        output = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (status === "executed") {
+      this._progressThisTurn = true;
+    }
+    const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
+    const result = {
+      turn,
+      action: { type: action.type, path: action.path, focus: action.focus ?? null },
+      status,
+      output: boundedOutput,
+    };
+    this.emit("action-result", result);
+    this._remember({
+      layer: "evidence",
+      label: `visual_review ${action.path}`,
+      text: `${describeAction(action)} -> ${status}\n${boundedOutput}`,
+      importance: 0.8,
+      kind: "visual",
+    });
+    await this._appendTranscript({ kind: "visual", ...result });
+  }
+
   /**
    * Runs the full task loop and resolves with a result summary. Also emits a
    * `done` event with the same payload.
@@ -1254,6 +1331,8 @@ export default class AgentSession extends EventEmitter {
           await this._handleReadonly({ action, turn });
         } else if (category === "research") {
           await this._handleResearch({ action, turn });
+        } else if (category === "visual") {
+          await this._handleVisualReview({ action, turn });
         } else if (action.type === "run_cmd") {
           await this._handleCommand({ action, turn });
         } else {

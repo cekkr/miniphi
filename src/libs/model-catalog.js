@@ -406,6 +406,23 @@ export function selectBestModelForTask(models, options = undefined) {
 }
 
 /**
+ * Picks a vision-capable (VLM) model from the live catalog, if one is
+ * installed. Prefers an already-loaded instance to avoid extra JIT-load
+ * latency on the first visual_review action; ties break by id for
+ * deterministic output. Returns null when no vision model is available so
+ * callers can leave visual review disabled rather than guessing a model id.
+ */
+export function selectVisionModel(models) {
+  const candidates = (Array.isArray(models) ? models : [])
+    .filter((model) => model && Array.isArray(model.capabilities) && model.capabilities.includes("vision"))
+    .sort((a, b) => {
+      const loadedDelta = (b.state === "loaded" ? 1 : 0) - (a.state === "loaded" ? 1 : 0);
+      return loadedDelta !== 0 ? loadedDelta : a.id.localeCompare(b.id);
+    });
+  return candidates[0] ?? null;
+}
+
+/**
  * Fetches the live model inventory through an LMStudioRestClient. Current
  * native v1 is preferred, then the legacy native v0 route, then the
  * OpenAI-compatible /v1/models list.

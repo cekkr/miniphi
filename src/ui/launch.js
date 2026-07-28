@@ -9,6 +9,9 @@ import {
   ModelBenchmarkRunner,
   loadFreshModelBenchmarkIndex,
 } from "../libs/model-benchmarks.js";
+import { selectVisionModel } from "../libs/model-catalog.js";
+import { createVisionReviewAction } from "../libs/vision-reviewer.js";
+import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -63,6 +66,17 @@ export async function launchAgentUi(options = undefined) {
     cwd,
   });
   const researcher = webResearch ? null : new WebResearcher();
+  // Vision review is genuinely optional: only wire it in when the live LM
+  // Studio inventory actually reports a VLM, so the model is never told about
+  // an action that would just report "unavailable" every time.
+  const visionModel = selectVisionModel(modelCatalog);
+  const visionReview = visionModel
+    ? createVisionReviewAction({
+        restClient: client,
+        schemaRegistry: new PromptSchemaRegistry(),
+        model: visionModel.id,
+      })
+    : null;
   const session = new AgentSession({
     client,
     cwd,
@@ -71,6 +85,7 @@ export async function launchAgentUi(options = undefined) {
     webResearch:
       webResearch ??
       ((query, researchOptions) => researcher.search(query, researchOptions)),
+    visionReview,
     sessionDeadline,
     model,
     temperature,
