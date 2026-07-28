@@ -16,6 +16,7 @@ Because a local model's context window is small (LM Studio typically loads model
 - **Drafting edits:** propose patches, refactors, docs updates, or helper scripts based on the repo snapshot.
 - **Nitpicking loops:** pit two local models against each other to improve long-form drafts.
 - **Web research (optional):** let the agent search for current libraries and capture page text via headless browsing.
+- **Small-model knowledge experiments (optional):** teach a deliberately small, "ignorant" model facts from plain text via Cheetah and query them back, grounded only in what it actually learned — see `cheetah-learn` below.
 
 > miniPhi is intentionally **local-first**. It’s not a hosted chatbot: you run LM Studio and you own the artifacts it writes.
 
@@ -169,6 +170,51 @@ service should stop the model turn. Environment overrides are `MINIPHI_CONTEXT_E
 `MINIPHI_CHEETAH_HOST`, `MINIPHI_CHEETAH_PORT`, `MINIPHI_CHEETAH_DATABASE`,
 `MINIPHI_CHEETAH_PROJECT_ID`,
 `MINIPHI_CHEETAH_TIMEOUT_MS`, and `MINIPHI_CHEETAH_REQUIRED`.
+
+#### Optional: teach a small "ignorant" model with Cheetah (`cheetah-learn`)
+
+This is a **different** use of Cheetah from the context engine above (a separate database,
+`miniphi_knowledge` instead of the project-derived context mirror): here Cheetah is the model's
+long-term memory of real-world facts, not the coding agent's own session context.
+
+The idea: a deliberately small model (e.g. `qwen2.5-coder-0.5b-instruct`) should never answer a
+factual question from its own training. Instead it **teaches** Cheetah what it reads and
+**recalls** from Cheetah to answer questions — every teach turn explicitly says what's new (and
+must be saved) versus already recorded, and every answer is checked against what the database
+actually returned before it counts as grounded, so a plausible-sounding but unsupported answer gets
+declined instead of stated as fact.
+
+```bash
+# Start Cheetah (same build as above) if it isn't already running.
+
+# Teach it a batch of rows from a Hugging Face dataset (defaults to rahular/simple-wikipedia):
+miniphi cheetah-learn teach --limit 20 --base-url http://<lm-studio-host>:1234 --model qwen2.5-coder-0.5b-instruct
+
+# Or teach one ad-hoc snippet directly:
+miniphi cheetah-learn teach --text "Lisbon is the capital of Portugal." --base-url http://<lm-studio-host>:1234
+
+# Ask it a question, or open a REPL:
+miniphi cheetah-learn ask "What do you know about Lisbon?"
+miniphi cheetah-learn chat
+
+# List the questions it couldn't answer (recorded instead of guessed):
+miniphi cheetah-learn questions
+
+# Measure it: teaches a batch, then asks about known vs. never-taught topics and
+# reports grounded/declined/hallucination rates:
+miniphi cheetah-learn eval --teach-limit 20 --eval-limit 8
+```
+
+Once something has been taught, the normal interactive agent can use the same knowledge base too:
+it's an optional, auto-run `knowledge_lookup` action (like `web_research`), off by default so a
+regular run never pays a reachability check. Turn it on with:
+
+```json
+{ "knowledgeLookup": { "enabled": true } }
+```
+
+or `MINIPHI_KNOWLEDGE_LOOKUP=1`. The agent will then check recorded facts before asserting
+something it isn't sure of, whenever a `cheetah-server` is actually reachable.
 
 ### Common workflows
 
@@ -325,7 +371,7 @@ If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
 These are the commands most people start with:
 
 - `miniphi` / `miniphi ui`  
-  Open the **interactive agent UI**. Its home screen starts a task or runs the Easy model benchmark and displays cached scores; task flow then picks files, prompts, shows benchmark-informed model choices/live progress (including bounded `web_research` actions and, when a vision-capable model is installed in LM Studio, `visual_review` — the agent screenshots a rendered file and asks that model to critique what it actually sees, e.g. whether a generated animation's shape/color/motion looks right), and approves guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out. Prompts are assembled from the [layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window); size it explicitly with `--context-budget <tokens>` if you want to override the auto-detected window.
+  Open the **interactive agent UI**. Its home screen starts a task or runs the Easy model benchmark and displays cached scores; task flow then picks files, prompts, shows benchmark-informed model choices/live progress (including bounded `web_research` actions, and, when a vision-capable model is installed in LM Studio, `visual_review` — the agent screenshots a rendered file and asks that model to critique what it actually sees, e.g. whether a generated animation's shape/color/motion looks right; and, when a Cheetah knowledge base is enabled and reachable, `knowledge_lookup` — see [cheetah-learn](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn)), and approves guarded edits (diff + rollback). Bare `miniphi` and a free-form task both open the UI on a TTY; add `--headless` to opt out. Prompts are assembled from the [layered context](#layered-context-how-miniphi-fits-big-repos-in-a-small-window); size it explicitly with `--context-budget <tokens>` if you want to override the auto-detected window.
 - `miniphi "<task>"`  
   On a TTY this opens the interactive UI seeded with the task. With `--headless` (or a non-TTY), it runs the classic workspace scan + planning prompt + log-analysis JSON summary. Add `--cmd` or `--file` to route the same free-form task into `run` or `analyze-file`.
 - `miniphi run --cmd "<command>" --task "<objective>"`  
@@ -359,6 +405,8 @@ These are the commands most people start with:
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark models` produces model-selection evidence; `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
+- `miniphi cheetah-learn teach|ask|chat|questions|eval`  
+  Optional: teach a small "ignorant" model facts via Cheetah (e.g. from a Hugging Face dataset) and query them back, grounded only in what it actually learned — see [Optional: teach a small "ignorant" model with Cheetah](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn).
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 
