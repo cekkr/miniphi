@@ -12,7 +12,7 @@ import {
 import { selectVisionModel } from "../libs/model-catalog.js";
 import { createVisionReviewAction } from "../libs/vision-reviewer.js";
 import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
-import { CheetahTcpClient } from "../libs/cheetah-context-engine.js";
+import { CheetahTcpClient } from "../libs/cheetah-binder.js";
 import {
   resolveKnowledgeLookupConfig,
   createKnowledgeLookupAction,

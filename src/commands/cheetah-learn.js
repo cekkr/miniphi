@@ -3,7 +3,7 @@ import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 import LMStudioHandler from "../libs/lmstudio-handler.js";
 import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
-import { CheetahTcpClient } from "../libs/cheetah-context-engine.js";
+import { CheetahTcpClient } from "../libs/cheetah-binder.js";
 import {
   DEFAULT_HOST as CHEETAH_DEFAULT_HOST,
   DEFAULT_PORT as CHEETAH_DEFAULT_PORT,

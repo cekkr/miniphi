@@ -1,11 +1,24 @@
-import { decodeCheetahPayload } from "./cheetah-context-engine.js";
+import {
+  buildEdgeSet,
+  buildEdgeSetBatch,
+  buildNeighborTypes,
+  buildNeighbors,
+  buildNodeGet,
+  buildNodeSet,
+  buildRecall,
+  decodeCheetahPayload,
+} from "./cheetah-binder.js";
 
 /**
  * The Cheetah "adapter" for the ignorant-model teach/recall loop documented in
- * thirds/cheetah/studies/GRAPH_LLM.md. Built entirely on top of the existing,
- * reusable `CheetahTcpClient` (imported from cheetah-context-engine.js and
- * passed in by the caller) — this module never opens its own TCP connection,
- * it only knows how to shape commands and interpret responses.
+ * thirds/cheetah/studies/GRAPH_LLM.md. Built entirely on top of the reusable
+ * `CheetahTcpClient` passed in by the caller — this module never opens its own
+ * TCP connection, it only knows how to shape commands and interpret responses.
+ *
+ * The command spellings and their encodings come from the Cheetah submodule's
+ * own Node binder (`buildNodeSet`, `buildRecall`, …). What lives here is the
+ * knowledge-base shape on top of them: type-agnostic `topic:` anchors, the
+ * episodic INSERT/PAIR_SET log, and the open-question convention.
  *
  * Per the GRAPH_LLM.md §10 adapter contract, the model itself never touches
  * this protocol: it only ever emits structured JSON (facts, probes, answers)
@@ -126,11 +139,10 @@ export function entityId(type, name) {
   return `${slugify(type)}:${slugify(name)}`;
 }
 
-// Always base64, uniformly: question/fact text almost always contains
-// spaces, so there is no safe "inline if short" shortcut worth special-casing.
-export function encodeProps(value) {
-  return Buffer.from(JSON.stringify(value ?? {}), "utf8").toString("base64");
-}
+// Props and references are always base64, uniformly — question/fact text
+// almost always contains spaces — but that encoding now belongs to the Cheetah
+// binder's command builders, which take plain objects. Nothing here should
+// hand-encode a `key=value` argument.
 
 // The protocol is one-line-per-command; collapse anything that would break
 // that (or corrupt the declared INSERT byte length) into single spaces.
@@ -157,7 +169,7 @@ function requireSuccess(response, context) {
 }
 
 export async function ensureAskerAnchor(client) {
-  const [response] = await client.execute([`GRAPH_NODE_SET id=${ASKER_ID} labels=agent`]);
+  const [response] = await client.execute([buildNodeSet({ id: ASKER_ID, labels: "agent" })]);
   requireSuccess(response, "ensureAskerAnchor");
   return { id: ASKER_ID };
 }
@@ -194,7 +206,7 @@ export async function logEpisode(client, text, { sequence } = {}) {
  */
 export async function probeBeforeWrite(client, subjectId) {
   const [response] = await client.execute([
-    `GRAPH_NEIGHBOR_TYPES id=${subjectId} direction=out limit=16 weighted=1`,
+    buildNeighborTypes({ id: subjectId, direction: "out", limit: 16, weighted: true }),
   ]);
   if (!response?.ok) {
     return { exists: false, relationHistogram: [] };
@@ -218,8 +230,12 @@ export async function writeFacts(
     ? [{ id: "src-1", text: snippetText, source: "simple-wikipedia", ordinal: 0 }]
     : [];
   commands.push(
-    `GRAPH_NODE_SET id=${subjectId} labels=${slugify(subjectType)} ` +
-      `props=${encodeProps({ name: subjectName })} references=${encodeProps(references)}`,
+    buildNodeSet({
+      id: subjectId,
+      labels: slugify(subjectType),
+      props: { name: subjectName },
+      references,
+    }),
   );
 
   const seenObjectIds = new Set();
@@ -234,7 +250,11 @@ export async function writeFacts(
     if (!seenObjectIds.has(objectId)) {
       seenObjectIds.add(objectId);
       commands.push(
-        `GRAPH_NODE_SET id=${objectId} labels=${slugify(objectType)} props=${encodeProps({ name: objectName })}`,
+        buildNodeSet({
+          id: objectId,
+          labels: slugify(objectType),
+          props: { name: objectName },
+        }),
       );
     }
     const edge = {
@@ -249,7 +269,7 @@ export async function writeFacts(
     edges.push(edge);
   }
   if (edges.length) {
-    commands.push(`GRAPH_EDGE_SET_BATCH items=${encodeProps(edges)} continue_on_error=1`);
+    commands.push(buildEdgeSetBatch(edges, { continueOnError: true }));
   }
 
   const responses = await client.execute(commands);
@@ -285,19 +305,29 @@ function seedTermsFromName(name) {
  */
 export async function recallAnchorFacts(client, { subjectName }) {
   const nodeId = topicId(subjectName);
-  const [nodeResponse] = await client.execute([`GRAPH_NODE_GET id=${nodeId}`]);
+  const [nodeResponse] = await client.execute([buildNodeGet(nodeId)]);
   if (nodeResponse?.ok) {
     const props = decodeCheetahPayload(nodeResponse);
     const [histResponse] = await client.execute([
-      `GRAPH_NEIGHBOR_TYPES id=${nodeId} direction=out limit=16 weighted=1`,
+      buildNeighborTypes({ id: nodeId, direction: "out", limit: 16, weighted: true }),
     ]);
     const histogram = histResponse?.ok ? decodeCheetahPayload(histResponse) ?? [] : [];
     if (!Array.isArray(histogram) || histogram.length === 0) {
       return { resolved: true, via: "direct", nodeId, props, facts: [] };
     }
     const [recallResponse] = await client.execute([
-      `GRAPH_RECALL seeds=${nodeId} hops=1 precision=0.3 limit=8 direction=both ` +
-        "expand=none include_seeds=0 references=1 reference_limit=4",
+      buildRecall({
+        seeds: nodeId,
+        hops: 1,
+        precision: 0.3,
+        limit: 8,
+        direction: "both",
+        // The anchor id is exact, so lexical/synonym resolution can only add noise.
+        expand: "none",
+        includeSeeds: false,
+        references: true,
+        referenceLimit: 4,
+      }),
     ]);
     const recallPayload = recallResponse?.ok ? decodeCheetahPayload(recallResponse) : null;
     const facts = Array.isArray(recallPayload?.associations) ? recallPayload.associations : [];
@@ -311,7 +341,15 @@ export async function recallAnchorFacts(client, { subjectName }) {
   // Omit `expand=` here so the default lexical + synonym resolution applies
   // (only `expand=exact` turns that off).
   const [recallResponse] = await client.execute([
-    `GRAPH_RECALL seeds=${seedTerms.join(",")} hops=1 precision=0.3 limit=5 direction=both references=1 reference_limit=4`,
+    buildRecall({
+      seeds: seedTerms,
+      hops: 1,
+      precision: 0.3,
+      limit: 5,
+      direction: "both",
+      references: true,
+      referenceLimit: 4,
+    }),
   ]);
   if (!recallResponse?.ok) {
     return { resolved: false, via: "none", nodeId, props: null, facts: [] };
@@ -340,9 +378,13 @@ export async function recordOpenQuestion(client, { questionText, topicHint = nul
     created_at: new Date().toISOString(),
   };
   const commands = [
-    `GRAPH_NODE_SET id=${hypothesisId} labels=hypothesis props=${encodeProps(props)}`,
-    `GRAPH_EDGE_SET from=${ASKER_ID} to=${hypothesisId} type=unsure_about ` +
-      `props=${encodeProps({ status: "open", question: questionText })}`,
+    buildNodeSet({ id: hypothesisId, labels: "hypothesis", props }),
+    buildEdgeSet({
+      from: ASKER_ID,
+      to: hypothesisId,
+      type: "unsure_about",
+      props: { status: "open", question: questionText },
+    }),
   ];
   const responses = await client.execute(commands);
   for (const response of responses) {
@@ -359,7 +401,7 @@ export async function recordOpenQuestion(client, { questionText, topicHint = nul
  * cursor-pageable `GRAPH_NEIGHBORS` listing keeps working unchanged.
  */
 export async function resolveOpenQuestion(client, hypothesisId) {
-  const [nodeResponse] = await client.execute([`GRAPH_NODE_GET id=${hypothesisId}`]);
+  const [nodeResponse] = await client.execute([buildNodeGet(hypothesisId)]);
   const existing = nodeResponse?.ok ? decodeCheetahPayload(nodeResponse) : null;
   const props = {
     ...(existing?.props ?? {}),
@@ -367,9 +409,13 @@ export async function resolveOpenQuestion(client, hypothesisId) {
     resolved_at: new Date().toISOString(),
   };
   const commands = [
-    `GRAPH_NODE_SET id=${hypothesisId} props=${encodeProps(props)}`,
-    `GRAPH_EDGE_SET from=${ASKER_ID} to=${hypothesisId} type=unsure_about ` +
-      `props=${encodeProps({ status: "resolved", question: props.question ?? null })}`,
+    buildNodeSet({ id: hypothesisId, props }),
+    buildEdgeSet({
+      from: ASKER_ID,
+      to: hypothesisId,
+      type: "unsure_about",
+      props: { status: "resolved", question: props.question ?? null },
+    }),
   ];
   const responses = await client.execute(commands);
   for (const response of responses) {
@@ -385,9 +431,15 @@ export async function resolveOpenQuestion(client, hypothesisId) {
  * (`next_cursor=`), so paging beyond one page is just passing it back in.
  */
 export async function listOpenQuestions(client, { status = "open", limit = 20, cursor = "*" } = {}) {
-  const cursorArg = cursor && cursor !== "*" ? ` cursor=${cursor}` : "";
   const [response] = await client.execute([
-    `GRAPH_NEIGHBORS id=${ASKER_ID} direction=out type=unsure_about limit=${limit}${cursorArg}`,
+    buildNeighbors({
+      id: ASKER_ID,
+      direction: "out",
+      type: "unsure_about",
+      limit,
+      // `*` means "from the beginning" as an input, so it is simply omitted.
+      cursor: cursor && cursor !== "*" ? cursor : null,
+    }),
   ]);
   if (!response?.ok) {
     return { items: [], nextCursor: "*", count: 0 };

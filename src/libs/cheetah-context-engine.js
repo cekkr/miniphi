@@ -1,7 +1,22 @@
-import net from "node:net";
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import path from "node:path";
+
+import {
+  CheetahTcpClient,
+  buildEdgeSetBatch,
+  buildNodeDel,
+  buildNodeSet,
+  buildRecall,
+  decodeCheetahPayload,
+  parseCheetahResponse,
+} from "./cheetah-binder.js";
+
+// The transport and every command spelling come from the Cheetah submodule's
+// own Node binder (see cheetah-binder.js). What stays here is MiniPhi policy:
+// project/session isolation, the opt-in configuration, what is worth mirroring
+// out of the layered context graph, and how a Cheetah failure degrades.
+export { CheetahTcpClient, decodeCheetahPayload, parseCheetahResponse };
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4455;
@@ -96,148 +111,10 @@ const normalizeLabel = (value, fallback = "context") => {
   return normalized || fallback;
 };
 
-const encodeJSON = (value) => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
-
 const responseError = (response) =>
   typeof response?.raw === "string" && response.raw.startsWith("ERROR")
     ? response.raw
     : null;
-
-/**
- * Parses Cheetah's one-line protocol without splitting base64 padding on "=".
- */
-export function parseCheetahResponse(line) {
-  const raw = String(line ?? "").trim();
-  const parts = raw.split(",");
-  const status = parts.shift() ?? "";
-  const fields = {};
-  for (const part of parts) {
-    const separator = part.indexOf("=");
-    if (separator < 0) {
-      fields[part] = true;
-      continue;
-    }
-    fields[part.slice(0, separator)] = part.slice(separator + 1);
-  }
-  return {
-    ok: status === "SUCCESS",
-    status,
-    fields,
-    raw,
-  };
-}
-
-export function decodeCheetahPayload(response) {
-  const encoded = response?.fields?.payload;
-  if (typeof encoded !== "string" || !encoded) {
-    return null;
-  }
-  try {
-    return JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Minimal bounded TCP client for Cheetah's one-line command protocol.
- *
- * One connection is used per batch. Context synchronization is infrequent
- * compared with model generation, and short-lived connections make timeout and
- * reconnect behavior deterministic when the optional engine is unavailable.
- */
-export class CheetahTcpClient {
-  constructor(options = undefined) {
-    this.host =
-      typeof options?.host === "string" && options.host.trim()
-        ? options.host.trim()
-        : DEFAULT_HOST;
-    this.port = toPositiveInteger(options?.port, DEFAULT_PORT);
-    this.database = normalizeDatabase(options?.database);
-    this.timeoutMs = toPositiveInteger(options?.timeoutMs, DEFAULT_TIMEOUT_MS);
-  }
-
-  async execute(commands) {
-    const requested = (Array.isArray(commands) ? commands : [commands])
-      .filter((command) => typeof command === "string" && command.trim())
-      .map((command) => command.trim());
-    if (!requested.length) {
-      return [];
-    }
-    for (const command of requested) {
-      if (/[\r\n]/.test(command)) {
-        throw new Error("Cheetah commands must contain exactly one line");
-      }
-    }
-
-    const lines = [`DATABASE ${this.database}`, ...requested];
-    const responses = await new Promise((resolve, reject) => {
-      const socket = net.createConnection({ host: this.host, port: this.port });
-      let buffer = "";
-      let settled = false;
-      const received = [];
-      const finish = (error = null) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        if (error) {
-          reject(error);
-        } else {
-          resolve(received);
-        }
-      };
-      const timer = setTimeout(() => {
-        finish(
-          new Error(
-            `Cheetah request timed out after ${this.timeoutMs}ms (${this.host}:${this.port})`,
-          ),
-        );
-      }, this.timeoutMs);
-
-      socket.setEncoding("utf8");
-      socket.on("connect", () => {
-        socket.write(`${lines.join("\n")}\n`);
-      });
-      socket.on("data", (chunk) => {
-        buffer += chunk;
-        let newline = buffer.indexOf("\n");
-        while (newline >= 0) {
-          const line = buffer.slice(0, newline).trimEnd();
-          buffer = buffer.slice(newline + 1);
-          if (line) {
-            received.push(parseCheetahResponse(line));
-          }
-          if (received.length === lines.length) {
-            finish();
-            return;
-          }
-          newline = buffer.indexOf("\n");
-        }
-      });
-      socket.on("error", (error) => finish(error));
-      socket.on("close", () => {
-        if (!settled) {
-          finish(
-            new Error(
-              `Cheetah closed the connection after ${received.length}/${lines.length} response(s)`,
-            ),
-          );
-        }
-      });
-    });
-
-    const databaseResponse = responses[0];
-    if (!databaseResponse?.ok) {
-      throw new Error(
-        `Cheetah database selection failed: ${databaseResponse?.raw ?? "no response"}`,
-      );
-    }
-    return responses.slice(1);
-  }
-}
 
 /**
  * Resolves the opt-in context engine configuration. The in-memory graph is the
@@ -438,19 +315,22 @@ export class CheetahContextEngine {
       node.kind ? `kind_${normalizeLabel(node.kind)}` : null,
       `label_${normalizeLabel(node.label)}`,
     ].filter(Boolean);
-    const props = encodeJSON({
-      local_id: node.id,
-      layer: node.layer,
-      label: node.label,
-      state: node.state,
-      importance: node.importance,
-      turn: node.turn,
-      subtask_id: node.subtaskId ?? null,
-      project_reference: this.projectReference,
-      session_reference: this.sessionReference,
+    return buildNodeSet({
+      id: this._externalId(node.id),
+      labels,
+      props: {
+        local_id: node.id,
+        layer: node.layer,
+        label: node.label,
+        state: node.state,
+        importance: node.importance,
+        turn: node.turn,
+        subtask_id: node.subtaskId ?? null,
+        project_reference: this.projectReference,
+        session_reference: this.sessionReference,
+      },
+      references: this._nodeReferences(node),
     });
-    const references = encodeJSON(this._nodeReferences(node));
-    return `GRAPH_NODE_SET id=${this._externalId(node.id)} labels=${labels.join(",")} props=${props} references=${references}`;
   }
 
   _collectEdges(graph, liveNodes) {
@@ -513,8 +393,8 @@ export class CheetahContextEngine {
       const deletedNodeIds = [...this._nodeFingerprints.keys()].filter(
         (nodeId) => !liveNodes.has(nodeId),
       );
-      const deleteCommands = deletedNodeIds.map(
-        (nodeId) => `GRAPH_NODE_DEL id=${this._externalId(nodeId)} cascade=1`,
+      const deleteCommands = deletedNodeIds.map((nodeId) =>
+        buildNodeDel({ id: this._externalId(nodeId), cascade: true }),
       );
       const nodeCommands = [];
       let referencesMirrored = 0;
@@ -551,9 +431,7 @@ export class CheetahContextEngine {
       const commands = [...deleteCommands, ...nodeCommands];
       for (let index = 0; index < changedEdges.length; index += MAX_EDGE_BATCH_SIZE) {
         const batch = changedEdges.slice(index, index + MAX_EDGE_BATCH_SIZE);
-        commands.push(
-          `GRAPH_EDGE_SET_BATCH items=${encodeJSON(batch)} continue_on_error=1`,
-        );
+        commands.push(buildEdgeSetBatch(batch, { continueOnError: true }));
       }
       if (commands.length) {
         const responses = await this.client.execute(commands);
@@ -621,17 +499,19 @@ export class CheetahContextEngine {
     if (!seeds.length) {
       return { ok: true, preferredNodeIds: [], referenceCandidates: [] };
     }
-    const command = [
-      `GRAPH_RECALL seeds=${seeds.map((id) => this._externalId(id)).join(",")}`,
-      `hops=${this.recallHops}`,
-      `precision=${this.recallPrecision}`,
-      `limit=${this.recallLimit}`,
-      "direction=both",
-      "expand=none",
-      "include_seeds=1",
-      "references=1",
-      `reference_limit=${this.referenceLimit}`,
-    ].join(" ");
+    const command = buildRecall({
+      seeds: seeds.map((id) => this._externalId(id)),
+      hops: this.recallHops,
+      precision: this.recallPrecision,
+      limit: this.recallLimit,
+      direction: "both",
+      // Seeds are opaque namespaced ids, so lexical/synonym resolution can only
+      // cost time here — the exact ids are what this engine mirrored.
+      expand: "none",
+      includeSeeds: true,
+      references: true,
+      referenceLimit: this.referenceLimit,
+    });
     try {
       const [response] = await this.client.execute([command]);
       if (!response?.ok) {
@@ -731,6 +611,17 @@ export class CheetahContextEngine {
       };
     }
     return this.recall(graph, options);
+  }
+
+  /**
+   * Releases the mirror connection. Optional in a normal run — the binder's
+   * idle socket is unref'd, so a finished process still exits — but a test or a
+   * long-lived host that owns the engine should not leave the socket open.
+   */
+  async close() {
+    if (typeof this.client?.close === "function") {
+      await this.client.close();
+    }
   }
 
   stats() {

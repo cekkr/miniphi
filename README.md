@@ -126,6 +126,11 @@ When local context is superseded (for example, after a guarded edit or a newer v
 MiniPhi drops the stale local node and removes its mirrored Cheetah node and edges before the next
 recall. The exact guarded post-edit source becomes the authoritative file context.
 
+MiniPhi talks to Cheetah through the Node.js client binder that ships inside the submodule
+(`thirds/cheetah/binders/nodejs`), so the wire protocol is described in one place rather than
+re-implemented here. Initializing the submodule is therefore required for any Cheetah feature,
+including `cheetah-learn`.
+
 Build and start Cheetah on loopback:
 
 ```bash

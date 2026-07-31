@@ -190,6 +190,16 @@ test("CheetahTcpClient selects a database and frames one response per command", 
       Buffer.from(responses[1].fields.echo, "base64").toString("utf8"),
       "GRAPH_NODE_GET id=x",
     );
+
+    // The connection is persistent and DATABASE is sent once per connection,
+    // not once per batch: a second call must not re-select.
+    await client.execute(["SYSTEM_STATS"]);
+    assert.deepEqual(received.filter((line) => line.startsWith("DATABASE ")), [
+      "DATABASE ctx_test",
+    ]);
+    // The client owns a socket now, so the fixture server cannot close until
+    // the client releases it.
+    await client.close();
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
