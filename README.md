@@ -179,7 +179,7 @@ service should stop the model turn. Environment overrides are `MINIPHI_CONTEXT_E
 #### Optional: teach a small "ignorant" model with Cheetah (`cheetah-learn`)
 
 This is a **different** use of Cheetah from the context engine above (a separate database,
-`miniphi_knowledge` instead of the project-derived context mirror): here Cheetah is the model's
+`miniphi_knowledge` by default instead of the project-derived context mirror): here Cheetah is the model's
 long-term memory of real-world facts, not the coding agent's own session context.
 
 The idea: a deliberately small model (e.g. `qwen2.5-coder-0.5b-instruct`) should never answer a
@@ -208,7 +208,16 @@ miniphi cheetah-learn questions
 # Measure it: teaches a batch, then asks about known vs. never-taught topics and
 # reports grounded/declined/hallucination rates:
 miniphi cheetah-learn eval --teach-limit 20 --eval-limit 8
+
+# Stream a local Wikipedia dump with checkpointed, interleaved retention probes:
+node scripts/run-cheetah-wikipedia-learning.js --limit 100 --probe-every 10 --probe-count 3 --verbose
 ```
+
+The Wikipedia runner defaults to the documented SmolLM2 reference setup, uses database
+`wikidata`, resumes from a byte checkpoint after every article, and distinguishes model-grounded
+answers from deterministic exact-source fallbacks. See the
+[reusable Wikipedia learning guide](docs/cheetah-wikipedia-learning.md) before using the destructive
+`--reset-database` option or starting a long ingestion.
 
 Once something has been taught, the normal interactive agent can use the same knowledge base too:
 it's an optional, auto-run `knowledge_lookup` action (like `web_research`), off by default so a
@@ -326,6 +335,9 @@ $env:MINIPHI_BASKETBALL_OUTPUT = "$PWD\.miniphi\live-tests"
 node --test unit-tests-js/agent-project-creation.live.test.js
 ```
 
+`LMSTUDIO_REST_URL` is an operator override and takes precedence over REST endpoints in
+`config.json`, which is useful for remote LM Studio hosts and isolated live tests.
+
 If you're running from the repo (without a global install), the equivalent entrypoint is:
 
 ```bash
@@ -410,8 +422,8 @@ These are the commands most people start with:
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark models` produces model-selection evidence; `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
-- `miniphi cheetah-learn teach|ask|chat|questions|eval`  
-  Optional: teach a small "ignorant" model facts via Cheetah (e.g. from a Hugging Face dataset) and query them back, grounded only in what it actually learned — see [Optional: teach a small "ignorant" model with Cheetah](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn).
+- `miniphi cheetah-learn teach|ask|chat|questions|eval|wikipedia`
+  Optional: teach a small "ignorant" model facts via Cheetah (from Hugging Face or a checkpointed local Wikipedia dump) and query them back, grounded only in retrieved source memory — see [Optional: teach a small "ignorant" model with Cheetah](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn).
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 

@@ -197,6 +197,8 @@ test("CheetahTcpClient selects a database and frames one response per command", 
     assert.deepEqual(received.filter((line) => line.startsWith("DATABASE ")), [
       "DATABASE ctx_test",
     ]);
+    await client.resetDatabase();
+    assert.equal(received.at(-1), "RESET_DB ctx_test");
     // The client owns a socket now, so the fixture server cannot close until
     // the client releases it.
     await client.close();

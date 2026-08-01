@@ -5,7 +5,7 @@ const DEFAULT_INDEX_LIMIT = 200;
 
 /**
  * Lightweight JSON run-log for `cheetah-learn` (teach/ask/chat/questions/
- * eval). Same bare-workspaceRoot convention as PromptRecorder/
+ * eval/Wikipedia streaming). Same bare-workspaceRoot convention as PromptRecorder/
  * TaskExecutionRegister, deliberately not routed through the larger
  * MiniPhiMemory: the actual knowledge lives in Cheetah, this is only an
  * operator-facing report of what a run did.
@@ -38,7 +38,7 @@ export default class CheetahRunReport {
   }
 
   /**
-   * @param {{id: string, mode: "teach"|"ask"|"chat"|"questions"|"eval",
+   * @param {{id: string, mode: "teach"|"ask"|"chat"|"questions"|"eval"|"wikipedia",
    *   startedAt: string, finishedAt: string, params?: object, results?: any,
    *   metrics?: object}} run
    */

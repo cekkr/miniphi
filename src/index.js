@@ -1848,6 +1848,7 @@ async function main() {
       systemPrompt: resolvedSystemPrompt,
       modelKey: modelSelection.modelKey,
       restClient,
+      restBaseUrl: resolvedLmStudioBaseUrl,
       resourceConfig,
       resourceMonitorForcedDisabled,
       promptDbPath: globalMemory.promptDbPath,
@@ -3133,6 +3134,8 @@ Usage:
   node src/index.js cheetah-learn teach --limit 20 --base-url http://192.168.56.1:1234
   node src/index.js cheetah-learn ask "What do you know about Springfield?"
   node src/index.js cheetah-learn eval --teach-limit 20 --eval-limit 8
+  node src/index.js cheetah-learn wikipedia --dataset-path E:\\Models\\datasets\\wiki-data-2021 --base-url http://192.168.56.1:1234 --model smollm2-360m-instruct --cheetah-database wikidata --limit 100 --probe-every 10
+  node scripts/run-cheetah-wikipedia-learning.js --help
 
 Options:
   --cmd <command>              Command to execute in run mode

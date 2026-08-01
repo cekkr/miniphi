@@ -77,23 +77,23 @@ test("ensureAskerAnchor upserts the fixed agent node", async () => {
   assert.equal(result.id, ASKER_ID);
 });
 
-test("logEpisode captures the INSERT key from the response, never a client-side counter", async () => {
-  const client = fakeClient((command, index) => {
-    if (index === 0) {
-      assert.match(command, /^INSERT:\d+ My cat is a female siamese\.$/);
-      return success({ key: "42" });
-    }
-    assert.match(command, /^PAIR_SET episode:\d+T\d+Z\/000007 42$/);
-    return success({ pair_set: true });
-  });
+test("logEpisode uses the binder-backed value writer and captures its absolute key", async () => {
+  const writes = [];
+  const client = {
+    async putValue(key, payload) {
+      writes.push({ key, payload });
+      return 42;
+    },
+  };
   const result = await logEpisode(client, "My cat is a female siamese.\n", { sequence: 7 });
   assert.equal(result.insertKey, "42");
   assert.match(result.episodePairKey, /^episode:.+\/000007$/);
   assert.equal(result.text, "My cat is a female siamese.");
+  assert.deepEqual(writes, [{ key: result.episodePairKey, payload: result.text }]);
 });
 
 test("logEpisode throws when INSERT does not return a key", async () => {
-  const client = fakeClient(() => success({}));
+  const client = { async putValue() { return null; } };
   await assert.rejects(() => logEpisode(client, "text"), /did not return a key/);
 });
 
@@ -199,6 +199,22 @@ test("recallAnchorFacts returns a legitimate empty histogram result without a re
   const result = await recallAnchorFacts(client, { subjectName: "X" });
   assert.equal(result.resolved, true);
   assert.equal(result.facts.length, 0);
+});
+
+test("recallAnchorFacts returns an exact source memory even without semantic edges", async () => {
+  const reference = { id: "src-1", text: "Alpha is located in One.", source: "wikipedia-2021" };
+  const client = fakeClient((_command, index) => {
+    if (index === 0) {
+      return success({
+        id: "topic:alpha",
+        payload: payloadField({ props: { name: "Alpha" }, references: [reference] }),
+      });
+    }
+    return success({ count: 0, payload: payloadField([]) });
+  });
+  const result = await recallAnchorFacts(client, { subjectName: "Alpha" });
+  assert.equal(result.resolved, true);
+  assert.deepEqual(result.facts[0].references, [reference]);
 });
 
 test("recallAnchorFacts falls back to free-text GRAPH_RECALL when the exact anchor id is not found", async () => {

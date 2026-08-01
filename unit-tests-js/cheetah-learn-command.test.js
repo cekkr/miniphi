@@ -42,19 +42,25 @@ function scriptedRestClient(turns) {
 
 // Permissive fake CheetahTcpClient answering by command prefix - the exact
 // protocol strings are already pinned by cheetah-knowledge-client.test.js.
-function genericCheetahClient({ nodeExists = false, facts = [] } = {}) {
+function genericCheetahClient({ nodeExists = false, facts = [], references = [] } = {}) {
   const calls = [];
   return {
     calls,
+    async putValue(key, payload) {
+      calls.push(`PUT_VALUE ${key} ${payload}`);
+      return calls.length;
+    },
     async execute(commands) {
       const list = Array.isArray(commands) ? commands : [commands];
       const responses = [];
       for (const command of list) {
         calls.push(command);
-        if (command.startsWith("INSERT:")) {
-          responses.push(success({ key: String(calls.length) }));
-        } else if (command.startsWith("GRAPH_NODE_GET")) {
-          responses.push(nodeExists ? success({ payload: payloadField({ props: {} }) }) : { ok: false, raw: "ERROR,node_not_found" });
+        if (command.startsWith("GRAPH_NODE_GET")) {
+          responses.push(
+            nodeExists
+              ? success({ payload: payloadField({ props: {}, references }) })
+              : { ok: false, raw: "ERROR,node_not_found" },
+          );
         } else if (command.startsWith("GRAPH_NEIGHBOR_TYPES")) {
           responses.push(success({ payload: payloadField(facts.length ? [{ type: "x", count: 1 }] : []) }));
         } else if (command.startsWith("GRAPH_RECALL")) {
@@ -159,7 +165,7 @@ test("runTeach --text teaches an ad-hoc snippet without touching the HF dataset 
   const capture = captureConsoleLog();
   try {
     const { results } = await runTeach({
-      options: { text: "Springfield is a city in Illinois." },
+      options: { text: "Springfield is located in Illinois." },
       restClient,
       cheetahClient,
       schemaRegistry: new PromptSchemaRegistry(),
@@ -191,7 +197,15 @@ test("runAsk answers a single question and honors --no-save (skips the run repor
       stop_reason: "completed",
     },
   ]);
-  const cheetahClient = genericCheetahClient({ nodeExists: true, facts: [{ id: "place:illinois" }] });
+  const reference = {
+    id: "src-1",
+    text: "Springfield is located in Illinois.",
+    source: "test",
+  };
+  const cheetahClient = genericCheetahClient({
+    nodeExists: true,
+    facts: [{ id: "place:illinois", references: [reference] }],
+  });
   const capture = captureConsoleLog();
   try {
     const { result } = await runAsk({

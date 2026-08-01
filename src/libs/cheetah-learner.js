@@ -122,26 +122,25 @@ async function runCheetahPromptStep({
 }
 
 function buildSchemaBlock(schemaRegistry, schemaId) {
-  return schemaRegistry?.buildInstructionBlock(schemaId, { compact: true, maxLength: 1800 }) ?? "";
+  // The prompt contract requires the exact schema, not a truncated preview;
+  // response_format carries the same registry entry independently.
+  return schemaRegistry?.buildInstructionBlock(schemaId, { compact: true }) ?? "";
 }
 
 function buildTeachPrompt({ snippetText, subjectHint, schemaBlock, knownRelations }) {
   const lines = [
-    "You are teaching an external database that starts out knowing NOTHING about any subject, no matter how famous.",
-    "CRITICAL RULE: 'already known' means ALREADY RECORDED IN THE DATABASE below - it never means facts you personally recognize from training. If the database list below says nothing is recorded, you MUST extract the facts as new, even if they are obvious common knowledge to you.",
+    "Extract facts from exactly one source snippet for an external database.",
+    "The database starts empty. 'Already known' means recorded in the database list below, never facts from your training.",
+    "Do not copy or invent facts from instructions, examples, or prior knowledge.",
     "",
-    "Worked example:",
-    'Snippet: "Paris is the capital of France."',
-    "Already recorded in the database: nothing is recorded yet about this subject.",
-    'Correct output: no_new_information=false, new_facts=[{"relation":"capital_of","object_name":"France","object_type":"place"}]',
-    "(Note: even though 'Paris is the capital of France' is common knowledge, the DATABASE did not have it, so it still counts as new and must be saved.)",
-    "",
-    "Now do the same for the real snippet below.",
-    "",
-    `Snippet: ${snippetText}`,
+    `SOURCE TEXT: ${snippetText}`,
   ];
   if (subjectHint?.subject) {
-    lines.push(`Hint: this snippet is likely about "${subjectHint.subject}" - confirm or correct this.`);
+    lines.push(
+      subjectHint.authoritative
+        ? `Canonical source title: "${subjectHint.subject}". Use this exact value for subject_name; do not rename or shorten it.`
+        : `Hint: this snippet is likely about "${subjectHint.subject}" - confirm or correct this.`,
+    );
   }
   const relationList = Array.isArray(knownRelations) ? knownRelations : [];
   lines.push(
@@ -156,6 +155,8 @@ function buildTeachPrompt({ snippetText, subjectHint, schemaBlock, knownRelation
     "",
     "Rules:",
     "- Extract AT MOST 3 new facts as (relation, object) pairs about the subject.",
+    "- Every object_name MUST be copied verbatim as a contiguous phrase from SOURCE TEXT. If it does not occur in SOURCE TEXT, do not output it.",
+    "- Build relation only from a verb written near that object in SOURCE TEXT. Do not infer a relation from prior knowledge.",
     "- Only set no_new_information=true if every fact in the snippet is already in the 'Already recorded' list above.",
     "- If the snippet hedges ('may', 'is thought to', 'probably'), set confidence to possible/probable rather than omitting it.",
     "- In `thinking`, explicitly say what you are choosing to save because the database does not have it yet.",
@@ -207,11 +208,8 @@ function describeAnchorFacts(anchorResult) {
 }
 
 function buildRecallPrompt({ question, anchorResult, schemaBlock }) {
-  // Deliberately no worked example here (unlike buildTeachPrompt): a live
-  // proof run showed the tiny model echoing the example's unrelated content
-  // ("Paris is the capital of France") verbatim as its answer instead of
-  // using the real facts below - a worked example helps teach's extraction
-  // task but actively hurts this one at this model size.
+  // Deliberately no worked example: live tiny-model runs copied example facts
+  // instead of grounding on the real evidence.
   const factsBlock = describeAnchorFacts(anchorResult);
   const lines = [
     "Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.",
@@ -219,7 +217,7 @@ function buildRecallPrompt({ question, anchorResult, schemaBlock }) {
     "",
     `Question: ${question}`,
     "",
-    "Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true and write the answer using their wording.",
+    "Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.",
     "If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.",
     "",
     'Set stop_reason to "completed".',
@@ -246,6 +244,96 @@ function stripQuestionPrefix(question) {
   return stripped.replace(/[?.!]+$/g, "").trim();
 }
 
+function normalizeGroundingText(value) {
+  const words = String(value ?? "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("en")
+    .match(/[\p{L}\p{N}]+/gu);
+  return words?.join(" ") ?? "";
+}
+
+function filterSourceGroundedFacts(facts, snippetText) {
+  const normalizedSource = ` ${normalizeGroundingText(snippetText)} `;
+  const normalizedSentences = String(snippetText ?? "")
+    .split(/(?<=[.!?])\s+/u)
+    .map(normalizeGroundingText)
+    .filter(Boolean);
+  const relationStopWords = new Set([
+    "a", "an", "and", "as", "at", "by", "for", "from", "has", "have", "in", "is",
+    "of", "on", "or", "the", "to", "was", "were", "with",
+  ]);
+  const accepted = [];
+  const rejected = [];
+  for (const fact of Array.isArray(facts) ? facts : []) {
+    const objectName = typeof fact?.object_name === "string" ? fact.object_name.trim() : "";
+    const normalizedObject = normalizeGroundingText(objectName);
+    if (
+      !normalizedObject ||
+      !normalizedSource.includes(` ${normalizedObject} `)
+    ) {
+      rejected.push({
+        relation: fact?.relation ?? null,
+        objectName: objectName || null,
+        reason: "object-not-in-source",
+      });
+      continue;
+    }
+    const relationTokens = normalizeGroundingText(fact?.relation)
+      .split(" ")
+      .filter((token) => token.length >= 3 && !relationStopWords.has(token));
+    const objectSentences = normalizedSentences.filter((sentence) =>
+      ` ${sentence} `.includes(` ${normalizedObject} `),
+    );
+    const relationSupported = relationTokens.length > 0 && objectSentences.some((sentence) => {
+      const sentenceTokens = sentence.split(" ");
+      return relationTokens.every((relationToken) => {
+        const prefix = relationToken.slice(0, Math.min(5, relationToken.length));
+        return sentenceTokens.some((token) => token.startsWith(prefix));
+      });
+    });
+    if (!relationSupported) {
+      rejected.push({
+        relation: fact?.relation ?? null,
+        objectName,
+        reason: "relation-not-supported-near-object",
+      });
+      continue;
+    }
+    accepted.push(fact);
+  }
+  return { accepted, rejected };
+}
+
+function isDeclineAnswer(answer) {
+  return /\b(i\s+(?:do\s+not|don['’]?t)\s+know|unknown|not\s+known|no\s+answer)\b/i.test(
+    String(answer ?? ""),
+  );
+}
+
+function isBroadMemoryQuestion(question, subjectName) {
+  const normalizedQuestion = normalizeGroundingText(question);
+  const normalizedSubject = normalizeGroundingText(subjectName);
+  if (!normalizedQuestion || !normalizedSubject) {
+    return false;
+  }
+  return [
+    `what do you know about ${normalizedSubject}`,
+    `tell me about ${normalizedSubject}`,
+  ].includes(normalizedQuestion);
+}
+
+function retrievedReferenceTexts(anchorResult) {
+  const texts = [];
+  for (const fact of Array.isArray(anchorResult?.facts) ? anchorResult.facts : []) {
+    for (const reference of Array.isArray(fact?.references) ? fact.references : []) {
+      if (typeof reference?.text === "string" && reference.text.trim()) {
+        texts.push(reference.text.trim());
+      }
+    }
+  }
+  return [...new Set(texts)];
+}
+
 /**
  * Log the episode, ask the "teacher" turn, and (unless the model declares
  * nothing new) probe then write the declared facts. Returns a structured
@@ -253,7 +341,15 @@ function stripQuestionPrefix(question) {
  */
 export async function teachFromText(
   text,
-  { handler, cheetahClient, schemaRegistry, subjectHint = null, sequence, mainPromptId } = {},
+  {
+    handler,
+    cheetahClient,
+    schemaRegistry,
+    subjectHint = null,
+    sequence,
+    mainPromptId,
+    source = "cheetah-learn",
+  } = {},
 ) {
   const episode = await logEpisode(cheetahClient, text, { sequence });
 
@@ -283,17 +379,32 @@ export async function teachFromText(
     mainPromptId,
   });
   const parsed = step.response;
+  const modelSubjectName =
+    typeof parsed.subject_name === "string" && parsed.subject_name.trim()
+      ? parsed.subject_name.trim()
+      : null;
+  const canonicalSubjectName =
+    subjectHint?.authoritative && typeof subjectHint.subject === "string"
+      ? subjectHint.subject.trim()
+      : null;
   const subjectName =
-    (typeof parsed.subject_name === "string" && parsed.subject_name.trim()) ||
+    canonicalSubjectName ||
+    modelSubjectName ||
     subjectHint?.subject ||
     "unknown";
   const subjectType = parsed.subject_type || "other";
   const subjectId = topicId(subjectName);
 
   let batchResult = { applied: 0, created: 0, updated: 0, failed: 0, edgeCount: 0 };
+  let memoryWritten = false;
   let probeResult = subjectId === hintedSubjectId ? preProbe : { exists: false, relationHistogram: [] };
   const declaredFacts = Array.isArray(parsed.new_facts) ? parsed.new_facts : [];
-  if (!parsed.no_new_information && declaredFacts.length) {
+  const groundedFacts = filterSourceGroundedFacts(declaredFacts, episode.text);
+  const shouldWriteAuthoritativeMemory = Boolean(canonicalSubjectName && episode.text);
+  if (
+    shouldWriteAuthoritativeMemory ||
+    (!parsed.no_new_information && groundedFacts.accepted.length)
+  ) {
     if (subjectId !== hintedSubjectId) {
       // The model corrected/renamed the subject away from the hint; the
       // pre-probe no longer applies, so probe again against the real id.
@@ -305,13 +416,17 @@ export async function teachFromText(
       subjectName,
       snippetText: episode.text,
       insertKey: episode.insertKey,
-      newFacts: declaredFacts,
+      newFacts: groundedFacts.accepted,
+      source,
     });
+    memoryWritten = true;
   }
 
   return {
     subjectId,
     subjectName,
+    modelSubjectName,
+    canonicalSubjectApplied: Boolean(canonicalSubjectName),
     subjectType,
     insertKey: episode.insertKey,
     episodePairKey: episode.episodePairKey,
@@ -319,6 +434,9 @@ export async function teachFromText(
     noNewInformation: Boolean(parsed.no_new_information),
     alreadyKnownBeforeWrite: probeResult.exists,
     newFactsWritten: batchResult.edgeCount,
+    memoryWritten,
+    rejectedFacts: groundedFacts.rejected,
+    rejectedFactsCount: groundedFacts.rejected.length,
     knownFactsSkipped: Array.isArray(parsed.known_facts) ? parsed.known_facts : [],
     batchResult,
     stopReason: parsed.stop_reason ?? null,
@@ -334,7 +452,14 @@ export async function teachFromText(
  */
 export async function recallAnswer(
   question,
-  { handler, cheetahClient, schemaRegistry, subjectHint = null, mainPromptId } = {},
+  {
+    handler,
+    cheetahClient,
+    schemaRegistry,
+    subjectHint = null,
+    mainPromptId,
+    recordMiss = true,
+  } = {},
 ) {
   const guessedSubject = subjectHint ?? stripQuestionPrefix(question);
   const anchorResult = await recallAnchorFacts(cheetahClient, { subjectName: guessedSubject });
@@ -355,11 +480,48 @@ export async function recallAnswer(
   // `grounded` claim alone. A claim of groundedness when the adapter's own
   // probe found nothing is logged as a distinct mismatch and treated as not
   // grounded.
+  const answer = typeof parsed.answer === "string" ? parsed.answer.trim() : "";
+  const evidence = Array.isArray(parsed.evidence)
+    ? parsed.evidence
+        .filter((entry) => typeof entry === "string" && entry.trim())
+        .map((entry) => entry.trim())
+    : [];
+  const referenceTexts = retrievedReferenceTexts(anchorResult);
+  const evidenceMatchesReference = evidence.some((entry) => {
+    const normalizedEvidence = normalizeGroundingText(entry);
+    if (!normalizedEvidence) {
+      return false;
+    }
+    return referenceTexts.some((reference) => {
+      const normalizedReference = normalizeGroundingText(reference);
+      return (
+        normalizedReference.includes(normalizedEvidence) ||
+        normalizedEvidence.includes(normalizedReference)
+      );
+    });
+  });
   const modelClaimedGroundedButAnchorMissing = Boolean(parsed.grounded) && !anchorResult.resolved;
-  const effectiveGrounded = Boolean(anchorResult.resolved && parsed.grounded === true);
+  const modelClaimedGroundedButAnswerInvalid = Boolean(
+    parsed.grounded && (!answer || isDeclineAnswer(answer) || !evidenceMatchesReference),
+  );
+  const modelGrounded = Boolean(
+    anchorResult.resolved &&
+      parsed.grounded === true &&
+      answer &&
+      !isDeclineAnswer(answer) &&
+      evidenceMatchesReference,
+  );
+  const deterministicEvidence = referenceTexts[0] ?? null;
+  const deterministicFallbackUsed = Boolean(
+    !modelGrounded &&
+      anchorResult.resolved &&
+      deterministicEvidence &&
+      isBroadMemoryQuestion(question, guessedSubject),
+  );
+  const effectiveGrounded = modelGrounded || deterministicFallbackUsed;
 
   let openQuestion = null;
-  if (!effectiveGrounded) {
+  if (!effectiveGrounded && recordMiss) {
     const questionText =
       parsed.open_question?.has_question && parsed.open_question?.question_text?.trim()
         ? parsed.open_question.question_text.trim()
@@ -374,10 +536,30 @@ export async function recallAnswer(
     anchorId: anchorResult.nodeId ?? null,
     anchorResolved: anchorResult.resolved,
     grounded: effectiveGrounded,
+    modelGrounded,
+    deterministicFallbackUsed,
+    answerSource: modelGrounded
+      ? "model"
+      : deterministicFallbackUsed
+        ? "deterministic-reference-fallback"
+        : "decline",
     modelClaimedGroundedButAnchorMissing,
-    answer: parsed.answer ?? "I don't know.",
-    confidence: parsed.confidence ?? "unknown",
-    evidence: Array.isArray(parsed.evidence) ? parsed.evidence : [],
+    modelClaimedGroundedButAnswerInvalid,
+    answer: modelGrounded
+      ? answer
+      : deterministicFallbackUsed
+        ? deterministicEvidence
+        : "I don't know.",
+    confidence: effectiveGrounded
+      ? modelGrounded
+        ? (parsed.confidence ?? "unknown")
+        : "certain"
+      : "unknown",
+    evidence: modelGrounded
+      ? evidence
+      : deterministicFallbackUsed
+        ? [deterministicEvidence]
+        : [],
     thinking: parsed.thinking ?? null,
     openQuestion,
     stopReason: parsed.stop_reason ?? null,

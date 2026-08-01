@@ -184,19 +184,22 @@ let localEpisodeSequence = 0;
  */
 export async function logEpisode(client, text, { sequence } = {}) {
   const sanitized = sanitizeForInsert(text);
-  const byteLength = Buffer.byteLength(sanitized, "utf8");
-  const [insertResponse] = await client.execute([`INSERT:${byteLength} ${sanitized}`]);
-  requireSuccess(insertResponse, "logEpisode insert");
-  const insertKey = insertResponse.fields?.key;
-  if (!insertKey) {
-    throw new Error("Cheetah INSERT did not return a key.");
-  }
   const seq = Number.isFinite(sequence) ? sequence : localEpisodeSequence++;
   const seqLabel = String(seq).padStart(6, "0");
   const episodePairKey = `episode:${new Date().toISOString().replace(/[-:.]/g, "")}/${seqLabel}`;
-  const [pairResponse] = await client.execute([`PAIR_SET ${episodePairKey} ${insertKey}`]);
-  requireSuccess(pairResponse, "logEpisode pair_set");
-  return { insertKey, episodePairKey, text: sanitized };
+  if (typeof client?.putValue !== "function") {
+    throw new Error("Cheetah client does not expose the binder-backed putValue operation.");
+  }
+  const insertKey = await client.putValue(episodePairKey, sanitized);
+  if (
+    insertKey === null ||
+    insertKey === undefined ||
+    String(insertKey).trim() === "" ||
+    !Number.isFinite(Number(insertKey))
+  ) {
+    throw new Error("Cheetah INSERT did not return a key.");
+  }
+  return { insertKey: String(insertKey), episodePairKey, text: sanitized };
 }
 
 /**
@@ -223,11 +226,19 @@ export async function probeBeforeWrite(client, subjectId) {
  */
 export async function writeFacts(
   client,
-  { subjectId, subjectType, subjectName, snippetText, insertKey, newFacts },
+  {
+    subjectId,
+    subjectType,
+    subjectName,
+    snippetText,
+    insertKey,
+    newFacts,
+    source = "cheetah-learn",
+  },
 ) {
   const commands = [];
   const references = snippetText
-    ? [{ id: "src-1", text: snippetText, source: "simple-wikipedia", ordinal: 0 }]
+    ? [{ id: "src-1", text: snippetText, source, ordinal: 0 }]
     : [];
   commands.push(
     buildNodeSet({
@@ -261,7 +272,7 @@ export async function writeFacts(
       from: subjectId,
       to: objectId,
       type: slugify(fact?.relation) || "related_to",
-      props: { src: insertKey },
+      props: { src: insertKey, source },
     };
     if (typeof fact?.confidence === "string" && fact.confidence.trim()) {
       edge.confidence = fact.confidence.trim();
@@ -308,12 +319,20 @@ export async function recallAnchorFacts(client, { subjectName }) {
   const [nodeResponse] = await client.execute([buildNodeGet(nodeId)]);
   if (nodeResponse?.ok) {
     const props = decodeCheetahPayload(nodeResponse);
+    const anchorFact =
+      Array.isArray(props?.references) && props.references.length ? props : null;
     const [histResponse] = await client.execute([
       buildNeighborTypes({ id: nodeId, direction: "out", limit: 16, weighted: true }),
     ]);
     const histogram = histResponse?.ok ? decodeCheetahPayload(histResponse) ?? [] : [];
     if (!Array.isArray(histogram) || histogram.length === 0) {
-      return { resolved: true, via: "direct", nodeId, props, facts: [] };
+      return {
+        resolved: true,
+        via: "direct",
+        nodeId,
+        props,
+        facts: anchorFact ? [anchorFact] : [],
+      };
     }
     const [recallResponse] = await client.execute([
       buildRecall({
@@ -321,7 +340,7 @@ export async function recallAnchorFacts(client, { subjectName }) {
         hops: 1,
         precision: 0.3,
         limit: 8,
-        direction: "both",
+        direction: "out",
         // The anchor id is exact, so lexical/synonym resolution can only add noise.
         expand: "none",
         includeSeeds: false,
@@ -330,7 +349,10 @@ export async function recallAnchorFacts(client, { subjectName }) {
       }),
     ]);
     const recallPayload = recallResponse?.ok ? decodeCheetahPayload(recallResponse) : null;
-    const facts = Array.isArray(recallPayload?.associations) ? recallPayload.associations : [];
+    const associations = Array.isArray(recallPayload?.associations)
+      ? recallPayload.associations
+      : [];
+    const facts = anchorFact ? [anchorFact, ...associations] : associations;
     return { resolved: true, via: "direct", nodeId, props, facts };
   }
 

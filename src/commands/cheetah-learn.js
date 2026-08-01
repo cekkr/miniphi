@@ -1,4 +1,5 @@
 import readline from "readline";
+import path from "node:path";
 import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 import LMStudioHandler from "../libs/lmstudio-handler.js";
@@ -20,14 +21,16 @@ import {
   DEFAULT_DATASET,
 } from "../libs/hf-dataset-client.js";
 import CheetahRunReport from "../libs/cheetah-run-report.js";
+import PromptRecorder from "../libs/prompt-recorder.js";
+import { runWikipediaLearning } from "../libs/cheetah-wikipedia-runner.js";
 import { parseNumericSetting } from "../libs/cli-utils.js";
 
-// Fixed by design: this command is a demonstration of a deliberately small,
-// "ignorant" model driven entirely by Cheetah. Registering it in
+// Kept out of global auto-selection by design: this command defaults to a
+// deliberately small, "ignorant" model driven entirely by Cheetah, while
+// allowing an exact experiment model through --model. Registering the default in
 // model-presets.js would make it a candidate in unrelated --model auto
-// coding-task ranking, a different concern from this one-fixed-model command.
-const QWEN_MODEL_KEY = "qwen2.5-coder-0.5b-instruct";
-const QWEN_CONTEXT_LENGTH = 32768;
+// coding-task ranking, a different concern from this workflow.
+const DEFAULT_SMALL_MODEL_KEY = "qwen2.5-coder-0.5b-instruct";
 
 const CHEETAH_LEARN_SYSTEM_PROMPT = [
   "You serve an external database that starts out empty, no matter how famous or obvious a subject is.",
@@ -40,11 +43,12 @@ function optionsString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function buildLmStudioHandler({ restClient, schemaRegistry, modelKey }) {
+export function buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder = null }) {
   const handler = new LMStudioHandler(undefined, {
     systemPrompt: CHEETAH_LEARN_SYSTEM_PROMPT,
     schemaRegistry,
     modelKey,
+    promptRecorder,
   });
   handler.setRestClient(restClient, { preferRestTransport: true });
   handler.setTransportPreference({
@@ -113,9 +117,10 @@ export async function runTeach({
   emitJson,
   noSave,
   runReport,
+  promptRecorder,
 }) {
   const startedAt = new Date().toISOString();
-  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey });
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder });
   const adHocText = optionsString(options.text);
   const results = [];
   let params;
@@ -186,13 +191,14 @@ export async function runAsk({
   emitJson,
   noSave,
   runReport,
+  promptRecorder,
 }) {
   const startedAt = new Date().toISOString();
   const question = positionals.slice(1).join(" ").trim() || optionsString(options.question);
   if (!question) {
     throw new Error('cheetah-learn ask expects a question, e.g. `cheetah-learn ask "What is X?"`.');
   }
-  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey });
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder });
   const record = await recallAnswer(question, {
     handler,
     cheetahClient,
@@ -216,8 +222,8 @@ export async function runAsk({
   return { result: record };
 }
 
-export async function runChat({ restClient, cheetahClient, schemaRegistry, modelKey }) {
-  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey });
+export async function runChat({ restClient, cheetahClient, schemaRegistry, modelKey, promptRecorder }) {
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder });
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -270,6 +276,7 @@ export async function runEval({
   emitJson,
   noSave,
   runReport,
+  promptRecorder,
 }) {
   const startedAt = new Date().toISOString();
   const dataset = optionsString(options.dataset) ?? DEFAULT_DATASET;
@@ -288,7 +295,7 @@ export async function runEval({
     evalUnknownCount: evalLimit,
   });
 
-  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey });
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder });
 
   const teachResults = [];
   let sequence = 0;
@@ -383,6 +390,165 @@ export async function runEval({
   return { params, metrics, teachResults, knownResults, unknownResults };
 }
 
+export async function runWikipedia({
+  options,
+  restClient,
+  cheetahClient,
+  schemaRegistry,
+  modelKey,
+  verbose,
+  emitJson,
+  noSave,
+  runReport,
+  promptRecorder,
+}) {
+  const datasetPath = optionsString(options["dataset-path"]);
+  if (!datasetPath) {
+    throw new Error("cheetah-learn wikipedia requires --dataset-path <directory>.");
+  }
+  const database = cheetahClient.database;
+  const checkpointFile = path.resolve(
+    optionsString(options.checkpoint) ??
+      path.join(process.cwd(), ".miniphi", "cheetah", "wikipedia", `${database}-checkpoint.json`),
+  );
+  const maxArticles = parseNumericSetting(options.limit, "--limit") ?? 100;
+  const probeEvery = parseNumericSetting(options["probe-every"], "--probe-every") ?? 10;
+  const probeCount = parseNumericSetting(options["probe-count"], "--probe-count") ?? 3;
+  const maxErrors = parseNumericSetting(options["max-errors"], "--max-errors") ?? 5;
+  const maxNoProgress =
+    parseNumericSetting(options["max-no-progress"], "--max-no-progress") ?? 10;
+  const maxSentences = parseNumericSetting(options["max-sentences"], "--max-sentences") ?? 2;
+  const maxChars = parseNumericSetting(options["max-chars"], "--max-chars") ?? 700;
+  const maxArticleBytes = parseNumericSetting(
+    options["max-article-bytes"],
+    "--max-article-bytes",
+  );
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder });
+  const resetDatabase = options["reset-database"] === true;
+  if (resetDatabase) {
+    await cheetahClient.resetDatabase();
+    if (!emitJson) {
+      console.log(`[cheetah-learn][wikipedia] reset Cheetah database ${database}`);
+    }
+  }
+
+  const onProgress = async (event) => {
+    if (emitJson) {
+      return;
+    }
+    if (event.type === "probe") {
+      const metrics = event.probe.metrics;
+      console.log(
+        `[cheetah-learn][wikipedia][probe] after=${event.probe.afterArticlesSeen} ` +
+          `facts=${event.probe.afterFactsWritten} resolved=${metrics.resolvedCount}/${metrics.count} ` +
+          `grounded=${metrics.groundedCount}/${metrics.count} ` +
+          `model=${metrics.modelGroundedCount}/${metrics.count} ` +
+          `reference-fallbacks=${metrics.deterministicFallbackCount} errors=${metrics.fallbackCount}`,
+      );
+      const regressions = event.probe.changes?.regressedGrounding ?? [];
+      if (regressions.length) {
+        console.log(`  grounding regressions: ${regressions.join(", ")}`);
+      }
+      return;
+    }
+    if (verbose && event.type === "article") {
+      console.log(
+        `[cheetah-learn][wikipedia] ${event.article.subjectName} - ` +
+          `memory=${event.article.memoryWritten ? "saved" : "missed"}, ` +
+          `${event.article.newFactsWritten} semantic fact(s), ` +
+          `rejected=${event.article.rejectedFactsCount}, ` +
+          `cumulative=${event.checkpoint.counters.memoriesWritten} memories`,
+      );
+    }
+  };
+
+  const startedAt = new Date().toISOString();
+  const result = await runWikipediaLearning({
+    datasetPath,
+    checkpointFile,
+    database,
+    modelKey,
+    handler,
+    cheetahClient,
+    schemaRegistry,
+    maxArticles,
+    probeEvery,
+    probeCount,
+    maxErrors,
+    maxNoProgress,
+    maxSentences,
+    maxChars,
+    maxArticleBytes,
+    resume: !resetDatabase && !options["no-resume"],
+    verbose,
+    onProgress,
+  });
+
+  const latestProbe = result.probes.at(-1) ?? null;
+  const metrics = {
+    sessionArticlesSeen: result.session.articlesSeen,
+    sessionArticlesLearned: result.session.articlesLearned,
+    sessionMemoriesWritten: result.session.memoriesWritten,
+    sessionFactsWritten: result.session.factsWritten,
+    sessionFactsRejected: result.session.factsRejected,
+    cumulativeArticlesSeen: result.cumulative.articlesSeen,
+    cumulativeArticlesLearned: result.cumulative.articlesLearned,
+    cumulativeMemoriesWritten: result.cumulative.memoriesWritten,
+    cumulativeFactsWritten: result.cumulative.factsWritten,
+    cumulativeFactsRejected: result.cumulative.factsRejected,
+    inferenceProbes: result.cumulative.inferenceProbes,
+    latestRetrievalResolvedRate: latestProbe?.metrics?.retrievalResolvedRate ?? null,
+    latestEffectiveGroundedRate: latestProbe?.metrics?.effectiveGroundedRate ?? null,
+    latestModelGroundedRate: latestProbe?.metrics?.modelGroundedRate ?? null,
+    latestDeterministicFallbackCount:
+      latestProbe?.metrics?.deterministicFallbackCount ?? null,
+    latestGroundingRegressions:
+      latestProbe?.changes?.regressedGrounding?.length ?? null,
+    status: result.session.status,
+    stopReason: result.session.stopReason,
+    stopReasonCode: result.session.stopReasonCode,
+  };
+  if (!noSave) {
+    await runReport.saveRun({
+      id: `wikipedia-${Date.now()}`,
+      mode: "wikipedia",
+      startedAt,
+      finishedAt: result.session.finishedAt,
+      params: {
+        datasetPath: path.resolve(datasetPath),
+        database,
+        modelKey,
+        maxArticles,
+        probeEvery,
+        probeCount,
+        checkpointFile,
+        resetDatabase,
+      },
+      results: {
+        session: result.session,
+        retentionSubjects: result.retentionSubjects,
+        probes: result.probes,
+        position: result.position,
+      },
+      metrics,
+    });
+  }
+  if (emitJson) {
+    console.log(JSON.stringify({ mode: "wikipedia", metrics, result }, null, 2));
+  } else {
+    console.log(
+      `[cheetah-learn][wikipedia] status=${metrics.status} articles=${metrics.sessionArticlesSeen} ` +
+        `learned=${metrics.sessionArticlesLearned} memories=${metrics.sessionMemoriesWritten} ` +
+        `facts=${metrics.sessionFactsWritten} rejected=${metrics.sessionFactsRejected} ` +
+        `checkpoint=${checkpointFile}`,
+    );
+    if (metrics.stopReason) {
+      console.log(`  stop: ${metrics.stopReason}/${metrics.stopReasonCode}`);
+    }
+  }
+  return { metrics, result };
+}
+
 export async function handleCheetahLearnCommand({
   options,
   positionals,
@@ -391,40 +557,66 @@ export async function handleCheetahLearnCommand({
   restBaseUrl,
 }) {
   const action = (positionals[0] ?? options.action ?? "ask").toLowerCase();
-  const modelKey = optionsString(options.model) ?? QWEN_MODEL_KEY;
+  const modelKey = optionsString(options.model) ?? DEFAULT_SMALL_MODEL_KEY;
+  const requestedContextLength = parseNumericSetting(options["context-length"], "--context-length");
   const overrideBaseUrl =
     optionsString(options["base-url"]) ?? optionsString(options.host) ?? restBaseUrl ?? undefined;
   const restClient = new LMStudioRestClient(
     buildRestClientOptions(
       configData,
-      { modelKey, contextLength: QWEN_CONTEXT_LENGTH },
+      {
+        modelKey,
+        ...(Number.isFinite(requestedContextLength)
+          ? { contextLength: requestedContextLength }
+          : {}),
+      },
       overrideBaseUrl ? { baseUrl: overrideBaseUrl } : undefined,
-    ) ?? { defaultModel: modelKey, defaultContextLength: QWEN_CONTEXT_LENGTH },
+    ) ?? { defaultModel: modelKey },
   );
   const schemaRegistry = new PromptSchemaRegistry();
   const cheetahClient = buildCheetahClient(options);
   const emitJson = Boolean(options.json);
   const noSave = Boolean(options["no-save"]);
   const runReport = new CheetahRunReport();
+  const promptRecorder = new PromptRecorder();
+  await promptRecorder.prepare();
 
-  await ensureAskerAnchor(cheetahClient);
+  try {
+    await ensureAskerAnchor(cheetahClient);
 
-  const shared = { options, positionals, restClient, cheetahClient, schemaRegistry, modelKey, verbose, emitJson, noSave, runReport };
+    const shared = {
+      options,
+      positionals,
+      restClient,
+      cheetahClient,
+      schemaRegistry,
+      modelKey,
+      verbose,
+      emitJson,
+      noSave,
+      runReport,
+      promptRecorder,
+    };
 
-  switch (action) {
-    case "teach":
-      return runTeach(shared);
-    case "ask":
-      return runAsk(shared);
-    case "chat":
-      return runChat(shared);
-    case "questions":
-      return runQuestions(shared);
-    case "eval":
-      return runEval(shared);
-    default:
-      throw new Error(
-        `Unsupported cheetah-learn action "${action}". Expected teach, ask, chat, questions, or eval.`,
-      );
+    switch (action) {
+      case "teach":
+        return await runTeach(shared);
+      case "ask":
+        return await runAsk(shared);
+      case "chat":
+        return await runChat(shared);
+      case "questions":
+        return await runQuestions(shared);
+      case "eval":
+        return await runEval(shared);
+      case "wikipedia":
+        return await runWikipedia(shared);
+      default:
+        throw new Error(
+          `Unsupported cheetah-learn action "${action}". Expected teach, ask, chat, questions, eval, or wikipedia.`,
+        );
+    }
+  } finally {
+    await cheetahClient.close();
   }
 }

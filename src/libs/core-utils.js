@@ -457,9 +457,9 @@ export function buildResourceConfig(cliOptions) {
 
 export function resolveLmStudioHttpBaseUrl(configData, env = process.env) {
   const candidate =
+    env?.LMSTUDIO_REST_URL ??
     configData?.lmStudio?.rest?.baseUrl ??
     configData?.rest?.baseUrl ??
-    env?.LMSTUDIO_REST_URL ??
     configData?.lmStudio?.clientOptions?.baseUrl ??
     null;
   if (!candidate) {

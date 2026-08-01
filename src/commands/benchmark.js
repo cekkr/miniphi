@@ -32,6 +32,7 @@ export async function handleBenchmarkCommand(context) {
     systemPrompt,
     modelKey,
     restClient = null,
+    restBaseUrl = null,
     resourceConfig = undefined,
     resourceMonitorForcedDisabled = false,
     promptDbPath,
@@ -68,7 +69,9 @@ export async function handleBenchmarkCommand(context) {
     // default context_length could exceed the benchmark's 4k load.
     const effectiveRestClient = new LMStudioRestClient(
       buildRestClientOptions(configData, { modelKey }, {
-        ...(restClient?.baseUrl ? { baseUrl: restClient.baseUrl } : {}),
+        ...(restClient?.baseUrl || restBaseUrl
+          ? { baseUrl: restClient?.baseUrl ?? restBaseUrl }
+          : {}),
         ...(restClient?.apiToken ? { apiToken: restClient.apiToken } : {}),
         timeoutMs,
       }),

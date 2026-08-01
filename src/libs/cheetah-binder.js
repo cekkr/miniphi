@@ -28,10 +28,12 @@ const binder = require(binderRoot);
 export const CheetahBinderClient = binder.CheetahClient;
 export const CheetahBinderError = binder.CheetahError;
 export const CheetahBinderConnectionError = binder.CheetahConnectionError;
+export const startCheetahServer = binder.startServer;
 
 export const protocol = binder.protocol;
 export const graphCommands = binder.graph;
 export const kvCommands = binder.kv;
+export const adminCommands = binder.admin;
 
 export const {
   buildCommand,
@@ -152,6 +154,30 @@ export class CheetahTcpClient {
       // The binder's FIFO guarantees each promise resolves with the response to
       // its own command, so writing the batch up front is safe and pipelined.
       return await Promise.all(requested.map((command) => connection.send(command)));
+    } finally {
+      this._release(socket);
+    }
+  }
+
+  async resetDatabase() {
+    const connection = this._connection();
+    await connection.connect();
+    const socket = connection.socket;
+    this._retain(socket);
+    try {
+      return await binder.admin.resetDatabase(connection, this.database);
+    } finally {
+      this._release(socket);
+    }
+  }
+
+  async putValue(key, payload, options = undefined) {
+    const connection = this._connection();
+    await connection.connect();
+    const socket = connection.socket;
+    this._retain(socket);
+    try {
+      return await binder.kv.putValue(connection, key, payload, options);
     } finally {
       this._release(socket);
     }
