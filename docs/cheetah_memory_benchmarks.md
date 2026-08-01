@@ -205,147 +205,481 @@ Return strict JSON only that matches this schema:
 
 The braces on the two schema lines are documentation substitutions only. In every real request MiniPhi embedded the complete minified [teach schema](prompts/cheetah-teach.schema.json) or [recall schema](prompts/cheetah-recall.schema.json) at that position and sent the same object through `response_format=json_schema`. The per-example archive paths below are the byte-for-byte record when exact whitespace matters.
 
-### Trace 1: M-137
+### Before reading the examples: who issues the queries?
 
-Prompt substitutions and archives:
+SmolLM2 does **not** create Cheetah commands and never talks to port 4455. MiniPhi deterministically derives a topic id from the question/subject and sends binder-built commands. In all ten captured examples the exact node already contained one source reference and had no outgoing semantic relations, so the live command sequence was exactly:
 
-```text
-TRIAL_ID: wiki-memory-m137
-QUESTION: What was M-137 and what places did it serve?
-SUBJECT: M-137 (Michigan highway)
-SOURCE_TEXT / RETRIEVED_REFERENCE: M-137 was a state trunkline highway in the US state of Michigan that served as a spur route to the Interlochen Center for the Arts and Interlochen State Park. It started south of the park and ran north between two lakes in the area and through the community of Interlochen to US Highway 31 (US 31) in Grand Traverse County.
+1. `GRAPH_NODE_GET id=topic:<slug>` — retrieve the canonical node and its stored references;
+2. `GRAPH_NEIGHBOR_TYPES id=topic:<slug> direction=out limit=16 weighted=1` — cheaply check whether semantic relations exist;
+3. stop, because the second response decoded to `[]` in every example. `GRAPH_RECALL` would be the third query only when the histogram was non-empty, or the fallback query when the exact node was missing.
+
+The Cheetah wire transports node JSON as base64 in `payload=`. The examples show the useful decoded response rather than pages of base64, while retaining the literal non-payload response. Each example now starts with the user question and ends with the exact answer MiniPhi returned.
+
+### Question 1: M-137
+
+> What was M-137 and what places did it serve?
+
+**A. SmolLM2 without memory**
+
+The closed-book prompt used `TRIAL_ID=wiki-memory-m137`, the exact question above, and the shared closed-book schema. Exchange: `.miniphi/prompt-exchanges/c65b56bb-4a90-40ca-9d2c-59e01fff28b6.json`.
+
+```json
+{"answer":"","evidence":["I do not know"]}
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/c65b56bb-4a90-40ca-9d2c-59e01fff28b6.json`; raw result: `{"answer":"","evidence":["I do not know"]}`.
-- Teach exchange: `.miniphi/prompt-exchanges/700bc2eb-e223-4625-890c-6f6d6cbe3e0b.json`; SmolLM2 returned the canonical name, the wrong type `person`, `no_new_information:true`, and no facts. MiniPhi still retained the canonical exact source reference and wrote no optional semantic edge.
-- Recall exchange: `.miniphi/prompt-exchanges/de0ab44d-7208-400e-9135-5f27e3423762.json`; SmolLM2 returned `anchor_resolved:false`, `grounded:true`, `answer:"I don't know"`, and empty evidence. MiniPhi rejected the contradictory answer even though its own Cheetah lookup had resolved the anchor.
-- Final result: `I don't know.` Because this CLI call used the normal `recordMiss:true` behavior, MiniPhi also saved `hypothesis:what_was_m_137_and_what_places_did_it_serve` as an open question. The other nine diagnostic calls disabled miss recording so the benchmark would not add more hypotheses.
-
-### Trace 2: Dynamic density
+**B. MiniPhi → Cheetah queries and Cheetah → MiniPhi responses**
 
 ```text
-TRIAL_ID: wiki-memory-dynamic-density
-QUESTION: What two components make up dynamic density?
-SUBJECT: Dynamic density
-SOURCE_TEXT / RETRIEVED_REFERENCE: In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population. Émile Durkheim used the term to explain why societies transition from simple to more complex forms, specifically in terms of the division of labor within that society. He suggested that it required both an increase in population and an increase in the frequency of social interaction to form more specialised occupations, which then leads to a new type of society.
+> GRAPH_NODE_GET id=topic:m_137_michigan_highway
+< SUCCESS,id=topic:m_137_michigan_highway,payload=<base64 JSON>
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/30182e34-1da7-4737-b9a8-0996fffa7ab0.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/25f12512-1f66-42bf-9162-13b638991ed9.json`; SmolLM2 renamed the subject to `MiniPhi Cheetah teach turn`, labelled it `person`, and emitted no new facts. MiniPhi overrode the name with the authoritative title and saved the exact reference, not the hallucinated metadata.
-- Recall exchange: `.miniphi/prompt-exchanges/da7cf9ff-aa9b-45ff-b092-4a8dc613524e.json`; raw fields were `{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["The Facts","The Schema"]}`. MiniPhi rejected both the decline and the non-reference evidence.
-- Final result: `I don't know.` The reference clearly contains the correct answer—population density plus social interaction—but the specific-question policy did not substitute the whole reference.
-
-### Trace 3: Marc Fein
+```json
+{"id":"topic:m_137_michigan_highway","name":"M-137 (Michigan highway)","references":[{"id":"src-1","text":"M-137 was a state trunkline highway in the US state of Michigan that served as a spur route to the Interlochen Center for the Arts and Interlochen State Park. It started south of the park and ran north between two lakes in the area and through the community of Interlochen to US Highway 31 (US 31) in Grand Traverse County.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751000"}]}
+```
 
 ```text
-TRIAL_ID: wiki-memory-marc-fein
-QUESTION: What kinds of work did Marc Fein do?
-SUBJECT: Marc Fein
-SOURCE_TEXT / RETRIEVED_REFERENCE: Marc Fein (born Marc Alan Fein October 21, 1967 in Miami, Florida) is a sports journalist, sports news anchor, and television sports studio host, formerly one of the main studio hosts for the NBA TV show, NBA Gametime Live. He is also the host of its show, The Beat, and has been the substitute host for Ernie Johnson on the NBA on TNT.Quigley, Eileen S. (2006) International Television & Video Almanac ==Broadcasting career== Prior to his present work at NBA TV, Fein was at one time the exclusive studio host for and NASCAR on TNT Live!.
+> GRAPH_NEIGHBOR_TYPES id=topic:m_137_michigan_highway direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # W10= decodes to []
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/31454a89-7d7c-4a3f-b6e9-460650456ee5.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/68264dfe-eac2-4c0d-8c8d-b35e0ae8e3be.json`; the JSON matched the schema but contained malformed semantic values such as `subject_name:"[Marc Fein]"` and no new facts. MiniPhi used `Marc Fein` from the dataset and saved the exact reference.
-- Recall exchange: `.miniphi/prompt-exchanges/29ff49d0-7695-40f1-ae01-533e9f3a73e7.json`; SmolLM2 answered `I don't know` while inventing four evidence descriptions instead of copying the reference. Validation rejected it.
-- Final result: `I don't know.` The retrieved text says sports journalist, sports news anchor, and television sports studio host, but MiniPhi conservatively abstained rather than treating an unvalidated model paraphrase as the answer.
+The stored reference came from teach exchange `.miniphi/prompt-exchanges/700bc2eb-e223-4625-890c-6f6d6cbe3e0b.json`.
 
-### Trace 4: Alphyn
+**C. Context MiniPhi gave SmolLM2 after retrieval**
 
 ```text
-TRIAL_ID: wiki-memory-alphyn
-QUESTION: What does the name Alphyn mean?
-SUBJECT: Alphyn
-SOURCE_TEXT / RETRIEVED_REFERENCE: A heraldic alphyn An Alphyn (from the Germanic word for "chaser" or "wolf"), also known as awfyn or alfin in older writings,The Chess player's chronicle. Oxford Press, 1841.
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "M-137 was a state trunkline highway in the US state of Michigan that served as a spur route to the Interlochen Center for the Arts and Interlochen State Park. It started south of the park and ran north between two lakes in the area and through the community of Interlochen to US Highway 31 (US 31) in Grand Traverse County."
+Question: What was M-137 and what places did it serve?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[The complete cheetah-recall schema is appended and also sent as response_format=json_schema.]
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/615da8c4-6173-4484-9234-af9ddb6a7123.json`; raw answer was empty and its spurious evidence was `Wiki memory`.
-- Teach exchange: `.miniphi/prompt-exchanges/7040452a-d382-44ca-8bfc-8a7c7688a0b7.json`; the model selected the canonical name but the wrong type `person` and no graph facts. The exact reference was still saved.
-- Recall exchange: `.miniphi/prompt-exchanges/11991913-47dc-4165-899e-6d7f0ba35e19.json`; the model copied the correct reference into `evidence` but still set `answer:"I don't know"`. MiniPhi rejected a decline as a grounded answer.
-- Final result: `I don't know.` The stored evidence says the name comes from a Germanic word for “chaser” or “wolf”; current specific-question handling did not extract that answer deterministically.
+Recall exchange: `.miniphi/prompt-exchanges/de0ab44d-7208-400e-9135-5f27e3423762.json`.
 
-### Trace 5: HaMoshava Stadium
+```json
+{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":[],"stop_reason":""}
+```
+
+MiniPhi rejected the contradictory model result. With `recordMiss:true`, it also recorded `hypothesis:what_was_m_137_and_what_places_did_it_serve`.
+
+**Answer returned by MiniPhi**
+
+> I don't know.
+
+### Question 2: Dynamic density
+
+> What two components make up dynamic density?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/30182e34-1da7-4737-b9a8-0996fffa7ab0.json` returned `{"answer":"","evidence":["","",""]}`.
+
+**B. MiniPhi → Cheetah queries and responses**
 
 ```text
-TRIAL_ID: wiki-memory-hamoshava
-QUESTION: Where is HaMoshava Stadium and when was it completed?
-SUBJECT: HaMoshava Stadium
-SOURCE_TEXT / RETRIEVED_REFERENCE: The western stand, June 2016 Aerial view The HaMoshava Stadium (), also known as Petah Tikva Stadium, is a football stadium in Petah Tikva, Israel. It was completed in 2011, and is used mainly for football matches and is home to both Hapoel Petah Tikva and Maccabi Petah Tikva.
+> GRAPH_NODE_GET id=topic:dynamic_density
+< SUCCESS,id=topic:dynamic_density,payload=<base64 JSON>
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/dd2960f1-a52a-4bcb-9f6a-747eafc2dc07.json`; raw answer: `I do not know`.
-- Teach exchange: `.miniphi/prompt-exchanges/fe7b6102-1883-42e6-ae77-35eed15ed873.json`; SmolLM2 labelled the stadium `person` and emitted no facts. MiniPhi saved the canonical topic and exact reference.
-- Recall exchange: `.miniphi/prompt-exchanges/a614dabb-fbbe-424a-91bc-924bafec22a0.json`; raw fields were `{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["",""]}`. The answer failed validation.
-- Final result: `I don't know.` Cheetah supplied both requested details—Petah Tikva, Israel and 2011—but the light model failed to compose them.
-
-### Trace 6: Carinya Christian School
+```json
+{"id":"topic:dynamic_density","name":"Dynamic density","references":[{"id":"src-1","text":"In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population. Émile Durkheim used the term to explain why societies transition from simple to more complex forms, specifically in terms of the division of labor within that society. He suggested that it required both an increase in population and an increase in the frequency of social interaction to form more specialised occupations, which then leads to a new type of society.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751001"}]}
+```
 
 ```text
-TRIAL_ID: wiki-memory-carinya
-QUESTION: What do you know about Carinya Christian School?
-SUBJECT: Carinya Christian School
-SOURCE_TEXT / RETRIEVED_REFERENCE: Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.
+> GRAPH_NEIGHBOR_TYPES id=topic:dynamic_density direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/fe964db2-52b8-4c66-838e-0bfaefdccc64.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/33bf25b4-0b46-433b-968c-e05ae7964a0f.json`; the model emitted no new facts and merely put `located_in` in the non-persisted transparency field. MiniPhi saved the canonical exact source record.
-- Recall exchange: `.miniphi/prompt-exchanges/62271907-fffb-4741-a314-2b3d4e5a2e53.json`; SmolLM2 explicitly said it used training knowledge, set `grounded:false`, and answered `I don't know`, despite copying much of the reference into `evidence`. MiniPhi rejected model composition.
-- Final result (`answerSource=deterministic-reference-fallback`): `Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.`
+Teach exchange: `.miniphi/prompt-exchanges/25f12512-1f66-42bf-9162-13b638991ed9.json`.
 
-### Trace 7: Asian Young Footballer of the Year
+**C. Context returned to SmolLM2**
 
 ```text
-TRIAL_ID: wiki-memory-asian-footballer
-QUESTION: What do you know about Asian Young Footballer of the Year?
-SUBJECT: Asian Young Footballer of the Year
-SOURCE_TEXT / RETRIEVED_REFERENCE: The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population. Émile Durkheim used the term to explain why societies transition from simple to more complex forms, specifically in terms of the division of labor within that society. He suggested that it required both an increase in population and an increase in the frequency of social interaction to form more specialised occupations, which then leads to a new type of society."
+Question: What two components make up dynamic density?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/9bff4de2-f826-4a7a-a321-4a26c0f6b024.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/a2b2afa8-fc3f-4c16-be5d-f0d9eb70f6a9.json`; SmolLM2 emitted no graph facts. Its `known_facts` strings are transparency-only and were not written as facts; MiniPhi saved the exact source reference.
-- Recall exchange: `.miniphi/prompt-exchanges/58696660-4c98-4b80-8ed9-63219b1e4d6c.json`; the model copied two relevant evidence lines but answered `I don't know`, so composition was rejected.
-- Final result (`answerSource=deterministic-reference-fallback`): `The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.`
+Recall exchange `.miniphi/prompt-exchanges/da7cf9ff-aa9b-45ff-b092-4a8dc613524e.json` returned:
 
-### Trace 8: Pie crust crab
+```json
+{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["The Facts","The Schema"]}
+```
+
+MiniPhi rejected the decline and the non-reference evidence. The retrieved reference did contain the answer, but the specific-question policy did not substitute a whole paragraph.
+
+**Answer returned by MiniPhi**
+
+> I don't know.
+
+### Question 3: Marc Fein
+
+> What kinds of work did Marc Fein do?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/31454a89-7d7c-4a3f-b6e9-460650456ee5.json` returned an empty `answer` and `evidence:["I do not know"]`.
+
+**B. MiniPhi → Cheetah queries and responses**
 
 ```text
-TRIAL_ID: wiki-memory-pie-crust-crab
-QUESTION: What do you know about Pie crust crab?
-SUBJECT: Pie crust crab
-SOURCE_TEXT / RETRIEVED_REFERENCE: The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms.
+> GRAPH_NODE_GET id=topic:marc_fein
+< SUCCESS,id=topic:marc_fein,payload=<base64 JSON>
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/01803c4e-138e-4f8c-bb51-4e07df0fdfda.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/42bab444-0789-4b69-8a57-e16eb279f7f1.json`; the model labelled the crab `person`, proposed no facts, and invented a sentence in `known_facts`. MiniPhi ignored that field and saved the canonical source reference.
-- Recall exchange: `.miniphi/prompt-exchanges/bc38cf94-d266-47e4-b562-8f18b94f9f26.json`; the model answered `I don't know.` and its two evidence strings described the prompt instead of the crab. MiniPhi rejected it.
-- Final result (`answerSource=deterministic-reference-fallback`): the exact retrieved reference shown above, including the distribution, larval diet, and adult carnivorous behavior.
-
-### Trace 9: Wiyot traditional narratives
+```json
+{"id":"topic:marc_fein","name":"Marc Fein","references":[{"id":"src-1","text":"Marc Fein (born Marc Alan Fein October 21, 1967 in Miami, Florida) is a sports journalist, sports news anchor, and television sports studio host, formerly one of the main studio hosts for the NBA TV show, NBA Gametime Live. He is also the host of its show, The Beat, and has been the substitute host for Ernie Johnson on the NBA on TNT.Quigley, Eileen S. (2006) International Television & Video Almanac ==Broadcasting career== Prior to his present work at NBA TV, Fein was at one time the exclusive studio host for and NASCAR on TNT Live!.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751048"}]}
+```
 
 ```text
-TRIAL_ID: wiki-memory-wiyot
-QUESTION: What do you know about Wiyot traditional narratives?
-SUBJECT: Wiyot traditional narratives
-SOURCE_TEXT / RETRIEVED_REFERENCE: Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S.
+> GRAPH_NEIGHBOR_TYPES id=topic:marc_fein direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/1e02f11e-5b34-45b8-b61d-6022f9d1f0ff.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/151b3c6f-1e48-44f0-a6af-eae3cc128b1f.json`; the model proposed no graph facts and mixed source paraphrases with hallucinated text in `known_facts`. MiniPhi did not persist that field; it saved the exact reference.
-- Recall exchange: `.miniphi/prompt-exchanges/03c89c47-6d95-4ed4-85b0-c6e4e9604547.json`; SmolLM2 produced a useful-looking first-sentence answer, but also set `anchor_resolved:false`, supplied no evidence, and left `stop_reason` empty. MiniPhi correctly refused to trust the answer based on wording alone.
-- Final result (`answerSource=deterministic-reference-fallback`): the exact retrieved reference shown above.
+Teach exchange: `.miniphi/prompt-exchanges/68264dfe-eac2-4c0d-8c8d-b35e0ae8e3be.json`.
 
-### Trace 10: More Than I Know
+**C. Context returned to SmolLM2**
 
 ```text
-TRIAL_ID: wiki-memory-more-than-i-know
-QUESTION: What do you know about More Than I Know?
-SUBJECT: More Than I Know
-SOURCE_TEXT / RETRIEVED_REFERENCE: "More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes.
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "Marc Fein (born Marc Alan Fein October 21, 1967 in Miami, Florida) is a sports journalist, sports news anchor, and television sports studio host, formerly one of the main studio hosts for the NBA TV show, NBA Gametime Live. He is also the host of its show, The Beat, and has been the substitute host for Ernie Johnson on the NBA on TNT.Quigley, Eileen S. (2006) International Television & Video Almanac ==Broadcasting career== Prior to his present work at NBA TV, Fein was at one time the exclusive studio host for and NASCAR on TNT Live!."
+Question: What kinds of work did Marc Fein do?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
 ```
 
-- Closed-book exchange: `.miniphi/prompt-exchanges/56069b89-60fa-4a75-82f2-02f685fc8339.json`; raw answer was empty.
-- Teach exchange: `.miniphi/prompt-exchanges/ca91472b-20ef-4aee-9b49-08af1127d31e.json`; SmolLM2 proposed `has_occupation -> [1]` and `born_in -> [4]`. Neither object occurs in the source, so MiniPhi rejected both candidates and saved only the exact source reference.
-- Recall exchange: `.miniphi/prompt-exchanges/2e6a206f-f174-489a-9a5e-1d04282a1c2d.json`; the model copied relevant evidence but answered `I don't know`. MiniPhi rejected model composition.
-- Final result (`answerSource=deterministic-reference-fallback`): `"More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes.`
+Recall exchange `.miniphi/prompt-exchanges/29ff49d0-7695-40f1-ae01-533e9f3a73e7.json` returned `answer:"I don't know"` plus four invented evidence descriptions. MiniPhi rejected it.
+
+**Answer returned by MiniPhi**
+
+> I don't know.
+
+### Question 4: Alphyn
+
+> What does the name Alphyn mean?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/615da8c4-6173-4484-9234-af9ddb6a7123.json` returned an empty answer and the spurious evidence `Wiki memory`.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:alphyn
+< SUCCESS,id=topic:alphyn,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:alphyn","name":"Alphyn","references":[{"id":"src-1","text":"A heraldic alphyn An Alphyn (from the Germanic word for \"chaser\" or \"wolf\"), also known as awfyn or alfin in older writings,The Chess player's chronicle. Oxford Press, 1841.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751439"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:alphyn direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/7040452a-d382-44ca-8bfc-8a7c7688a0b7.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "A heraldic alphyn An Alphyn (from the Germanic word for "chaser" or "wolf"), also known as awfyn or alfin in older writings,The Chess player's chronicle. Oxford Press, 1841."
+Question: What does the name Alphyn mean?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/11991913-47dc-4165-899e-6d7f0ba35e19.json` copied the reference into evidence but still returned `answer:"I don't know"`; MiniPhi rejected the decline.
+
+**Answer returned by MiniPhi**
+
+> I don't know.
+
+### Question 5: HaMoshava Stadium
+
+> Where is HaMoshava Stadium and when was it completed?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/dd2960f1-a52a-4bcb-9f6a-747eafc2dc07.json` answered `I do not know`.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:hamoshava_stadium
+< SUCCESS,id=topic:hamoshava_stadium,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:hamoshava_stadium","name":"HaMoshava Stadium","references":[{"id":"src-1","text":"The western stand, June 2016 Aerial view The HaMoshava Stadium (), also known as Petah Tikva Stadium, is a football stadium in Petah Tikva, Israel. It was completed in 2011, and is used mainly for football matches and is home to both Hapoel Petah Tikva and Maccabi Petah Tikva.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751452"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:hamoshava_stadium direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/fe7b6102-1883-42e6-ae77-35eed15ed873.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "The western stand, June 2016 Aerial view The HaMoshava Stadium (), also known as Petah Tikva Stadium, is a football stadium in Petah Tikva, Israel. It was completed in 2011, and is used mainly for football matches and is home to both Hapoel Petah Tikva and Maccabi Petah Tikva."
+Question: Where is HaMoshava Stadium and when was it completed?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/a614dabb-fbbe-424a-91bc-924bafec22a0.json` returned `{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["",""]}`. MiniPhi rejected it.
+
+**Answer returned by MiniPhi**
+
+> I don't know.
+
+### Question 6: Carinya Christian School
+
+> What do you know about Carinya Christian School?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/fe964db2-52b8-4c66-838e-0bfaefdccc64.json` returned an empty answer.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:carinya_christian_school
+< SUCCESS,id=topic:carinya_christian_school,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:carinya_christian_school","name":"Carinya Christian School","references":[{"id":"src-1","text":"Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788958"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:carinya_christian_school direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/33bf25b4-0b46-433b-968c-e05ae7964a0f.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12."
+Question: What do you know about Carinya Christian School?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/62271907-fffb-4741-a314-2b3d4e5a2e53.json` said it used training knowledge, set `grounded:false`, and answered `I don't know`. MiniPhi rejected composition and used the broad-question fallback.
+
+**Answer returned by MiniPhi**
+
+> Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.
+
+### Question 7: Asian Young Footballer of the Year
+
+> What do you know about Asian Young Footballer of the Year?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/9bff4de2-f826-4a7a-a321-4a26c0f6b024.json` returned an empty answer.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:asian_young_footballer_of_the_year
+< SUCCESS,id=topic:asian_young_footballer_of_the_year,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:asian_young_footballer_of_the_year","name":"Asian Young Footballer of the Year","references":[{"id":"src-1","text":"The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788916"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:asian_young_footballer_of_the_year direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/a2b2afa8-fc3f-4c16-be5d-f0d9eb70f6a9.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995."
+Question: What do you know about Asian Young Footballer of the Year?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/58696660-4c98-4b80-8ed9-63219b1e4d6c.json` copied relevant evidence but answered `I don't know`. MiniPhi rejected it and used the reference fallback.
+
+**Answer returned by MiniPhi**
+
+> The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.
+
+### Question 8: Pie crust crab
+
+> What do you know about Pie crust crab?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/01803c4e-138e-4f8c-bb51-4e07df0fdfda.json` returned an empty answer.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:pie_crust_crab
+< SUCCESS,id=topic:pie_crust_crab,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:pie_crust_crab","name":"Pie crust crab","references":[{"id":"src-1","text":"The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788834"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:pie_crust_crab direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/42bab444-0789-4b69-8a57-e16eb279f7f1.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms."
+Question: What do you know about Pie crust crab?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/bc38cf94-d266-47e4-b562-8f18b94f9f26.json` answered `I don't know.` and supplied evidence about the prompt rather than the crab. MiniPhi rejected it and used the exact reference.
+
+**Answer returned by MiniPhi**
+
+> The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms.
+
+### Question 9: Wiyot traditional narratives
+
+> What do you know about Wiyot traditional narratives?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/1e02f11e-5b34-45b8-b61d-6022f9d1f0ff.json` returned an empty answer.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:wiyot_traditional_narratives
+< SUCCESS,id=topic:wiyot_traditional_narratives,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:wiyot_traditional_narratives","name":"Wiyot traditional narratives","references":[{"id":"src-1","text":"Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788884"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:wiyot_traditional_narratives direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/151b3c6f-1e48-44f0-a6af-eae3cc128b1f.json`.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- "Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S."
+Question: What do you know about Wiyot traditional narratives?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/03c89c47-6d95-4ed4-85b0-c6e4e9604547.json` produced a useful-looking sentence but set `anchor_resolved:false`, supplied no evidence, and left `stop_reason` empty. MiniPhi rejected composition and returned the reference.
+
+**Answer returned by MiniPhi**
+
+> Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S.
+
+### Question 10: More Than I Know
+
+> What do you know about More Than I Know?
+
+**A. SmolLM2 without memory**
+
+Closed-book exchange `.miniphi/prompt-exchanges/56069b89-60fa-4a75-82f2-02f685fc8339.json` returned an empty answer.
+
+**B. MiniPhi → Cheetah queries and responses**
+
+```text
+> GRAPH_NODE_GET id=topic:more_than_i_know
+< SUCCESS,id=topic:more_than_i_know,payload=<base64 JSON>
+```
+
+```json
+{"id":"topic:more_than_i_know","name":"More Than I Know","references":[{"id":"src-1","text":"\"More Than I Know\" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of \"Not Forgotten\" by Daley requested by Neil Barnes.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788889"}]}
+```
+
+```text
+> GRAPH_NEIGHBOR_TYPES id=topic:more_than_i_know direction=out limit=16 weighted=1
+< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
+```
+
+Teach exchange: `.miniphi/prompt-exchanges/ca91472b-20ef-4aee-9b49-08af1127d31e.json`. SmolLM2 proposed two unsupported edges; MiniPhi rejected both and retained only the reference.
+
+**C. Context returned to SmolLM2**
+
+```text
+Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
+Facts about the subject:
+- ""More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes."
+Question: What do you know about More Than I Know?
+Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
+If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
+Set stop_reason to "completed".
+[cheetah-recall schema appended; response_format=json_schema]
+```
+
+Recall exchange `.miniphi/prompt-exchanges/2e6a206f-f174-489a-9a5e-1d04282a1c2d.json` copied relevant evidence but answered `I don't know`. MiniPhi rejected composition and selected the reference fallback.
+
+**Answer returned by MiniPhi**
+
+> "More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes.
 
 ### What the ten traces demonstrate
 
