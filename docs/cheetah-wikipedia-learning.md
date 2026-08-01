@@ -70,6 +70,23 @@ for ($batch = 1; $batch -le 10; $batch += 1) {
 
 Do not add `--reset-database` to a resume loop. `--no-resume` ignores the saved input position but deliberately does not clear Cheetah, which is useful for idempotency testing but not for starting over.
 
+## Four-hour reliability and benchmark session
+
+Use the soak runner when the goal is continuous execution with retained time-series evidence rather than ingestion alone:
+
+```powershell
+node scripts/run-cheetah-wikipedia-soak.js --duration-hours 4
+```
+
+Every cycle resumes a bounded Wikipedia batch, probes fixed early memories, refreshes the model's Easy benchmark, archives that complete benchmark payload instead of overwriting history, and runs `npm test`. The session stops immediately on a failed step so the defect can be repaired before resuming the same artifact directory and original deadline:
+
+```powershell
+node scripts/run-cheetah-wikipedia-soak.js `
+  --session-dir .miniphi\cheetah\soak\<session-id>
+```
+
+Session state, step events, stdout/stderr logs, checkpoint snapshots, and benchmark snapshots live under `.miniphi/cheetah/soak/<session-id>/`. Defaults are 100 articles per cycle, probes every 25 articles over five retained subjects, and one benchmark plus one full unit-test gate per cycle. Use `--article-batch`, `--probe-every`, `--probe-count`, `--benchmark-every`, and `--test-every` to change cadence without weakening the four-hour deadline.
+
 ## Useful controls
 
 ```text
@@ -130,6 +147,7 @@ This proves streaming, Unicode-safe persistence, byte-offset resume, retention a
 ```powershell
 node --test unit-tests-js/local-wikipedia-dataset.test.js `
   unit-tests-js/cheetah-wikipedia-runner.test.js `
+  unit-tests-js/cheetah-wikipedia-soak.test.js `
   unit-tests-js/cheetah-knowledge-client.test.js `
   unit-tests-js/cheetah-learner.test.js `
   unit-tests-js/cheetah-learn-command.test.js

@@ -211,6 +211,9 @@ miniphi cheetah-learn eval --teach-limit 20 --eval-limit 8
 
 # Stream a local Wikipedia dump with checkpointed, interleaved retention probes:
 node scripts/run-cheetah-wikipedia-learning.js --limit 100 --probe-every 10 --probe-count 3 --verbose
+
+# Run a four-hour learn/probe/benchmark/test soak with time-series snapshots:
+node scripts/run-cheetah-wikipedia-soak.js --duration-hours 4
 ```
 
 The Wikipedia runner defaults to the documented SmolLM2 reference setup, uses database
