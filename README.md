@@ -153,7 +153,8 @@ Then opt in through `config.json`:
       "projectId": null,
       "timeoutMs": 2500,
       "required": false,
-      "referenceLimit": 48
+      "referenceLimit": 48,
+      "binary": true
     }
   }
 }
@@ -174,7 +175,20 @@ in-memory selector and records the failure in
 service should stop the model turn. Environment overrides are `MINIPHI_CONTEXT_ENGINE=cheetah`,
 `MINIPHI_CHEETAH_HOST`, `MINIPHI_CHEETAH_PORT`, `MINIPHI_CHEETAH_DATABASE`,
 `MINIPHI_CHEETAH_PROJECT_ID`,
-`MINIPHI_CHEETAH_TIMEOUT_MS`, and `MINIPHI_CHEETAH_REQUIRED`.
+`MINIPHI_CHEETAH_TIMEOUT_MS`, `MINIPHI_CHEETAH_BINARY`, and `MINIPHI_CHEETAH_REQUIRED`.
+
+`binary` (default `true`) picks Cheetah's byte-wise protocol: the command travels as a 2-byte index
+and values travel in their own types instead of as decimal text. It changes nothing else — the
+binder transcodes the same command lines and turns each response frame back into the same line, and
+responses come back byte-identical. On MiniPhi's own mirror/recall traffic the saving is small
+(measured at 0.4% of bytes written and 3.0% of bytes read over a 400-node mirror plus 20 recalls),
+because those commands are dominated by one base64 JSON argument that binary carries as a string
+just like text does. A server built before that
+protocol existed never answers the handshake, so MiniPhi falls back to the newline protocol by
+itself and records it under `transport` in `context-engine.json`; set `binary: false` (or
+`MINIPHI_CHEETAH_BINARY=0`) to skip that one-time probe. Explicit numeric widths are accepted too
+(`"binary": {"uint": 4, "float": 4}`). The same option exists for the `knowledgeLookup` section
+(`MINIPHI_KNOWLEDGE_BINARY`) and as `--cheetah-text` on `cheetah-learn`.
 
 #### Optional: teach a small "ignorant" model with Cheetah (`cheetah-learn`)
 

@@ -9,6 +9,7 @@ import {
   buildNodeSet,
   buildRecall,
   decodeCheetahPayload,
+  normalizeBinaryTransport,
   parseCheetahResponse,
 } from "./cheetah-binder.js";
 
@@ -145,6 +146,10 @@ export function resolveCheetahContextConfig(configData = undefined, env = proces
     projectId: normalizeOptionalString(
       env.MINIPHI_CHEETAH_PROJECT_ID ?? cheetah.projectId,
     ),
+    // Byte-wise transport is the default; `false` (or MINIPHI_CHEETAH_BINARY=0)
+    // pins the newline protocol for a server that predates it, which the client
+    // would otherwise only discover by paying one handshake timeout.
+    binary: normalizeBinaryTransport(env.MINIPHI_CHEETAH_BINARY ?? cheetah.binary),
     timeoutMs: toPositiveInteger(
       env.MINIPHI_CHEETAH_TIMEOUT_MS ?? cheetah.timeoutMs,
       DEFAULT_TIMEOUT_MS,
@@ -223,6 +228,7 @@ export class CheetahContextEngine {
         port: options?.port,
         database,
         timeoutMs: options?.timeoutMs,
+        binary: options?.binary,
       });
     this._nodeFingerprints = new Map();
     this._edgeFingerprints = new Map();
@@ -630,6 +636,7 @@ export class CheetahContextEngine {
       host: this.client?.host ?? null,
       port: this.client?.port ?? null,
       database: this.client?.database ?? null,
+      transport: this.client?.transportStatus?.() ?? null,
       projectReference: this.projectReference,
       sessionReference: this.sessionReference,
     };

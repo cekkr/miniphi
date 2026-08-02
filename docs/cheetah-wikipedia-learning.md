@@ -101,6 +101,7 @@ Session state, step events, stdout/stderr logs, checkpoint snapshots, and benchm
 --checkpoint <file>         Alternate resumable state file
 --no-start-cheetah          Require an already-running server
 --keep-cheetah              Leave an auto-started server running
+--cheetah-text              Use the newline protocol instead of byte-wise frames
 --reset-database            Destructively clear the selected DB and restart input
 --no-resume                 Restart input without clearing the selected DB
 --json                      Machine-readable final result

@@ -4,7 +4,7 @@ import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
 import LMStudioHandler from "../libs/lmstudio-handler.js";
 import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
-import { CheetahTcpClient } from "../libs/cheetah-binder.js";
+import { CheetahTcpClient, normalizeBinaryTransport } from "../libs/cheetah-binder.js";
 import {
   DEFAULT_HOST as CHEETAH_DEFAULT_HOST,
   DEFAULT_PORT as CHEETAH_DEFAULT_PORT,
@@ -65,6 +65,13 @@ export function buildCheetahClient(options) {
     port: Number(options["cheetah-port"]) || CHEETAH_DEFAULT_PORT,
     database: optionsString(options["cheetah-database"]) ?? CHEETAH_DEFAULT_DATABASE,
     timeoutMs: parseNumericSetting(options["cheetah-timeout-ms"], "--cheetah-timeout-ms"),
+    // Byte-wise frames by default; `--cheetah-text` pins the newline protocol
+    // for an older server instead of letting the client find out by timing the
+    // handshake out once. Ingestion here is round-trip bound, so this is the
+    // path the cheaper transport helps most.
+    binary: normalizeBinaryTransport(
+      options["cheetah-text"] === true ? false : options["cheetah-binary"],
+    ),
   });
 }
 

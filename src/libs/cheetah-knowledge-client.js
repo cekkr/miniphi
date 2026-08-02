@@ -7,6 +7,7 @@ import {
   buildNodeSet,
   buildRecall,
   decodeCheetahPayload,
+  normalizeBinaryTransport,
 } from "./cheetah-binder.js";
 
 /**
@@ -83,6 +84,12 @@ export function resolveKnowledgeLookupConfig(configData = undefined, env = proce
     timeoutMs: toPositiveInteger(
       env.MINIPHI_KNOWLEDGE_TIMEOUT_MS ?? cheetahSection.timeoutMs,
       DEFAULT_KNOWLEDGE_LOOKUP_TIMEOUT_MS,
+    ),
+    // Byte-wise transport by default, exactly as the context engine resolves it;
+    // the lookup budget here is tighter (1.5 s), so the cheaper frames matter
+    // more, and the client still degrades to text on its own.
+    binary: normalizeBinaryTransport(
+      env.MINIPHI_KNOWLEDGE_BINARY ?? cheetahSection.binary,
     ),
   };
 }

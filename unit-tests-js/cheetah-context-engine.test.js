@@ -178,6 +178,11 @@ test("CheetahTcpClient selects a database and frames one response per command", 
       port: address.port,
       database: "ctx_test",
       timeoutMs: 1000,
+      // Pinned to the newline protocol: the byte-wise transport and its
+      // downgrade are covered by cheetah-binary-transport.test.js, and this
+      // fixture speaks text, so leaving the default on would only make this
+      // test pay a handshake timeout to reach the same place.
+      binary: false,
     });
     const responses = await client.execute(["SYSTEM_STATS", "GRAPH_NODE_GET id=x"]);
     assert.equal(responses.length, 2);

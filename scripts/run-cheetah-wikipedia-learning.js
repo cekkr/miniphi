@@ -59,6 +59,7 @@ Options:
   --cheetah-host <host>      Cheetah TCP host
   --cheetah-port <port>      Cheetah TCP port
   --cheetah-data-dir <dir>   Persistent server data directory when auto-started
+  --cheetah-text             Use the newline text protocol instead of byte-wise frames
   --no-start-cheetah         Require an already-running Cheetah server
   --keep-cheetah             Leave an auto-started server running
   --no-resume                Ignore the checkpoint position (does not reset the DB)
@@ -74,6 +75,7 @@ function parseArgs(argv) {
   const booleanKeys = new Set([
     "no-start-cheetah",
     "keep-cheetah",
+    "cheetah-text",
     "no-resume",
     "reset-database",
     "verbose",
@@ -224,6 +226,7 @@ async function main() {
   if (options.maxArticleBytes) {
     args.push("--max-article-bytes", options.maxArticleBytes);
   }
+  if (options["cheetah-text"]) args.push("--cheetah-text");
   if (options["no-resume"]) args.push("--no-resume");
   if (options["reset-database"]) args.push("--reset-database");
   if (options.verbose) args.push("--verbose");

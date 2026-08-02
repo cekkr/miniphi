@@ -99,6 +99,7 @@ export async function launchAgentUi(options = undefined) {
       port: knowledgeLookupConfig.port,
       database: knowledgeLookupConfig.database,
       timeoutMs: knowledgeLookupConfig.timeoutMs,
+      binary: knowledgeLookupConfig.binary,
     });
     const reachable = await knowledgeClient
       .execute(["SYSTEM_STATS"])

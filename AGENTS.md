@@ -89,7 +89,8 @@ When you add or change CLI behavior:
 - Override with `--context-budget <tokens>` or `config.context.budgetTokens`.
 
 ### Cheetah alternative query engine
-- The transport and every Cheetah command spelling come from the submodule's own Node binder (`thirds/cheetah/binders/nodejs`), reached through the single import site `src/libs/cheetah-binder.js`. That module bridges the binder's CommonJS to MiniPhi's ESM, re-exports the graph command builders (`buildNodeSet`, `buildRecall`, `buildEdgeSetBatch`, …) and `parseCheetahResponse`/`decodeCheetahPayload`, and wraps the binder's pipelined `CheetahClient` in the batch-shaped `CheetahTcpClient` (`execute(commands) -> responses[]`) the Cheetah modules are written against. **Never hand-encode a Cheetah `key=value` argument in MiniPhi**: props/references/batch items are base64 JSON and flags are `1`/`0`, and getting either wrong fails silently — build the command upstream instead. The connection is persistent (`DATABASE` is selected once per connection, not once per batch) and unref'd while idle so a finished run still exits; `CheetahContextEngine.close()` releases it explicitly. Because the binder ships in the submodule, `thirds/cheetah` must be initialized for any Cheetah-touching MiniPhi path to import.
+- The transport and every Cheetah command spelling come from the submodule's own Node binder (`thirds/cheetah/binders/nodejs`), reached through the single import site `src/libs/cheetah-binder.js`. That module bridges the binder's CommonJS to MiniPhi's ESM, re-exports the graph command builders (`buildNodeSet`, `buildRecall`, `buildEdgeSetBatch`, …), `parseCheetahResponse`/`decodeCheetahPayload`, the byte-wise codec (`binaryProtocol`, used only by test fixtures — MiniPhi never encodes a frame by hand) and `normalizeBinaryTransport`, and wraps the binder's pipelined `CheetahClient` in the batch-shaped `CheetahTcpClient` (`execute(commands) -> responses[]`) the Cheetah modules are written against. **Never hand-encode a Cheetah `key=value` argument in MiniPhi**: props/references/batch items are base64 JSON and flags are `1`/`0`, and getting either wrong fails silently — build the command upstream instead. The connection is persistent (`DATABASE` is selected once per connection, not once per batch) and unref'd while idle so a finished run still exits; `CheetahContextEngine.close()` releases it explicitly. Because the binder ships in the submodule, `thirds/cheetah` must be initialized for any Cheetah-touching MiniPhi path to import.
+- **The transport is byte-wise by default and degrades to text by itself.** `CheetahTcpClient` passes `binary` to the binder's `CheetahClient`, which frames the *same* canonical command line (command as a 2-byte index, values in their own types) and turns each response frame back into that line — so no MiniPhi command builder, parser, or test above the socket changes with the setting. Config keys: `context.cheetah.binary` / `MINIPHI_CHEETAH_BINARY`, `knowledgeLookup.cheetah.binary` / `MINIPHI_KNOWLEDGE_BINARY`, and `--cheetah-text` on `cheetah-learn`; all accept `true`/`false` (and the dialect strings `binary`/`text`) or an explicit `{uint,int,float}` width triple validated against `0|1|2|4|8`. A server that predates the binary protocol never answers the handshake, so a **connect-phase** transport failure downgrades that client to the newline protocol for the rest of its life and reconnects immediately; a refused TCP connect is *not* a transport failure and must keep failing once, or an unreachable Cheetah would cost two full timeouts inside a prompt. A frame that fails to decode mid-conversation only changes what the *next* connection speaks — the batch that saw the error is reported failed, never silently replayed, because the server may already have applied it. `client.transportStatus()` (requested/active transport, negotiated widths, command-index digest+epoch, downgrade reason) rides in `stats().transport` into `context-engine.json` and `result.json`.
 - `src/libs/cheetah-context-engine.js` implements `CheetahContextEngine` and MiniPhi's Cheetah policy (project/session isolation, what is mirrored, how failures degrade). Enable it with `context.engine: "cheetah"` (or `MINIPHI_CONTEXT_ENGINE=cheetah`); connection settings live under `context.cheetah` and default to loopback port `4455`, a project-derived database, a 2500 ms timeout, and `required: false`.
 - Context identity has two independent isolation boundaries. Unless `context.cheetah.database` is explicitly set, the canonical workspace path is SHA-256-derived into `miniphi_context_p_<hash>`. Every external node id is also namespaced by opaque SHA-256 project and session references, so projects cannot overlap even in an explicitly shared database or when they reuse the same session id. `context.cheetah.projectId` (or `MINIPHI_CHEETAH_PROJECT_ID`) supplies a stable project identity across workspace moves; without it, moving the workspace deliberately starts a new namespace. Never weaken `_localId()` to accept associations outside the exact project + session prefix.
 - Every local context node persists bounded complete reference sentences in `context-graph.json`; terse tool/code fragments are quoted inside a grammatical source-labelled sentence rather than stored as orphaned keywords. The adapter mirrors stable project/session-scoped node ids, layer/label/state/importance metadata, model-authored relations, mission/subtask membership, and only those bounded reference sentences. It never mirrors full context blocks or the workspace path. Edge writes use idempotent `GRAPH_EDGE_SET_BATCH`; locally dropped/superseded nodes are removed with `GRAPH_NODE_DEL cascade=1`. Failed or partial batches clear local fingerprints so the whole metadata set is replayed on the next bounded attempt.
@@ -329,6 +330,48 @@ Delivered 2026-07-28, extended 2026-08-01 — Cheetah-learn: ignorant-model teac
   with); the interactive agent does not write newly-learned facts back into the knowledge base
   (read-only integration only).
 
+Delivered 2026-08-02 — Cheetah byte-wise client protocol (offline-proven, live proof open):
+- Every MiniPhi → Cheetah connection now speaks the submodule's binary protocol by default. The
+  whole change is transport: `CheetahTcpClient` passes `binary` to the binder's `CheetahClient`,
+  which frames the same canonical command line and decodes each response frame back into that same
+  line, so `cheetah-context-engine.js`, `cheetah-knowledge-client.js` and `cheetah-learner.js` build
+  exactly the commands they built before. Nothing was hand-encoded in MiniPhi.
+- MiniPhi-shaped policy that does *not* belong upstream: `normalizeBinaryTransport` (config dialects
+  + width validation), the opt-out keys (`context.cheetah.binary`, `knowledgeLookup.cheetah.binary`,
+  `--cheetah-text`, `MINIPHI_CHEETAH_BINARY`/`MINIPHI_KNOWLEDGE_BINARY`), and the degradation rules —
+  a connect-phase handshake failure downgrades to text once and reconnects; a refused TCP connect
+  does not (it would otherwise cost two timeouts inside a prompt); a mid-conversation frame error
+  changes only the next connection and never replays the failed batch.
+- Telemetry: `transportStatus()` (requested/active, negotiated widths, command-index digest + epoch,
+  downgrade reason) rides in `CheetahContextEngine.stats().transport` into `context-engine.json` and
+  `result.json`.
+- Regression: `node --test unit-tests-js/cheetah-binary-transport.test.js
+  unit-tests-js/cheetah-context-engine.test.js unit-tests-js/cheetah-knowledge-client.test.js
+  unit-tests-js/cheetah-learner.test.js unit-tests-js/cheetah-learn-command.test.js
+  unit-tests-js/cheetah-run-report.test.js unit-tests-js/cheetah-wikipedia-runner.test.js`
+  (64 tests). The transport suite uses a fixture server
+  built on the binder's own codec, so the assertion that its frames are well-formed is that the
+  binder's decoders accept them.
+- Live proof against a real `cheetah-server` built from the submodule (`go build -o cheetah-server.exe
+  ./src`, loopback, MiniPhi's own `CheetahTcpClient`): the handshake negotiated 8/8/8 widths, a
+  62-command index and digest `cd33ea13e2046af8` in one round trip, and `GRAPH_NODE_SET` +
+  `SYSTEM_STATS` + `GRAPH_RECALL` + `GRAPH_NODE_GET` returned **byte-identical response lines** in
+  binary and text mode, including a UTF-8 props round trip (`città — UTF-8 çheck`).
+- **Measured, and smaller than the protocol's headline suggests**: same 400-node mirror + 20 recalls,
+  same server, bytes counted on the socket — binary wrote 158,743 B against text's 159,429 B (0.4%
+  less) and read 22,997 B against 23,704 B (3.0% less). The reason is MiniPhi-specific and worth
+  keeping in mind before optimizing here again: our graph traffic is dominated by one big **base64**
+  argument per command (`props`/`references` via `encodeJsonArgument`), which binary carries as a
+  length-prefixed string just like text does. Typed numbers and the 2-byte command index only pay off
+  on numeric/keyed traffic. Wall-clock is *not* a usable comparison in that harness — whichever
+  transport runs second pays for the larger trie (1207 ms vs 1636 ms one way round, 2539 ms vs 535 ms
+  with the order swapped).
+- Not yet done: neither `cheetah-learn.live.test.js` nor `agent-cheetah-context.live.test.js` has been
+  re-run on the byte-wise transport, so no *full agent turn* has gone through it end to end; the live
+  proof above is a direct client round trip. The byte savings above are the ceiling until the base64
+  props argument itself changes shape, which is an upstream (`GRAPH_*` argument semantics) question,
+  not a MiniPhi one.
+
 Next steps to close "Reliable edit pipeline" (ordered — see `ROADMAP.md`):
 1. Live anchored `edit_file` on an existing file (+ a hash-mismatch rollback) end-to-end.
 2. Wire a post-edit validation command (policy-gated `run_cmd`) into the finish path; record its result.
@@ -370,6 +413,7 @@ Rule: if progress stalls on a slice, switch to another live `miniphi` run instea
 - `node scripts/prompt-composer.js --send --response-file .miniphi/prompt-chain/response.json` plus `node scripts/prompt-interpret.js --response-file .miniphi/prompt-chain/response.json` to iterate on prompt-chain JSON composition and learned options.
 - `RECOMPOSE_MODE=live ./run-log-benchmarks.sh` (when touching recomposition/benchmark stack; archive output folders).
 - `node src/index.js lmstudio-health --timeout 10` for a quick REST probe before long-running runs.
+- `node --test unit-tests-js/cheetah-binary-transport.test.js` to validate the byte-wise transport offline against a fixture server built on the binder's own frame codec: handshake + framed commands from byte one, the negotiated session reported in `transportStatus()`, `binary: false` never probing, the one-time downgrade to text against a server that cannot handshake (and that it is remembered), a refused connect *not* downgrading, and the config/env resolution on both the context and knowledge sections.
 - `node --test unit-tests-js/cheetah-context-engine.test.js unit-tests-js/context-reference-composer.test.js unit-tests-js/context-graph.test.js unit-tests-js/agent-context-layers.test.js` to validate Cheetah protocol framing, complete-sentence mirroring, strict same-model selection, recall-driven query boosts, fallback, and session telemetry without live services.
 - With Cheetah and LM Studio running: `MINIPHI_LMSTUDIO_INTEGRATION=1 MINIPHI_CHEETAH_INTEGRATION=1 LMSTUDIO_REST_URL=http://127.0.0.1:1234 MINIPHI_LIVE_MODEL=qwen/qwen3-4b-thinking-2507 node --test unit-tests-js/agent-cheetah-context.live.test.js`.
 - Run the complete multi-file performance proof against `samples/get-started/code` with the same variables and `node --test unit-tests-js/agent-cheetah-complex-sample.live.test.js`; it records turns, actions, elapsed time, graph mirror/recall counts, project/database identity, guarded edits, and functional validation.
