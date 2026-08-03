@@ -372,6 +372,118 @@ Delivered 2026-08-02 — Cheetah byte-wise client protocol (offline-proven, live
   props argument itself changes shape, which is an upstream (`GRAPH_*` argument semantics) question,
   not a MiniPhi one.
 
+Delivered 2026-08-03 — Layered ("hippocampus mode") Cheetah knowledge memory:
+- Replaces cheetah-learn's context-free store. The previous generation wrote **one** clipped lead
+  paragraph as a single `references[]` entry on one `topic:<slug>` node and read it back with one
+  `GRAPH_NODE_GET topic:<slug(question)>` — an id lookup returning a pre-made sentence, with no
+  context around a fact, no second layer when the lead did not contain the answer, and (105 edges
+  over 3,933 articles) nothing in the graph to traverse.
+- **Writing is layered** (`src/libs/cheetah-memory-layers.js` segments deterministically,
+  `writeLayeredMemory` in `cheetah-knowledge-client.js` writes):
+  `topic:<subject>` keeps identity + the gist + `props.context`/`props.tags`;
+  `-[:has_passage]-> passage:<subject>_pN` gives every detail passage its own node;
+  `-[:in_context]-> context:<tag>` is the shared-category bridge; `-[:mentions]-> entity:<name>` /
+  `time:<year>` carry deterministically extracted named entities and years; model-proposed relations
+  now carry `props.context` (the situating clause) and `props.quote` (the verbatim fragment).
+- **Why per-passage nodes, specifically**: `graphNodeIndexTokens`
+  (`thirds/cheetah/src/graph_recall.go`) indexes at most 12 tokens from a node's id/labels plus ~20
+  from its references. Putting a whole article on one node therefore leaves everything past the first
+  ~20 distinct words lexically unreachable — no free-text cue can ever find it. One node per passage
+  gives each passage its own index budget, and hanging them off the topic keeps them one hop from a
+  resolved anchor.
+- **Retrieval is a bounded ladder plus a discovery round** (`src/libs/cheetah-hippocampus.js`):
+  every capitalized run in the question is tried as an anchor (pattern completion); resolved anchors
+  seed a two-hop `GRAPH_RECALL expand=none references=1` (spreading activation) that reaches passage,
+  context and mention nodes with their text hydrated in the same round trip; the question's content
+  words seed a lexical recall against the derived term index — **not only** when no anchor resolved
+  but also when an anchor's passages do not cover the question, which is the case the old ladder had
+  no answer for at all. Everything is consolidated into ranked, id-tagged evidence (`e1`, `e2`, …).
+- **The model reasons by requesting information.** `docs/prompts/cheetah-recall-layered.schema.json`
+  adds `reasoning_steps` (each naming the id it used), `used_evidence_ids`, `needs_more_context` and
+  `follow_up_lookups[]`. A turn that says the memory is about the right subject but does not state
+  what was asked gets one extra retrieval round for exactly what it named, then a re-prompt with the
+  enlarged evidence set. The model still never speaks to Cheetah; MiniPhi builds every command.
+- **The teach prompt teaches the model how to store context**
+  (`docs/prompts/cheetah-teach-layered.schema.json`): it states that a later reader will see only
+  what is stored, then asks for the framing clause (`subject_context`), the shared category
+  (`context_tags`, common nouns only — they are bridges), facts with their situating `context` and a
+  verbatim `evidence_quote`, and `related_subjects`. Two prompt-shape rules are load-bearing at this
+  model size: **the schema's `title` is stripped from the prompt copy** (both schema generations
+  produced `subject_name: "MiniPhi Cheetah … teach turn"` — the model files the article under the
+  schema's own title) and **the last line of the prompt is the identity instruction, not the schema**
+  (it echoes whatever it read last). `response_format=json_schema` still carries the complete schema.
+- **Adjudication gained the check that was missing.** `modelGrounded` now additionally requires that
+  ≥60% of the answer's own content words occur in the item it cited (`evidenceSupportRatio`). The old
+  check only asked whether an `evidence` string matched a retrieved reference, so an answer about
+  something else paired with a correct-looking quote passed — the previous report flagged exactly
+  this as why its 35/780 was an upper bound.
+- **Deterministic answers instead of a blanket decline.** A broad question falls back to the stored
+  gist; a specific one falls back to an **extractive span** (`deterministic-extractive-span`), which
+  is the improvement the previous report closed on. The span is gated on *focus tokens* (the
+  question's words minus the subject's own name) plus a type match, so "When was Alpha founded?"
+  cannot be answered with "Alpha is located in One."; and a broad question never gets a span, because
+  its focus tokens are just the subject name and any lexically similar passage would qualify — that
+  is precisely how a never-taught subject would be answered out of somebody else's article.
+- Everything the model proposes is still filtered deterministically before it is written:
+  `object_name`/`evidence_quote`/`related_subjects`/model `context_tags` must occur verbatim in the
+  source, a relation needs a verb near the object, a category may not be all-capitalized (a live run
+  proposed `Fairy Stone State Park` as a lake's category), and `subject_context` — the one permitted
+  paraphrase — needs ≥85% word support or is replaced by a synthesized sentence.
+- Navigation sections (`See also`/`External links`/`References`/`Category:`) are dropped before
+  segmentation; storing them filled the passage layer with link lists and donated `Category`,
+  `Protected`, `Tourist` to the mention layer as entities.
+- New: random-position dump sampling (`sampleRandomWikipediaArticles` in
+  `local-wikipedia-dataset.js` — a raw `\n` can never occur inside a JSON string, so the first
+  newline after a random seek is a safe record boundary), deterministic question + gold-answer
+  generation (`cheetah-question-generator.js`), the benchmark harness
+  (`scripts/run-cheetah-memory-benchmark.js`, seeded, crash-resumable, closed-book vs. memory for
+  every question) and its trace renderer (`scripts/render-cheetah-memory-report.js`).
+- `LMStudioHandler` gained an optional `maxOutputTokens` (unset keeps the historical
+  `max_tokens: -1`). Batch callers set a ceiling; **do not set it low on a reasoning model** — at
+  1900 this distill spent the whole budget on reasoning tokens and returned empty content on ~50% of
+  turns.
+- **Live proof (2026-08-03)**: `qwen3.5-0.8b-claude-4.6-opus-reasoning-distilled` at
+  `http://127.0.0.1:1234`, database `wikimem`, **200 randomly sampled** articles from
+  `E:\Models\datasets\wiki-data-2021` (random byte offsets across 605 shards, seed 20260803),
+  learned sequentially in 5,728 s. Stored **751 passage nodes and 2,763 edges** (against 105 accepted
+  edges per 3,933 articles in the previous generation) plus 126 accepted / 121 rejected semantic
+  facts; 15 of 200 teach turns fell back and still received the full deterministic layers. On 52
+  deterministically generated questions with gold answers taken from the source *before* asking:
+  **closed book 2/52 correct (14 abstentions), with memory 40/52 correct (0 abstentions), 52/52
+  anchors resolved**, 35 answers model-composed, 12 extractive spans, 5 gist fallbacks. All 8
+  never-taught controls declined (closed book fabricated 3 of 8). Retrieved evidence came 46× from
+  the direct anchor, 42× from lexical reinstatement, 12× from spreading activation and 4× from a
+  model-requested follow-up — the later rungs carry nearly as much as exact anchor resolution.
+  Full numbers, method and all 60 complete traces:
+  [`docs/cheetah_memory_benchmarks.md`](docs/cheetah_memory_benchmarks.md) +
+  [`docs/cheetah_memory_benchmark_samples.md`](docs/cheetah_memory_benchmark_samples.md).
+- **Host lessons baked into the runner** (both cost hours to find): the model must be **loaded
+  explicitly** — with it unloaded every `/v1/chat/completions` hangs indefinitely while
+  `/api/v1/models` answers in milliseconds, which reads exactly like a wedged server and is not one
+  (`ensureModelLoaded` = catalog-check → `POST /api/v1/models/load` → warm completion); and
+  `reasoning_effort: "low"` is **accepted even though this model advertises no reasoning
+  capability**, taking it from 21,519 characters of reasoning per 974-character answer (53-200 s/turn)
+  to ~1,500 characters (5.5-9.4 s/turn). `reasoning-profile.js` only sends an effort when the catalog
+  advertises one, which is why `LMStudioHandler` now has a `reasoningEffort` passthrough.
+- `LMStudioHandler` also now captures `message.reasoning_content` on the **REST** route. Only the WS
+  path parsed `<think>` blocks, so every REST exchange was recorded without the reasoning — for a
+  reasoning distill that is most of the generated tokens, and an exchange without it explains neither
+  the latency nor the answer.
+- Two defects that only the traces revealed, both fixed after the recorded run and now regression-
+  covered: the mention extractor let a capitalized run cross a sentence boundary (`entity:asia_it`
+  from "…in Asia. It walked…") or trail a connector ("Mongolia the"), and hydration could then paste
+  such a name onto an unrelated passage as its displayed subject. Stored topic names were never
+  wrong. Reading the rendered traces is how both were found — keep doing that after a run.
+- Not yet done: no live test file covers the layered path (the benchmark script is the live proof);
+  the interactive agent's `knowledge_lookup` still uses the older flat `recallAnchorFacts` retrieval
+  rather than the hippocampal ladder; answer support is a word-overlap bound, not entailment, so a
+  correct answer with a fabricated tail can still pass (observed and documented).
+- Regression: `node --test unit-tests-js/cheetah-memory-layers.test.js
+  unit-tests-js/cheetah-hippocampus.test.js unit-tests-js/cheetah-question-generator.test.js
+  unit-tests-js/cheetah-learner.test.js unit-tests-js/cheetah-knowledge-client.test.js
+  unit-tests-js/cheetah-learn-command.test.js unit-tests-js/cheetah-wikipedia-runner.test.js
+  unit-tests-js/local-wikipedia-dataset.test.js`.
+
 Next steps to close "Reliable edit pipeline" (ordered — see `ROADMAP.md`):
 1. Live anchored `edit_file` on an existing file (+ a hash-mismatch rollback) end-to-end.
 2. Wire a post-edit validation command (policy-gated `run_cmd`) into the finish path; record its result.

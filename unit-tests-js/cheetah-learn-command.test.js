@@ -152,12 +152,20 @@ test("runTeach --text teaches an ad-hoc snippet without touching the HF dataset 
   const restClient = scriptedRestClient([
     {
       schema_version: "v1",
-      thinking: "new fact",
       subject_name: "Springfield",
       subject_type: "place",
+      subject_context: "located in Illinois",
+      context_tags: [],
       no_new_information: false,
-      new_facts: [{ relation: "located_in", object_name: "Illinois", object_type: "place" }],
-      known_facts: [],
+      new_facts: [
+        {
+          relation: "located_in",
+          object_name: "Illinois",
+          object_type: "place",
+          context: "the state the city sits in",
+          evidence_quote: "Springfield is located in Illinois",
+        },
+      ],
       stop_reason: "completed",
     },
   ]);
@@ -187,12 +195,14 @@ test("runAsk answers a single question and honors --no-save (skips the run repor
   const restClient = scriptedRestClient([
     {
       schema_version: "v1",
-      thinking: "grounded",
-      anchor_resolved: true,
+      reasoning_steps: ["e1 states where Springfield is"],
       grounded: true,
       answer: "Springfield is in Illinois.",
       confidence: "certain",
+      used_evidence_ids: ["e1"],
       evidence: ["located_in Illinois"],
+      needs_more_context: false,
+      follow_up_lookups: [],
       open_question: { has_question: false, question_text: "", topic_hint: "" },
       stop_reason: "completed",
     },

@@ -60,6 +60,25 @@ export class LMStudioHandler {
     this.performanceTracker = options?.performanceTracker ?? null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
     this.noTokenTimeoutMs = options?.noTokenTimeoutMs ?? null;
+    // Optional generation cap. Unset means the historical `max_tokens: -1`
+    // ("as much as the model wants"), which is right for open-ended coding
+    // turns but is what wedges a host under a long batch of reasoning-model
+    // calls: one runaway generation costs minutes and the server stops
+    // answering afterwards. Batch callers set an explicit ceiling.
+    this.maxOutputTokens =
+      Number.isFinite(options?.maxOutputTokens) && options.maxOutputTokens > 0
+        ? Math.floor(options.maxOutputTokens)
+        : null;
+    // Explicit `reasoning_effort` passthrough for the REST route.
+    // `reasoning-profile.js` only sends an effort when the catalog *advertises*
+    // `capabilityDetails.reasoning`, which is right for capability discovery but
+    // misses a reasoning model that does not declare one: the reference
+    // qwen3.5-0.8b distill advertises nothing, spends thousands of reasoning
+    // tokens per turn, and its host accepts `reasoning_effort` regardless.
+    this.reasoningEffort =
+      typeof options?.reasoningEffort === "string" && options.reasoningEffort.trim()
+        ? options.reasoningEffort.trim()
+        : null;
     this.executionRegister = options?.executionRegister ?? null;
     this.executionContext = options?.executionContext ?? null;
     this.protocolGate = {
@@ -381,6 +400,12 @@ export class LMStudioHandler {
           );
           result = restResult?.text ?? "";
           responseToolCalls = restResult?.toolCalls ?? null;
+          if (restResult?.reasoning) {
+            capturedThoughts.push(restResult.reasoning);
+            if (onThink) {
+              onThink(restResult.reasoning);
+            }
+          }
           rawFragmentCount = result ? 1 : 0;
           solutionTokenCount = this._approximateTokens(result);
           if (result) {
@@ -867,7 +892,8 @@ export class LMStudioHandler {
       messages,
       model: this.modelKey,
       stream: false,
-      max_tokens: -1,
+      max_tokens: this.maxOutputTokens ?? -1,
+      ...(this.reasoningEffort ? { reasoning_effort: this.reasoningEffort } : {}),
       ...(responseFormat ? { response_format: responseFormat } : {}),
       ...(timeoutMs ? { timeoutMs } : {}),
     });
@@ -877,8 +903,19 @@ export class LMStudioHandler {
       choice?.delta?.content ??
       (typeof response === "string" ? response : null) ??
       "";
+    // A reasoning model returns its chain separately from `content`; on the WS
+    // path Phi4StreamParser captures it from the `<think>` block, and without
+    // this the REST path silently dropped it. For a reasoning distill that is
+    // most of the generated tokens, so an exchange recorded without it cannot
+    // explain either the latency or the answer.
+    const reasoning =
+      choice?.message?.reasoning_content ??
+      choice?.message?.reasoning ??
+      choice?.delta?.reasoning_content ??
+      null;
     return {
       text,
+      reasoning: typeof reasoning === "string" && reasoning.trim() ? reasoning : null,
       toolCalls: choice?.message?.tool_calls ?? null,
     };
   }

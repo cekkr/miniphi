@@ -260,8 +260,12 @@ export async function runWikipediaLearning({
   probeCount = 3,
   maxErrors = 5,
   maxNoProgress = 10,
-  maxSentences = 2,
-  maxChars = 700,
+  // Layered memory needs more than the lead sentence: the article body is what
+  // becomes the per-passage detail nodes, so the bound here is the whole
+  // learning unit, not the excerpt the model reads (teachFromText clips that
+  // separately).
+  maxSentences = 16,
+  maxChars = 2400,
   maxArticleBytes,
   resume = true,
   verbose = false,
@@ -382,8 +386,8 @@ export async function runWikipediaLearning({
     };
     const title = cleanTitle(item.article?.title);
     const snippet = clipSnippet(item.article?.text, {
-      maxSentences: positiveInteger(maxSentences, 2),
-      maxChars: positiveInteger(maxChars, 700),
+      maxSentences: positiveInteger(maxSentences, 16),
+      maxChars: positiveInteger(maxChars, 2400),
     });
 
     if (item.error || !title || !snippet) {

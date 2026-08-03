@@ -304,6 +304,190 @@ export async function writeFacts(
   };
 }
 
+/** Detail passages live on their own nodes; see `writeLayeredMemory`. */
+export function passageId(subjectName, ordinal) {
+  return `passage:${slugify(subjectName)}_p${Math.max(0, Math.floor(Number(ordinal) || 0))}`;
+}
+
+export function contextId(tag) {
+  return `context:${slugify(tag)}`;
+}
+
+/**
+ * Write one article as a layered memory instead of a single sentence hung off
+ * one node.
+ *
+ * The layering is not cosmetic — it is forced by how the engine indexes text.
+ * `graphNodeIndexTokens` gives a node at most 12 tokens from its id/labels plus
+ * ~20 from its reference sentences, so piling every passage of an article onto
+ * the topic node leaves everything after the first paragraph lexically
+ * invisible: a question about a detail can never reach it. Giving each passage
+ * its own `passage:` node gives each one its own index budget, and hanging them
+ * off the topic means a resolved anchor still reaches all of them in one hop.
+ *
+ *   topic:<subject>            gist + identity + props.context
+ *     -[:has_passage]->        passage:<subject>_pN   one detail passage each
+ *     -[:in_context]->         context:<tag>          shared category bridge
+ *     -[:mentions]->           entity:<name> / time:<year>
+ *     -[:<model relation>]->   entity:<object>        with its situating context
+ *
+ * The `context:` and mention nodes are what make discovery possible at all: two
+ * articles taught days apart that never mention each other still meet at a
+ * shared category, year, or named entity, so spreading activation has somewhere
+ * to spread.
+ */
+export async function writeLayeredMemory(
+  client,
+  {
+    subjectId,
+    subjectType,
+    subjectName,
+    subjectContext = null,
+    gistText,
+    passages = [],
+    contextTags = [],
+    mentions = [],
+    facts = [],
+    insertKey = null,
+    source = "cheetah-learn",
+  },
+) {
+  const commands = [];
+  const gistReference = gistText
+    ? [{ id: "src-1", text: gistText, source: `${source}#gist:lead`, ordinal: 0 }]
+    : [];
+  const topicProps = { name: subjectName };
+  if (subjectContext) {
+    topicProps.context = subjectContext;
+  }
+  if (contextTags.length) {
+    topicProps.tags = contextTags.join("; ");
+  }
+  topicProps.passages = passages.length;
+  commands.push(
+    buildNodeSet({
+      id: subjectId,
+      labels: slugify(subjectType),
+      props: topicProps,
+      references: gistReference,
+    }),
+  );
+
+  const edges = [];
+  const detailPassages = passages.filter((passage) => passage?.text && passage.layer !== "gist");
+  for (const passage of detailPassages) {
+    const id = passageId(subjectName, passage.ordinal);
+    commands.push(
+      buildNodeSet({
+        id,
+        labels: "passage",
+        props: {
+          name: subjectName,
+          subject: subjectId,
+          section: passage.section ?? "lead",
+          ordinal: passage.ordinal,
+        },
+        references: [
+          {
+            id: `src-${passage.ordinal + 1}`,
+            text: passage.text,
+            source: `${source}#detail:${slugify(passage.section ?? "lead")}`,
+            ordinal: passage.ordinal,
+          },
+        ],
+      }),
+    );
+    edges.push({
+      from: subjectId,
+      to: id,
+      type: "has_passage",
+      props: { section: passage.section ?? "lead", src: insertKey },
+    });
+  }
+
+  for (const tag of contextTags.slice(0, 3)) {
+    const id = contextId(tag);
+    commands.push(buildNodeSet({ id, labels: "context", props: { name: tag } }));
+    edges.push({ from: subjectId, to: id, type: "in_context", props: { source } });
+  }
+
+  const seenObjectIds = new Set();
+  for (const mention of mentions.slice(0, 8)) {
+    const name = typeof mention?.name === "string" ? mention.name.trim() : "";
+    if (!name) {
+      continue;
+    }
+    const id = mention.type === "year" ? `time:${slugify(name)}` : entityId("entity", name);
+    if (seenObjectIds.has(id)) {
+      continue;
+    }
+    seenObjectIds.add(id);
+    commands.push(
+      buildNodeSet({ id, labels: mention.type === "year" ? "time" : "entity", props: { name } }),
+    );
+    edges.push({
+      from: subjectId,
+      to: id,
+      type: "mentions",
+      props: { src: insertKey, source },
+    });
+  }
+
+  for (const fact of Array.isArray(facts) ? facts : []) {
+    const objectName = typeof fact?.object_name === "string" ? fact.object_name.trim() : "";
+    if (!objectName) {
+      continue;
+    }
+    const objectType = fact?.object_type ?? "other";
+    const objectId =
+      objectType === "time" ? `time:${slugify(objectName)}` : entityId(objectType, objectName);
+    if (!seenObjectIds.has(objectId)) {
+      seenObjectIds.add(objectId);
+      commands.push(
+        buildNodeSet({ id: objectId, labels: slugify(objectType), props: { name: objectName } }),
+      );
+    }
+    const edge = {
+      from: subjectId,
+      to: objectId,
+      type: slugify(fact?.relation) || "related_to",
+      props: {
+        src: insertKey,
+        source,
+        // The situating clause travels with the edge so a retrieved relation is
+        // still meaningful without re-reading the whole article.
+        context: typeof fact?.context === "string" ? fact.context.slice(0, 200) : null,
+        quote: typeof fact?.evidence_quote === "string" ? fact.evidence_quote.slice(0, 240) : null,
+      },
+    };
+    if (typeof fact?.confidence === "string" && fact.confidence.trim()) {
+      edge.confidence = fact.confidence.trim();
+    }
+    edges.push(edge);
+  }
+
+  if (edges.length) {
+    commands.push(buildEdgeSetBatch(edges, { continueOnError: true }));
+  }
+
+  const responses = await client.execute(commands);
+  for (const response of responses) {
+    requireSuccess(response, "writeLayeredMemory");
+  }
+  const batchResponse = edges.length ? responses[responses.length - 1] : null;
+  return {
+    applied: Number(batchResponse?.fields?.applied ?? 0),
+    created: Number(batchResponse?.fields?.created ?? 0),
+    updated: Number(batchResponse?.fields?.updated ?? 0),
+    failed: Number(batchResponse?.fields?.failed ?? 0),
+    edgeCount: edges.length,
+    nodeCount: commands.length - (edges.length ? 1 : 0),
+    passageNodes: detailPassages.length,
+    contextNodes: Math.min(contextTags.length, 3),
+    mentionNodes: seenObjectIds.size,
+  };
+}
+
 function seedTermsFromName(name) {
   return String(name ?? "")
     .toLowerCase()

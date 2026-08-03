@@ -1,869 +1,361 @@
 # Cheetah memory benchmarks and practical retrieval results
 
-This document records what MiniPhi actually achieved with Cheetah as external real-time memory, how Wikipedia information was identified and saved, and how retrieved evidence was placed into the model context to produce a final answer. It uses the completed four-hour run from 2026-08-01 plus a ten-question same-question follow-up from 2026-08-02 rather than hypothetical examples.
+This document records what MiniPhi achieves with Cheetah as external real-time memory: how Wikipedia
+information is identified and stored across several memory layers, how retrieved evidence is placed
+into the model's context, and what the resulting answers look like against the same questions asked
+with no memory at all.
+
+It supersedes the 2026-08-01/02 report, whose memory was a single stored sentence per subject
+retrieved by one id lookup. The section ["What was wrong with the first-generation
+memory"](#what-was-wrong-with-the-first-generation-memory) explains what that could not do and why.
+
+**All 60 complete per-sample traces** — the learned passage, the teach turn, what was written into
+each layer, every MiniPhi → Cheetah command with its decoded response, the memory items placed back
+into the model's context, the recall turn(s), the closed-book answer and the final answer — are in
+the companion record [`cheetah_memory_benchmark_samples.md`](cheetah_memory_benchmark_samples.md).
 
 ## Reference setup and evidence
 
-- MiniPhi commits: `ce9e1b1` (Wikipedia learning) and `c92f4d5` (timed soak runner)
-- Cheetah commit: `0e37e24`
-- Dataset: `E:\Models\datasets\wiki-data-2021`
-- Cheetah database: `wikidata`
-- LM Studio: `http://192.168.56.1:1234`
-- Model: `smollm2-360m-instruct` (`SmolLM2-360M-Instruct-GGUF`, Q8_0)
-- Loaded context: 8,192 tokens
-- Session: `.miniphi/cheetah/soak/2026-08-01T16-24-39-159Z/`
-- Duration: 4 hours and 0.906 seconds
-- Workload: 39 cycles, 100 Wikipedia records per cycle, five retained subjects probed every 25 records
+- MiniPhi commit: `95fa65e` (working tree) · Cheetah submodule: `fe28f78`
+- Model: `qwen3.5-0.8b-claude-4.6-opus-reasoning-distilled` (Jackrong, Q8_0, 752M params)
+- LM Studio: `http://127.0.0.1:1234`, loaded at 16,384 context, `parallel: 4`
+- Dataset: `E:\Models\datasets\wiki-data-2021` (605 real shards), sampled at **random byte offsets**
+- Cheetah database: `wikimem` (reset before the run)
+- Session: `.miniphi/cheetah/memory-benchmark/run-200/` (seed `20260803`)
+- Learning: 200 random articles, 5,728 s, strictly sequential
+- Benchmark: 52 answerable questions + 8 never-taught controls
 
-The raw evidence is retained in `session.json`, `events.jsonl`, 39 checkpoint snapshots, 39 complete benchmark snapshots, and the associated stdout/stderr logs. Benchmark snapshots retain the raw response text, usage, tool definitions, and validation result.
+Raw evidence is retained in `learned.jsonl` (every teach prompt, raw response, stored layers and
+graph-write result), `questions.json`, `samples.jsonl` (every trace in this report), `report.json`,
+and `.miniphi/prompt-exchanges/` (full schema-bound exchanges including the model's reasoning text).
 
 Implementation map:
 
-- [local-wikipedia-dataset.js](../src/libs/local-wikipedia-dataset.js): streaming shard parser and byte-position resume;
-- [cheetah-wikipedia-runner.js](../src/libs/cheetah-wikipedia-runner.js): bounded article loop, checkpoints, fixed-subject probes, counters, and regression detection;
-- [cheetah-learner.js](../src/libs/cheetah-learner.js): schema-bound teach/recall prompts, source filter, evidence adjudication, and deterministic fallback;
-- [cheetah-knowledge-client.js](../src/libs/cheetah-knowledge-client.js): stable ids, episodic writes, graph writes, and bounded recall ladder;
-- [agent-session.js](../src/agent/agent-session.js): optional `knowledge_lookup` observation and layered context-budget integration;
-- [cheetah-teach schema](prompts/cheetah-teach.schema.json) and [cheetah-recall schema](prompts/cheetah-recall.schema.json): exact JSON contracts sent through `response_format=json_schema`.
+- [cheetah-memory-layers.js](../src/libs/cheetah-memory-layers.js): passage segmentation, category
+  and mention extraction, question cues, extractive span selection, support ratio;
+- [cheetah-hippocampus.js](../src/libs/cheetah-hippocampus.js): the multi-stage retrieval ladder and
+  the follow-up round;
+- [cheetah-knowledge-client.js](../src/libs/cheetah-knowledge-client.js): `writeLayeredMemory` and
+  the Cheetah command shapes;
+- [cheetah-learner.js](../src/libs/cheetah-learner.js): teach/recall orchestration and adjudication;
+- [cheetah-question-generator.js](../src/libs/cheetah-question-generator.js): deterministic questions
+  with gold answers;
+- [run-cheetah-memory-benchmark.js](../scripts/run-cheetah-memory-benchmark.js) and
+  [render-cheetah-memory-report.js](../scripts/render-cheetah-memory-report.js);
+- [cheetah-teach-layered schema](prompts/cheetah-teach-layered.schema.json) and
+  [cheetah-recall-layered schema](prompts/cheetah-recall-layered.schema.json), both sent through
+  `response_format=json_schema`. The v1 [teach](prompts/cheetah-teach.schema.json) /
+  [recall](prompts/cheetah-recall.schema.json) schemas are the superseded contracts.
 
 ## Results at a glance
 
-| Path being measured | Result | What it demonstrates |
-| --- | ---: | --- |
-| SmolLM2 model-only Easy benchmark | 234/234 schema-valid trials were incorrect; quality 35 in every category and cycle | The 360M base model followed the JSON shape but was weak at reasoning, coding, context, writing, research, and tool-use tasks without help from the knowledge store. |
-| Cheetah retrieval | 780/780 subject queries resolved during the soak | Exact early memories remained findable after thousands of later writes. |
-| Cheetah evidence + SmolLM2 composition | 35/780 answers passed the current structural grounding check | The model sometimes composed an answer from retrieved evidence, but this is an upper bound because the validator accepted some low-quality answers. |
-| Cheetah exact-reference fallback | 745/780 answers | When SmolLM2 could not compose a trustworthy broad answer, MiniPhi returned the exact stored source reference. |
-| Recorded effective-grounding metric | 780/780, with zero recorded retrieval/grounding regressions and zero probe errors | The memory layer supplied reference availability every time. This is a structural metric, not a human semantic-quality score for the 35 model-composed answers. |
-| Follow-up, same-question closed-book control | 0/10 useful factual answers | On 2026-08-02 the model was asked the exact ten questions documented below without retrieved context. Nine `answer` fields were empty and one was an explicit decline. |
-| Follow-up, same ten questions with `wikidata` | 10/10 anchors resolved; 5 exact-reference answers and 5 safe declines | Cheetah found evidence for every question. SmolLM2 composed 0 accepted answers in this pass; broad questions used the exact reference, while specific questions abstained under the current conservative policy. |
+Same 52 questions, same model, asked twice — once with no memory, once through the memory:
 
-The four-hour Easy suite and 780 retention probes are related but are not a perfect same-question ablation: the Easy suite does not ask the five retention questions. Therefore, this report does **not** claim that the no-memory score for those 780 questions was 35/780 or 0/780. The later ten-question follow-up is a direct, same-question diagnostic; it is smaller than the soak and is reported separately below.
+| | Closed book | With layered memory |
+| --- | ---: | ---: |
+| **Correct** | **2 / 52 (3.8%)** | **40 / 52 (76.9%)** |
+| Wrong | 36 / 52 | 12 / 52 |
+| Abstained | 14 / 52 | 0 / 52 |
+| Anchor resolved | — | 52 / 52 |
+| Never-taught controls correctly declined | 5 / 8 | **8 / 8** |
 
-## Without memory versus with memory
+Correctness is scored against a gold answer extracted from the source article *before* the model was
+asked (see [Method](#method-how-a-question-and-its-gold-answer-are-built)); a year question must
+contain the exact year, everything else must reproduce ≥60% of the gold span's content words.
 
-### Without Cheetah knowledge memory
+Where the accepted answers came from:
 
-The 39 Easy benchmark snapshots made 234 independent model calls (six per cycle). Every response was valid against the required JSON schema, but every task answer was scored incorrect. Examples included:
+| Answer source | Used | Correct |
+| --- | ---: | ---: |
+| `model` — the model composed it and passed adjudication | 35 | 28 |
+| `deterministic-extractive-span` — best sentence span from a retrieved passage | 12 | 8 |
+| `deterministic-reference-fallback` — the stored gist, for a broad question | 5 | 4 |
 
-| Trial | Model answer | Outcome |
-| --- | --- | --- |
-| Reasoning sequence | `2` | Incorrect |
-| Coding execution | `.` | Incorrect |
-| Context retrieval | Empty answer, although `amber-field-118` appeared in `evidence` | Incorrect |
-| Research source choice | Empty answer | Incorrect |
-| Tool planning | Empty answer | Incorrect |
-| Writing constraints | `Calm tools build trust.` | Schema-valid but did not satisfy the complete trial constraints |
+By question kind:
 
-The model-only overall score was 41 in 12 snapshots and 40 in 27. Category quality remained 35; the overall difference came only from speed. Mean latency was 2,462.3 ms, rising from 2,140.2 ms for the first ten cycles to 2,730.3 ms for the last ten.
+| Kind | n | Closed book | With memory |
+| --- | ---: | ---: | ---: |
+| definition (`What kind of thing is X?`) | 9 | 0 | 7 |
+| location (`Where is X located?`) | 9 | 1 | 8 |
+| year (`In what year was X …?`) | 9 | 0 | 6 |
+| agent (`Who wrote/created/directed X?`) | 9 | 0 | 7 |
+| affiliation (`What is X associated with?`) | 7 | 0 | 4 |
+| broad (`What do you know about X?`) | 9 | 1 | 8 |
 
-This control shows why MiniPhi does not treat a schema-valid response as a fact. JSON validity proves interface compliance, not factual correctness.
+Retrieval behaviour across the 52 answerable questions: 9.4 Cheetah commands per question on
+average, 2.0 memory items placed in context. Of the items that made it into a prompt, **46 came from
+the direct anchor, 42 from lexical reinstatement, 12 from spreading activation and 4 from a
+model-requested follow-up** — the ladder's later stages contribute nearly as much evidence as exact
+anchor resolution, which is the whole reason they exist.
 
-### With Cheetah memory available
+## What was wrong with the first-generation memory
 
-During the same session, MiniPhi issued 156 retention probes over five subjects, or 780 questions. Cheetah resolved all 780 subject anchors and supplied stored evidence every time. SmolLM2 passed the current grounding check on 35 answers; MiniPhi used an exact-reference fallback on the other 745.
+The previous report's memory stored exactly one thing per article and retrieved it exactly one way:
 
-The recorded retrieval and grounding metrics were stable even though model generation was stochastic:
+- **Writing** clipped the article to its first two sentences (≤700 characters) and hung that single
+  string on one `topic:<slug(title)>` node as one `references[]` entry. Everything after the lead
+  paragraph was discarded before it ever reached the database.
+- **Reading** stripped a known question prefix (`What do you know about …`), re-derived the same
+  slug, and did `GRAPH_NODE_GET`. If the slug matched, the model got that one pre-made sentence; if
+  it did not, retrieval was over.
 
-- first half: 15 model-composed answers and 375 reference fallbacks;
-- second half: 20 model-composed answers and 370 reference fallbacks;
-- final probe: 0/5 model-composed and 5/5 exact-reference fallback;
-- retrieval or grounding regressions: 0;
-- probe errors: 0.
+Three consequences showed up directly in that report:
 
-The small first-half/second-half difference is not evidence that the model weights learned. SmolLM2 was never fine-tuned. Cheetah learned by persisting external memories, and each inference received retrieved evidence as fresh context.
+1. **No second layer to fall back on.** Five of its ten documented traces asked for a specific detail
+   that was not in the lead sentence, so the only honest answer was a decline. Its closing note
+   called an extractive answer "the next needed improvement".
+2. **No context around a fact.** The model was asked for bare `(relation, object)` pairs. A pair like
+   `is_for → football matches` means nothing on its own, which is part of why only 105 semantic edges
+   survived 3,933 articles.
+3. **Nothing to discover.** One node per article and almost no edges is a bag of isolated points.
+   There was no path from one subject to a related one, so retrieval could never be more than "did
+   the slug match".
 
-## Practical results by remembered subject
+There is also an engine constraint that made the single-node design worse than it looks.
+`graphNodeIndexTokens` (`thirds/cheetah/src/graph_recall.go`) gives a node at most **12** index
+tokens from its id and labels plus about **20** from its reference sentences. Piling an entire
+article onto one node therefore leaves everything past the first ~20 distinct words lexically
+invisible: no free-text cue can reach it, no matter how much text is stored.
 
-Each subject was queried 156 times while 3,900 more Wikipedia records were attempted.
+## The layered memory
 
-| Subject | Cheetah resolved | Model passed structural check | Exact-reference fallback | Errors |
-| --- | ---: | ---: | ---: | ---: |
-| M-137 (Michigan highway) | 156/156 | 16 | 140 | 0 |
-| Dynamic density | 156/156 | 0 | 156 | 0 |
-| Marc Fein | 156/156 | 5 | 151 | 0 |
-| Alphyn | 156/156 | 5 | 151 | 0 |
-| HaMoshava Stadium | 156/156 | 9 | 147 | 0 |
-
-### Example 1: Dynamic density
-
-SmolLM2 never produced a directly accepted answer in 156 attempts. Cheetah nevertheless found the same exact source reference 156/156 times, so the final broad answer remained grounded. The stored reference began:
-
-> In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population.
-
-This is the clearest difference between model knowledge and external memory: the model could not reliably compose the fact, but the system could still retrieve and return the learned source.
-
-### Example 2: HaMoshava Stadium
-
-Cheetah resolved the subject 156/156 times. SmolLM2 produced nine structurally accepted responses, including a useful concise result:
-
-> The HaMoshava Stadium is a football stadium in Petah Tikva, Israel.
-
-It also produced low-value responses such as `Yes` and `The HaMoshava Stadium.`. On the other 147 probes, MiniPhi returned the authoritative stored excerpt, which also stated that the stadium was completed in 2011 and is home to Hapoel Petah Tikva and Maccabi Petah Tikva.
-
-### Example 3: M-137 (Michigan highway)
-
-Cheetah resolved this memory 156/156 times. SmolLM2 sometimes copied the useful learned description, but other structurally accepted outputs included `M-137`, `yes`, `{2}`, and `MiniPhi Cheetah recall turn`. The reference fallback returned the stable learned passage describing M-137 as a former Michigan state trunkline spur serving the Interlochen Center for the Arts and Interlochen State Park.
-
-### Example 4: Marc Fein
-
-Cheetah resolved the subject 156/156 times. Only five model responses passed the current structural check, and manual inspection found both useful statements and bad answers such as `Yes`, `[null]`, and `I'm not sure what you're asking.`. The exact-reference path consistently retained the source description of Fein as a sports journalist, anchor, and television studio host.
-
-### Example 5: Alphyn
-
-Cheetah resolved the subject 156/156 times. Five responses passed the structural model check; 151 used the exact reference. Useful direct output closely restated the reference describing an alphyn as a heraldic creature whose name derives from a Germanic word for "chaser" or "wolf."
-
-### Important interpretation of `modelGrounded`
-
-The current check requires:
-
-1. a resolved Cheetah anchor;
-2. `grounded: true` from the schema-valid model response;
-3. a non-empty, non-decline answer; and
-4. at least one model `evidence` item that matches a retrieved reference.
-
-It does not yet prove that the answer itself is semantically entailed by that evidence. Manual inspection found cases where a poor answer was paired with matching evidence and was therefore counted among the 35. Treat 35/780 as an **upper bound on model composition**, not as 35 guaranteed high-quality answers. The exact-reference fallback is the stronger result because its returned text is itself the stored evidence.
-
-## Ten complete, same-question prompt traces
-
-This follow-up was run on 2026-08-02 with the same `smollm2-360m-instruct` endpoint and the already-trained `wikidata` database. It adds the requested ten concrete examples and a direct closed-book control for each exact question. These are actual outputs, including weak and contradictory model responses; they are not cleaned-up demonstrations.
-
-| # | Question subject | Closed book | Cheetah anchor | Raw recall composition | MiniPhi final result |
-| ---: | --- | --- | ---: | --- | --- |
-| 1 | M-137 | Empty answer | yes | Decline/contradictory flags | Safe decline; one open-question hypothesis recorded |
-| 2 | Dynamic density | Empty answer | yes | Decline/bogus evidence | Safe decline |
-| 3 | Marc Fein | Empty answer | yes | Decline/unsupported evidence | Safe decline |
-| 4 | Alphyn | Empty answer | yes | Decline despite matching evidence | Safe decline |
-| 5 | HaMoshava Stadium | `I do not know` | yes | Decline/empty evidence | Safe decline |
-| 6 | Carinya Christian School | Empty answer | yes | Ungrounded decline | Exact-reference fallback |
-| 7 | Asian Young Footballer of the Year | Empty answer | yes | Decline despite relevant evidence | Exact-reference fallback |
-| 8 | Pie crust crab | Empty answer | yes | Decline/unrelated evidence | Exact-reference fallback |
-| 9 | Wiyot traditional narratives | Empty answer | yes | Useful-looking answer but no evidence | Exact-reference fallback |
-| 10 | More Than I Know | Empty answer | yes | Decline | Exact-reference fallback |
-
-The closed-book result was 0/10 useful factual answers. With memory, retrieval was 10/10, but the final user-visible result was useful on only the five broad questions because the current policy deliberately does not return a whole article reference as the answer to a specific question. The retrieved passages did contain the requested details in examples 1-5, so those five declines expose a real composition/adjudication improvement opportunity rather than a Cheetah retrieval failure.
-
-### Exact prompt protocol used by all ten traces
-
-There is no hidden conversational history. Each call is a fresh request. To avoid printing the same long instructions and schema twenty times, the invariant prompt fragments are shown once below and every example then shows the exact substituted payload. Concatenating the shared fragment with an example payload reconstructs that complete prompt. The archived exchange named in each example retains the fully rendered `messages`, `response_format`, raw response text, usage, tool calls, and validation outcome.
-
-The exact closed-book prompt template was:
+Writing an article now produces a small subgraph instead of a single node:
 
 ```text
-You are running a closed-book MiniPhi factual benchmark without external memory or retrieved context.
-Use only knowledge already present in the model weights. If unsure, use the exact decline phrase: I do not know.
-Trial id: {TRIAL_ID}
-Question: {QUESTION}
-Return exactly one JSON object and no prose.
-Exact JSON schema: {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"model-benchmark-trial@v1","type":"object","additionalProperties":false,"required":["schema_version","trial_id","answer","evidence","needs_more_context","missing_snippets"],"properties":{"schema_version":{"const":"model-benchmark-trial@v1"},"trial_id":{"type":"string","minLength":1},"answer":{"type":"string"},"evidence":{"type":"array","maxItems":3,"items":{"type":"string"}},"needs_more_context":{"type":"boolean"},"missing_snippets":{"type":"array","items":{"type":"string"}},"stop_reason":{"type":"string"}}}
-Set schema_version to model-benchmark-trial@v1 and trial_id to {TRIAL_ID}.
-Set evidence to [], needs_more_context to false, missing_snippets to [], and stop_reason to completed.
+topic:<subject>                     identity + gist reference + props.context/tags
+  -[:has_passage]->  passage:<subject>_pN   one detail passage each, with its section name
+  -[:in_context]->   context:<tag>          shared category — the bridge between subjects
+  -[:mentions]->     entity:<name> / time:<year>
+  -[:<relation>]->   entity:<object>        model-proposed, with its situating context + quote
 ```
 
-It also sent that schema through `response_format={"type":"json_schema",...}`. All ten closed-book outputs were schema-valid on the first attempt, even though several violated the natural-language request to leave `evidence` empty. This is another example of JSON validity not implying task correctness.
-
-Every teach and recall call used this exact system prompt:
-
-```text
-You serve an external database that starts out empty, no matter how famous or obvious a subject is. You never answer factual questions from your own training knowledge, and you never skip saving a fact just because it feels obvious to you - only what the database already has counts as 'known'. You only work from what is explicitly given to you in each prompt: a text snippet to learn from plus what the database already records, or facts retrieved from the database to answer a question from. Always reply with strict JSON matching the requested schema only - no commentary, no markdown fences.
-```
-
-The exact teach user prompt template was:
-
-```text
-Extract facts from exactly one source snippet for an external database.
-The database starts empty. 'Already known' means recorded in the database list below, never facts from your training.
-Do not copy or invent facts from instructions, examples, or prior knowledge.
-SOURCE TEXT: {SOURCE_TEXT}
-Canonical source title: "{SUBJECT}". Use this exact value for subject_name; do not rename or shorten it.
-Already recorded in the database about this subject: nothing is recorded yet about this subject.
-Rules:
-- Extract AT MOST 3 new facts as (relation, object) pairs about the subject.
-- Every object_name MUST be copied verbatim as a contiguous phrase from SOURCE TEXT. If it does not occur in SOURCE TEXT, do not output it.
-- Build relation only from a verb written near that object in SOURCE TEXT. Do not infer a relation from prior knowledge.
-- Only set no_new_information=true if every fact in the snippet is already in the 'Already recorded' list above.
-- If the snippet hedges ('may', 'is thought to', 'probably'), set confidence to possible/probable rather than omitting it.
-- In `thinking`, explicitly say what you are choosing to save because the database does not have it yet.
-- Set stop_reason to "completed".
-Return strict JSON only that matches this schema:
-{MINIFIED_CONTENTS_OF_docs/prompts/cheetah-teach.schema.json}
-```
-
-The exact recall user prompt template was:
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "{RETRIEVED_REFERENCE}"
-Question: {QUESTION}
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-Return strict JSON only that matches this schema:
-{MINIFIED_CONTENTS_OF_docs/prompts/cheetah-recall.schema.json}
-```
-
-The braces on the two schema lines are documentation substitutions only. In every real request MiniPhi embedded the complete minified [teach schema](prompts/cheetah-teach.schema.json) or [recall schema](prompts/cheetah-recall.schema.json) at that position and sent the same object through `response_format=json_schema`. The per-example archive paths below are the byte-for-byte record when exact whitespace matters.
-
-### Before reading the examples: who issues the queries?
-
-SmolLM2 does **not** create Cheetah commands and never talks to port 4455. MiniPhi deterministically derives a topic id from the question/subject and sends binder-built commands. In all ten captured examples the exact node already contained one source reference and had no outgoing semantic relations, so the live command sequence was exactly:
-
-1. `GRAPH_NODE_GET id=topic:<slug>` — retrieve the canonical node and its stored references;
-2. `GRAPH_NEIGHBOR_TYPES id=topic:<slug> direction=out limit=16 weighted=1` — cheaply check whether semantic relations exist;
-3. stop, because the second response decoded to `[]` in every example. `GRAPH_RECALL` would be the third query only when the histogram was non-empty, or the fallback query when the exact node was missing.
-
-The Cheetah wire transports node JSON as base64 in `payload=`. The examples show the useful decoded response rather than pages of base64, while retaining the literal non-payload response. Each example now starts with the user question and ends with the exact answer MiniPhi returned.
-
-### Question 1: M-137
-
-> What was M-137 and what places did it serve?
-
-**A. SmolLM2 without memory**
-
-The closed-book prompt used `TRIAL_ID=wiki-memory-m137`, the exact question above, and the shared closed-book schema. Exchange: `.miniphi/prompt-exchanges/c65b56bb-4a90-40ca-9d2c-59e01fff28b6.json`.
-
-```json
-{"answer":"","evidence":["I do not know"]}
-```
-
-**B. MiniPhi → Cheetah queries and Cheetah → MiniPhi responses**
-
-```text
-> GRAPH_NODE_GET id=topic:m_137_michigan_highway
-< SUCCESS,id=topic:m_137_michigan_highway,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:m_137_michigan_highway","name":"M-137 (Michigan highway)","references":[{"id":"src-1","text":"M-137 was a state trunkline highway in the US state of Michigan that served as a spur route to the Interlochen Center for the Arts and Interlochen State Park. It started south of the park and ran north between two lakes in the area and through the community of Interlochen to US Highway 31 (US 31) in Grand Traverse County.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751000"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:m_137_michigan_highway direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # W10= decodes to []
-```
-
-The stored reference came from teach exchange `.miniphi/prompt-exchanges/700bc2eb-e223-4625-890c-6f6d6cbe3e0b.json`.
-
-**C. Context MiniPhi gave SmolLM2 after retrieval**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "M-137 was a state trunkline highway in the US state of Michigan that served as a spur route to the Interlochen Center for the Arts and Interlochen State Park. It started south of the park and ran north between two lakes in the area and through the community of Interlochen to US Highway 31 (US 31) in Grand Traverse County."
-Question: What was M-137 and what places did it serve?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[The complete cheetah-recall schema is appended and also sent as response_format=json_schema.]
-```
-
-Recall exchange: `.miniphi/prompt-exchanges/de0ab44d-7208-400e-9135-5f27e3423762.json`.
-
-```json
-{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":[],"stop_reason":""}
-```
-
-MiniPhi rejected the contradictory model result. With `recordMiss:true`, it also recorded `hypothesis:what_was_m_137_and_what_places_did_it_serve`.
-
-**Answer returned by MiniPhi**
-
-> I don't know.
-
-### Question 2: Dynamic density
-
-> What two components make up dynamic density?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/30182e34-1da7-4737-b9a8-0996fffa7ab0.json` returned `{"answer":"","evidence":["","",""]}`.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:dynamic_density
-< SUCCESS,id=topic:dynamic_density,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:dynamic_density","name":"Dynamic density","references":[{"id":"src-1","text":"In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population. Émile Durkheim used the term to explain why societies transition from simple to more complex forms, specifically in terms of the division of labor within that society. He suggested that it required both an increase in population and an increase in the frequency of social interaction to form more specialised occupations, which then leads to a new type of society.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751001"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:dynamic_density direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/25f12512-1f66-42bf-9162-13b638991ed9.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "In sociology, dynamic density refers to the combination of two things: population density and the amount of social interaction within that population. Émile Durkheim used the term to explain why societies transition from simple to more complex forms, specifically in terms of the division of labor within that society. He suggested that it required both an increase in population and an increase in the frequency of social interaction to form more specialised occupations, which then leads to a new type of society."
-Question: What two components make up dynamic density?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/da7cf9ff-aa9b-45ff-b092-4a8dc613524e.json` returned:
-
-```json
-{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["The Facts","The Schema"]}
-```
-
-MiniPhi rejected the decline and the non-reference evidence. The retrieved reference did contain the answer, but the specific-question policy did not substitute a whole paragraph.
-
-**Answer returned by MiniPhi**
-
-> I don't know.
-
-### Question 3: Marc Fein
-
-> What kinds of work did Marc Fein do?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/31454a89-7d7c-4a3f-b6e9-460650456ee5.json` returned an empty `answer` and `evidence:["I do not know"]`.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:marc_fein
-< SUCCESS,id=topic:marc_fein,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:marc_fein","name":"Marc Fein","references":[{"id":"src-1","text":"Marc Fein (born Marc Alan Fein October 21, 1967 in Miami, Florida) is a sports journalist, sports news anchor, and television sports studio host, formerly one of the main studio hosts for the NBA TV show, NBA Gametime Live. He is also the host of its show, The Beat, and has been the substitute host for Ernie Johnson on the NBA on TNT.Quigley, Eileen S. (2006) International Television & Video Almanac ==Broadcasting career== Prior to his present work at NBA TV, Fein was at one time the exclusive studio host for and NASCAR on TNT Live!.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751048"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:marc_fein direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/68264dfe-eac2-4c0d-8c8d-b35e0ae8e3be.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "Marc Fein (born Marc Alan Fein October 21, 1967 in Miami, Florida) is a sports journalist, sports news anchor, and television sports studio host, formerly one of the main studio hosts for the NBA TV show, NBA Gametime Live. He is also the host of its show, The Beat, and has been the substitute host for Ernie Johnson on the NBA on TNT.Quigley, Eileen S. (2006) International Television & Video Almanac ==Broadcasting career== Prior to his present work at NBA TV, Fein was at one time the exclusive studio host for and NASCAR on TNT Live!."
-Question: What kinds of work did Marc Fein do?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/29ff49d0-7695-40f1-ae01-533e9f3a73e7.json` returned `answer:"I don't know"` plus four invented evidence descriptions. MiniPhi rejected it.
-
-**Answer returned by MiniPhi**
-
-> I don't know.
-
-### Question 4: Alphyn
-
-> What does the name Alphyn mean?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/615da8c4-6173-4484-9234-af9ddb6a7123.json` returned an empty answer and the spurious evidence `Wiki memory`.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:alphyn
-< SUCCESS,id=topic:alphyn,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:alphyn","name":"Alphyn","references":[{"id":"src-1","text":"A heraldic alphyn An Alphyn (from the Germanic word for \"chaser\" or \"wolf\"), also known as awfyn or alfin in older writings,The Chess player's chronicle. Oxford Press, 1841.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751439"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:alphyn direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/7040452a-d382-44ca-8bfc-8a7c7688a0b7.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "A heraldic alphyn An Alphyn (from the Germanic word for "chaser" or "wolf"), also known as awfyn or alfin in older writings,The Chess player's chronicle. Oxford Press, 1841."
-Question: What does the name Alphyn mean?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/11991913-47dc-4165-899e-6d7f0ba35e19.json` copied the reference into evidence but still returned `answer:"I don't know"`; MiniPhi rejected the decline.
-
-**Answer returned by MiniPhi**
-
-> I don't know.
-
-### Question 5: HaMoshava Stadium
-
-> Where is HaMoshava Stadium and when was it completed?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/dd2960f1-a52a-4bcb-9f6a-747eafc2dc07.json` answered `I do not know`.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:hamoshava_stadium
-< SUCCESS,id=topic:hamoshava_stadium,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:hamoshava_stadium","name":"HaMoshava Stadium","references":[{"id":"src-1","text":"The western stand, June 2016 Aerial view The HaMoshava Stadium (), also known as Petah Tikva Stadium, is a football stadium in Petah Tikva, Israel. It was completed in 2011, and is used mainly for football matches and is home to both Hapoel Petah Tikva and Maccabi Petah Tikva.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7751452"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:hamoshava_stadium direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/fe7b6102-1883-42e6-ae77-35eed15ed873.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "The western stand, June 2016 Aerial view The HaMoshava Stadium (), also known as Petah Tikva Stadium, is a football stadium in Petah Tikva, Israel. It was completed in 2011, and is used mainly for football matches and is home to both Hapoel Petah Tikva and Maccabi Petah Tikva."
-Question: Where is HaMoshava Stadium and when was it completed?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/a614dabb-fbbe-424a-91bc-924bafec22a0.json` returned `{"anchor_resolved":false,"grounded":true,"answer":"I don't know","evidence":["",""]}`. MiniPhi rejected it.
-
-**Answer returned by MiniPhi**
-
-> I don't know.
-
-### Question 6: Carinya Christian School
-
-> What do you know about Carinya Christian School?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/fe964db2-52b8-4c66-838e-0bfaefdccc64.json` returned an empty answer.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:carinya_christian_school
-< SUCCESS,id=topic:carinya_christian_school,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:carinya_christian_school","name":"Carinya Christian School","references":[{"id":"src-1","text":"Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788958"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:carinya_christian_school direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/33bf25b4-0b46-433b-968c-e05ae7964a0f.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12."
-Question: What do you know about Carinya Christian School?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/62271907-fffb-4741-a314-2b3d4e5a2e53.json` said it used training knowledge, set `grounded:false`, and answered `I don't know`. MiniPhi rejected composition and used the broad-question fallback.
-
-**Answer returned by MiniPhi**
-
-> Carinya Christian School is a multi-campus independent Christian comprehensive co-educational early learning, primary, secondary day school located in the New England region of New South Wales, Australia. The school caters for approximately 600 students from early learning to Year 12.
-
-### Question 7: Asian Young Footballer of the Year
-
-> What do you know about Asian Young Footballer of the Year?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/9bff4de2-f826-4a7a-a321-4a26c0f6b024.json` returned an empty answer.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:asian_young_footballer_of_the_year
-< SUCCESS,id=topic:asian_young_footballer_of_the_year,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:asian_young_footballer_of_the_year","name":"Asian Young Footballer of the Year","references":[{"id":"src-1","text":"The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788916"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:asian_young_footballer_of_the_year direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/a2b2afa8-fc3f-4c16-be5d-f0d9eb70f6a9.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995."
-Question: What do you know about Asian Young Footballer of the Year?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/58696660-4c98-4b80-8ed9-63219b1e4d6c.json` copied relevant evidence but answered `I don't know`. MiniPhi rejected it and used the reference fallback.
-
-**Answer returned by MiniPhi**
-
-> The Asian Young Footballer of the Year award is presented to the best young football player in Asia. It has been awarded by the Asian Football Confederation (AFC) since 1995.
-
-### Question 8: Pie crust crab
-
-> What do you know about Pie crust crab?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/01803c4e-138e-4f8c-bb51-4e07df0fdfda.json` returned an empty answer.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:pie_crust_crab
-< SUCCESS,id=topic:pie_crust_crab,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:pie_crust_crab","name":"Pie crust crab","references":[{"id":"src-1","text":"The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788834"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:pie_crust_crab direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/42bab444-0789-4b69-8a57-e16eb279f7f1.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms."
-Question: What do you know about Pie crust crab?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/bc38cf94-d266-47e4-b562-8f18b94f9f26.json` answered `I don't know.` and supplied evidence about the prompt rather than the crab. MiniPhi rejected it and used the exact reference.
-
-**Answer returned by MiniPhi**
-
-> The pie crust crab (Metacarcinus novaezelandiae, formerly Cancer novaezelandiae), is a species of crab found around New Zealand and south- eastern Australia. == Diet and foraging == In larval form Metacarcinus novaezelandieae consumes mostly tiny plankton. Once fully grown though they are primarily carnivorous, hunting nocturnally and preying on a variety of organisms.
-
-### Question 9: Wiyot traditional narratives
-
-> What do you know about Wiyot traditional narratives?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/1e02f11e-5b34-45b8-b61d-6022f9d1f0ff.json` returned an empty answer.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:wiyot_traditional_narratives
-< SUCCESS,id=topic:wiyot_traditional_narratives,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:wiyot_traditional_narratives","name":"Wiyot traditional narratives","references":[{"id":"src-1","text":"Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788884"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:wiyot_traditional_narratives direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/151b3c6f-1e48-44f0-a6af-eae3cc128b1f.json`.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- "Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S."
-Question: What do you know about Wiyot traditional narratives?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/03c89c47-6d95-4ed4-85b0-c6e4e9604547.json` produced a useful-looking sentence but set `anchor_resolved:false`, supplied no evidence, and left `stop_reason` empty. MiniPhi rejected composition and returned the reference.
-
-**Answer returned by MiniPhi**
-
-> Wiyot traditional narratives include myths, legends, tales, and oral histories preserved by the Wiyot people of the Humboldt Bay area of northwestern California. Wiyot oral literature shares elements with the distinctive Yurok- Karuk-Hupa area of northwestern California, as well as with the more widely distributed patterns of central California. (See also Traditional narratives (Native California).) ==On-Line Examples of Wiyot Narratives== * The North American Indian by Edward S.
-
-### Question 10: More Than I Know
-
-> What do you know about More Than I Know?
-
-**A. SmolLM2 without memory**
-
-Closed-book exchange `.miniphi/prompt-exchanges/56069b89-60fa-4a75-82f2-02f685fc8339.json` returned an empty answer.
-
-**B. MiniPhi → Cheetah queries and responses**
-
-```text
-> GRAPH_NODE_GET id=topic:more_than_i_know
-< SUCCESS,id=topic:more_than_i_know,payload=<base64 JSON>
-```
-
-```json
-{"id":"topic:more_than_i_know","name":"More Than I Know","references":[{"id":"src-1","text":"\"More Than I Know\" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of \"Not Forgotten\" by Daley requested by Neil Barnes.","source":"wikipedia-2021:00c2bfc7-57db-496e-9d5c-d62f8d8119e3.json#7788889"}]}
-```
-
-```text
-> GRAPH_NEIGHBOR_TYPES id=topic:more_than_i_know direction=out limit=16 weighted=1
-< SUCCESS,count=0,next_cursor=*,payload=W10=    # []
-```
-
-Teach exchange: `.miniphi/prompt-exchanges/ca91472b-20ef-4aee-9b49-08af1127d31e.json`. SmolLM2 proposed two unsupported edges; MiniPhi rejected both and retained only the reference.
-
-**C. Context returned to SmolLM2**
-
-```text
-Read the facts below, then answer the question using ONLY those facts - never your own training knowledge.
-Facts about the subject:
-- ""More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes."
-Question: What do you know about More Than I Know?
-Decide: do the facts above, read plainly, answer this exact question? If yes, set grounded=true, write a non-empty answer using their wording, and copy at least one used fact into evidence.
-If the facts above are empty, unrelated, or do not mention what the question asks, set grounded=false, answer that you don't know, and fill in open_question.
-Set stop_reason to "completed".
-[cheetah-recall schema appended; response_format=json_schema]
-```
-
-Recall exchange `.miniphi/prompt-exchanges/2e6a206f-f174-489a-9a5e-1d04282a1c2d.json` copied relevant evidence but answered `I don't know`. MiniPhi rejected composition and selected the reference fallback.
-
-**Answer returned by MiniPhi**
-
-> "More Than I Know" is the second single released under the Leftfield name. Paul Daley was not involved in the song's creation; however, the B-side was a remix of "Not Forgotten" by Daley requested by Neil Barnes.
-
-### What the ten traces demonstrate
-
-- The 360M model can satisfy a JSON schema while leaving the answer empty, contradicting its own flags, misusing evidence, or copying prompt labels into semantic fields.
-- MiniPhi, not SmolLM2, supplies the durable identity. The dataset title becomes the canonical topic id even when the model renames or mis-types the subject.
-- Exact source references are the reliable learning unit. In these ten selected teach calls the model contributed no accepted semantic edge; one call proposed two candidates and both were rejected.
-- Retrieval is distinct from answer composition: Cheetah resolved 10/10, while SmolLM2 produced 0/10 accepted recall answers in this pass.
-- The broad-question fallback made five useful final answers possible without trusting faulty model output.
-- The five specific-question declines show the next needed improvement: a deterministic extractive answer or entailment check that can return the relevant sentence span without broadening the answer beyond the requested detail.
-
-## How MiniPhi identified information to learn
-
-For each streamed Wikipedia row, MiniPhi performed the following bounded process:
-
-1. The streaming reader selected a real `.json` shard, skipped `._*.json` sidecars, and parsed the top-level array without loading a multi-gigabyte shard into memory.
-2. The Wikipedia `title` became the authoritative subject name. This prevents a weak model from renaming the article to prompt text such as `MiniPhi Cheetah teach turn`.
-3. The article text was clipped to at most two leading sentences and 700 characters by default.
-4. MiniPhi derived a stable type-independent topic id, for example `M-137 (Michigan highway)` -> `topic:m_137_michigan_highway`.
-5. Before prompting, MiniPhi queried Cheetah for an outgoing-relation histogram. The teach prompt explicitly stated what the database already contained, rather than allowing the model to confuse pretraining knowledge with stored knowledge.
-6. SmolLM2 received the exact source excerpt, canonical title, known relation types, and the complete `cheetah-teach` JSON schema. It could propose at most three `(relation, object_name)` facts.
-7. MiniPhi independently filtered every proposed fact. `object_name` had to occur contiguously in the source, and meaningful relation terms had to be supported in the nearby source sentence.
-
-During the final cumulative run, MiniPhi saved 3,933 exact source memories and 105 semantic facts while rejecting 2,275 unsupported fact candidates. This ratio is expected: exact source memory is authoritative, while tiny-model graph edges are optional indexing aids.
-
-## How information was saved in Cheetah
-
-MiniPhi saves each learned article in two complementary forms.
-
-### 1. Episodic source record
-
-The bounded source text is sanitized to one protocol-safe line and written through the official binder-backed `putValue` operation under an `episode:<timestamp>/<sequence>` pair key. MiniPhi retains the numeric Cheetah insert key returned by the server; it does not guess the key locally.
-
-This source record allows a later process or a stronger model to re-extract knowledge from the original learned excerpt.
-
-### 2. Graph memory
-
-The subject is upserted as a `topic:<slug>` node with:
-
-- the model-selected type as a label;
-- `props.name` containing the canonical Wikipedia title; and
-- an exact `references[]` entry containing the bounded source text and provenance.
-
-Accepted objects become type-labelled entity nodes. Accepted facts become directed edges from the subject to the object. Each edge records `props.src` with the episodic insert key, `props.source` with Wikipedia shard/article provenance, and optional confidence.
-
-The guaranteed subject/reference shape and the optional accepted-edge shape are:
-
-```text
-topic:hamoshava_stadium
-  props.name = "HaMoshava Stadium"
-  references[0].text = <bounded exact Wikipedia excerpt>
-
-topic:<subject>
-  -[:<accepted_relation> {src, source}]-> <type>:<object>
-```
-
-The exact reference is written even when SmolLM2 proposes no acceptable semantic edge. This is why 3,933 memories could remain useful despite only 105 accepted graph facts.
-
-### 3. Resumable state
-
-After every article, MiniPhi atomically updates `.miniphi/cheetah/wikipedia/wikidata-checkpoint.json` with the shard name, next byte offset, article ordinal, counters, retained subjects, recent results, probe history, and stop-reason fields. A restart resumes at the next record instead of relearning the whole shard.
-
-## How retrieval supplied the needed information
-
-MiniPhi uses a bounded recall ladder:
-
-1. Strip a broad question prefix such as `What do you know about` to recover the likely subject.
-2. Re-derive the stable `topic:<slug>` id and call exact `GRAPH_NODE_GET`.
-3. If the node exists, fetch its outgoing relation histogram.
-4. If relations exist, run a one-hop outward `GRAPH_RECALL` with a limit of eight associations, exact expansion, references enabled, and at most four references per association.
-5. If the exact node does not exist, try a bounded lexical/synonym recall using up to four meaningful subject terms and a limit of five associations.
-6. Compose a compact evidence block from at most six returned facts. Exact natural-language references are placed before synthesized triple sentences because the 360M model handles complete sentences more reliably.
-7. Send only the evidence block, exact question, instructions, and complete `cheetah-recall` schema to SmolLM2.
-8. Validate the JSON and independently compare the model's evidence strings with retrieved references.
-
-The model never sends graph commands and never talks directly to Cheetah. MiniPhi controls retrieval, creates the prompt context, and adjudicates the output.
-
-## How contexts are handled for the final result
-
-```mermaid
-flowchart LR
-    A["Wikipedia article"] --> B["Bounded source excerpt"]
-    B --> C["Exact Cheetah reference"]
-    B --> D["SmolLM2 proposes up to 3 facts"]
-    D --> E{"Source-grounded?"}
-    E -- "yes" --> F["Cheetah graph edges"]
-    E -- "no" --> G["Reject candidate"]
-    Q["User question"] --> R["Exact or lexical Cheetah recall"]
-    C --> R
-    F --> R
-    R --> P["Small evidence-only prompt"]
-    P --> M["Schema-bound SmolLM2 answer"]
-    M --> V{"Answer and evidence accepted?"}
-    V -- "yes" --> O["Model-composed result"]
-    V -- "no, broad question" --> X["Exact-reference fallback"]
-    V -- "no, specific question" --> U["Decline / open question"]
-```
-
-There are three different context boundaries:
-
-### Learning context
-
-The teach call does not receive the whole article, dump, or conversation history. It receives a bounded source excerpt, authoritative title, a compact list of known relation types, instructions, and the exact JSON schema. This makes each article an independent, auditable learning unit.
-
-### Recall context
-
-The recall call receives only the retrieved reference/fact block, the current question, and the schema. At most six fact records are rendered, and graph recall hydrates at most four references per association. Old prompt transcripts are not appended. The source of truth is the current Cheetah retrieval.
-
-For a broad question (`What do you know about <subject>?` or `Tell me about <subject>?`):
-
-- if the model answer and evidence pass validation, MiniPhi returns the model answer;
-- otherwise, if the exact subject and a stored reference were found, MiniPhi returns that reference deterministically;
-- if nothing relevant was retrieved, MiniPhi returns `I don't know.`.
-
-For a specific detail question, MiniPhi does not use the broad exact-reference fallback merely because the article is related. If retrieved evidence does not answer the detail, it declines and may record an open question.
-
-### Interactive agent context
-
-When `knowledgeLookup.enabled` (or `MINIPHI_KNOWLEDGE_LOOKUP=1`) points at `wikidata`, the normal MiniPhi agent may emit the read-only action:
-
-```json
-{
-  "type": "knowledge_lookup",
-  "subject": "HaMoshava Stadium"
-}
-```
-
-The action returns structured Cheetah recall JSON without making a second LLM call. MiniPhi bounds the observation to 6,000 characters and stores it as a context-graph `evidence` node with kind `knowledge` and importance `0.75`. On the next agent turn, the layered `ContextGraph` selects full evidence, a digest, or a requestable stub according to the loaded model's token budget and current focus.
-
-This `wikidata` knowledge memory is separate from `CheetahContextEngine`, which optionally mirrors the agent's own mission/plan/subtask context. Knowledge lookup supplies real-world evidence; the context engine prioritizes conversation/work evidence. Neither is allowed to bypass the final prompt budget.
-
-## Final result decision rules
-
-| Condition | Final result |
+Over the 200 articles that produced **751 passage nodes and 2,763 edges** (against 105 accepted edges
+per 3,933 articles previously), plus 126 accepted semantic facts with 121 rejected.
+
+Each layer exists for a specific reason:
+
+- **Passage nodes** give every detail its own index budget — the direct answer to the 32-token cap
+  above. A question about the third paragraph can now reach the paragraph that says it, because that
+  paragraph is its own indexed node rather than the invisible tail of a long reference list.
+- **Context nodes** are the discovery layer. Two subjects taught days apart that never mention each
+  other still meet at `context:football_stadium` or `time:2011`, so spreading activation has
+  somewhere to spread. A category must be a common noun: a live run proposed `Fairy Stone State Park`
+  as a lake's category, which would have made a neighbouring park the lake's entire frame, so proper
+  names are rejected here and kept as mentions instead.
+- **Mention nodes** carry named entities and years, extracted deterministically. A capitalized run
+  that only ever appears sentence-initially is ordinary English, not a name, so it is dropped unless
+  the same surface also appears mid-sentence.
+- **Semantic edges** now carry `props.context` (the situating clause) and `props.quote` (the verbatim
+  fragment that states the fact), so a retrieved relation still means something without re-reading
+  the article.
+
+Navigation sections (`See also`, `External links`, `References`, `Category:` …) are dropped before
+segmentation. Storing them filled the passage layer with link lists and donated words like
+`Category`, `Protected` and `Tourist` to the mention layer as if they were entities — observed in the
+first smoke run of this work.
+
+## Teaching the model how to store context
+
+The teach prompt no longer just asks for triples. It tells the model what the memory is for and what
+a later reader will not have:
+
+> You are writing "<subject>" into an external memory that another reader will search LATER, with
+> none of this passage in front of them. They will see only what you store, so what you store has to
+> carry the context that makes it understandable on its own.
+
+and then names what to store and why: the framing clause (`subject_context`), the shared category
+(`context_tags` — "these are the bridges between subjects, so never a proper name"), and the facts,
+each with the situating `context` a later reader needs plus the verbatim `evidence_quote`.
+
+Three prompt-shape findings were needed to make that land on a sub-1B model:
+
+- **The schema's `title` is stripped from the prompt copy.** A model this small reads any prominent
+  proper-sounding string as content: both schema generations produced
+  `subject_name: "MiniPhi Cheetah … teach turn"` — it filed the article under the schema's own title.
+  `response_format=json_schema` still carries the complete schema.
+- **The last line of the prompt is the task reminder, not the schema.** The model echoes whatever it
+  read last.
+- **Instruction order flips extraction on and off.** Leading with the anti-invention rules made the
+  model return *zero* facts and say so in its own reasoning ("this violates the rule against
+  inventing facts"). Leading with "copying facts out of the SOURCE TEXT is the task; an empty list
+  because the facts feel obvious is a failure" restored extraction.
+
+Every proposal is still adjudicated deterministically before anything is written: `object_name` and
+`evidence_quote` must occur verbatim in the source, a relation must be supported by a verb near the
+object, a category may not be all-capitalized, and `subject_context` — the one place a paraphrase is
+allowed — needs ≥85% of its content words present in the source or it is replaced by a synthesized
+sentence built from the deterministic category.
+
+## Hippocampal retrieval
+
+Retrieval replaces the single `GRAPH_NODE_GET` with a bounded three-stage ladder, then a discovery
+round driven by the model itself:
+
+1. **Pattern completion.** Every capitalized run in the question is tried as an anchor, not just the
+   whole stripped question.
+2. **Spreading activation.** Resolved anchors seed a two-hop `GRAPH_RECALL` (`expand=none`,
+   `references=1`), reaching that subject's passage nodes, its context/mention nodes, and other
+   subjects sharing them — text hydrated in the same round trip.
+3. **Lexical reinstatement.** The question's content words seed a recall against the derived term
+   index. This is *not* only the "anchor missing" fallback: it also runs when an anchor resolved but
+   its passages do not cover the question — the case the old ladder had no answer for. It supplied 42
+   of the retrieved items in this run.
+4. **Discovery.** Everything retrieved is consolidated into ranked, id-tagged evidence (`e1`, `e2`,
+   …). The model reasons over those ids and, when the items are about the right subject but do not
+   state what was asked, sets `needs_more_context` and names what to fetch in `follow_up_lookups`.
+   MiniPhi executes those lookups and re-prompts once. Nine questions requested a follow-up; two
+   received new evidence and were re-prompted with it.
+
+The model never speaks to Cheetah. MiniPhi derives the ids, builds every command, and adjudicates the
+result.
+
+## Answer adjudication
+
+Groundedness is still never taken from the model's own `grounded` flag, and the check is now three
+independent conditions instead of one:
+
+| check | what it catches |
 | --- | --- |
-| Exact/lexical subject unresolved | Decline; optionally record an open question |
-| Subject resolved, but a specific requested detail is unsupported | Decline rather than return a related paragraph |
-| Broad subject question, model output invalid or ungrounded, exact reference available | Return the exact reference with `answerSource=deterministic-reference-fallback` |
-| Model answer non-empty and its evidence matches a retrieved reference | Return model answer with `answerSource=model` (currently only structural assurance; see limitation above) |
-| LM response is invalid JSON or times out | Retry once under the registered schema, then use deterministic schema-valid fallback behavior |
+| retrieval actually resolved something | the model claiming knowledge of a subject the memory has never seen |
+| the citation points at a real retrieved item (`used_evidence_ids`) | evidence invented to look like a quote |
+| ≥60% of the answer's content words occur in the cited item | the hole in the previous check — an answer about something else paired with a correct-looking quote |
 
-## Reliability and scale observations
+When the model fails that, MiniPhi answers deterministically rather than declining outright:
 
-- Exact memories added during the four-hour soak: 3,899 (3,933 cumulative).
-- Grounded semantic edges added during the soak: 103 (105 cumulative).
-- Unsupported semantic candidates rejected during the soak: 2,259 (2,275 cumulative).
-- One malformed/empty dataset row was safely skipped.
-- Retrieval stayed 5/5 at every soak probe as the database grew.
-- All 39 full-suite invocations were green: 38 scheduled cycle gates plus one closing suite, with 319 passed, 0 failed, and 11 skipped per invocation.
-- Benchmark latency increased by 27.6% from the first-ten to last-ten mean. Remote LM Studio exposed no resource telemetry, so the cause cannot be assigned to CPU, GPU, RAM, VRAM, or server load from this evidence.
+| condition | final result |
+| --- | --- |
+| broad question, anchor resolved, gist stored | the stored gist (`deterministic-reference-fallback`) |
+| specific question, a retrieved passage covers the asked-for detail | the extractive span (`deterministic-extractive-span`) |
+| specific question, nothing covers the detail | decline, optionally recording an open question |
+| no anchor resolved | decline — lexical hits alone never produce a broad answer |
 
-## Recommended next strict memory A/B benchmark
+The extractive span is the fix for the previous report's open item, and it produced 12 of the 52
+answers here. It is gated on **focus tokens** — the question's words minus the subject's own name —
+so "When was Alpha founded?" cannot be answered with "Alpha is located in One." just because both
+mention Alpha, and on a type match, so a `when` question needs a year in the span. A broad question
+never gets a span: its focus tokens are just the subject name, so any lexically similar passage would
+qualify, which is exactly how a never-taught subject would be answered out of somebody else's
+article.
 
-The ten-trace follow-up adds a direct same-question closed-book comparison, while the four-hour run proves long-duration retention. The next reusable benchmark should automate and strengthen that diagnostic:
+## Method: how a question and its gold answer are built
 
-1. Select taught subjects and never-taught controls before training.
-2. Ask each exact question with no Cheetah evidence through a registered closed-book schema.
-3. Ask the same question with Cheetah retrieval context and preserve both model composition and final fallback.
-4. Score four fields separately: anchor resolution, answer entailment, evidence match, and abstention correctness.
-5. Add a semantic entailment or deterministic answer-to-reference overlap check so a matching `evidence` field cannot validate an unrelated answer.
-6. Preserve raw prompts/responses and report model composition separately from exact-reference fallback.
+Every question is generated by matching a literal pattern in the *source article*, and its gold
+answer is the span that pattern captured — fixed before the model is asked and never produced by a
+model, so a wrong answer cannot be excused by a wrong question. A question is only kept when the
+sentence it came from names the subject (or is one of the article's opening two sentences), which
+stops "The show was created by Ernie Johnson" in a biography from becoming "Who created Marc Fein?".
 
-The strongest supported conclusion from the soak plus this ten-question follow-up is:
+At most two questions come from any one article, and broad questions are capped at 30% of the set so
+the easiest shape cannot dominate. Eight further articles were sampled and deliberately **not**
+taught; their questions measure whether the system declines what it never learned.
 
-> Cheetah gave MiniPhi stable access to learned Wikipedia source text across thousands of later writes. On ten exact follow-up questions SmolLM2 answered 0/10 usefully without memory, while Cheetah resolved 10/10 anchors; exact-reference retrieval, rather than model composition, was the dependable mechanism.
+## Three worked examples
+
+Full traces for all 60 are in
+[`cheetah_memory_benchmark_samples.md`](cheetah_memory_benchmark_samples.md).
+
+### The layered case: a detail the old design could not have stored
+
+> **Sample 9 — In what year was Microceratus created?** (gold `2008`)
+
+Closed book: `152 BC`. With memory: **correct**.
+
+The answer is not in the article's lead, so the first-generation memory would never have held it. It
+came from `passage:microceratus_p2`, a detail node reached by **lexical reinstatement**, not by the
+anchor:
+
+```text
+e1 [lexical/detail]  "Though much of the material has since been reassigned to the genus
+                      Graciliceratops, a replacement name Microceratus was created by Mateus in
+                      2008 for the type specimen."
+e2 [associated/gist] "Microceratus (meaning "small-horned") is a genus of small ceratopsian
+                      dinosaur that lived in the Cretaceous period in Asia…"
+e3, e4 [lexical/detail] two further passage nodes of the same article
+```
+
+Nine Cheetah commands ran: two anchor lookups, a relation histogram, a two-hop spread, a lexical
+recall, and four hydrations. The model did not compose an accepted answer; the extractive span did,
+returning the exact sentence that contains 2008.
+
+### The discovery case: the model asks for more memory
+
+> **Sample 7 — What kind of thing is God Is in the House (Hillsong Church album)?**
+
+The first recall turn set `needs_more_context: true` and asked for
+`{"kind":"subject","value":"Hillsong Album","why":"The album's type itself is what we're trying to
+identify."}`. MiniPhi ran that lookup (`follow_up_anchor`, `follow_up_lexical`), added the new
+passages as `e2`/`e3` and re-prompted. The follow-ups were not useful in this case — they returned
+two unrelated albums — but the direct gist was still in context and the extractive span answered
+correctly: *"God Is in the House is the fifth album in the live praise and worship series of
+contemporary worship music by Hillsong Church."* Closed book had said "electronic Christian
+alternative rock album".
+
+### The control case: what the memory never learned
+
+> **Sample 54 — What do you know about Jan Berglin?** (never taught)
+
+Closed book invented a biography: *"Jan Berglin was a physicist known for his work on qubits and
+fault-tolerant quantum computation…"*. With memory, no anchor resolved, no passage was retrieved, and
+MiniPhi answered `I don't know.` All 8 controls declined; 3 of the 8 closed-book answers were
+confident fabrications.
+
+## Honest limitations
+
+- **12 of 52 answers with memory are still wrong**, and they are wrong in instructive ways. Sample 4
+  ("Who created Microceratus?") scored correct because the gold token `Mateus` appears, but the
+  model's sentence continues *"…as a replacement name for the wasp subfamily Gelinae"*, which is
+  fabricated. The ≥60% support check passes because most of the answer's words *are* in the evidence.
+  Support ratio bounds how far an answer can drift; it does not verify entailment.
+- **Gold-recall scoring credits an answer that contains the gold span**, even when it also contains
+  unsupported material. That makes 40/52 an upper bound on fully-correct answers, in the same spirit
+  as the previous report's 35/780 caveat.
+- **Broad questions are partly self-fulfilling**: their gold answer is the stored gist, and the
+  deterministic fallback returns exactly that. This is why broad is capped at 30% of the set and
+  reported as its own row.
+- **The category layer still admits noise.** A definition like "Jagmanpur, Kanar is a situated 9 km…"
+  yields the tag `situated 9 km`. Such tags are inert (no other article produces the same phrase, so
+  they bridge nothing) but they are visible in stored `props.context`.
+- **15 of 200 teach turns fell back** (invalid JSON or an LM error). Those articles still received the
+  full deterministic layers — passages, categories, mentions — and lost only the model's proposed
+  facts and tags.
+- **Two defects were found by reading these traces and fixed afterwards; the recorded run predates
+  both.** (1) The mention extractor let a capitalized run cross a sentence boundary, so
+  "…lived in Asia. It walked on two legs" produced the entity node `entity:asia_it` (and
+  "Mongolia the" from a trailing connector) — visible in sample 9's spread response. (2) Hydration
+  could then attach such a name to an unrelated passage as its displayed subject, which is why
+  sample 4 labels a Microceratus passage `Asia. It`. Stored *topic* names were always correct, and
+  both fixes are covered by
+  `unit-tests-js/cheetah-memory-layers.test.js` / `cheetah-hippocampus.test.js`.
+- Runtime is dominated by the model's reasoning. See [Reproducing](#reproducing-the-benchmark) — this
+  distill needs `reasoning_effort: low` or turns take 10-30× longer.
 
 ## Reproducing the benchmark
 
-Run the reference workflow:
-
-```powershell
-node scripts/run-cheetah-wikipedia-soak.js --duration-hours 4
+```bash
+node scripts/run-cheetah-memory-benchmark.js --base-url http://127.0.0.1:1234 --database wikimem --learn-count 200 --sample-count 52 --control-count 8 --seed 20260803 --concurrency 1 --reset-database
 ```
 
-Resume the same deadline-bound session after repairing a failed gate:
-
-```powershell
-node scripts/run-cheetah-wikipedia-soak.js `
-  --session-dir .miniphi\cheetah\soak\<session-id>
+```bash
+node scripts/render-cheetah-memory-report.js --session-dir .miniphi/cheetah/memory-benchmark/run-200 --out docs/cheetah_memory_benchmark_samples.md
 ```
+
+Two host lessons are baked into the runner and matter for any repeat:
+
+- **The model must be loaded explicitly.** With it unloaded, every `/v1/chat/completions` request
+  hangs indefinitely while `/api/v1/models` answers in milliseconds — which reads exactly like a
+  wedged server and is not one. `ensureModelLoaded` does catalog-check → `POST /api/v1/models/load`
+  (~2.4 s) → warm completion before the run starts.
+- **`reasoning_effort: low` is accepted even though this model advertises no reasoning capability.**
+  Without it the distill produced **21,519 characters of reasoning for a 974-character answer** at
+  53-200 s per turn; with it, ~1,500 characters at 5.5-9.4 s. Do *not* instead cap `max_tokens` low —
+  at 1,900 the model spent the whole budget on reasoning and returned empty content on ~50% of turns.
 
 Inspect:
 
-- `.miniphi/cheetah/wikipedia/wikidata-checkpoint.json` for counters and probe history;
-- `.miniphi/cheetah/soak/<session-id>/snapshots/` for per-cycle checkpoints and benchmarks;
-- `.miniphi/prompt-exchanges/` for complete schema-bound LM exchanges;
-- `thirds/cheetah/cheetah_data/wikidata` for the Cheetah database;
-- [`docs/cheetah-wikipedia-learning.md`](cheetah-wikipedia-learning.md) for setup, controls, and safety details.
+- `.miniphi/cheetah/memory-benchmark/run-200/` — `learned.jsonl`, `questions.json`, `samples.jsonl`,
+  `report.json`;
+- `.miniphi/prompt-exchanges/` — complete schema-bound LM exchanges, now including the REST route's
+  reasoning text;
+- `thirds/cheetah/cheetah_data/wikimem` — the Cheetah database;
+- [`docs/cheetah-wikipedia-learning.md`](cheetah-wikipedia-learning.md) — setup, controls and safety
+  for the streaming learner.

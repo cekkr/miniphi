@@ -216,4 +216,119 @@ export async function* streamWikipediaArticles(
   }
 }
 
+/**
+ * Byte offset of the first record boundary at or after `fromOffset`.
+ *
+ * A raw newline can never occur inside a JSON string (it has to be escaped),
+ * so the first `\n` at or after a random seek is guaranteed to sit outside any
+ * string value. Resuming the shard scanner there is therefore safe: its
+ * depth-0 search for `{` cannot mistake a brace inside an article's text for a
+ * record start.
+ */
+export async function findRecordBoundary(filePath, fromOffset, { window = 1024 * 1024 } = {}) {
+  const handle = await fsPromises.open(path.resolve(filePath), "r");
+  try {
+    const { size } = await handle.stat();
+    let position = Math.max(0, Math.min(Math.floor(Number(fromOffset) || 0), Math.max(0, size - 1)));
+    const buffer = Buffer.alloc(positiveInteger(window, 1024 * 1024));
+    while (position < size) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (!bytesRead) {
+        return null;
+      }
+      const index = buffer.subarray(0, bytesRead).indexOf(0x0a);
+      if (index >= 0) {
+        return position + index + 1;
+      }
+      position += bytesRead;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Draw articles from random positions across the whole dump instead of walking
+ * it front to back.
+ *
+ * Sequential ingestion makes an unrepresentative knowledge base: consecutive
+ * records in one shard share subject matter and provenance, so retrieval gets
+ * tested against a topically clustered store. Seeking to random offsets in
+ * randomly chosen shards spreads the sample over the corpus, which is what a
+ * memory benchmark needs in order to mean anything.
+ */
+export async function sampleRandomWikipediaArticles(
+  datasetPath,
+  {
+    count = 100,
+    rng = Math.random,
+    maxArticleBytes = DEFAULT_MAX_ARTICLE_BYTES,
+    minTextChars = 200,
+    maxAttemptsPerArticle = 6,
+  } = {},
+) {
+  const inventory = await listWikipediaJsonFiles(datasetPath);
+  const sizes = new Map();
+  for (const fileName of inventory.files) {
+    try {
+      const stat = await fsPromises.stat(path.join(inventory.datasetPath, fileName));
+      sizes.set(fileName, stat.size);
+    } catch {
+      // A shard that cannot be stat'ed is simply not drawn from.
+    }
+  }
+  const usable = inventory.files.filter((fileName) => (sizes.get(fileName) ?? 0) > 4096);
+  if (!usable.length) {
+    throw new Error(`No readable Wikipedia shards under ${inventory.datasetPath}.`);
+  }
+
+  const seenIds = new Set();
+  const sampled = [];
+  let attempts = 0;
+  const attemptCap = Math.max(1, count) * Math.max(1, maxAttemptsPerArticle);
+  while (sampled.length < count && attempts < attemptCap) {
+    attempts += 1;
+    const fileName = usable[Math.floor(rng() * usable.length) % usable.length];
+    const size = sizes.get(fileName) ?? 0;
+    const filePath = path.join(inventory.datasetPath, fileName);
+    const seekTo = Math.floor(rng() * Math.max(1, size - 2048));
+    const boundary = await findRecordBoundary(filePath, seekTo);
+    if (boundary === null) {
+      continue;
+    }
+    let picked = null;
+    for await (const item of streamWikipediaShard(filePath, {
+      startByteOffset: boundary,
+      maxArticleBytes,
+    })) {
+      if (item.error || !item.article) {
+        continue;
+      }
+      const title = typeof item.article.title === "string" ? item.article.title.trim() : "";
+      const text = typeof item.article.text === "string" ? item.article.text.trim() : "";
+      if (!title || text.length < minTextChars) {
+        continue;
+      }
+      const key = `${fileName}#${item.article.id ?? item.byteOffset}`;
+      if (seenIds.has(key)) {
+        break;
+      }
+      seenIds.add(key);
+      picked = {
+        ...item,
+        datasetPath: inventory.datasetPath,
+        fileName,
+        filePath,
+        seekOffset: seekTo,
+      };
+      break;
+    }
+    if (picked) {
+      sampled.push(picked);
+    }
+  }
+  return { datasetPath: inventory.datasetPath, articles: sampled, attempts };
+}
+
 export { DEFAULT_MAX_ARTICLE_BYTES };

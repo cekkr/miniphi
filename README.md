@@ -203,6 +203,15 @@ must be saved) versus already recorded, and every answer is checked against what
 actually returned before it counts as grounded, so a plausible-sounding but unsupported answer gets
 declined instead of stated as fact.
 
+What gets stored is **layered**, not a single sentence per subject: the gist, each detail passage as
+its own node (so a question about the third paragraph can actually reach it), shared category nodes
+that bridge subjects taught days apart, the named entities and years a passage mentions, and
+relations that carry the context making them meaningful. Retrieval matches that shape — exact
+anchors, two-hop spreading activation, and a lexical pass over the derived term index — and the
+model can say "the memory is about the right thing but doesn't state this" and name what to fetch
+next, which MiniPhi then retrieves for one more round. See
+[the memory benchmark](docs/cheetah_memory_benchmarks.md) for measured results and complete traces.
+
 ```bash
 # Start Cheetah (same build as above) if it isn't already running.
 
@@ -228,6 +237,13 @@ node scripts/run-cheetah-wikipedia-learning.js --limit 100 --probe-every 10 --pr
 
 # Run a four-hour learn/probe/benchmark/test soak with time-series snapshots:
 node scripts/run-cheetah-wikipedia-soak.js --duration-hours 4
+
+# Measure the memory itself: teach N random pages of the dump, build questions with
+# gold answers taken from those pages, then answer each one closed-book and with memory.
+node scripts/run-cheetah-memory-benchmark.js --learn-count 200 --sample-count 52 --reset-database
+
+# Render the complete per-sample traces (prompts, Cheetah commands, both answers):
+node scripts/render-cheetah-memory-report.js --session-dir .miniphi/cheetah/memory-benchmark/<id>
 ```
 
 The Wikipedia runner defaults to the documented SmolLM2 reference setup, uses database

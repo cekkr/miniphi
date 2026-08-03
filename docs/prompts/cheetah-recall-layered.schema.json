@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "reasoning_steps",
+    "grounded",
+    "answer",
+    "confidence",
+    "used_evidence_ids",
+    "evidence",
+    "needs_more_context",
+    "follow_up_lookups",
+    "open_question",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "reasoning_steps": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Your reasoning as short steps that each name the memory item you used, e.g. 'e2 gives the completion year 2011'.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "grounded": {
+      "type": "boolean",
+      "description": "True ONLY when your answer is stated by the memory items in this prompt. Never true from your own training knowledge."
+    },
+    "answer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Answer the exact question asked, in one or two sentences, using the memory items' own wording. When nothing supports an answer, say you don't know."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "certain",
+        "probable",
+        "possible",
+        "unlikely",
+        "ruled_out",
+        "unknown"
+      ]
+    },
+    "used_evidence_ids": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "The ids (e1, e2, ...) of the memory items your answer came from. Empty when not grounded.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "Verbatim quotes copied from those memory items. Empty when not grounded.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "description": "True when the retrieved items are related but do not contain what the question asks, so more memory should be fetched before answering."
+    },
+    "follow_up_lookups": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "What to retrieve next when needs_more_context is true: name the subject or the term the memory should be searched for.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "value",
+          "why"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "subject",
+              "term"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "open_question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "has_question",
+        "question_text",
+        "topic_hint"
+      ],
+      "description": "Set has_question true whenever grounded is false, so the gap gets recorded instead of guessed.",
+      "properties": {
+        "has_question": {
+          "type": "boolean"
+        },
+        "question_text": {
+          "type": "string"
+        },
+        "topic_hint": {
+          "type": "string"
+        }
+      }
+    },
+    "stop_reason": {
+      "type": "string"
+    },
+    "stop_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stop_reason_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

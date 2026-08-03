@@ -14,12 +14,12 @@ The observed dump contains 605 real JSON shards (about 22.08 GiB) plus 605 `._*.
 
 ## Safety and learning model
 
-Each usable article creates an authoritative `topic:<title>` memory containing a bounded, exact source excerpt and provenance. SmolLM2 may additionally propose up to three semantic `(relation, object)` edges. An edge is saved only when:
+Each usable article creates an authoritative layered memory anchored at `topic:<title>`: the gist and provenance on the topic node, each further passage on its own `passage:<title>_pN` node with its section name, shared `context:<category>` nodes, and `entity:`/`time:` nodes for the names and years the article mentions. All of that is derived deterministically from the source (see [`cheetah-memory-layers.js`](../src/libs/cheetah-memory-layers.js)). The model may additionally propose up to four semantic `(relation, object)` edges, each carrying its situating context and the verbatim fragment that states it. An edge is saved only when:
 
 1. `object_name` is a contiguous phrase in the source excerpt; and
-2. meaningful relation terms are supported by a nearby source sentence.
+2. its `evidence_quote` occurs verbatim in the source — or, when the model supplies none, meaningful relation terms are supported by a nearby source sentence.
 
-This division is intentional. The exact excerpt is the safe memory of record; tiny-model triples are optional search structure. Invalid JSON, unsupported relations, and hallucinated objects cannot silently become semantic facts. Every model request carries the exact registered JSON schema through both the prompt and `response_format=json_schema`; prompt text, responses, reasoning, tool definitions, and validation metadata are recorded under `.miniphi/prompt-exchanges/`.
+This division is intentional. The exact passages are the safe memory of record; tiny-model triples are optional search structure. Invalid JSON, unsupported relations, and hallucinated objects cannot silently become semantic facts. Every model request carries the exact registered JSON schema through both the prompt and `response_format=json_schema`; prompt text, responses, reasoning, tool definitions, and validation metadata are recorded under `.miniphi/prompt-exchanges/`.
 
 Inference probes are read-only. They never create open-question training data. A probe reports three separate outcomes:
 
@@ -95,8 +95,8 @@ Session state, step events, stdout/stderr logs, checkpoint snapshots, and benchm
 --probe-count <n>           Number of fixed early subjects to retain and probe
 --max-errors <n>            Stop after consecutive LM inference errors
 --max-no-progress <n>       Stop after articles save neither memory nor facts
---max-sentences <n>         Leading article sentences sent to the model
---max-chars <n>             Source excerpt character cap
+--max-sentences <n>         Article sentences kept as the learning unit (default 16)
+--max-chars <n>             Learning-unit character cap (default 2400)
 --max-article-bytes <n>     Parser cap for one raw JSON article
 --checkpoint <file>         Alternate resumable state file
 --no-start-cheetah          Require an already-running server

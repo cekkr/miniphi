@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject_type",
+    "subject_context",
+    "context_tags",
+    "no_new_information",
+    "new_facts",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "subject_name": {
+      "type": "string",
+      "description": "Only needed when no canonical title was given: the main entity the passage is about."
+    },
+    "subject_type": {
+      "type": "string",
+      "enum": ["person", "place", "organization", "species", "work", "event", "concept", "object", "other"]
+    },
+    "subject_context": {
+      "type": "string",
+      "description": "One short clause naming what kind of thing this is, in the source's own words, e.g. 'a football stadium in Petah Tikva, Israel'. This is the context a reader needs before any single fact makes sense."
+    },
+    "context_tags": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "General category phrases this subject shares with OTHER subjects, e.g. 'football stadium'. Common nouns only - never a proper name.",
+      "items": { "type": "string" }
+    },
+    "no_new_information": {
+      "type": "boolean",
+      "description": "True only when every fact in the passage is already in the 'Already recorded' list. Never true because you personally recognize the subject."
+    },
+    "new_facts": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "The facts the passage states about the subject, each carrying the context that makes it meaningful on its own.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relation", "object_name", "object_type", "context", "evidence_quote"],
+        "properties": {
+          "relation": {
+            "type": "string",
+            "description": "Snake_case verb built from a verb written near the object in the source, e.g. 'located_in', 'completed_in'."
+          },
+          "object_name": { "type": "string", "description": "Copied verbatim from the source." },
+          "object_type": {
+            "type": "string",
+            "enum": ["person", "place", "organization", "species", "work", "event", "concept", "object", "other", "time"]
+          },
+          "context": { "type": "string", "description": "The situating clause a later reader needs, in a few words." },
+          "evidence_quote": {
+            "type": "string",
+            "description": "The verbatim source fragment that states this fact."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["certain", "probable", "possible", "unlikely", "ruled_out"]
+          }
+        }
+      }
+    },
+    "stop_reason": { "type": "string" },
+    "stop_reason_code": { "type": ["string", "null"] },
+    "stop_reason_detail": { "type": ["string", "null"] }
+  }
+}

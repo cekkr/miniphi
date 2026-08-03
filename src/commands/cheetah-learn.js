@@ -424,8 +424,8 @@ export async function runWikipedia({
   const maxErrors = parseNumericSetting(options["max-errors"], "--max-errors") ?? 5;
   const maxNoProgress =
     parseNumericSetting(options["max-no-progress"], "--max-no-progress") ?? 10;
-  const maxSentences = parseNumericSetting(options["max-sentences"], "--max-sentences") ?? 2;
-  const maxChars = parseNumericSetting(options["max-chars"], "--max-chars") ?? 700;
+  const maxSentences = parseNumericSetting(options["max-sentences"], "--max-sentences") ?? 16;
+  const maxChars = parseNumericSetting(options["max-chars"], "--max-chars") ?? 2400;
   const maxArticleBytes = parseNumericSetting(
     options["max-article-bytes"],
     "--max-article-bytes",
