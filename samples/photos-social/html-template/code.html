@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Favicon -->
+    <link href="assets/images/favicon.png" rel="icon" type="image/png">
+
+    <!-- title and description-->
+    <title>Instello</title>
+    <meta name="description" content="Instello - Sharing Photos platform HTML Template">
+   
+    <!-- Syntax Highlighter -->
+    <link rel="stylesheet" type="text/css" href="assets/syntax-highlighter/styles/shCore.css" media="all">
+    <link rel="stylesheet" type="text/css" href="assets/syntax-highlighter/styles/shCoreMidnight.css" media="all">
+  
+      
+    <!-- css files -->
+    <link rel="stylesheet" href="assets/css/tailwind.css">
+    <link rel="stylesheet" href="assets/css/style.css">  
+    
+    <!-- google font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+   
+       
+    <style> .syntaxhighlighter .gutter, .syntaxhighlighter .toolbar { display: none !important ;} </style>
+
+</head>
+<body class="!bg-slate-900 overflow-x-hidden">
+
+ 
+    <div>
+
+        <!-- Heading -->
+        <div class="lg:py-8 py-4 px-14 border-b border-slate-700/60 flex items-center justify-between">
+
+            <div class="flex items-center gap-8">
+                <img src="assets/images/logo.png" alt="" class="w-12" uk-toggle="target: #side; cls: max-lg:-translate-x-full">
+                <div class="flex-1 space-y-2">
+                    <h2 class="font-semibold text-3xl text-white tracking-wider"> Instello </h2>
+                    <p class="font-light text-blue-200/60 text-lg"> built with <a href="#">tailwindcss</a> framework  </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2  text-white/80">
+                <a href="index.html">
+                    <button type="button" class="flex items-center gap-2 bg-slate-800 rounded-lg py-2 px-5 border border-slate-700/80">
+                        <ion-icon name="chevron-down" class="text-lg -ml-2 rotate-90 text-slate-500"></ion-icon> 
+                        <span class="text-sm font-medium"> Demo </span>
+                    </button>
+                </a>
+                <a href="https://themeforest.net/item/instello-ultimate-photo-sharing-html-template/29882650" target="_blank">
+                    <button type="button" class="flex items-center gap-2 bg-slate-800 rounded-lg py-2 px-5 border border-slate-700/80">
+                        <ion-icon name="cart" class="text-lg -ml-2 text-slate-500"></ion-icon> 
+                        <span class="text-sm font-medium"> Buy </span>
+                    </button>
+                </a>
+            </div>
+            
+            <div class="flex items-center text-white bg-slate-800 text-white/60 rounded-lg border border-slate-700/80 divide-x divide-slate-700/80 hidden">
+                <ion-icon name="chevron-down" class="text-lg p-3 duration-300 hover:text-white"></ion-icon> 
+                <ion-icon name="chevron-down" class="text-lg p-3 duration-300 hover:text-white"></ion-icon> 
+                <ion-icon name="chevron-down" class="text-lg p-3 duration-300 hover:text-white"></ion-icon> 
+            </div>
+           
+
+        </div>
+ 
+        <!-- Sidebar -->
+        <div id="side" class="fixed z-10 overflow-hidden transition-transform max-lg:w-full max-lg:-translate-x-full">
+
+            <div class="relative !bg-slate-900 w-5/6 lg:w-80 border-r border-slate-700/60 z-20 duration-300 overflow-y-auto lg:h-[calc(100vh-141px)] h-[calc(100vh-109px)]">
+
+                <nav class="py-3">
+    
+                    <ul class="space-y-2 text-base font-normal text-white/80" uk-nav="multiple: true">
+          
+                        <li class="uk-parent uk-open"> 
+                            <a href="#" class="group pl-4 py-2 flex items-center gap-2 hover:bg-slate-800" aria-expanded="true"> 
+                                <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                <span> public </span> 
+                            </a>
+                            <ul class="mt-1 space-y-0">
+                             
+                                <li> 
+                                    
+                                    <nav>
+    
+                                        <ul class="mt-1" uk-nav="">
+    
+                                            <li class="uk-parent uk-open"> 
+                                                <a href="#" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800" aria-expanded="true"> 
+                                                    <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                    <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                    <span> assets </span> 
+                                                </a>
+                                                <ul uk-nav="">
+                                                    
+                                                    <li class="uk-parent"> 
+                                                        <a href="#" class="group pl-16 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                            <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                            <span> css </span> 
+                                                        </a>
+
+                                                        <ul class="mt-1">
+     
+                                                            <li>
+                                                                <a href="#" onclick="openPage('styleCss')" class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="logo-css3" class="text-lg text-blue-400"></ion-icon> 
+                                                                    <span> style.css </span> 
+                                                                    <div class="ml-auto pr-4 text-sm">22KB</div>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <a href="#" class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="logo-css3" class="text-lg text-blue-400"></ion-icon> 
+                                                                    <span> tailwind.css </span> 
+                                                                    <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                                </a>
+                                                            </li>
+
+                                                        </ul>
+
+                                                    </li>
+                                                    <li class="uk- parent"> 
+                                                        <a href="#" class="group pl-16 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                            <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                            <span> images </span> 
+                                                        </a>
+
+                                                        <ul class="mt-1 hidden">
+     
+                                                            <li>
+                                                                <a href="#" onclick="openPage('first')" class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="image" class="text-lg text-teal-600"></ion-icon> 
+                                                                    <span> logo.jpg </span> 
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <a href="#" class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="image" class="text-lg text-teal-600"></ion-icon> 
+                                                                    <span> logo.jpg </span> 
+                                                                </a>
+                                                            </li>
+
+                                                        </ul>
+
+                                                    </li>
+                                                    <li class="uk-parent"> 
+                                                        <a href="#" class="group pl-16 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                            <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                            <span> js </span> 
+                                                        </a>
+
+                                                        <ul class="mt-1">
+     
+                                                            <li>
+                                                                <a href="#" onclick="openPage('uikitJs')" class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                                                    <span> Uikit.js </span> 
+                                                                    <div class="ml-auto pr-4 text-sm">133KB</div>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <a href="#" onclick="openPage('scriptJs')"  class="pl-[90px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                                    <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                                                    <span> script.js </span> 
+                                                                    <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                                </a>
+                                                            </li>
+
+                                                        </ul>
+
+                                                    </li>
+                                                    <li class="uk-parent"> 
+                                                        <a href="#" class="pl-16 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="chevron-down" class="text-lg duration-500 text-slate-500"></ion-icon> 
+                                                            <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                            <span> syntax-highlighter </span> 
+                                                        </a>
+
+                                                    </li>
+                                                    
+                                                </ul>
+                                            
+                                            </li>
+
+                                            <!--
+                                            <li class="uk-parent"> 
+                                                <a href="#" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                    <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                    <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                    <span> images </span> 
+                                                </a>
+                                                <ul>
+                                                    <li>
+                                                        <a href="#" aria-expanded="false" onclick="openPage('first')" class="focus:bg-slate-800 pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <div class="ml-auto pr-4 text-sm">16KB</div>
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-css3" class="text-lg text-blue-400"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="image" class="text-lg text-teal-600"></ion-icon> 
+                                                            <span> logo.jpg </span> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="pl-[66px] py-1 flex items-center gap-2"> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-lg text-slate-500"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                </ul>
+                                            
+                                            </li>
+
+                                            <li class="uk-parent"> 
+                                                <a href="#" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                    <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                    <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                    <span> js </span> 
+                                                </a>
+                                                <ul>
+                                                    <li>
+                                                        <a href="#" aria-expanded="false" onclick="openPage('first')" class="focus:bg-slate-800 pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <div class="ml-auto pr-4 text-sm">16KB</div>
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-css3" class="text-lg text-blue-400"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                                            <span> index.html </span> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-slate-500 ml-auto pr-4 text-sm"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="group pl-[66px] py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                            <ion-icon name="image" class="text-lg text-teal-600"></ion-icon> 
+                                                            <span> logo.jpg </span> 
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a href="#" class="pl-[66px] py-1 flex items-center gap-2"> 
+                                                            <ion-icon name="ellipsis-horizontal" class="text-lg text-slate-500"></ion-icon> 
+                                                        </a>
+                                                    </li>
+                                                </ul>
+                                            
+                                            </li> 
+
+                                            <li>
+                                                <a href="#" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                                    <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                                    <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                                    <span> syntax-highlighter</span>  
+                                                </a>
+                                            </li> -->
+
+                                        </ul>
+                                        
+                                    </nav>
+    
+                                </li>
+    
+                            
+                                <!-- html file  -->
+
+                                <li> 
+                                    <a href="#" onclick="openPage('samplePage')" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                        <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                        <span> home.html </span> 
+                                    </a>
+                                </li>
+                                
+                                <li> 
+                                    <a href="#" onclick="openPage('samplePage')" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                        <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                        <span> expolre.html </span> 
+                                    </a>
+                                </li>
+
+                                <li> 
+                                    <a href="#" onclick="openPage('samplePage')" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                        <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                        <span> reels.html </span> 
+                                    </a>
+                                </li>
+
+                                <li> 
+                                    <a href="#" onclick="openPage('samplePage')" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                        <ion-icon name="logo-html5" class="text-lg text-orange-500"></ion-icon> 
+                                        <span> chats.html </span> 
+                                    </a>
+                                </li>
+
+                                <li> 
+                                    <div class="pl-10 "> ...... </div>
+                                    
+                                </li>
+
+
+                            </ul>
+                        </li>
+    
+                        <li class="uk-parent"> 
+                            <a href="#" class="group pl-4 py-2 flex items-center gap-2 hover:bg-slate-800"> 
+                                <ion-icon name="chevron-down" class="text-lg duration-500 group-aria-expanded:rotate-180 text-slate-500"></ion-icon> 
+                                <ion-icon name="folder-open" class="text-lg text-sky-300"></ion-icon> 
+                                <span> Input </span> 
+                            </a>
+                            <ul class="mt-1 space-y-0">
+                             
+                                <li> 
+                                    
+                                    <ul>
+
+                                        <li> 
+                                            <a href="#" onclick="openPage('tailCss')" class="group pl-10 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                                <img src="assets/images/brand-tailwind.svg" class="w-5" alt="">
+                                                <span> style.css </span> 
+                                            </a>
+                                        </li>
+   
+                                    </ul>
+                                  
+                                </li>
+
+                            </ul>
+                        </li>
+
+                        <li> 
+                            <a href="#" class="group pl-4 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                <span> package-lock.json</span> 
+                            </a> 
+                        </li> 
+                        <li> 
+                            <a href="#" class="group pl-4 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                <ion-icon name="logo-javascript" class="text-lg text-yellow-400"></ion-icon> 
+                                <span>  package.json </span> 
+                            </a> 
+                        </li>
+                         <li> 
+                            <a href="#" onclick="openPage('tailConfig')" class="group pl-4 py-2 flex items-center gap-2 hover:bg-slate-800 text-sm"> 
+                                <img src="assets/images/brand-tailwind.svg" class="w-5" alt="">
+                                <span> tailwind.config.js </span> 
+                            </a> 
+                        </li>
+    
+                    </ul>
+    
+                </nav>
+    
+                
+            </div>
+     
+            <!-- sidebar overly -->
+            <div    class="absolute top-0 left-0 z-10 w-screen h-screen lg:hidden backdrop-blur-sm"
+                    uk-toggle="target: #side ; cls : max-lg:-translate-x-full"> 
+            </div>
+
+        </div>
+
+        <!-- Contents t-->
+        <div class="fixed w-full lg:pl-80 overflow-x-hidden">
+     
+            
+            <!-- first tab -->
+            <div id="first" class="hidden page bg-slate-800/50 flex flex-col justify-center items-center w-full h-[calc(100vh-141px)]">
+                
+                <div class="rounded-full bg-slate-700 md:p-1.5 p-2 inline-flex ring ring-slate-600/80  ring-offset-1 ring-offset-slate-600/5">
+                    <ion-icon name="reader" class="md:text-4xl text-2xl text-white drop-shadow-md slate-800 md hydrated" role="img" aria-label="reader"></ion-icon>
+                </div>
+                 
+                <h4 class="text-xl font-semibold text-white mt-8">Open File </h4>
+
+                <p class="text-sm font-light text-white/70 mt-3"> You can view the code inside the file by opening it. </p>
+
+
+            </div>
+
+
+            <!-- styleCss -->
+            <div id="styleCss" class="hidden page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> Style.css </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+
+
+                    <pre class="code_syntax p-4" style="color:#d1d1d1;bakground:#000000;"><span class="line_wrapper"><span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">    Table Contents</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  ========================================================================== </span></span>
+<span class="line_wrapper"><span style="color:#9999a9; "></span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -on/Off switch</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -ripple effect </span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Slider</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Slideshow</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Transform Origin</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Animation</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Transitions</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  -Simplebar</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; "></span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">*/</span></span>
+<span class="line_wrapper"> </span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">[</span>hidden<span style="color:#d2cd86; ">]</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">display</span><span style="color:#d2cd86; ">:</span> none <span style="color:#e66170; font-weight:bold; ">!important</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"> <span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">  On/Off Switch</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; "> ========================================================================== */</span></span>
+<span class="line_wrapper"> </span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>switch-button <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> relative<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">display</span><span style="color:#d2cd86; ">:</span> inline-block<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">width</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">34</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">20</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">cursor</span><span style="color:#d2cd86; ">:</span> pointer<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">border-radius</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">margin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">7</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">top</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">4</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> absolute<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">top</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">2</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">left</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">   </span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>switch <span style="color:#e66170; font-weight:bold; ">input</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">display</span><span style="color:#d2cd86; ">:</span> none<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">.switch<span style="color:#d2cd86; ">.</span>interactive-effect <span style="color:#e66170; font-weight:bold; ">input</span><span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">checked</span> <span style="color:#d2cd86; ">+</span> <span style="color:#d2cd86; ">.</span>switch-button<span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">before</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-animation</span><span style="color:#d2cd86; ">:</span> switch-shadow-color <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">animation</span><span style="color:#d2cd86; ">:</span> switch-shadow-color <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">.switch<span style="color:#d2cd86; ">.</span>interactive-effect <span style="color:#d2cd86; ">.</span>switch-button<span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">before</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-animation</span><span style="color:#d2cd86; ">:</span> switch-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">animation</span><span style="color:#d2cd86; ">:</span> switch-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">-webkit-keyframes</span> <span style="color:#00c4c4; ">switch-shadow</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.3</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.3</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">keyframes</span> <span style="color:#00c4c4; ">switch-shadow</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.3</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.3</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">-webkit-keyframes</span> <span style="color:#00c4c4; ">switch-shadow-color</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">42</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">65</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">232</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.6</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">42</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">65</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">232</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.6</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">keyframes</span> <span style="color:#00c4c4; ">switch-shadow-color</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">42</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">65</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">232</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.6</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">42</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">65</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">232</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0.6</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">box-shadow</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#006600; ">px</span> <span style="color:#00a800; ">10</span><span style="color:#006600; ">px</span> <span style="color:#e66170; font-weight:bold; ">rgba</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">,</span> <span style="color:#00a800; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>switch-button<span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">before</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> absolute<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">content</span><span style="color:#d2cd86; ">:</span> <span style="color:#02d045; ">"</span><span style="color:#02d045; ">"</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">16</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">width</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">16</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">bottom</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">2</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">left</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">2</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#d2cd86; ">,</span> -webkit-box-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#d2cd86; ">,</span> -webkit-box-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#d2cd86; ">,</span> box-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">4</span><span style="color:#006600; ">s</span><span style="color:#d2cd86; ">,</span> box-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span><span style="color:#d2cd86; ">,</span> -webkit-box-shadow <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">border-radius</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#e66170; font-weight:bold; ">input</span><span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">checked</span> <span style="color:#d2cd86; ">+</span> <span style="color:#d2cd86; ">.</span>switch-button<span style="color:#b060b0; ">:</span><span style="color:#e66170; font-weight:bold; ">before</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">translateX</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">14</span><span style="color:#006600; ">px</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">translateX</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">14</span><span style="color:#006600; ">px</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">   Ripple Effect</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; "> ========================================================================== */</span></span>
+<span class="line_wrapper"> </span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>ripple-effect-dark <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">overflow</span><span style="color:#d2cd86; ">:</span> hidden<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> relative<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">z-index</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>ripple-effect <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">overflow</span><span style="color:#d2cd86; ">:</span> hidden<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> relative<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">z-index</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>ripple-effect <span style="color:#e66170; font-weight:bold; ">span</span><span style="color:#d2cd86; ">.</span>ripple-overlay <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-animation</span><span style="color:#d2cd86; ">:</span> ripple <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">9</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">animation</span><span style="color:#d2cd86; ">:</span> ripple <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">9</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">border-radius</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">background</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">#</span><span style="color:#00a800; ">fff</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> absolute<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">width</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">line-height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">opacity</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">pointer-events</span><span style="color:#d2cd86; ">:</span> none<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>ripple-effect-dark <span style="color:#e66170; font-weight:bold; ">span</span><span style="color:#d2cd86; ">.</span>ripple-overlay <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-animation</span><span style="color:#d2cd86; ">:</span> ripple <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">9</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">animation</span><span style="color:#d2cd86; ">:</span> ripple <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">9</span><span style="color:#006600; ">s</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">border-radius</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">background</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">#</span><span style="color:#00a800; ">fff</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">position</span><span style="color:#d2cd86; ">:</span> absolute<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">width</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">line-height</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">12</span><span style="color:#006600; ">px</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">opacity</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">pointer-events</span><span style="color:#d2cd86; ">:</span> none<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">background</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">#</span><span style="color:#00a800; ">000</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">opacity</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.07</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">-webkit-keyframes</span> <span style="color:#00c4c4; ">ripple</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">4</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">4</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">opacity</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">40</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">40</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">@</span><span style="color:#008073; ">keyframes</span> <span style="color:#00c4c4; ">ripple</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">0</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">4</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">4</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">  <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">opacity</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">-webkit-transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">40</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#904050; ">transform</span><span style="color:#d2cd86; ">:</span> <span style="color:#e66170; font-weight:bold; ">scale</span><span style="color:#d2cd86; ">(</span><span style="color:#00a800; ">40</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">    Component: modal</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">========================================================================== */</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-modal <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-overflow-scrolling</span><span style="color:#d2cd86; ">:</span> touch<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> opacity <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">15</span><span style="color:#006600; ">s</span> linear<span style="color:#b060b0; ">;</span> </span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-modal-dialog <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0.</span><span style="color:#00a800; ">3</span><span style="color:#006600; ">s</span> linear<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transition-property</span><span style="color:#d2cd86; ">:</span> opacity<span style="color:#d2cd86; ">,</span> transform<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">box-sizing</span><span style="color:#d2cd86; ">:</span> border-box<span style="color:#b060b0; ">;</span> </span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">    Component: Slider and Slideshow</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; "> ========================================================================== */</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/*  Prevent tab highlighting on iOS. */</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-slider <span style="color:#d2cd86; ">,</span> <span style="color:#d2cd86; ">.</span>uk-slideshow <span style="color:#b060b0; ">{</span> </span>
+<span class="line_wrapper">  <span style="color:#e66170; font-weight:bold; ">-webkit-tap-highlight-color</span><span style="color:#d2cd86; ">:</span> transparent<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-slider-items <span style="color:#d2cd86; ">,</span> <span style="color:#d2cd86; ">.</span>uk-slideshow-items<span style="color:#b060b0; ">{</span> </span>
+<span class="line_wrapper">  touch-action<span style="color:#d2cd86; ">:</span> pan-y<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/*  Prevent displaying the callout information on iOS.*/</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-slider-items <span style="color:#d2cd86; ">,</span> <span style="color:#d2cd86; ">.</span>uk-slideshow-items <span style="color:#b060b0; ">{</span> </span>
+<span class="line_wrapper">  -webkit-touch-callout<span style="color:#d2cd86; ">:</span> none<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* ========================================================================</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">    Component: Slideshow</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">========================================================================== */</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* Optimize animation */</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-slideshow-items <span style="color:#d2cd86; ">&gt;</span> <span style="color:#d2cd86; ">*</span> <span style="color:#b060b0; ">{</span> </span>
+<span class="line_wrapper">  will-change<span style="color:#d2cd86; ">:</span> transform<span style="color:#d2cd86; ">,</span> opacity<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span> </span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">/* Transform Origin</span></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">========================================================================== */</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-top-left <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-top-center <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">%</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-top-right <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#00a800; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-center-left <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-center-right <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-bottom-left <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">0</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-bottom-center <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">50</span><span style="color:#006600; ">%</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">.</span>uk-transform-origin-bottom-right <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">  <span style="color:#904050; ">transform-origin</span><span style="color:#d2cd86; ">:</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span> <span style="color:#00a800; ">100</span><span style="color:#006600; ">%</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>..... 
+
+
+
+
+</pre>
+                   
+
+
+                </div>
+
+            </div> 
+
+
+            <!-- uikitJs -->
+            <div id="uikitJs" class="hidden page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> Uikit.js </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+                    <pre class="code_syntax  p-6" style="color:#d1d1d1; "><span class="line_wrapper"><span style="color:#8695b8; font-weight:bold; ">/*! UIkit </span><span style="color:#00a800; font-weight:bold; ">3.2.1</span><span style="color:#8695b8; font-weight:bold; "> | </span><span style="color:#6070ec; font-weight:bold; ">http://www.getuikit.com</span><span style="color:#8695b8; font-weight:bold; "> | (c) </span><span style="color:#00a800; font-weight:bold; ">2014</span><span style="color:#8695b8; font-weight:bold; "> </span><span style="color:#8695b8; font-weight:bold; ">-</span><span style="color:#8695b8; font-weight:bold; "> </span><span style="color:#00a800; font-weight:bold; ">2019</span><span style="color:#8695b8; font-weight:bold; "> YOOtheme | MIT License */</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>global<span style="color:#d2cd86; ">,</span> factory<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">typeof</span> exports <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">object</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">&amp;&amp;</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> module <span style="color:#d2cd86; ">!==</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">undefined</span><span style="color:#02d045; ">'</span> <span style="color:#b060b0; ">?</span> module<span style="color:#d2cd86; ">.</span>exports <span style="color:#d2cd86; ">=</span> factory<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">:</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">typeof</span> define <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">function</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">&amp;&amp;</span> define<span style="color:#d2cd86; ">.</span>amd <span style="color:#b060b0; ">?</span> define<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">uikit</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> factory<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">:</span></span>
+<span class="line_wrapper">    <span style="color:#d2cd86; ">(</span>global <span style="color:#d2cd86; ">=</span> global <span style="color:#d2cd86; ">||</span> self<span style="color:#d2cd86; ">,</span> global<span style="color:#d2cd86; ">.</span>UIkit <span style="color:#d2cd86; ">=</span> factory<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">use strict</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> objPrototype <span style="color:#d2cd86; ">=</span> Object<span style="color:#d2cd86; ">.</span>prototype<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> <span style="color:#e66170; font-weight:bold; ">hasOwnProperty</span> <span style="color:#d2cd86; ">=</span> objPrototype<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">hasOwnProperty</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> hasOwn<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">,</span> key<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">hasOwnProperty</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">,</span> key<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> hyphenateCache <span style="color:#d2cd86; ">=</span> <span style="color:#b060b0; ">{</span><span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> hyphenateRe <span style="color:#d2cd86; ">=</span><span style="color:#00c4c4; "> </span><span style="color:#02d045; ">/</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">[</span><span style="color:#00c4c4; ">a</span><span style="color:#d2cd86; ">-</span><span style="color:#00c4c4; ">z</span><span style="color:#00c4c4; ">\d</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">[</span><span style="color:#00c4c4; ">A</span><span style="color:#d2cd86; ">-</span><span style="color:#00c4c4; ">Z</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span><span style="color:#02d045; ">/</span><span style="color:#e66170; font-weight:bold; ">g</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> hyphenate<span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">!</span><span style="color:#d2cd86; ">(</span>str <span style="color:#e66170; font-weight:bold; ">in</span> hyphenateCache<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            hyphenateCache<span style="color:#d2cd86; ">[</span>str<span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">=</span> str</span>
+<span class="line_wrapper">                <span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">replace</span><span style="color:#d2cd86; ">(</span>hyphenateRe<span style="color:#d2cd86; ">,</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">$1-$2</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">toLowerCase</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> hyphenateCache<span style="color:#d2cd86; ">[</span>str<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> camelizeRe <span style="color:#d2cd86; ">=</span><span style="color:#00c4c4; "> </span><span style="color:#02d045; ">/</span><span style="color:#00c4c4; ">-</span><span style="color:#d2cd86; ">(</span><span style="color:#00c4c4; ">\w</span><span style="color:#d2cd86; ">)</span><span style="color:#02d045; ">/</span><span style="color:#e66170; font-weight:bold; ">g</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> camelize<span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> str<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">replace</span><span style="color:#d2cd86; ">(</span>camelizeRe<span style="color:#d2cd86; ">,</span> toUpper<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toUpper<span style="color:#d2cd86; ">(</span>_<span style="color:#d2cd86; ">,</span> c<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> c <span style="color:#b060b0; ">?</span> c<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">toUpperCase</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">:</span> <span style="color:#02d045; ">'</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> ucfirst<span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> str<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span> <span style="color:#b060b0; ">?</span> toUpper<span style="color:#d2cd86; ">(</span><span style="color:#0f4d75; ">null</span><span style="color:#d2cd86; ">,</span> str<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">charAt</span><span style="color:#d2cd86; ">(</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">+</span> str<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">slice</span><span style="color:#d2cd86; ">(</span><span style="color:#008c00; ">1</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">:</span> <span style="color:#02d045; ">'</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> strPrototype <span style="color:#d2cd86; ">=</span> String<span style="color:#d2cd86; ">.</span>prototype<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> startsWithFn <span style="color:#d2cd86; ">=</span> strPrototype<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">startsWith</span> <span style="color:#d2cd86; ">||</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">lastIndexOf</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">,</span> <span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">===</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span> <span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#e66170; font-weight:bold; ">startsWith</span><span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> startsWithFn<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> endsWithFn <span style="color:#d2cd86; ">=</span> strPrototype<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">endsWith</span> <span style="color:#d2cd86; ">||</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">substr</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">-</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span><span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">===</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#b060b0; ">;</span> <span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#e66170; font-weight:bold; ">endsWith</span><span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> endsWithFn<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>str<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> arrPrototype <span style="color:#d2cd86; ">=</span> Array<span style="color:#d2cd86; ">.</span>prototype<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> includesFn <span style="color:#d2cd86; ">=</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">,</span> i<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#d2cd86; ">~</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">indexOf</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">,</span> i<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span> <span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> includesStr <span style="color:#d2cd86; ">=</span> strPrototype<span style="color:#d2cd86; ">.</span>includes <span style="color:#d2cd86; ">||</span> includesFn<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> includesArray <span style="color:#d2cd86; ">=</span> arrPrototype<span style="color:#d2cd86; ">.</span>includes <span style="color:#d2cd86; ">||</span> includesFn<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> includes<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> obj <span style="color:#d2cd86; ">&amp;&amp;</span> <span style="color:#d2cd86; ">(</span>isString<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">?</span> includesStr <span style="color:#b060b0; ">:</span> includesArray<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">search</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> findIndexFn <span style="color:#d2cd86; ">=</span> arrPrototype<span style="color:#d2cd86; ">.</span>findIndex <span style="color:#d2cd86; ">||</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>predicate<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">var</span> arguments$1 <span style="color:#d2cd86; ">=</span> arguments<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">for</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">var</span> i <span style="color:#d2cd86; ">=</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span> i <span style="color:#d2cd86; ">&lt;</span> <span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span><span style="color:#b060b0; ">;</span> i<span style="color:#d2cd86; ">++</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span>predicate<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>arguments$1<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">1</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">[</span>i<span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">,</span> i<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">return</span> i<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#d2cd86; ">-</span><span style="color:#008c00; ">1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> findIndex<span style="color:#d2cd86; ">(</span>array<span style="color:#d2cd86; ">,</span> predicate<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> findIndexFn<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>array<span style="color:#d2cd86; ">,</span> predicate<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> <span style="color:#e66170; font-weight:bold; ">isArray</span> <span style="color:#d2cd86; ">=</span> Array<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">isArray</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isFunction<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> obj <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">function</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> obj <span style="color:#d2cd86; ">!==</span> <span style="color:#0f4d75; ">null</span> <span style="color:#d2cd86; ">&amp;&amp;</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> obj <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">object</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> <span style="color:#e66170; font-weight:bold; ">toString</span> <span style="color:#d2cd86; ">=</span> objPrototype<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">toString</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isPlainObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">toString</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">[object Object]</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isWindow<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> obj <span style="color:#d2cd86; ">===</span> obj<span style="color:#d2cd86; ">.</span>window<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isDocument<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> obj<span style="color:#d2cd86; ">.</span>nodeType <span style="color:#d2cd86; ">===</span> <span style="color:#008c00; ">9</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isJQuery<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> <span style="color:#d2cd86; ">!</span><span style="color:#d2cd86; ">!</span>obj<span style="color:#d2cd86; ">.</span>jquery<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isNode<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> obj <span style="color:#e66170; font-weight:bold; ">instanceof</span> Node <span style="color:#d2cd86; ">||</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> obj<span style="color:#d2cd86; ">.</span>nodeType <span style="color:#d2cd86; ">&gt;=</span> <span style="color:#008c00; ">1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isNodeCollection<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">toString</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">match</span><span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">/</span><span style="color:#d2cd86; ">^</span><span style="color:#008080; ">\[</span><span style="color:#00c4c4; ">object </span><span style="color:#d2cd86; ">(</span><span style="color:#00c4c4; ">NodeList</span><span style="color:#b060b0; ">|</span><span style="color:#00c4c4; ">HTMLCollection</span><span style="color:#d2cd86; ">)</span><span style="color:#008080; ">\]</span><span style="color:#d2cd86; ">$</span><span style="color:#02d045; ">/</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isBoolean<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">boolean</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isString<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">string</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isNumber<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">typeof</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">number</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isNumeric<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isNumber<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> isString<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> <span style="color:#d2cd86; ">!</span><span style="color:#e66170; font-weight:bold; ">isNaN</span><span style="color:#d2cd86; ">(</span>value <span style="color:#d2cd86; ">-</span> <span style="color:#e66170; font-weight:bold; ">parseFloat</span><span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isEmpty<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#d2cd86; ">!</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">isArray</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> obj<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> isObject<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> Object<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">keys</span><span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> <span style="color:#0f4d75; ">false</span></span>
+<span class="line_wrapper">        <span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isUndefined<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#e66170; font-weight:bold; ">void</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toBoolean<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isBoolean<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> value</span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">true</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">||</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">1</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">||</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#02d045; ">'</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> <span style="color:#0f4d75; ">true</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">false</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">||</span> value <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">0</span><span style="color:#02d045; ">'</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">?</span> <span style="color:#0f4d75; ">false</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">:</span> value<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toNumber<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">var</span> number <span style="color:#d2cd86; ">=</span> Number<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#d2cd86; ">!</span><span style="color:#e66170; font-weight:bold; ">isNaN</span><span style="color:#d2cd86; ">(</span>number<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">?</span> number <span style="color:#b060b0; ">:</span> <span style="color:#0f4d75; ">false</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toFloat<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">parseFloat</span><span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toNode<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isNode<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> isWindow<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> isDocument<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> element</span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> isNodeCollection<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> isJQuery<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> element<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> <span style="color:#e66170; font-weight:bold; ">isArray</span><span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">?</span> toNode<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">:</span> <span style="color:#0f4d75; ">null</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toNodes<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> isNode<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> <span style="color:#d2cd86; ">[</span>element<span style="color:#d2cd86; ">]</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> isNodeCollection<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> arrPrototype<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">slice</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">call</span><span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> <span style="color:#e66170; font-weight:bold; ">isArray</span><span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">?</span> element<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">map</span><span style="color:#d2cd86; ">(</span>toNode<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">filter</span><span style="color:#d2cd86; ">(</span>Boolean<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">:</span> isJQuery<span style="color:#d2cd86; ">(</span>element<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                        <span style="color:#b060b0; ">?</span> element<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">toArray</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                        <span style="color:#b060b0; ">:</span> <span style="color:#d2cd86; ">[</span><span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toList<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">isArray</span><span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> value</span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> isString<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> value<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">split</span><span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">/</span><span style="color:#00c4c4; ">,</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">?!</span><span style="color:#d2cd86; ">[</span><span style="color:#d2cd86; ">^</span><span style="color:#00c4c4; ">(</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">*</span><span style="color:#008080; ">\)</span><span style="color:#d2cd86; ">)</span><span style="color:#02d045; ">/</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">map</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#e66170; font-weight:bold; ">return</span> isNumeric<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">?</span> toNumber<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">:</span> toBoolean<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">trim</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span> <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> <span style="color:#d2cd86; ">[</span>value<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> toMs<span style="color:#d2cd86; ">(</span>time<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#d2cd86; ">!</span>time</span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> <span style="color:#008c00; ">0</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> <span style="color:#e66170; font-weight:bold; ">endsWith</span><span style="color:#d2cd86; ">(</span>time<span style="color:#d2cd86; ">,</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">ms</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> toFloat<span style="color:#d2cd86; ">(</span>time<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> toFloat<span style="color:#d2cd86; ">(</span>time<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">*</span> <span style="color:#008c00; ">1000</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> isEqual<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">,</span> other<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> value <span style="color:#d2cd86; ">===</span> other</span>
+<span class="line_wrapper">            <span style="color:#d2cd86; ">||</span> isObject<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#d2cd86; ">&amp;&amp;</span> isObject<span style="color:#d2cd86; ">(</span>other<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#d2cd86; ">&amp;&amp;</span> Object<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">keys</span><span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span> <span style="color:#d2cd86; ">===</span> Object<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">keys</span><span style="color:#d2cd86; ">(</span>other<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span></span>
+<span class="line_wrapper">            <span style="color:#d2cd86; ">&amp;&amp;</span> each<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>val<span style="color:#d2cd86; ">,</span> key<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span> <span style="color:#e66170; font-weight:bold; ">return</span> val <span style="color:#d2cd86; ">===</span> other<span style="color:#d2cd86; ">[</span>key<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span> <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> swap<span style="color:#d2cd86; ">(</span>value<span style="color:#d2cd86; ">,</span> a<span style="color:#d2cd86; ">,</span> b<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> value<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">replace</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">new</span> RegExp<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">(</span>a <span style="color:#d2cd86; ">+</span> <span style="color:#02d045; ">"</span><span style="color:#00c4c4; ">|</span><span style="color:#02d045; ">"</span> <span style="color:#d2cd86; ">+</span> b<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">,</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">mg</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">match</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#e66170; font-weight:bold; ">match</span> <span style="color:#d2cd86; ">===</span> a <span style="color:#b060b0; ">?</span> b <span style="color:#b060b0; ">:</span> a<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> assign <span style="color:#d2cd86; ">=</span> Object<span style="color:#d2cd86; ">.</span>assign <span style="color:#d2cd86; ">||</span> <span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>target<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">var</span> args <span style="color:#d2cd86; ">=</span> <span style="color:#d2cd86; ">[</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">,</span> len <span style="color:#d2cd86; ">=</span> arguments<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span> <span style="color:#d2cd86; ">-</span> <span style="color:#008c00; ">1</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">while</span> <span style="color:#d2cd86; ">(</span> len<span style="color:#d2cd86; ">--</span> <span style="color:#d2cd86; ">&gt;</span> <span style="color:#008c00; ">0</span> <span style="color:#d2cd86; ">)</span> args<span style="color:#d2cd86; ">[</span> len <span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">=</span> arguments<span style="color:#d2cd86; ">[</span> len <span style="color:#d2cd86; ">+</span> <span style="color:#008c00; ">1</span> <span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">        target <span style="color:#d2cd86; ">=</span> Object<span style="color:#d2cd86; ">(</span>target<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">for</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">var</span> i <span style="color:#d2cd86; ">=</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span> i <span style="color:#d2cd86; ">&lt;</span> args<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span><span style="color:#b060b0; ">;</span> i<span style="color:#d2cd86; ">++</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">var</span> source <span style="color:#d2cd86; ">=</span> args<span style="color:#d2cd86; ">[</span>i<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span>source <span style="color:#d2cd86; ">!==</span> <span style="color:#0f4d75; ">null</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">for</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">var</span> key <span style="color:#e66170; font-weight:bold; ">in</span> source<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                    <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span>hasOwn<span style="color:#d2cd86; ">(</span>source<span style="color:#d2cd86; ">,</span> key<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                        target<span style="color:#d2cd86; ">[</span>key<span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">=</span> source<span style="color:#d2cd86; ">[</span>key<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> target<span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> last<span style="color:#d2cd86; ">(</span>array<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> array<span style="color:#d2cd86; ">[</span>array<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">length</span> <span style="color:#d2cd86; ">-</span> <span style="color:#008c00; ">1</span><span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> each<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">,</span> cb<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">for</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">var</span> key <span style="color:#e66170; font-weight:bold; ">in</span> obj<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span><span style="color:#0f4d75; ">false</span> <span style="color:#d2cd86; ">===</span> cb<span style="color:#d2cd86; ">(</span>obj<span style="color:#d2cd86; ">[</span>key<span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">,</span> key<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#0f4d75; ">false</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> <span style="color:#0f4d75; ">true</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> sortBy<span style="color:#d2cd86; ">(</span>array<span style="color:#d2cd86; ">,</span> prop<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> array<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">sort</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>ref<span style="color:#d2cd86; ">,</span> ref$1<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">var</span> propA <span style="color:#d2cd86; ">=</span> ref<span style="color:#d2cd86; ">[</span>prop<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span> <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span> propA <span style="color:#d2cd86; ">===</span> <span style="color:#e66170; font-weight:bold; ">void</span> <span style="color:#008c00; ">0</span> <span style="color:#d2cd86; ">)</span> propA <span style="color:#d2cd86; ">=</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">var</span> propB <span style="color:#d2cd86; ">=</span> ref$1<span style="color:#d2cd86; ">[</span>prop<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span> <span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span> propB <span style="color:#d2cd86; ">===</span> <span style="color:#e66170; font-weight:bold; ">void</span> <span style="color:#008c00; ">0</span> <span style="color:#d2cd86; ">)</span> propB <span style="color:#d2cd86; ">=</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">                <span style="color:#e66170; font-weight:bold; ">return</span> propA <span style="color:#d2cd86; ">&gt;</span> propB</span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">?</span> <span style="color:#008c00; ">1</span></span>
+<span class="line_wrapper">                <span style="color:#b060b0; ">:</span> propB <span style="color:#d2cd86; ">&gt;</span> propA</span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">?</span> <span style="color:#d2cd86; ">-</span><span style="color:#008c00; ">1</span></span>
+<span class="line_wrapper">                    <span style="color:#b060b0; ">:</span> <span style="color:#008c00; ">0</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper">        <span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">function</span> uniqueBy<span style="color:#d2cd86; ">(</span>array<span style="color:#d2cd86; ">,</span> prop<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">var</span> seen <span style="color:#d2cd86; ">=</span> <span style="color:#e66170; font-weight:bold; ">new</span> Set<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#e66170; font-weight:bold; ">return</span> array<span style="color:#d2cd86; ">.</span><span style="color:#e66170; font-weight:bold; ">filter</span><span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">function</span> <span style="color:#d2cd86; ">(</span>ref<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">var</span> check <span style="color:#d2cd86; ">=</span> ref<span style="color:#d2cd86; ">[</span>prop<span style="color:#d2cd86; ">]</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper">            <span style="color:#e66170; font-weight:bold; ">return</span> seen<span style="color:#d2cd86; ">.</span>has<span style="color:#d2cd86; ">(</span>check<span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">?</span> <span style="color:#0f4d75; ">false</span></span>
+<span class="line_wrapper">            <span style="color:#b060b0; ">:</span> seen<span style="color:#d2cd86; ">.</span>add<span style="color:#d2cd86; ">(</span>check<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">||</span> <span style="color:#0f4d75; ">true</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">        <span style="color:#b060b0; ">}</span> <span style="color:#9999a9; ">// IE 11 does not return the Set object</span></span>
+<span class="line_wrapper">        <span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+.....
+
+
+</pre> 
+
+                </div>
+
+            </div>
+
+
+            <!-- scriptjs -->
+            <div id="scriptJs" class="hidden page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> Script.js </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+                   <pre class="code_syntax p-6" style="color:#d1d1d1; "><span class="line_wrapper"><span style="color:#9999a9; ">// On page load or when changing themes, best to add inline in `head` to avoid FOUC</span></span>
+<span class="line_wrapper"><span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span>localStorage<span style="color:#d2cd86; ">.</span>theme <span style="color:#d2cd86; ">===</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">dark</span><span style="color:#02d045; ">'</span> <span style="color:#d2cd86; ">||</span> <span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">!</span><span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">theme</span><span style="color:#02d045; ">'</span> <span style="color:#e66170; font-weight:bold; ">in</span> localStorage<span style="color:#d2cd86; ">)</span> <span style="color:#d2cd86; ">&amp;&amp;</span> window<span style="color:#d2cd86; ">.</span>matchMedia<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">(prefers-color-scheme: dark)</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>matches<span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>documentElement<span style="color:#d2cd86; ">.</span>classList<span style="color:#d2cd86; ">.</span>add<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">dark</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span> <span style="color:#e66170; font-weight:bold; ">else</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>documentElement<span style="color:#d2cd86; ">.</span>classList<span style="color:#d2cd86; ">.</span>remove<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">dark</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// Whenever the user explicitly chooses light mode</span></span>
+<span class="line_wrapper">localStorage<span style="color:#d2cd86; ">.</span>theme <span style="color:#d2cd86; ">=</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">light</span><span style="color:#02d045; ">'</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// Whenever the user explicitly chooses dark mode</span></span>
+<span class="line_wrapper">localStorage<span style="color:#d2cd86; ">.</span>theme <span style="color:#d2cd86; ">=</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">dark</span><span style="color:#02d045; ">'</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// Whenever the user explicitly chooses to respect the OS preference</span></span>
+<span class="line_wrapper">localStorage<span style="color:#d2cd86; ">.</span>removeItem<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">theme</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// add post upload image </span></span>
+<span class="line_wrapper">document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">addPostUrl</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">change</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper"><span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> picture <span style="color:#d2cd86; ">=</span> <span style="color:#e66170; font-weight:bold; ">new</span> FileReader<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>readAsDataURL<span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">load</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span>event<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">addPostImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>setAttribute<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">src</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> event<span style="color:#d2cd86; ">.</span>target<span style="color:#d2cd86; ">.</span>result<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">addPostImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>style<span style="color:#d2cd86; ">.</span>display <span style="color:#d2cd86; ">=</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">block</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// Create Status upload image </span></span>
+<span class="line_wrapper">document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createStatusUrl</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">change</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper"><span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> picture <span style="color:#d2cd86; ">=</span> <span style="color:#e66170; font-weight:bold; ">new</span> FileReader<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>readAsDataURL<span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">load</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span>event<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createStatusImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>setAttribute<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">src</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> event<span style="color:#d2cd86; ">.</span>target<span style="color:#d2cd86; ">.</span>result<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createStatusImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>style<span style="color:#d2cd86; ">.</span>display <span style="color:#d2cd86; ">=</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">block</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"><span style="color:#9999a9; ">// create product upload image</span></span>
+<span class="line_wrapper">document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createProductUrl</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">change</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper"><span style="color:#e66170; font-weight:bold; ">if</span> <span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span> <span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    <span style="color:#e66170; font-weight:bold; ">var</span> picture <span style="color:#d2cd86; ">=</span> <span style="color:#e66170; font-weight:bold; ">new</span> FileReader<span style="color:#d2cd86; ">(</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>readAsDataURL<span style="color:#d2cd86; ">(</span><span style="color:#e66170; font-weight:bold; ">this</span><span style="color:#d2cd86; ">.</span>files<span style="color:#d2cd86; ">[</span><span style="color:#008c00; ">0</span><span style="color:#d2cd86; ">]</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    picture<span style="color:#d2cd86; ">.</span>addEventListener<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">load</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> <span style="color:#e66170; font-weight:bold; ">function</span><span style="color:#d2cd86; ">(</span>event<span style="color:#d2cd86; ">)</span> <span style="color:#b060b0; ">{</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createProductImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>setAttribute<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">src</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">,</span> event<span style="color:#d2cd86; ">.</span>target<span style="color:#d2cd86; ">.</span>result<span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    document<span style="color:#d2cd86; ">.</span>getElementById<span style="color:#d2cd86; ">(</span><span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">createProductImage</span><span style="color:#02d045; ">'</span><span style="color:#d2cd86; ">)</span><span style="color:#d2cd86; ">.</span>style<span style="color:#d2cd86; ">.</span>display <span style="color:#d2cd86; ">=</span> <span style="color:#02d045; ">'</span><span style="color:#00c4c4; ">block</span><span style="color:#02d045; ">'</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper">    <span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span></span>
+<span class="line_wrapper"><span style="color:#b060b0; ">}</span><span style="color:#d2cd86; ">)</span><span style="color:#b060b0; ">;</span></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span>
+<span class="line_wrapper"></span></pre>
+
+                </div>
+
+            </div>
+            
+            
+            <!-- second tab -->
+            <div id="samplePage" class="hidden page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> Sample.html </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+                    <pre class="brush: html">
+                        
+
+<!-- <!DOCTYPE html>
+<html lang="en"> --> 
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Favicon -->
+    <link href="assets/images/favicon.png" rel="icon" type="image/png">
+
+    <!-- title and description-->
+    <title>Instello</title>
+    <meta name="description" content="Instello - Sharing Photos platform HTML Template">
+   
+    <!-- css files -->
+    <link rel="stylesheet" href="assets/css/tailwind.css">
+    <link rel="stylesheet" href="assets/css/style.css">  
+    
+  
+    <div id="wrapper">
+
+        <!-- sidebar -->
+        <div id="sidebar" class="fixed top-0 left-0 z-40 max-md:top-auto max-md:bottom-0">
+
+            <div id="sidebar__inner" class="flex sside md:flex-col justify-between md:h-screen md:p-2 p-1 transition-all duration-500 bg-white shadow dark:bg-dark2 2xl:w-72 xl:w-60 max-xl:w-[73px] max-md:w-screen max-md:border-t max-md:dark:border-slate-700">
+
+                <!-- logo -->
+                <div class="flex h-20 px-2 max-md:fixed max-md:top-0 max-md:w-full max-md:bg-white/80 max-md:left-0 max-md:px-4 max-md:h-14 max-md:shadow-sm max-md:dark:bg-slate-900/80 backdrop-blur-xl">
+                    <a href="home.html" id="logo" class="flex items-center gap-3">
+
+                        <!-- logo icon -->
+                        <img id="logo__icon" src="assets/images/logo-icon.png" alt="" class="md:w-8 hidden text-2xl max-xl:!block max-md:!hidden shrink-0 uk-animation-scale-upd"> 
+
+                        <!-- text logo -->
+                        <img id="logo__text" src="assets/images/logo.svg" alt="" class="w-full h-6 ml-1 max-xl:hidden max-md:block dark:!hidden">
+                        <img id="logo__text" src="assets/images/logo-dark.svg" alt="" class="w-full h-6 ml-1 !hidden max-xl:!hidden max-md:block dark:max-md:!block dark:!block">
+                      
+                    </a>
+                </div>
+
+                <!-- nav -->
+                <nav class="flex-1 max-md:flex max-md:justify-around md:space-y-2">
+
+                    <!-- Home -->
+                    <a href="home.html">
+                        <svg id="icon__outline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                        </svg>
+                        <svg id="icon__solid" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="hidden">
+                            <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="max-xl:hidden"> Home </span>
+                    </a>
+
+                    .........
+
+                </nav>
+
+            </div>
+            
+        </div>
+
+
+        <!-- main contents -->
+
+        <main class="2xl:ml-[--w-side] xl:ml-[--w-side-md] md:ml-[--w-side-small]">
+
+            <!-- explore -->
+            <div class="main__inner">
+
+
+                <!-- search box -->
+                <div    class="z-10 p-5 max-lg:!top-10 lg:rounded-bl-2xl lg:rounded-br-2xl shadow-md bg-slate-100/60 backdrop-blur-3xl dark:bg-slate-800/60" 
+                        uk-sticky="cls-inactive: invisible h-0; start: 200; animation: uk-animation-slide-top">
+                   
+                    <div class="relative">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 absolute left-3 bottom-1/2 translate-y-1/2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                        </svg>
+                        <input type="text" placeholder="Search" class="!bg-white/20 w-full !pl-10 !py-2 border !border-gray-300 dark:!border-slate-500">
+                    </div>
+
+                </div>
+
+               
+                <div class="gallery -mt-16" uk-scrollspy="target: > div; cls: uk-animation-scale-up; delay: 100">
+                    
+                    <div class="gallery__card">
+                        <a href="#preview_modal" uk-toggle=""> 
+                            <div class="card__image">
+                                <img src="assets/images/post/post-1.jpg" alt="">
+                            </div>
+                        </a>
+                    </div>
+                
+                    <div class="gallery__card">
+                        <a href="#preview_modal" uk-toggle=""> 
+                            <div class="card__image">
+                                <img src="assets/images/post/post-2.jpg" alt="">
+                            </div>
+                        </a>
+                    </div>
+                    
+                    .........
+
+
+                </div>
+                
+            </div>
+
+        </main>
+
+    </div>
+
+    <!-- Uikit js you can use cdn  https://getuikit.com/docs/installation  or fine the latest  https://getuikit.com/docs/installation -->
+    <script src="assets/js/uikit.min.js"></script>
+    <script src="assets/js/script.js"></script>
+
+    <!-- Ion icon -->
+    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+ 
+
+
+
+ 
+
+
+
+                    </pre>
+
+                </div>
+
+            </div>
+
+
+            <!-- tailCss -->
+            <div id="tailCss" class="hidden page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> tailwind.css </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+                    <pre class="  text-white p-6 hidden">
+                        
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* google font */
+@import url(https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&display=swap);
+
+@layer base {
+
+    :root { 
+        --w-side:               290px; 
+        --w-side-md:            240px; 
+        --w-side-small:         73px; 
+
+        --color-primary:        219 39 119; 
+        --color-primary-soft:   252 231 243; 
+        --color-secondery:      241 245 249; 
+        --color-bgbody:         246 249 251; 
+    } 
+    
+    
+    html {
+        font-family: inter, system-ui, sans-serif;
+    }
+
+    /* Basic */
+    body {
+        @apply text-gray-600 font-normal bg-bgbody dark:bg-dark1 dark:text-white  
+    }
+
+    body:has(#mood.active) { @apply  overflow-hidden }
+
+    /* Basic */ 
+    input[type='text'],
+    input[type='password'],
+    input[type='email'], 
+    input[type='number'],
+    input[type='url'],
+    input[type='date'],
+    select, 
+    textarea{
+        @apply rounded-md py-2 px-4 text-sm font-medium !text-gray-600 dark:!text-white/90 placeholder:!text-gray-600 dark:placeholder:!text-white/90
+    }
+ 
+    input[type='text'],
+    input[type='password'],
+    input[type='email'],
+    input[type='number'],
+    input[type='url'],
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='week'],
+    input[type='time'],
+    input[type='search'],
+    input[type='tel'],
+    input[type='checkbox'],
+    input[type='radio'],
+    select,
+    select[multiple],
+    textarea {
+        @apply bg-slate-100 border-transparent focus:ring-black focus:border-transparent dark:bg-dark3
+    }                           
+
+    select,
+    select[multiple]                       {  @apply  focus:!ring-transparent focus:shadow}
+
+    input[type='radio'],
+    input[type='checkbox']                 {  @apply !text-sky-600 bg-slate-100 focus:ring-sky-600}
+
+    .switch-button                         { @apply bg-slate-200 dark:bg-slate-800}
+    .switch-button:before                  { @apply bg-white dark:bg-sky-600}
+    input:checked + .switch-button         { @apply bg-sky-600 dark:bg-blue-300}
+    input:checked + .switch-button:before  { @apply dark:bg-sky-600}
+
+    
+    
+    .........
+}
+
+                    </pre>
+
+                    <img src="assets/images/demos/code-prev2.jpg" class="w-full" alt="">
+
+                </div>
+
+            </div>
+
+
+            <!-- tailwind.config -->
+            <div id="tailConfig" class="  page flex-col">
+
+                <div class="flex items-center gap-3 p-4 border-b border-slate-700/60 text-base font-normal text-white/80">
+                    <ion-icon name="logo-html5"></ion-icon>
+                    <h4> tailwind.config.js </h4><br> 
+                </div>
+ 
+                <div class="lg:w-[calc(100vw-320px)] w-full overflow-y-auto lg:h-[calc(100vh-180px)] h-[calc(100vh-160px)] code-editor">
+
+                    <img src="assets/images/demos/code-prev3.jpg" class="w-full" alt="">
+
+                </div>
+
+            </div>
+
+
+        </div>
+
+    </div>
+ 
+ 
+    <!-- Uikit js you can use cdn  https://getuikit.com/docs/installation  or fine the latest  https://getuikit.com/docs/installation -->
+    <script src="assets/js/uikit.min.js"></script>
+    <script src="assets/js/script.js"></script>
+
+    <!-- Ion icon -->
+    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+
+
+    <!-- Essential JavaScript Libraries
+	==============================================-->
+    <script type="text/javascript" src="assets/syntax-highlighter/scripts/shCore.js"></script>
+    <script type="text/javascript" src="assets/syntax-highlighter/scripts/shBrushJScript.js"></script>
+    <script type="text/javascript" src="assets/syntax-highlighter/scripts/shBrushXml.js"></script>
+    <script type="text/javascript">
+        SyntaxHighlighter.all()
+    </script>
+
+ 
+
+    <!-- clipboard button -->
+    <script>
+        function selectElementContents(el) {
+        var body = document.body,
+            range, sel;
+        if (document.createRange && window.getSelection) {
+            range = document.createRange();
+            sel = window.getSelection();
+            sel.removeAllRanges();
+            range.selectNodeContents(el);
+            sel.addRange(range);
+        }
+        document.execCommand("Copy");
+        }
+    </script>
+
+    
+    <!-- page tabs-->
+    <script>
+        function openPage(tab) {
+            var i;
+            var x = document.getElementsByClassName("page");
+            for (i = 0; i < x.length; i++) {
+                x[i].style.display = "none";
+            }
+            document.getElementById(tab).style.display = "flex"; 
+        }
+    </script>
+
+</body>
+</html>
