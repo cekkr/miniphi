@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LMStudioRestClient } from "../src/libs/lmstudio-api.js";
+import { LMStudioRestClient, toCompatibleReasoningEffort } from "../src/libs/lmstudio-api.js";
 
 const MESSAGES = [{ role: "user", content: "Return JSON." }];
 
@@ -37,6 +37,48 @@ test("REST chat sends the advertised reasoning effort beside response_format", a
   assert.equal(bodies[0].response_format.type, "json_schema");
   assert.equal(completion.miniphi_reasoning.sent, "medium");
   assert.equal(completion.miniphi_reasoning.supported, true);
+});
+
+test("the compatible route's own reasoning_effort key is sent, mapped to its vocabulary", async () => {
+  // The native v1 route names this `reasoning`; the compatible
+  // /chat/completions route every schema-bound prompt uses names it
+  // `reasoning_effort` and silently ignores `reasoning`. Sending only the
+  // native key meant an "off" profile still paid full reasoning against a real
+  // LM Studio host. `off` is also not a legal value on that route (it 400s), so
+  // the mapping is part of the contract, not a nicety.
+  for (const [resolved, expected] of [
+    ["off", "none"],
+    ["on", "medium"],
+    ["low", "low"],
+    ["high", "high"],
+  ]) {
+    const bodies = [];
+    const client = new LMStudioRestClient({
+      defaultModel: "reasoner",
+      defaultReasoning: { profile: resolved, model: { requested: resolved, resolved } },
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(init.body));
+        return response({ choices: [{ message: { content: "{}" } }] });
+      },
+    });
+    const completion = await client.createChatCompletion({
+      messages: MESSAGES,
+      response_format: { type: "json_schema", json_schema: { name: "fixture" } },
+    });
+    assert.equal(bodies[0].reasoning, resolved, `native key keeps ${resolved}`);
+    assert.equal(bodies[0].reasoning_effort, expected, `${resolved} maps to ${expected}`);
+    assert.equal(completion.miniphi_reasoning.sentEffort, expected);
+  }
+});
+
+test("toCompatibleReasoningEffort never emits a value the compatible route rejects", () => {
+  const allowed = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+  for (const value of ["off", "on", "low", "medium", "high", "xhigh", "none", "", null, "nonsense"]) {
+    assert.ok(
+      allowed.has(toCompatibleReasoningEffort(value)),
+      `${String(value)} produced an out-of-vocabulary effort`,
+    );
+  }
 });
 
 test("unsupported reasoning retries exactly once without the setting and caches it", async () => {

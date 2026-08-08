@@ -14,7 +14,16 @@ pids
 *.pid
 *.seed
 *.pid.lock
-.miniphi/
+# Everything directly under any .miniphi/ is a per-run audit trail. This is
+# `.miniphi/*`, not `.miniphi/`, because git cannot re-include anything inside
+# an excluded *directory* — and `memory/` below has to be re-includable.
+**/.miniphi/*
+# Durable, portable agent memory: the corpus a later run (or another machine)
+# recalls from. Text, small, and deliberately tracked. `index.json` stays
+# ignored because it is a rebuildable cache keyed by local file mtimes.
+!**/.miniphi/memory/
+**/.miniphi/memory/index.json
+**/.miniphi/memory/*.tmp
 config.json
 miniphi.config.json
 current-benchmarks/

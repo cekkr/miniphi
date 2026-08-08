@@ -41,6 +41,13 @@
   "context": {
     "budgetTokens": null,
     "engine": "memory",
+    "localMemory": {
+      "enabled": true,
+      "maxCandidates": 12,
+      "maxRecords": 4000,
+      "harvestSessions": 12,
+      "minScore": 0.08
+    },
     "cheetah": {
       "host": "127.0.0.1",
       "port": 4455,

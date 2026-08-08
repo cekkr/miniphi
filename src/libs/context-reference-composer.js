@@ -7,7 +7,9 @@ const SCHEMA_VERSION = "context-reference-selection@v1";
 const DEFAULT_MAX_CANDIDATES = 48;
 const DEFAULT_MAX_SELECTED = 8;
 const DEFAULT_BUDGET_TOKENS = 480;
-const DEFAULT_MAX_TOKENS = 512;
+// Large enough that a reasoning model still reaches the JSON after its trace;
+// the selection itself is only a handful of ids.
+const DEFAULT_MAX_TOKENS = 3072;
 const DEFAULT_TIMEOUT_MS = 45000;
 
 const fingerprint = (value) =>

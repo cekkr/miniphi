@@ -412,9 +412,27 @@ miniPhi stores reproducible artifacts in two places:
 
 - **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, agent-session transcripts/validation/rollbacks, helper scripts, reports, recompose edit logs/rollbacks)
 - **Project-local (extra):** `.miniphi/web/` for browser snapshots and `.miniphi/nitpick/` for writer/critic sessions
+- **Project memory:** `.miniphi/memory/` — the one part worth keeping. See below.
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
-If you want to keep your repo clean, add `.miniphi/` to your `.gitignore`.
+If you want to keep your repo clean, ignore `.miniphi/*` but **keep `.miniphi/memory/`**.
+
+### Project memory (`.miniphi/memory/`)
+
+Everything else under `.miniphi/` is a per-run audit trail. `.miniphi/memory/` is different: it is
+what a *later* run remembers about this project, and it is plain text so it travels — commit it, sync
+it, copy it to another machine.
+
+- `records.jsonl` — one fact per line. miniPhi writes one whenever the agent records a durable note,
+  and one recap when a session finishes (what the task was, how it ended, which files changed).
+- `notes/*.md` — your own notes. Write anything here; each `##` section becomes a separately
+  recallable memory. An optional `---` front-matter block sets `title`, `tags` and `kind`.
+- `index.json` — a rebuildable cache. Safe to delete; safe to ignore in git.
+
+Before each prompt, miniPhi ranks this corpus against what the run is currently doing and offers the
+best sentences to the model alongside anything recalled from Cheetah — so a new session starts
+knowing what the last one decided, without a database and without a server. Disable it with
+`MINIPHI_LOCAL_MEMORY=0` or `context.localMemory.enabled: false`.
 
 ## Commands (overview)
 
@@ -462,6 +480,7 @@ For the full list of flags and subcommands, run `miniphi --help` (or `node src/i
 
 ## Documentation map
 
+- **RECAP.md**: the condensed operational recap — principles, critical contracts, control flow, the memory stores, and the failure modes that recur. Start here.
 - **AGENTS.md**: contributor + agent guardrails, JSON-first rules, deeper reference.
 - **ROADMAP.md**: milestones, exit criteria, and the current status snapshot.
 - `docs/`: implementation notes and LM Studio integration details.

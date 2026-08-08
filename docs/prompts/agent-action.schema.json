@@ -60,6 +60,10 @@
             "type": "string",
             "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file/visual_review (never absolute, no `..`)."
           },
+          "url": {
+            "type": "string",
+            "description": "For visual_review: a loopback http(s) URL to screenshot instead of `path`, e.g. 'http://127.0.0.1:3000/feed'. Use this when the page only renders correctly while the app's own server is running; a file:// screenshot of the template shows it unpopulated. Only localhost/127.0.0.1 addresses are accepted."
+          },
           "focus": {
             "type": "string",
             "description": "For visual_review: what to look for in the rendered screenshot (e.g. 'does the ball look round and orange, is it moving'). Optional; a generic quality check is used when omitted."

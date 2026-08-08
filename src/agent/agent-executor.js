@@ -4,9 +4,14 @@ import { createHash } from "crypto";
 import { spawnSync } from "child_process";
 import { resolveWorkspacePath, executeReadonlyAction } from "../libs/plan-executor.js";
 import { writeFileWithGuard } from "../libs/file-edit-guard.js";
+import { normalizeReviewUrl } from "../libs/vision-reviewer.js";
 import { summarizeDiff } from "../libs/recompose-utils.js";
 
 const DEFAULT_MAX_OUTPUT_CHARS = 1500;
+// A line that is only a markdown fence, anywhere in proposed file content.
+const FENCE_LINE = /^[ \t]*(?:```|~~~)/m;
+// Directory segments whose contents are installed or generated, never authored.
+const VENDORED_PATH = /(?:^|\/)(node_modules|\.git|vendor|dist|build|\.venv|__pycache__)(?:\/|$)/;
 
 export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_text"]);
 export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
@@ -23,6 +28,33 @@ const KNOWN_ACTION_TYPES = new Set([
 ]);
 
 const hashText = (text) => createHash("sha256").update(text ?? "", "utf8").digest("hex");
+
+/**
+ * JSON gets the same pre-write gate JavaScript already had.
+ *
+ * The guard refused to write unparseable `.js` but happily wrote unparseable
+ * `.json`, which is the more damaging of the two for an agent: a broken
+ * `package.json` breaks `npm install`, the start script and every later turn,
+ * and the model only learns about it from a downstream validator one step
+ * removed from the edit that caused it. Observed three times in one run —
+ * a raw newline inside a string, a trailing comma, and two concatenated
+ * objects — each written to disk before anything complained.
+ */
+const validateJsonSyntax = (filePath, content) => {
+  if (path.extname(filePath).toLowerCase() !== ".json") {
+    return null;
+  }
+  try {
+    JSON.parse(content);
+    return null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const fenceHint = FENCE_LINE.test(content)
+      ? " The content also contains a markdown code fence line (``` or ~~~); `content` must be the raw file text only."
+      : "";
+    return `proposed ${filePath} is not valid JSON; no file was changed: ${detail}.${fenceHint} Common causes: a literal newline inside a string (escape it as \\n), a trailing comma before } or ], or text after the closing brace.`;
+  }
+};
 
 const validateJavaScriptSyntax = (filePath, content) => {
   const extension = path.extname(filePath).toLowerCase();
@@ -47,7 +79,15 @@ const validateJavaScriptSyntax = (filePath, content) => {
   )
     .trim()
     .slice(0, 1200);
-  return `proposed ${filePath} has invalid JavaScript syntax; no file was changed:\n${detail}`;
+  // A markdown code fence inside `content` is one of the most common ways a
+  // local model breaks a file, and the parser's report of it is useless: the
+  // fence is not valid JavaScript, so the error surfaces as an unrelated
+  // "Unexpected end of input" pointing at whatever line the fence landed on.
+  // Naming it converts an unfixable message into a one-line fix.
+  const fenceHint = FENCE_LINE.test(content)
+    ? "\nThe content contains a markdown code fence line (``` or ~~~). `content` must be the raw file text only: no fences, no language tag, no surrounding prose. Remove the fence lines and re-send."
+    : "";
+  return `proposed ${filePath} has invalid JavaScript syntax; no file was changed:\n${detail}${fenceHint}`;
 };
 
 /**
@@ -82,7 +122,14 @@ export function describeAction(action) {
   if (!action || typeof action !== "object") {
     return "(invalid action)";
   }
-  const target = action.path ?? action.term ?? action.query ?? action.subject ?? action.command ?? "";
+  const target =
+    action.path ??
+    action.url ??
+    action.term ??
+    action.query ??
+    action.subject ??
+    action.command ??
+    "";
   return `${action.type}${target ? ` ${target}` : ""}`.trim();
 }
 
@@ -158,14 +205,29 @@ export function normalizeAgentAction(rawAction, cwd) {
   }
 
   if (type === "visual_review") {
-    const visualPath = resolveWorkspacePath(rawAction.path, cwd);
-    if (!visualPath) {
+    // A review target is either a workspace file or a loopback URL. The URL
+    // form exists because an app the agent just wrote only renders once its own
+    // server is running — a `file://` screenshot of the entry HTML shows the
+    // unpopulated template, which the vision model then reports as a defect.
+    const reviewUrl = normalizeReviewUrl(rawAction.url);
+    if (rawAction.url && !reviewUrl) {
       return {
         ok: false,
-        error: `path "${rawAction.path ?? ""}" is empty, absolute, or escapes the workspace`,
+        error: `url "${rawAction.url}" must be an http(s) loopback address (e.g. http://127.0.0.1:3000/)`,
       };
     }
-    action.path = visualPath;
+    if (reviewUrl) {
+      action.url = reviewUrl;
+    } else {
+      const visualPath = resolveWorkspacePath(rawAction.path, cwd);
+      if (!visualPath) {
+        return {
+          ok: false,
+          error: `visual_review needs either a workspace-relative path or a loopback url; path "${rawAction.path ?? ""}" is empty, absolute, or escapes the workspace`,
+        };
+      }
+      action.path = visualPath;
+    }
     const focus = typeof rawAction.focus === "string" ? rawAction.focus.trim() : "";
     if (focus) {
       action.focus = focus.slice(0, 400);
@@ -197,9 +259,36 @@ export function normalizeAgentAction(rawAction, cwd) {
   }
   action.path = relPath;
 
+  // Reading vendored code is legitimate research; *writing* it is not. A model
+  // that hits a dependency error reaches for the dependency: seen live, an
+  // `ERR_PACKAGE_PATH_NOT_EXPORTED` from `hono` was answered with a `write_file`
+  // to `server/node_modules/hono/package.json`. That "fix" corrupts an
+  // installed package, survives into every later run, and produces failures
+  // that no longer point at anything the agent wrote. The real remedy is always
+  // in the agent's own code or its manifest.
+  if (MUTATING_ACTION_TYPES.has(type)) {
+    const vendored = VENDORED_PATH.exec(relPath);
+    if (vendored) {
+      return {
+        ok: false,
+        error: `refusing to modify ${relPath}: ${vendored[1]} holds installed/generated code that must not be edited by hand. Fix this in your own source or in package.json (change the import, add the right package, or pin a different version) and re-install with run_cmd.`,
+      };
+    }
+  }
+
   if (type === "write_file") {
     if (typeof rawAction.content !== "string") {
-      return { ok: false, error: "write_file requires string content" };
+      // "requires string content" is accurate and useless: a model that omits
+      // `content` has almost always *described* the file in `reason` instead,
+      // and repeats the same shape next turn. Naming that mistake is what makes
+      // the correction actionable. Seen live on consecutive turns with
+      // prism-ml/bonsai-27b, whose `reason` read "Creating the main server entry
+      // point with Express setup..." while `content` was absent entirely.
+      return {
+        ok: false,
+        error:
+          "write_file did not include a `content` field, so nothing could be written. The complete new text of the file goes in the action's `content` field as a single JSON string; `reason` is only a one-line explanation and its text is never written to disk. Re-send this action with `content` filled in, and keep the file small enough to emit in full.",
+      };
     }
     action.content = rawAction.content;
     return { ok: true, action, category };
@@ -278,7 +367,9 @@ export async function buildMutationProposal({ action, cwd }) {
     return { ok: false, status: "unsupported", error: `not a file mutation: ${action.type}` };
   }
 
-  const syntaxError = validateJavaScriptSyntax(action.path, afterContent ?? "");
+  const syntaxError =
+    validateJavaScriptSyntax(action.path, afterContent ?? "") ??
+    validateJsonSyntax(action.path, afterContent ?? "");
   if (syntaxError) {
     return {
       ok: false,

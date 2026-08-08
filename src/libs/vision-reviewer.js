@@ -4,7 +4,10 @@ import { buildJsonSchemaResponseFormat } from "./json-schema-utils.js";
 export const VISUAL_REVIEW_SCHEMA_ID = "visual-review";
 const SCHEMA_VERSION = "visual-review@v1";
 const DEFAULT_TIMEOUT_MS = 45000;
-const DEFAULT_MAX_TOKENS = 512;
+// 512 was sized for a non-reasoning VLM. A reasoning model's trace alone can
+// exceed it, and the request then returns `finish_reason: "length"` with empty
+// content — a schema failure that no retry at the same cap can fix.
+const DEFAULT_MAX_TOKENS = 3072;
 const DEFAULT_WAIT_MS = 600;
 const DEFAULT_VIEWPORT = { width: 1200, height: 800 };
 const DEFAULT_NAV_TIMEOUT_MS = 30000;
@@ -18,19 +21,71 @@ async function loadPuppeteer() {
 }
 
 /**
- * Renders a local file in headless Chromium and returns a base64 PNG
- * screenshot. Shares the launch pattern already proven by web-browser.js and
- * the basketball-page live test, generalized for any renderable local file.
+ * Loopback only. A `file://` screenshot cannot review an app that only exists
+ * once a server is running, but a `visual_review` that could fetch *any* URL
+ * would turn a model-authored string into an outbound request from the
+ * operator's machine. The workspace agent is a local file agent; the only
+ * server it can legitimately be looking at is one it just started here.
  */
-export async function screenshotLocalFile({
-  absolutePath,
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"]);
+
+/**
+ * Normalizes a model-supplied review target to a loopback http(s) URL, or null.
+ * Exported so the executor rejects a bad target *before* the action is
+ * scheduled rather than failing inside Puppeteer.
+ */
+export function normalizeReviewUrl(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    return null;
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return null;
+  }
+  return LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase()) ? parsed.href : null;
+}
+
+/**
+ * Renders a local file *or* a loopback URL in headless Chromium and returns a
+ * base64 PNG screenshot. Shares the launch pattern already proven by
+ * web-browser.js and the basketball-page live test.
+ *
+ * `waitUntil` differs by target on purpose: a local file is done when it has
+ * loaded, while a page served by an app the agent just wrote is usually still
+ * fetching its own images and API data, and screenshotting it at `load` shows
+ * an empty feed the vision model then reports as a bug.
+ */
+export async function screenshotTarget({
+  absolutePath = null,
+  url = null,
   waitMs = DEFAULT_WAIT_MS,
   viewport = DEFAULT_VIEWPORT,
   timeoutMs = DEFAULT_NAV_TIMEOUT_MS,
 } = {}) {
-  if (!absolutePath) {
-    return { ok: false, error: "absolutePath is required", pageErrors: [] };
+  const normalizedUrl = url ? normalizeReviewUrl(url) : null;
+  if (url && !normalizedUrl) {
+    return {
+      ok: false,
+      error: `url "${url}" is not an http(s) loopback address`,
+      pageErrors: [],
+      consoleErrors: [],
+    };
   }
+  if (!normalizedUrl && !absolutePath) {
+    return {
+      ok: false,
+      error: "absolutePath or a loopback url is required",
+      pageErrors: [],
+      consoleErrors: [],
+    };
+  }
+  const target = normalizedUrl ?? pathToFileURL(absolutePath).href;
   let browser = null;
   try {
     const puppeteer = await loadPuppeteer();
@@ -41,27 +96,65 @@ export async function screenshotLocalFile({
     const page = await browser.newPage();
     await page.setViewport(viewport);
     const pageErrors = [];
+    const consoleErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
-    await page.goto(pathToFileURL(absolutePath).href, {
-      waitUntil: "load",
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        consoleErrors.push(message.text().slice(0, 400));
+      }
+    });
+    await page.goto(target, {
+      waitUntil: normalizedUrl ? "networkidle2" : "load",
       timeout: timeoutMs,
     });
     if (waitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
     const buffer = await page.screenshot({ type: "png" });
-    return { ok: true, base64: buffer.toString("base64"), pageErrors };
+    return {
+      ok: true,
+      base64: buffer.toString("base64"),
+      target,
+      pageErrors,
+      consoleErrors: consoleErrors.slice(0, 10),
+    };
   } catch (error) {
     return {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
       pageErrors: [],
+      consoleErrors: [],
     };
   } finally {
     if (browser) {
       await browser.close();
     }
   }
+}
+
+/** Back-compatible alias for the file-only callers that predate URL support. */
+export const screenshotLocalFile = (options = undefined) => screenshotTarget(options);
+
+/**
+ * True when the model stopped because it ran out of tokens *before* emitting
+ * any content — the signature of a reasoning model whose trace alone exceeded
+ * the cap. Distinguishing this from ordinary invalid JSON is what makes the
+ * failure actionable (raise the budget) instead of just "the model drifted".
+ */
+export function isTruncatedBeforeContent(completion, responseText) {
+  if (typeof responseText === "string" && responseText.trim()) {
+    return false;
+  }
+  const choice = completion?.choices?.[0];
+  if (choice?.finish_reason !== "length") {
+    return false;
+  }
+  const reasoningTokens = Number(
+    completion?.usage?.completion_tokens_details?.reasoning_tokens ??
+      completion?.usage?.completionTokensDetails?.reasoningTokens ??
+      0,
+  );
+  return reasoningTokens > 0;
 }
 
 const deterministicReview = (reason) => ({
@@ -139,6 +232,7 @@ Exact JSON schema:
 ${schemaBlock}`;
 
     let lastError = "invalid-response";
+    let budgetTokens = this.maxTokens;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const remainingMs = Number.isFinite(sessionDeadline)
         ? Math.floor(sessionDeadline - Date.now())
@@ -176,7 +270,7 @@ ${schemaBlock}`;
           model: this.model,
           messages,
           temperature: 0,
-          max_tokens: this.maxTokens,
+          max_tokens: budgetTokens,
           timeoutMs:
             remainingMs === null
               ? this.timeoutMs
@@ -211,7 +305,18 @@ ${schemaBlock}`;
             audit: { ...audit, finishedAt: new Date().toISOString() },
           };
         }
-        lastError = validation?.error ?? "schema validation failed";
+        // "No valid JSON found" is the wrong diagnosis when the model never got
+        // to the JSON: a reasoning model that spends the whole token budget
+        // thinking returns `finish_reason: "length"` with empty content. Saying
+        // so — and retrying with room — is the difference between a fixable
+        // report and a mystery. Seen against prism-ml/bonsai-27b, whose
+        // reasoning trace alone exceeds a 512-token cap.
+        if (isTruncatedBeforeContent(completion, responseText)) {
+          budgetTokens = budgetTokens > 0 ? budgetTokens * 4 : budgetTokens;
+          lastError = `the model used its entire ${completion?.usage?.completion_tokens ?? "?"}-token budget on reasoning and returned no content`;
+        } else {
+          lastError = validation?.error ?? "schema validation failed";
+        }
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
         audit.attempts.push({
@@ -246,8 +351,13 @@ export function createVisionReviewAction({
     return null;
   }
   const reviewer = new VisionReviewer({ client: restClient, schemaRegistry, model, timeoutMs, maxTokens });
-  return async function visionReviewAction({ absolutePath, focus = null, sessionDeadline = null } = {}) {
-    const capture = await screenshotLocalFile({ absolutePath, ...(screenshotOptions ?? {}) });
+  return async function visionReviewAction({
+    absolutePath = null,
+    url = null,
+    focus = null,
+    sessionDeadline = null,
+  } = {}) {
+    const capture = await screenshotTarget({ absolutePath, url, ...(screenshotOptions ?? {}) });
     if (!capture.ok) {
       return { ok: false, error: capture.error ?? "screenshot capture failed" };
     }
@@ -258,7 +368,12 @@ export function createVisionReviewAction({
     });
     return {
       ok: true,
-      response: { ...response, page_errors: capture.pageErrors ?? [] },
+      response: {
+        ...response,
+        reviewed_target: capture.target ?? null,
+        page_errors: capture.pageErrors ?? [],
+        console_errors: capture.consoleErrors ?? [],
+      },
       audit,
     };
   };

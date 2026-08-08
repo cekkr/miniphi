@@ -123,6 +123,36 @@ test("normalizeAgentAction resolves and normalizes valid actions", () => {
     "visual_review rejects paths that escape the workspace",
   );
 
+  // A running app can only be reviewed over http; the URL form is restricted to
+  // loopback so a model-authored string cannot become an outbound request.
+  const visualUrl = normalizeAgentAction(
+    {
+      type: "visual_review",
+      url: "http://127.0.0.1:3000/feed",
+      focus: "is the feed populated",
+      reason: "check the running app",
+    },
+    cwd,
+  );
+  assert.equal(visualUrl.ok, true);
+  assert.equal(visualUrl.category, "visual");
+  assert.equal(visualUrl.action.url, "http://127.0.0.1:3000/feed");
+  assert.equal(visualUrl.action.path, undefined);
+  assert.equal(describeAction(visualUrl.action), "visual_review http://127.0.0.1:3000/feed");
+
+  for (const url of [
+    "https://example.com/",
+    "http://10.0.0.5:3000/",
+    "file:///etc/passwd",
+    "not a url",
+  ]) {
+    assert.equal(
+      normalizeAgentAction({ type: "visual_review", url, reason: "x" }, cwd).ok,
+      false,
+      `visual_review must reject the non-loopback target ${url}`,
+    );
+  }
+
   const knowledge = normalizeAgentAction(
     { type: "knowledge_lookup", subject: "  Springfield  ", reason: "check for recorded facts" },
     cwd,
@@ -372,4 +402,151 @@ test("agent-action schema accepts a valid turn and rejects malformed ones", () =
     missing_snippets: [],
   });
   assert.equal(registry.validate("agent-action", badType).valid, false, "type enum enforced");
+});
+
+test("a write_file missing content names the mistake instead of restating the type", () => {
+  const cwd = "/workspace";
+  const result = normalizeAgentAction(
+    {
+      type: "write_file",
+      path: "server/index.js",
+      reason: "Creating the main server entry point with Express setup and SQLite initialization.",
+    },
+    cwd,
+  );
+  assert.equal(result.ok, false);
+  // The model put the file in `reason`; the correction has to say so, or it
+  // sends the identical shape again next turn.
+  assert.match(result.error, /did not include a `content` field/);
+  assert.match(result.error, /`reason` is only a one-line explanation/);
+  assert.match(result.error, /never written to disk/);
+});
+
+test("a markdown fence inside proposed file content is named, not left as a parser riddle", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    // The real shape a local model produced: a fence dropped into the middle of
+    // the file, after which the parser reports an unrelated "Unexpected end of
+    // input" at the fence's line and never mentions the fence itself.
+    const fenced = [
+      "export function createTables(db) {",
+      "  db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY)');",
+      "```",
+      "  }  ]  }, ",
+    ].join("\n");
+    const result = await buildMutationProposal({
+      action: { type: "write_file", path: "db.js", content: fenced, reason: "x" },
+      cwd: workspace,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "invalid-content");
+    assert.match(result.error, /invalid JavaScript syntax/);
+    assert.match(result.error, /markdown code fence/);
+    assert.match(result.error, /raw file text only/);
+
+    // A file that is merely broken, with no fence, must not be told to remove one.
+    const noFence = await buildMutationProposal({
+      action: { type: "write_file", path: "broken.js", content: "export function f( {\n", reason: "x" },
+      cwd: workspace,
+    });
+    assert.equal(noFence.ok, false);
+    assert.match(noFence.error, /invalid JavaScript syntax/);
+    assert.doesNotMatch(noFence.error, /markdown code fence/);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("invalid JSON is refused before it reaches disk, like invalid JavaScript", async () => {
+  const workspace = await createTempWorkspace();
+  try {
+    // Every shape this run actually produced.
+    const cases = [
+      ['{ "name": "app", "description": "one\ntwo" }', /literal newline inside a string/],
+      ['{ "name": "app", }', /trailing comma/],
+      ['{ "name": "app" } { "extra": 1 }', /text after the closing brace/],
+    ];
+    for (const [content, guidance] of cases) {
+      const result = await buildMutationProposal({
+        action: { type: "write_file", path: "package.json", content, reason: "x" },
+        cwd: workspace,
+      });
+      assert.equal(result.ok, false, `expected ${content} to be refused`);
+      assert.equal(result.status, "invalid-content");
+      assert.match(result.error, /is not valid JSON/);
+      assert.match(result.error, guidance);
+    }
+    // Nothing was written.
+    await assert.rejects(fs.readFile(path.join(workspace, "package.json"), "utf8"));
+
+    // Valid JSON still goes through.
+    const ok = await buildMutationProposal({
+      action: {
+        type: "write_file",
+        path: "package.json",
+        content: JSON.stringify({ name: "app", version: "1.0.0" }, null, 2),
+        reason: "x",
+      },
+      cwd: workspace,
+    });
+    assert.equal(ok.ok, true);
+
+    // A non-JSON extension is untouched by this check.
+    const text = await buildMutationProposal({
+      action: { type: "write_file", path: "notes.md", content: "{ not json", reason: "x" },
+      cwd: workspace,
+    });
+    assert.equal(text.ok, true);
+  } finally {
+    await removeTempWorkspace(workspace);
+  }
+});
+
+test("writes into installed or generated directories are refused, reads are not", () => {
+  const cwd = "/workspace";
+  // The exact action seen live: answering a dependency error by rewriting the
+  // dependency. It corrupts the install and survives into every later run.
+  const write = normalizeAgentAction(
+    {
+      type: "write_file",
+      path: "server/node_modules/hono/package.json",
+      content: "{}",
+      reason: "add the missing exports field",
+    },
+    cwd,
+  );
+  assert.equal(write.ok, false);
+  assert.match(write.error, /refusing to modify/);
+  assert.match(write.error, /node_modules/);
+  assert.match(write.error, /Fix this in your own source or in package\.json/);
+
+  for (const target of ["dist/bundle.js", ".git/config", "server/vendor/lib.js", "build/out.js"]) {
+    assert.equal(
+      normalizeAgentAction({ type: "edit_file", path: target, content: "x", reason: "r" }, cwd).ok,
+      false,
+      `${target} must not be writable`,
+    );
+  }
+
+  // Reading vendored code is legitimate research and stays allowed.
+  assert.equal(
+    normalizeAgentAction(
+      { type: "read_file", path: "server/node_modules/hono/package.json", reason: "inspect" },
+      cwd,
+    ).ok,
+    true,
+  );
+  assert.equal(
+    normalizeAgentAction({ type: "list_dir", path: "server/node_modules", reason: "inspect" }, cwd).ok,
+    true,
+  );
+
+  // A path that merely *contains* the word is untouched.
+  assert.equal(
+    normalizeAgentAction(
+      { type: "write_file", path: "server/node_modules_helper.js", content: "x", reason: "r" },
+      cwd,
+    ).ok,
+    true,
+  );
 });

@@ -16,6 +16,11 @@
 
 ## High priority references
 
+- `RECAP.md` is the **condensed operational recap** — start there. It carries only what is true of
+  the checked-out revision (principles, critical contracts, control flow, the three memory stores,
+  capability gating, recurring failure modes) and links back here for the full per-file reference and
+  the delivery history. This file stays authoritative for detail; keep `RECAP.md` current in the same
+  change whenever a contract, gate, or memory boundary moves.
 - `OPTIMIZATIONS.md` is the optimization roadmap for cross-cutting improvements across the entire `src/` runtime pipeline.
 - `thirds/cheetah` is the Cheetah submodule and upstream home for reusable graph-query engine work.
 
@@ -345,6 +350,215 @@ Delivered 2026-08-02 — Cheetah byte-wise client protocol (offline-proven, live
 - Telemetry: `transportStatus()` (requested/active, negotiated widths, command-index digest + epoch,
   downgrade reason) rides in `CheetahContextEngine.stats().transport` into `context-engine.json` and
   `result.json`.
+
+Delivered 2026-08-07 — Durable `.miniphi` memory served beside Cheetah recall (offline-proven):
+- `src/libs/local-context-memory.js` (`LocalContextMemory`) is a **third** memory store, distinct
+  from both Cheetah integrations above: it serves the corpus MiniPhi already writes under
+  `.miniphi/` directly, in process, with no TCP hop and no graph write. Cheetah's context engine only
+  ever knows what *this process* mirrored into it, and `cheetah_data/` is a per-machine binary table
+  directory — so previous sessions' decisions, applied edits and the operator's own notes were
+  invisible to recall unless they were paid for again as graph writes, and nothing worth remembering
+  could reach another device.
+- Storage is `.miniphi/memory/`: `records.jsonl` (one JSON record per line) plus operator/agent
+  markdown in `notes/`, and a disposable `index.json` cache keyed by file size + mtime. Deleting the
+  index costs one rescan, never a fact. Both durable parts are text, so they copy, sync and diff.
+- Recall is deterministic and model-free — IDF-weighted cue overlap over stored reference sentences,
+  with a small shared suffix stripper (`lightStem`) applied identically to what is stored and what is
+  asked, because "which files did the session *change*?" otherwise misses the sentence saying it
+  "*changed* these files". Results come back in the exact `referenceCandidates` shape
+  `CheetahContextEngine.recall()` produces, so `AgentSession` merges both into one pool
+  (`mergeReferenceCandidates`, deduped by id *and* by sentence) and `ContextReferenceComposer`
+  selects across it unchanged.
+- **Local candidates are never mirrored into Cheetah**: their ids carry a `local:` prefix and
+  `sourceNodeId` stays null, so the selection-boost path cannot mistake one for a live graph node.
+- Harvesters read only the layers that carry conclusions from previous sessions
+  (`mission`/`plan`/`contract` nodes, `result.json` recaps) plus `notes/*.md` sectioned by heading;
+  `evidence`/`scratch` are this-run working state and would flood the corpus with tool output that is
+  already on disk. A re-read replaces what that source contributed last time, so an edited note
+  leaves no ghost.
+- **What is deliberately *not* durable**, learned by watching the corpus rank itself: a previous
+  session's `mission` node (the current run already holds the same task verbatim, and the duplicate
+  is long and topical enough to outrank every real conclusion — it won "how did the previous session
+  end?"), and any `validation` node (a snapshot of one turn's issue set, stale the moment the next
+  edit lands; "nothing exists there yet" survived into a run where the app was half-built). The
+  session recap keeps only a **one-line** anchor of the task for the same reason. The recap's file
+  list also reads `edit.action.path` — an applied-edit entry carries its path under `action`, and
+  reading `edit.path` had silently produced an empty list in every recap.
+- The recall seed is mission + focus **plus the open validation issues and the previous turn's own
+  summary**. Mission alone is a constant: every turn would ask the same question and get the same
+  records back, which is the opposite of memory that follows the work. The current obstacle is the
+  highest-signal part of the seed, because a past session that hit the same wall is exactly the
+  record worth surfacing.
+- Writes: every applied `note` context op now also persists (`_rememberAppliedNotes`) and every
+  finished session writes one recap (`_rememberSessionRecap`) — previously a `note` was durable only
+  until the process exited. `recall()` excludes the live session's own records so the prompt never
+  pays twice for what it already renders. Stats ride in `result.json` under `context.localMemory`.
+- `.gitignore` changed from `.miniphi/` to `**/.miniphi/*` with `!**/.miniphi/memory/`, because git
+  cannot re-include a path inside an excluded *directory*. Keep the `**/` prefix: the old
+  trailing-slash pattern matched at any depth, and sample workspaces have their own `.miniphi/`.
+- Config: `context.localMemory.{enabled,maxCandidates,maxRecords,harvestSessions,minScore}`,
+  `MINIPHI_LOCAL_MEMORY=0`. On by default — it costs a directory scan and no network, and an empty
+  corpus simply recalls nothing.
+- Regression: `node --test unit-tests-js/local-context-memory.test.js`.
+
+Delivered 2026-08-07 — `reasoning_effort` on the compatible route (live-proven):
+- MiniPhi set the model's reasoning effort with `body.reasoning`, which is the **native v1** spelling.
+  Every schema-bound prompt goes through the compatible `/chat/completions` route, where the honored
+  key is `reasoning_effort` and `reasoning` is silently ignored. The result was that no reasoning
+  profile ever applied: measured against `prism-ml/bonsai-27b` at
+  `http://192.168.1.5:1234`, an `off` profile still spent its entire token budget on reasoning and
+  returned empty content. MiniPhi even *detected* the ignore and recorded it, but never corrected it.
+- `createChatCompletion` now sends both keys; whichever route does not know one ignores it, and the
+  400-retry drops both. `toCompatibleReasoningEffort()` maps MiniPhi's `off|low|medium|high` (and an
+  inventory's `off`/`on`) onto that route's closed vocabulary
+  `none|minimal|low|medium|high|xhigh` — `off` is **not** a legal value there and is a 400, not an
+  ignore. `miniphi_reasoning.sentEffort` records what was actually sent.
+- Live proof: same host and model, profile `off` → `reasoning_effort: "none"` →
+  `reasoning_tokens: 0`, `ignored: false`, schema-valid content, and ~3x faster wall clock on the
+  same prompt.
+
+Delivered 2026-08-07 — JSON gets the same pre-write gate JavaScript had, and fences are named (live-found):
+- `buildMutationProposal` refused unparseable `.js` and happily wrote unparseable `.json`. For an
+  agent that is the more damaging half: a broken `package.json` breaks `npm install`, the start
+  script and every later turn, and the model learns about it only from a downstream validator one
+  step removed from the edit that caused it. `validateJsonSyntax` now runs beside
+  `validateJavaScriptSyntax`, and its message names the three causes actually observed in one run —
+  a literal newline inside a string, a trailing comma, and two concatenated objects.
+- A markdown code fence inside `content` is one of the most common ways a local model breaks a file,
+  and the parser's report of it is useless: the fence is not JavaScript, so it surfaces as an
+  unrelated `Unexpected end of input` at whatever line the fence landed on. Both validators now
+  detect a fence line and say so outright. Note a fence is *not* always a syntax error — ```` ``` ````
+  parses as nested empty template literals — so the hint is attached to a failure, never used as the
+  failure test itself.
+- Regression: `node --test unit-tests-js/agent-executor.test.js` ("invalid JSON is refused before it
+  reaches disk, like invalid JavaScript", "a markdown fence inside proposed file content is named,
+  not left as a parser riddle").
+
+Delivered 2026-08-07 — a duplicate write is only "already applied" when the file is actually good (live-found):
+- The mutation dedupe answered every byte-identical re-write with "already applied: this file is
+  already in exactly this state. Do not re-write or re-read it to verify. Your next turn MUST be a
+  single finish action." That is correct for a healthy file and actively harmful for a broken one:
+  it instructs the model to abandon a file the workspace validator is failing on. Observed live: the
+  model wrote a `server/package.json` whose `description` contained a raw newline (invalid JSON),
+  the validator said `Rewrite server/package.json as valid JSON`, the model re-sent byte-identical
+  content believing it had fixed it, and the dedupe told it to stop and finish.
+- `_pathFailingValidation(relativePath)` returns the current validation issue naming that path (or
+  null). When it returns an issue, the duplicate note instead says the content was byte-identical so
+  nothing changed, quotes the issue that is still failing, and requires *different* content. A
+  healthy file keeps the original "already applied" message. Matching is on the workspace-relative
+  path as the validator prints it, so a validator needs no structured path field.
+- Note the second half of the value: byte-identical content is also the only signal the model gets
+  that its "fix" changed nothing at all, which is otherwise invisible to it.
+- Regression: `node --test unit-tests-js/agent-session.test.js` ("an identical re-write of a file
+  that is still failing validation is not called done", "only the path the validator is currently
+  failing on is treated as unfinished").
+
+Delivered 2026-08-07 — the no-progress guard no longer kills a run for advice it just gave (live-found):
+- The idle guard stops a session after two turns without progress. It counted the turn that *issued*
+  a brand-new corrective instruction as one of them, so the loop could end a run for not yet having
+  followed advice it had no turn to follow. Observed live: two rejections of an oversized
+  `server/index.js` produced the "split it into smaller modules" instruction, the model answered with
+  exactly the right plan (`separate db, routes, views`), and the session stopped `no-progress` on
+  that same turn with only `package.json` on disk.
+- `_grantCorrectionGrace(key)` / `_consumeCorrectionGrace()` excuse **one** idle turn per *distinct*
+  new instruction, capped at `MAX_CORRECTION_GRACES` (3). Repeating the same instruction never buys
+  a second grace, so a model that simply ignores the advice still stops — the guard is preserved,
+  not weakened. Currently granted by the oversized-proposal hint and the truncation note.
+- Regression: `node --test unit-tests-js/agent-session.test.js` ("a brand-new corrective instruction
+  buys one turn before the idle guard trips", "the same corrective instruction never buys a second
+  grace").
+
+Delivered 2026-08-07 — a large file rejected twice is steered into modules (live-found):
+- A syntax error in a 240-line file a local model generated in one shot is not a typo it can find
+  and fix; it is a symptom of the file being longer than the model can emit correctly, and
+  re-proposing the same 240 lines just moves the error. Observed live: `prism-ml/bonsai-27b`
+  proposed one whole application entry point on three consecutive turns, failing at a different line
+  each time (unterminated string, then unbalanced parens) while nothing but `package.json` existed.
+- `_oversizedProposalHint()` counts `invalid-content` rejections **per path**. From the second
+  rejection of a file over `LARGE_PROPOSAL_LINES` (120), the repair note stops being "fix the syntax"
+  and becomes "you have proposed this file N times and it is M lines; stop rewriting it whole, split
+  it into smaller modules, write ONE this turn and import it". A short file rejected twice keeps the
+  ordinary literal-anchor repair hint — a one-off typo is not a restructuring problem.
+- Regression: `node --test unit-tests-js/agent-session.test.js` ("a large file rejected twice is
+  steered into smaller modules", "a short file rejected twice keeps the ordinary repair hint").
+
+Delivered 2026-08-07 — a turn cut off by the token limit says so (live-found):
+- `AgentSession` treated a response truncated by `max_tokens` exactly like a response that drifted
+  off-schema. The two need different reactions: a `write_file` whose `content` was cut mid-file is
+  rejected downstream by the JavaScript syntax check as `invalid-content`, so the model spends its
+  next turn hunting a syntax error it never made instead of writing a smaller file. Observed live —
+  `prism-ml/bonsai-27b` tried to emit a whole Express application in one `write_file` and the
+  proposal was cut at line 243 with `SyntaxError: Unexpected end of input`.
+- `_requestTurn` now records `finish_reason === "length"` and `_noteTruncatedTurn()` files a
+  retained `contract` node (TTL 2) naming the limit, stating that the rejection is a length problem
+  rather than a syntax mistake, and instructing the model to split the application into smaller
+  modules and create one file per turn. It goes in `contract`, not `scratch`, for the usual reason:
+  budget pressure is exactly when this note must survive.
+- Regression: `node --test unit-tests-js/agent-session.test.js` ("a turn cut off by the token limit
+  is reported as a length problem, not a syntax one").
+
+Delivered 2026-08-07 — REST transport no longer inherits Node's 300s fetch ceiling (live-proven):
+- `LMStudioRestClient` used `globalThis.fetch`. undici enforces a 300-second `headersTimeout` and
+  `bodyTimeout` that **no `fetch` option can raise** (Node exposes no dispatcher to override), and a
+  non-streamed `/chat/completions` sends nothing until the whole completion is ready. So every
+  generation longer than five minutes died with a bare `TypeError: fetch failed`, whatever
+  `lmStudio.rest.timeoutMs`, `prompt.timeoutSeconds` or `--timeout` said. This is not a corner case
+  for a local agent: it is the normal shape of a 27B model writing a file, and it ended the first
+  `photos-social` run on turn 2 — the request failed at 300s, the single transient retry failed at
+  300s again, and the session stopped with `model request failed: fetch failed` having produced
+  nothing.
+- `createNodeHttpFetch()` is a `fetch`-shaped shim over `node:http(s)` with no deadline of its own,
+  and is now the default `fetchImpl`. It implements only the surface `_execute` uses (`ok`, `status`,
+  `statusText`, `headers.get`, `text()`), so every injected `fetchImpl` — which is every offline test
+  — is unaffected. The AbortController `_execute` already installs stays the single authority on how
+  long a request may take, and it destroys the socket on abort so an abandoned request cannot keep
+  the model busy.
+- Live proof: same host and model, a completion that ran **559 seconds** (4200 completion tokens)
+  returned normally; before the change the identical request failed at 300s.
+- Regression: `node --test unit-tests-js/lmstudio-rest-long-request.test.js` (slow response
+  delivered, MiniPhi's own timeout still aborts, non-2xx still surfaces status/body, method/headers/
+  body are sent verbatim).
+- Related operational note: two aborted 300s requests left LM Studio's engine wedged, answering 400
+  `Engine protocol predict request failed: fetch failed` to every later request until the model was
+  explicitly unloaded and reloaded (`models --unload` then `--load`). This is the same "LM Studio
+  wedge after long generations" pitfall already recorded above; the transport fix removes the cause.
+
+Delivered 2026-08-07 — `visual_review` over a loopback URL (live-proven):
+- `visual_review` could only screenshot a workspace file. An app the agent just wrote does not
+  render from `file://` — the entry HTML shows the unpopulated template, which the vision model then
+  correctly reports as a defect. The action now takes either `path` **or** `url`.
+- `url` is restricted to http(s) **loopback** hosts (`normalizeReviewUrl`), validated in
+  `normalizeAgentAction` so a bad target is refused before Puppeteer is launched. This is a local
+  file agent; the only server it can legitimately review is one running here, and an unrestricted URL
+  would turn a model-authored string into an outbound request.
+- `screenshotTarget()` replaces `screenshotLocalFile()` (kept as an alias) and waits for
+  `networkidle2` on a URL versus `load` on a file, because a server-rendered feed is still fetching
+  its own images at `load`. It also returns `consoleErrors` alongside `pageErrors`.
+- The duplicate-action signature for `visual_review` now includes the applied-edit count: "look, fix,
+  look again" is the point of the action, so the same target is reviewable again after any write and
+  still deduped before one.
+- An empty response with `finish_reason: "length"` and non-zero `reasoning_tokens` is now diagnosed
+  as a spent token budget (`isTruncatedBeforeContent`) and retried with a larger cap instead of being
+  reported as "no valid JSON found"; the 512-token defaults in `vision-reviewer.js` and
+  `context-reference-composer.js` predated reasoning models and are now 3072.
+- Regression: `node --test unit-tests-js/agent-executor.test.js unit-tests-js/vision-reviewer.test.js`.
+
+Delivered 2026-08-07 — `samples/photos-social` runner and validator (instrumentation):
+- `scripts/run-photos-social-sample.js` drives the sample with **every** optional capability wired at
+  once — Cheetah context engine, Cheetah knowledge lookup, durable `.miniphi` memory, web research,
+  vision review, guarded edits, policy-gated `run_cmd` with a 10-minute budget for `npm install` —
+  and writes a full run report under `.miniphi/live-tests/photos-social/`.
+- `scripts/photos-social/validator.js` is the `validateWorkspace` callback: it boots the app the
+  agent wrote, drives register → login → multipart upload → `/api/posts` → `/feed` → `/u/:username` →
+  like → comment over real HTTP with one cookie jar, proves the data reached a real SQLite file,
+  screenshots the result through Puppeteer, and asks the vision model whether the feed *looks* like a
+  photo feed. Every failure is one imperative sentence fed back into the agent's context, and only a
+  dependency-ordered prefix is returned per turn.
+- Two validator rules that are load-bearing rather than incidental: the scenario uploads one of the
+  template's real demo photographs (a 1x1 test pixel renders as a flat rectangle, and the vision
+  reviewer then correctly reports a feed with no photo in it), and the vision gate becomes advisory
+  after a bounded number of attempts (a vision model has no upper bound on taste, so gating on it
+  forever would keep a functionally complete app from finishing).
 - Regression: `node --test unit-tests-js/cheetah-binary-transport.test.js
   unit-tests-js/cheetah-context-engine.test.js unit-tests-js/cheetah-knowledge-client.test.js
   unit-tests-js/cheetah-learner.test.js unit-tests-js/cheetah-learn-command.test.js

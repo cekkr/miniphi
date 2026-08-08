@@ -28,11 +28,42 @@ const DEFAULT_MODEL_REQUEST_RETRIES = 1;
 const DEFAULT_MAX_WEB_RESEARCH_ACTIONS = 3;
 const DEFAULT_MAX_CONTEXT_REFORMS = 3;
 const DEFAULT_MAX_CONTEXT_ONLY_TURNS = 3;
+const DEFAULT_LOCAL_MEMORY_CANDIDATES = 12;
+// Above this, a rejected whole-file proposal is treated as "too big to emit
+// correctly" rather than as a typo to hunt for.
+const LARGE_PROPOSAL_LINES = 120;
+// A brand-new corrective instruction buys the model one idle turn to act on it.
+// Capped so this cannot become a way around the no-progress guard.
+const MAX_CORRECTION_GRACES = 3;
 const MAX_ACTION_SCAN_MULTIPLIER = 3;
 const MAX_PINNED_FILE_BYTES = 6000;
 const MAX_RESEARCH_OUTPUT_CHARS = 6000;
 const MAX_READONLY_OUTPUT_CHARS = 6000;
 const MAX_MUTATION_CONTEXT_CHARS = 12000;
+
+/**
+ * Graph-recalled and `.miniphi`-recalled references become one selection pool.
+ * They are deduplicated by id *and* by sentence, because the same fact can be
+ * mirrored into Cheetah this run and harvested from disk from a previous one —
+ * paying the reference budget twice for it would be the worst of both stores.
+ */
+const mergeReferenceCandidates = (...groups) => {
+  const merged = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const candidate of Array.isArray(group) ? group : []) {
+      const id = typeof candidate?.id === "string" ? candidate.id : "";
+      const text = typeof candidate?.text === "string" ? candidate.text.trim() : "";
+      if (!id || !text || seen.has(id) || seen.has(text)) {
+        continue;
+      }
+      seen.add(id);
+      seen.add(text);
+      merged.push(candidate);
+    }
+  }
+  return merged;
+};
 
 const SYSTEM_PROMPT = `You are MiniPhi, a local coding agent operating inside the operator's repository.
 Work in turns. Each turn respond with ONLY a JSON object matching the provided schema (no prose, no markdown fences).
@@ -54,7 +85,7 @@ ${CONTEXT_LANGUAGE_GUIDE}`;
 // Only appended when the session was configured with a vision-capable model
 // (see AgentSession.visionReview), so the model is never told about an action
 // that would just report "unavailable".
-const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. Use visual_review (path to a rendered HTML/image file, optional focus) to judge subjective visual quality that text/regex checks cannot see: does a shape look right, are colors/proportions convincing, does an animation look like it actually moved. It runs automatically like web_research and returns structured JSON (quality_score, issues, suggestions) from a model that looked at an actual screenshot; use its issues/suggestions to drive your next write_file/edit_file instead of guessing.`;
+const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. Use visual_review to judge subjective visual quality that text/regex checks cannot see: does a shape look right, are colors/proportions convincing, does a page look populated and laid out or broken and empty. Target it either with path (a rendered HTML/image file in the workspace) or with url (a loopback address such as http://127.0.0.1:3000/, for a page that only renders once the app's own server is running - a file:// screenshot of a server-rendered template shows it unpopulated). Add focus to say what to look for. It runs automatically like web_research and returns structured JSON (quality_score, issues, suggestions, page_errors, console_errors) from a model that looked at an actual screenshot; use its issues/suggestions to drive your next write_file/edit_file instead of guessing, then review the same target again after the fix.`;
 
 // Only appended when a reachable Cheetah knowledge base was configured (see
 // AgentSession.knowledgeLookup), so the model is never told about an action
@@ -130,6 +161,21 @@ export default class AgentSession extends EventEmitter {
             cwd: this.cwd,
           })
         : null);
+    // Durable, project-local memory served straight out of `.miniphi/`. It is a
+    // *peer* of the Cheetah engine, not a layer under it: it answers when
+    // Cheetah is disabled or unreachable, and what it returns is never mirrored
+    // into the graph database (see local-context-memory.js).
+    this.localMemory = options?.localMemory ?? null;
+    if (this.localMemory && !this.localMemory.sessionId) {
+      // The store is built before the session id exists (the UI creates it once
+      // per process). Stamping it here is what lets `remember()` attribute a
+      // record and `recall()` exclude this run's own writes.
+      this.localMemory.sessionId = this.sessionId;
+    }
+    this.localMemoryCandidates =
+      Number.isFinite(options?.localMemoryCandidates) && options.localMemoryCandidates > 0
+        ? Math.floor(options.localMemoryCandidates)
+        : DEFAULT_LOCAL_MEMORY_CANDIDATES;
     this.contextReferenceComposer =
       options?.contextReferenceComposer ??
       new ContextReferenceComposer({
@@ -189,6 +235,16 @@ export default class AgentSession extends EventEmitter {
     this._contextEngineFallbacks = 0;
     this._contextReferenceSelections = [];
     this._contextReferenceCache = new Map();
+    this._localMemoryQueries = 0;
+    this._localMemoryCandidatesServed = 0;
+    this._localMemoryRemembered = 0;
+    this._localMemoryError = null;
+    this._lastTurnSummary = null;
+    this._lastTurnTruncated = false;
+    this._invalidContentAttempts = new Map();
+    this._anchorFailures = new Map();
+    this._usedCorrectionGraces = new Set();
+    this._correctionGracePending = false;
   }
 
   cancel() {
@@ -463,13 +519,88 @@ export default class AgentSession extends EventEmitter {
       .join("\n");
   }
 
+  /**
+   * The seed the local `.miniphi` store is asked with.
+   *
+   * The mission alone would be a *constant*: every turn would ask the same
+   * question and get the same records back, which is the opposite of memory
+   * that follows the work. So the seed also carries what the run is up against
+   * right now — the open validation issues and the last turn's own summary —
+   * because that is the text a useful past record would resemble.
+   *
+   * Deliberately *not* the whole rendered context: a seed the size of the
+   * prompt matches everything and therefore ranks nothing.
+   */
+  _localMemorySeed() {
+    const parts = [];
+    const mission = this._missionNodeId ? this.context.nodes.get(this._missionNodeId) : null;
+    if (mission?.text) {
+      parts.push(mission.text);
+    }
+    const focus = this.context.focusId ? this.context.nodes.get(this.context.focusId) : null;
+    if (focus?.text && focus.id !== mission?.id) {
+      parts.push(`${focus.label ?? ""} ${focus.text}`);
+    }
+    // The current obstacle is the highest-signal part of the seed: a past
+    // session that hit the same wall is exactly the record worth surfacing.
+    for (const issue of this._lastValidation?.issues ?? []) {
+      parts.push(String(issue));
+    }
+    if (this._lastTurnSummary) {
+      parts.push(this._lastTurnSummary);
+    }
+    return parts.join("\n").slice(0, 4000);
+  }
+
+  /**
+   * Ranks durable `.miniphi` memory against this turn's seed. Failures are
+   * never fatal: a broken local store degrades to "no extra candidates", the
+   * same way an unreachable Cheetah does.
+   */
+  _recallLocalMemory() {
+    if (!this.localMemory || typeof this.localMemory.recall !== "function") {
+      return [];
+    }
+    const seed = this._localMemorySeed();
+    if (!seed) {
+      return [];
+    }
+    try {
+      const result = this.localMemory.recall({
+        text: seed,
+        limit: this.localMemoryCandidates,
+        // The live session's own nodes are already rendered into the prompt;
+        // serving them again from disk would buy a duplicate with the budget.
+        excludeSessionId: this.sessionId,
+      });
+      const candidates = Array.isArray(result?.referenceCandidates)
+        ? result.referenceCandidates
+        : [];
+      this._localMemoryQueries += 1;
+      this._localMemoryCandidatesServed += candidates.length;
+      this.emit("local-memory", {
+        turn: this.context.turn,
+        candidates: candidates.length,
+        matched: result?.matched ?? 0,
+        scanned: result?.scanned ?? 0,
+        elapsedMs: result?.elapsedMs ?? 0,
+      });
+      return candidates;
+    } catch (error) {
+      this._localMemoryError = error instanceof Error ? error.message : String(error);
+      this._log(`[AgentSession] local memory recall failed: ${this._localMemoryError}`);
+      return [];
+    }
+  }
+
   async _selectContextEngine() {
+    const localCandidates = this._recallLocalMemory();
     if (!this.contextEngine || typeof this.contextEngine.select !== "function") {
       return {
         ok: true,
-        engine: "memory",
+        engine: localCandidates.length ? "local" : "memory",
         preferredNodeIds: [],
-        referenceCandidates: [],
+        referenceCandidates: localCandidates,
       };
     }
     try {
@@ -494,9 +625,10 @@ export default class AgentSession extends EventEmitter {
         preferredNodeIds: Array.isArray(selection?.preferredNodeIds)
           ? selection.preferredNodeIds
           : [],
-        referenceCandidates: Array.isArray(selection?.referenceCandidates)
-          ? selection.referenceCandidates
-          : [],
+        referenceCandidates: mergeReferenceCandidates(
+          selection?.referenceCandidates,
+          localCandidates,
+        ),
       };
     } catch (error) {
       this._contextEngineFallbacks += 1;
@@ -516,7 +648,9 @@ export default class AgentSession extends EventEmitter {
         ok: false,
         engine: "cheetah",
         preferredNodeIds: [],
-        referenceCandidates: [],
+        // Cheetah being down is exactly when durable local memory matters most,
+        // so the fallback keeps the candidates it already has.
+        referenceCandidates: localCandidates,
         fallback: "memory",
         error: message,
       };
@@ -632,8 +766,15 @@ export default class AgentSession extends EventEmitter {
         at: new Date().toISOString(),
       });
     }
-    const message = completion?.choices?.[0]?.message ?? null;
-    return message?.content ?? "";
+    const choice = completion?.choices?.[0] ?? null;
+    // A turn that ran out of tokens is a *different* failure from a turn that
+    // drifted off-schema, and conflating them is expensive: a `write_file`
+    // whose content was cut mid-file is rejected downstream as "invalid
+    // JavaScript syntax", so the model spends its next turn hunting a syntax
+    // error it never made instead of writing a smaller file. Seen live against
+    // prism-ml/bonsai-27b writing a whole Express app in one action.
+    this._lastTurnTruncated = choice?.finish_reason === "length";
+    return choice?.message?.content ?? "";
   }
 
   async _requestTurnWithRetry(messages, responseFormat) {
@@ -656,6 +797,162 @@ export default class AgentSession extends EventEmitter {
       }
     }
     throw lastError ?? new Error("model request failed");
+  }
+
+  /**
+   * Tells the model, in the retained layer it is guaranteed to read, that its
+   * previous turn was cut off by the token budget rather than accepted whole.
+   * Without this the only feedback it gets is the downstream rejection of a
+   * half-written file, which reads as a syntax mistake it did not make.
+   */
+  _noteTruncatedTurn(turn) {
+    if (!this._lastTurnTruncated) {
+      return;
+    }
+    this._remember({
+      layer: "contract",
+      label: "response truncated",
+      text: [
+        `Your turn ${turn} response hit the per-turn output limit${
+          this.maxTurnTokens > 0 ? ` (${this.maxTurnTokens} tokens)` : ""
+        } and was cut off mid-way.`,
+        "Anything you were writing is incomplete, so a write_file in that turn was rejected for being unparseable — that is a length problem, not a syntax mistake.",
+        "Write less per turn: split the application into several smaller modules and create them one file per turn, rather than emitting one large file.",
+      ].join(" "),
+      importance: 1,
+      ttlTurns: 2,
+    });
+    this._grantCorrectionGrace("truncated");
+    this._log(`[AgentSession] turn ${turn} response was truncated by the output limit`);
+    this._lastTurnTruncated = false;
+  }
+
+  /**
+   * The recovery instruction that matches the failure, which is not what this
+   * used to do.
+   *
+   * The literal-anchor contract — the paragraph explaining that an anchor is an
+   * exact substring and how to replace a whole block — was attached to
+   * `invalid-content`, a *syntax* failure where it is irrelevant, and
+   * `anchor-not-found` / `anchor-ambiguous` were answered with nothing but
+   * "anchor not found in <path>". A model that misses an anchor was therefore
+   * never told how to recover, and repeated the same miss: seen live, three
+   * consecutive turns sent an anchor for `server/package.json` that did not
+   * exist.
+   */
+  _repairHint(status, action) {
+    if (status === "anchor-not-found" || status === "anchor-ambiguous") {
+      const path = typeof action?.path === "string" ? action.path : "";
+      const attempts = (this._anchorFailures.get(path) ?? 0) + 1;
+      this._anchorFailures.set(path, attempts);
+      const escalation =
+        attempts >= 2
+          ? ` You have now missed an anchor in ${path} ${attempts} times, so your idea of that file's text is wrong. Stop guessing anchors: read_file ${path} first, then send one edit_file with the full replacement content and no anchor at all.`
+          : "";
+      if (attempts >= 2) {
+        this._grantCorrectionGrace(`anchor:${path}`);
+      }
+      return ` An anchor is an exact literal substring of the file as it is on disk right now, not a line range and not a paraphrase. Copy it verbatim from the current file, include the complete block you are replacing, or omit the anchor and send a full-file content replacement.${escalation}`;
+    }
+    if (status === "invalid-content") {
+      // An anchored *removal* is the classic way to produce unparseable output
+      // from a correct intention: deleting the last entry of a list or object
+      // leaves the separator that preceded it dangling. Seen live twice in a
+      // row — removing `"node:sqlite": "^0.0.1"` from `dependencies` left the
+      // comma after the entry before it, and the model re-sent the same shape.
+      const anchored = typeof action?.anchor === "string" && action.anchor.length > 0;
+      const anchorHint = anchored
+        ? " Your anchor removed text and left the surrounding punctuation behind — deleting the last entry of an object or array strands the comma before it. Extend the anchor to cover that separator too, or drop the anchor and send the whole corrected file as `content`."
+        : "";
+      return ` The content must be the complete, parseable text of the file.${anchorHint}${this._oversizedProposalHint(action)}`;
+    }
+    if (status === "missing-file") {
+      return " Create it with write_file first; edit_file only changes a file that already exists.";
+    }
+    if (status === "conflicting-action") {
+      // Only the first edit to a path runs in a turn, because every later one
+      // was written against the pre-edit text. Without saying so, a model that
+      // split one fix across two edits sees the first succeed and never learns
+      // the rest were dropped: seen live, `import multer` landed while the
+      // `const upload = multer(...)` that made it useful was discarded, and the
+      // server kept failing on `upload is not defined`.
+      return " Only the first change to this file ran; the rest were written against its old text and were discarded, so the file is now half-changed. Put every change to one file into a SINGLE edit_file next turn — a full-content replacement is safest — and touch other files in separate actions.";
+    }
+    return "";
+  }
+
+  /**
+   * Steers a repeatedly-rejected large file toward being split up.
+   *
+   * A syntax error in a 240-line file generated in one shot is not a typo the
+   * model can reliably find and fix — it is a symptom of the file being longer
+   * than the model can emit correctly, and re-proposing the same 240 lines just
+   * moves the error somewhere else. Observed live: `prism-ml/bonsai-27b`
+   * proposed one whole application entry point three turns running, failing at a
+   * different line each time.
+   *
+   * Counted per path, so a one-off mistake in a short file gets the ordinary
+   * repair hint and nothing more.
+   */
+  _oversizedProposalHint(action) {
+    const path = typeof action?.path === "string" ? action.path : "";
+    const lines = typeof action?.content === "string" ? action.content.split("\n").length : 0;
+    if (!path) {
+      return "";
+    }
+    const attempts = (this._invalidContentAttempts.get(path) ?? 0) + 1;
+    this._invalidContentAttempts.set(path, attempts);
+    if (attempts < 2 || lines < LARGE_PROPOSAL_LINES) {
+      return "";
+    }
+    this._grantCorrectionGrace(`split:${path}`);
+    return ` You have now proposed ${path} ${attempts} times and it is ${lines} lines long; a file this size is where these errors come from. Stop rewriting it whole. Split it into smaller modules (for example separate database, route and view files), write ONE small module this turn, and import it from the entry point.`;
+  }
+
+  /**
+   * Records that a *new* corrective instruction was just issued, buying the
+   * model one turn to act on it before the idle guard counts against it.
+   * Keyed, so repeating the same instruction never buys a second grace, and
+   * capped overall so this can never become an escape hatch from the guard.
+   */
+  _grantCorrectionGrace(key) {
+    if (
+      !key ||
+      this._usedCorrectionGraces.has(key) ||
+      this._usedCorrectionGraces.size >= MAX_CORRECTION_GRACES
+    ) {
+      return;
+    }
+    this._usedCorrectionGraces.add(key);
+    this._correctionGracePending = true;
+  }
+
+  _consumeCorrectionGrace() {
+    if (!this._correctionGracePending) {
+      return false;
+    }
+    this._correctionGracePending = false;
+    return true;
+  }
+
+  /**
+   * The current validation issue naming this path, or null. Matching is on the
+   * workspace-relative path as the validator would print it, so a validator
+   * that says "server/package.json is not valid JSON" is recognised without the
+   * validator having to report paths in a structured field.
+   */
+  _pathFailingValidation(relativePath) {
+    if (this._lastValidation?.valid !== false || !relativePath) {
+      return null;
+    }
+    const needle = String(relativePath).split(path.sep).join("/");
+    for (const issue of this._lastValidation.issues ?? []) {
+      const text = String(issue);
+      if (text.includes(needle)) {
+        return text.slice(0, 400);
+      }
+    }
+    return null;
   }
 
   _fallbackTurn(task, reason) {
@@ -704,7 +1001,7 @@ export default class AgentSession extends EventEmitter {
     return this._fallbackTurn(task, `invalid-response: ${validation?.error ?? "schema validation failed"}`);
   }
 
-  async _handleMutation({ action, turn }) {
+  async _handleMutation({ action, turn, mutationPathsThisTurn = null }) {
     const proposalResult = await buildMutationProposal({ action, cwd: this.cwd });
     if (proposalResult.ok) {
       // Dedupe identical (path + resulting content) proposals: if the file is
@@ -719,10 +1016,21 @@ export default class AgentSession extends EventEmitter {
           status: "duplicate",
         };
         this.emit("action-result", result);
+        // "Already applied, move on" is the right answer only when the file is
+        // actually good. If validation is currently *failing on this very path*,
+        // that message tells the model to stop fixing a broken file — and
+        // because the content is byte-identical, it is also the model's only
+        // signal that its "fix" changed nothing. Seen live: a `package.json`
+        // with a raw newline inside a JSON string was re-sent unchanged, and the
+        // duplicate guard answered "do not re-write it; your next turn MUST be a
+        // single finish action".
+        const stillFailing = this._pathFailingValidation(proposalResult.proposal.path);
         this._remember({
           layer: "contract",
           label: `duplicate ${describeAction(action)}`,
-          text: `${describeAction(action)} -> already applied: ${proposalResult.proposal.path} is already in exactly this state. Do not re-write or re-read it to verify. Your next turn MUST be a single finish action unless another file still needs work.`,
+          text: stillFailing
+            ? `${describeAction(action)} -> unchanged: you sent ${proposalResult.proposal.path} with byte-identical content, so nothing changed and it is STILL failing validation: ${stillFailing} Re-read the file, find the exact defect, and send different content. Do not send the same content again.`
+            : `${describeAction(action)} -> already applied: ${proposalResult.proposal.path} is already in exactly this state. Do not re-write or re-read it to verify. Your next turn MUST be a single finish action unless another file still needs work.`,
           importance: 1,
           ttlTurns: 1,
         });
@@ -732,10 +1040,16 @@ export default class AgentSession extends EventEmitter {
       this._actionSignatures.add(signature);
     }
     if (!proposalResult.ok) {
-      const repairHint =
-        proposalResult.status === "invalid-content"
-          ? " The anchor is a literal exact replacement, not a range starting at that line. Use an anchor covering the complete old block, append after an exact end block, or send one full-file edit_file content replacement based on the current file."
-          : "";
+      const repairHint = this._repairHint(proposalResult.status, action);
+      // A failed edit is precisely when re-reading the file becomes useful
+      // again: the model needs its exact current text to build a correct anchor
+      // or a full replacement, and the repair hint above tells it to do that.
+      // The read dedupe then answered "already gathered (skipped)" — the loop
+      // instructing the model to read a file and refusing the read in the same
+      // breath. Seen live: an anchored edit failed, the hint said "read_file
+      // server/server.js first", the read came back `duplicate`, and the session
+      // stalled to `no-progress` two turns later.
+      this._actionSignatures.delete(`read_file:${action.path}`);
       const result = {
         turn,
         action: { type: action.type, path: action.path },
@@ -787,6 +1101,13 @@ export default class AgentSession extends EventEmitter {
     this.appliedEdits.push(result);
     this.emit("action-result", result);
     if (guard.status === "written") {
+      // The same-path guard exists to stop a second edit that was written
+      // against text the first one already changed. Claiming the path before
+      // attempting the write made a *failed* edit consume the slot, so the
+      // model's corrective follow-up in the same turn was refused for a
+      // conflict that did not exist — seen live, an `invalid-content` edit was
+      // followed by a valid one that got `conflicting-action`.
+      mutationPathsThisTurn?.add(proposal.path);
       this._progressThisTurn = true;
       this._retireSupersededFileContext(proposal.path);
     }
@@ -954,23 +1275,74 @@ export default class AgentSession extends EventEmitter {
         kind: "validation",
       });
     }
+    // Validation is the point at which the graph's meaning changes most —
+    // stale issue nodes are dropped and the authoritative one is pinned — but
+    // the snapshot was only written on context-ops and at session end. An
+    // operator (or a crash-resume) reading `context-graph.json` mid-run saw a
+    // validation state several turns old and drew the wrong conclusion from it.
+    await this._persistContextGraph();
     return normalized;
+  }
+
+  /**
+   * The live evidence node a previous identical read produced, or null when it
+   * has been dropped. Null is what makes the read runnable again: the dedupe
+   * exists to stop the model re-fetching text it already has, not to stop it
+   * fetching text that is gone.
+   */
+  _liveEvidenceNode(label) {
+    for (const node of this.context.nodes.values()) {
+      if (node.label === label && node.state !== "dropped") {
+        return node;
+      }
+    }
+    return null;
   }
 
   async _handleReadonly({ action, turn }) {
     // Skip repeated identical reads/searches: they add no new context and would
     // otherwise let the model keep the loop alive without progress.
     const signature = `${action.type}:${action.path ?? action.term ?? ""}`;
-    if (this._actionSignatures.has(signature)) {
-      const result = { turn, action: { type: action.type, path: action.path, term: action.term }, status: "duplicate" };
+    // "Already gathered" is only true while the gathered text is still *there*.
+    // Budget pressure demotes an old read to a digest and then to a stub, and at
+    // that point refusing the re-read leaves the model unable to obtain the file
+    // by any means: the content is not in the prompt and the tool that fetches
+    // it is disabled. Seen live — a 250-line `index.js` was read, aged out of a
+    // 5000-token budget, and two consecutive turns asking for it again were
+    // answered `duplicate` until the session stopped `no-progress` one edit away
+    // from a working app.
+    const gathered = this._liveEvidenceNode(describeAction(action));
+    if (this._actionSignatures.has(signature) && gathered) {
+      // The model asking to read a file it already read means one thing: it
+      // cannot see the content. Answering "already gathered, use expand" asks it
+      // to re-state the same intent in another vocabulary, and a model that does
+      // not take that hint simply re-reads until the idle guard kills the run —
+      // observed live, two turns of `duplicate` reads on the file holding the
+      // one-line defect. Satisfying the intent is strictly better than
+      // instructing it: expand the node here and say so.
+      const expanded = this.context.applyOps([{ op: "expand", node: gathered.id }], { turn });
+      const reloaded = expanded.applied.length > 0;
+      const result = {
+        turn,
+        action: { type: action.type, path: action.path, term: action.term },
+        status: reloaded ? "reloaded" : "duplicate",
+      };
       this.emit("action-result", result);
       this._remember({
         layer: "contract",
         label: `duplicate ${describeAction(action)}`,
-        text: `${describeAction(action)} -> already gathered (skipped); use it or emit finish.`,
-        importance: 0.8,
+        text: reloaded
+          ? `${describeAction(action)} -> not re-read; its content was already in your context as node [${gathered.id}] and MiniPhi has reloaded it in full for this turn. Use it now.`
+          : `${describeAction(action)} -> already gathered and already loaded in full as node [${gathered.id}]. Use it; do not read it again.`,
+        importance: 0.9,
         ttlTurns: 1,
       });
+      if (reloaded) {
+        // Reloading the text the model was blocked on is real progress: without
+        // this the idle guard counts the turn that unblocked it against it.
+        this._progressThisTurn = true;
+        await this._persistContextGraph();
+      }
       await this._appendTranscript({ kind: "action-result", ...result });
       return;
     }
@@ -1105,9 +1477,17 @@ export default class AgentSession extends EventEmitter {
   }
 
   async _handleVisualReview({ action, turn }) {
-    const signature = `${action.type}:${action.path}:${action.focus ?? ""}`;
+    // Reviewing the same target twice is only wasteful while nothing has
+    // changed. "Look, fix, look again" is the whole point of this action, so
+    // the edit count is part of the signature: after any applied write the same
+    // page is reviewable again, and before one it is still deduped.
+    const signature = `${action.type}:${action.path ?? action.url}:${action.focus ?? ""}:e${this.appliedEdits.length}`;
     if (this._actionSignatures.has(signature)) {
-      const result = { turn, action: { type: action.type, path: action.path }, status: "duplicate" };
+      const result = {
+        turn,
+        action: { type: action.type, path: action.path ?? null, url: action.url ?? null },
+        status: "duplicate",
+      };
       this.emit("action-result", result);
       this._remember({
         layer: "contract",
@@ -1130,8 +1510,9 @@ export default class AgentSession extends EventEmitter {
     } else {
       try {
         const result = await this.visionReview({
-          path: action.path,
-          absolutePath: path.resolve(this.cwd, action.path),
+          path: action.path ?? null,
+          absolutePath: action.path ? path.resolve(this.cwd, action.path) : null,
+          url: action.url ?? null,
           focus: action.focus ?? null,
           sessionDeadline: this.sessionDeadline,
         });
@@ -1153,14 +1534,19 @@ export default class AgentSession extends EventEmitter {
     const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
     const result = {
       turn,
-      action: { type: action.type, path: action.path, focus: action.focus ?? null },
+      action: {
+        type: action.type,
+        path: action.path ?? null,
+        url: action.url ?? null,
+        focus: action.focus ?? null,
+      },
       status,
       output: boundedOutput,
     };
     this.emit("action-result", result);
     this._remember({
       layer: "evidence",
-      label: `visual_review ${action.path}`,
+      label: `visual_review ${action.path ?? action.url}`,
       text: `${describeAction(action)} -> ${status}\n${boundedOutput}`,
       importance: 0.8,
       kind: "visual",
@@ -1288,7 +1674,12 @@ export default class AgentSession extends EventEmitter {
       // evidence at equal priority, without ever touching the invariant layers.
       this.context.decay({ turn });
       const turnData = await this._getTurn(task, responseFormat);
+      this._noteTruncatedTurn(turn);
       finalSummary = turnData.summary ?? finalSummary;
+      // Kept for the next turn's durable-memory seed: the model's own account of
+      // what it is doing is the part of the run that actually moves.
+      this._lastTurnSummary =
+        typeof turnData.summary === "string" ? turnData.summary.slice(0, 600) : null;
       this.emit("status", {
         turn,
         summary: turnData.summary ?? "",
@@ -1380,7 +1771,7 @@ export default class AgentSession extends EventEmitter {
           this._remember({
             layer: "contract",
             label: `conflict ${action.path}`,
-            text: `${describeAction(action)} -> conflicting-action: combine all changes for ${action.path} into one write_file or edit_file action on the next turn.`,
+            text: `${describeAction(action)} -> conflicting-action:${this._repairHint("conflicting-action", action)}`,
             importance: 0.9,
             ttlTurns: 1,
           });
@@ -1391,9 +1782,6 @@ export default class AgentSession extends EventEmitter {
           break;
         }
         executableActions += 1;
-        if (action.type === "write_file" || action.type === "edit_file") {
-          mutationPathsThisTurn.add(action.path);
-        }
         if (
           category === "mutating" &&
           this.requireWebResearch &&
@@ -1413,7 +1801,7 @@ export default class AgentSession extends EventEmitter {
         } else if (action.type === "run_cmd") {
           await this._handleCommand({ action, turn });
         } else {
-          await this._handleMutation({ action, turn });
+          await this._handleMutation({ action, turn, mutationPathsThisTurn });
         }
       }
 
@@ -1480,6 +1868,17 @@ export default class AgentSession extends EventEmitter {
       // burning the turn budget waiting for an explicit `finish`.
       if (this._progressThisTurn) {
         idleTurns = 0;
+      } else if (this._consumeCorrectionGrace()) {
+        // The loop handed the model a brand-new instruction this turn (split
+        // this file up; your output was truncated). Counting the turn that
+        // *delivered* it as idle lets the guard kill the run for not yet having
+        // followed advice it has not had a turn to follow — which is what
+        // happened live: the model answered the split instruction with the
+        // right plan ("separate db, routes and views") and the session stopped
+        // `no-progress` on that exact turn. The grace is one turn per distinct
+        // instruction and capped, so a model that ignores the advice still
+        // stops.
+        this._log("[AgentSession] idle turn excused: new corrective instruction was just issued");
       } else {
         idleTurns += 1;
         if (idleTurns >= 2) {
@@ -1552,13 +1951,92 @@ export default class AgentSession extends EventEmitter {
             .length,
         },
         engine: contextEngineStats,
+        localMemory: this._localMemoryStats(),
       },
     };
+    await this._rememberSessionRecap(result);
+    result.context.localMemory = this._localMemoryStats();
     await this._persistContextGraph();
     await this._persist("context-engine.json", contextEngineStats);
     await this._persist("result.json", { ...result, finishedAt: new Date().toISOString() });
     this.emit("done", result);
     return result;
+  }
+
+  _localMemoryStats() {
+    if (!this.localMemory) {
+      return { enabled: false };
+    }
+    const base =
+      typeof this.localMemory.stats === "function" ? this.localMemory.stats() : {};
+    return {
+      enabled: true,
+      ...base,
+      queries: this._localMemoryQueries,
+      candidatesServed: this._localMemoryCandidatesServed,
+      remembered: this._localMemoryRemembered,
+      lastError: this._localMemoryError,
+    };
+  }
+
+  /**
+   * Writes one durable record describing what this session actually concluded.
+   * `result.json` already holds the same facts, but it is a per-session file no
+   * later run reads; this record is what a *future* session recalls when it
+   * asks "has this project done this before, and how did it end?".
+   */
+  async _rememberSessionRecap(result) {
+    if (!this.localMemory || typeof this.localMemory.remember !== "function") {
+      return;
+    }
+    const mission = this._missionNodeId ? this.context.nodes.get(this._missionNodeId) : null;
+    // An applied-edit entry carries its path under `action`, not at the top
+    // level; reading only `edit.path` silently produced an empty file list in
+    // every recap ever written.
+    const files = [
+      ...new Set(
+        (Array.isArray(result.edits) ? result.edits : [])
+          .filter((edit) => edit?.status === "written")
+          .map((edit) => edit?.action?.path ?? edit?.path ?? edit?.file)
+          .filter((value) => typeof value === "string" && value.trim()),
+      ),
+    ].slice(0, 24);
+    // Only a one-line anchor of the task, never the whole thing. The mission is
+    // supplied fresh on every run, so restating it in the recap is a long,
+    // highly topical duplicate that outranks what the session actually
+    // concluded — measured on this corpus, the restated task beat the recap's
+    // own outcome sentences for "how did the previous session end?".
+    const missionAnchor = mission?.text
+      ? mission.text.split("\n").find((line) => line.trim())?.trim().slice(0, 160)
+      : null;
+    const lines = [
+      missionAnchor ? `The task was: ${missionAnchor}` : null,
+      result.summary ? `The session concluded: ${result.summary}` : null,
+      `The run stopped with reason ${result.stopReason} after ${result.turns} turn(s).`,
+      files.length ? `It changed these files: ${files.join(", ")}.` : null,
+      result.validation?.ok === false && result.validation?.summary
+        ? `Workspace validation failed with: ${result.validation.summary}`
+        : null,
+      result.validation?.ok === true ? "Workspace validation passed." : null,
+    ].filter(Boolean);
+    try {
+      const record = await this.localMemory.remember({
+        kind: "recap",
+        title: `session ${this.sessionId}`,
+        text: lines.join("\n"),
+        tags: ["recap", "session", result.stopReason].filter(Boolean),
+        source: `session:${this.sessionId}`,
+        // A recap outranks an ordinary note: it is the only record that says
+        // how an attempt actually ended.
+        importance: 0.85,
+      });
+      if (record) {
+        this._localMemoryRemembered += 1;
+      }
+    } catch (error) {
+      this._localMemoryError = error instanceof Error ? error.message : String(error);
+      this._log(`[AgentSession] local memory recap failed: ${this._localMemoryError}`);
+    }
   }
 
   /**
@@ -1597,9 +2075,48 @@ export default class AgentSession extends EventEmitter {
       this._log(
         `[AgentSession] context ops applied: ${outcome.applied.map((entry) => entry.op).join(", ")}`,
       );
+      await this._rememberAppliedNotes(outcome.applied);
       await this._persistContextGraph();
     }
     return outcome;
+  }
+
+  /**
+   * A `note` op is the model saying "this is durable". Until now it was durable
+   * only for the rest of the session — the graph JSON survived, but nothing
+   * read it back on the next run. Every applied note is now also written to
+   * `.miniphi/memory/`, which is what makes it recallable by a later session
+   * (and on another machine, since that directory travels with the project).
+   */
+  async _rememberAppliedNotes(applied) {
+    if (!this.localMemory || typeof this.localMemory.remember !== "function") {
+      return;
+    }
+    for (const entry of applied) {
+      if (entry?.op !== "note" || !entry.node) {
+        continue;
+      }
+      const node = this.context.nodes.get(entry.node);
+      if (!node?.text) {
+        continue;
+      }
+      try {
+        const record = await this.localMemory.remember({
+          kind: node.layer === "plan" ? "decision" : "note",
+          title: node.label || "model note",
+          text: node.text,
+          tags: ["model-note", node.layer].filter(Boolean),
+          source: `session:${this.sessionId}`,
+          importance: node.importance,
+        });
+        if (record) {
+          this._localMemoryRemembered += 1;
+        }
+      } catch (error) {
+        this._localMemoryError = error instanceof Error ? error.message : String(error);
+        this._log(`[AgentSession] local memory write failed: ${this._localMemoryError}`);
+      }
+    }
   }
 
   /**

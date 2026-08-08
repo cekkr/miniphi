@@ -75,11 +75,50 @@ const completeSentence = (fragment, label) => {
   )}.`;
 };
 
+// A line that opens with list, quote, heading, table or fence markup — or one
+// that reads like code — is its own unit and must never be glued to the line
+// above it, however the previous line ended.
+const STRUCTURAL_LINE = /^(?:[-*+•>#|]|\d+[.)]\s|```|~~~|\s*[}\])];?$)/u;
+const CODE_LIKE_LINE = /[{};=<>]\s*$|^\s{2,}\S|\b(?:function|const|let|var|import|export|class|def|return)\b/u;
+
+const isStructural = (line) => STRUCTURAL_LINE.test(line) || CODE_LIKE_LINE.test(line);
+
+/**
+ * Rejoins a hard-wrapped prose paragraph into whole sentences.
+ *
+ * Wrapping a paragraph at ~100 columns is invisible to a reader and fatal to
+ * line-wise segmentation: every sentence that spans a wrap becomes two
+ * fragments, and both are then stored as quoted half-sentences. Markdown notes
+ * are wrapped that way as a matter of course, which is why the store that reads
+ * them asks for this. Source lines and terse tool output must keep the
+ * line-wise treatment, so it stays opt-in.
+ */
+const unwrapParagraph = (lines) => {
+  const joined = [];
+  for (const line of lines) {
+    const previous = joined.at(-1);
+    if (
+      previous &&
+      !terminalPunctuation.test(previous) &&
+      !isStructural(previous) &&
+      !isStructural(line)
+    ) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+      continue;
+    }
+    joined.push(line);
+  }
+  return joined;
+};
+
 /**
  * Turns arbitrary context (including source lines and terse tool output) into
  * bounded, self-contained reference sentences. Existing prose survives
  * verbatim; fragments are quoted inside a grammatical sentence rather than
  * persisted as orphaned words.
+ *
+ * Set `unwrapProse` when the input is authored prose (a markdown note, a
+ * summary) rather than lines that mean something individually.
  */
 export function buildCompleteReferenceSentences({
   text,
@@ -87,6 +126,7 @@ export function buildCompleteReferenceSentences({
   source = "runtime",
   maxReferences = DEFAULT_MAX_REFERENCES,
   maxReferenceChars = DEFAULT_MAX_REFERENCE_CHARS,
+  unwrapProse = false,
 } = {}) {
   const normalizedText = normalizeWhitespace(text);
   const normalizedLabel = normalizeWhitespace(label) || "context";
@@ -95,7 +135,8 @@ export function buildCompleteReferenceSentences({
   }
   const fragments = [];
   for (const paragraph of normalizedText.split(/\n{2,}/u)) {
-    const lines = paragraph.split("\n").map(normalizeWhitespace).filter(Boolean);
+    const rawLines = paragraph.split("\n").map(normalizeWhitespace).filter(Boolean);
+    const lines = unwrapProse ? unwrapParagraph(rawLines) : rawLines;
     for (const line of lines) {
       const sentences = segmentSentences(line);
       for (const sentence of sentences.length ? sentences : [line]) {

@@ -17,6 +17,7 @@ import {
   resolveKnowledgeLookupConfig,
   createKnowledgeLookupAction,
 } from "../libs/cheetah-knowledge-client.js";
+import { createLocalContextMemory } from "../libs/local-context-memory.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -109,10 +110,22 @@ export async function launchAgentUi(options = undefined) {
       knowledgeLookup = createKnowledgeLookupAction({ cheetahClient: knowledgeClient });
     }
   }
+  // Durable `.miniphi` memory. Unlike knowledge_lookup this costs no probe and
+  // no network — it is a directory scan — so it is on unless explicitly
+  // disabled, and an empty `.miniphi/memory/` simply recalls nothing.
+  const localMemory = baseDir
+    ? await createLocalContextMemory({
+        baseDir,
+        configData,
+        sessionId: null,
+        projectId: configData?.context?.cheetah?.projectId ?? null,
+      }).catch(() => null)
+    : null;
   const session = new AgentSession({
     client,
     cwd,
     baseDir,
+    localMemory,
     runCommand,
     webResearch:
       webResearch ??

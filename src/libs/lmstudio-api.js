@@ -16,6 +16,121 @@ const DEFAULT_LOAD_CONFIG = {
 const DEFAULT_LMSTUDIO_HTTP_BASE_URL = "http://127.0.0.1:1234";
 const DEFAULT_LMSTUDIO_WS_BASE_URL = "ws://127.0.0.1:1234";
 const DEFAULT_REST_TIMEOUT_MS = MIN_LMSTUDIO_REQUEST_TIMEOUT_MS;
+
+// The compatible `/chat/completions` route validates `reasoning_effort` against
+// a closed vocabulary (`none, minimal, low, medium, high, xhigh`) and rejects
+// anything else with a 400. MiniPhi's own profile vocabulary spells "no
+// reasoning" as `off`, and the model inventory may advertise `off`/`on` — both
+// have to land on a value this route accepts, or the request fails outright
+// instead of merely being ignored.
+const COMPATIBLE_REASONING_EFFORTS = new Set([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+const COMPATIBLE_REASONING_ALIASES = new Map([
+  ["off", "none"],
+  ["disabled", "none"],
+  ["false", "none"],
+  ["on", "medium"],
+  ["enabled", "medium"],
+  ["true", "medium"],
+  ["max", "xhigh"],
+]);
+
+/**
+ * A `fetch`-shaped POST/GET over `node:http(s)` with **no** response deadline of
+ * its own.
+ *
+ * Node's global `fetch` (undici) enforces a 300-second `headersTimeout` and
+ * `bodyTimeout` that nothing in the `fetch` API can raise — no option, no
+ * exposed dispatcher. A non-streamed `/chat/completions` produces no bytes until
+ * the whole completion is ready, so **every generation longer than five minutes
+ * fails with a bare `TypeError: fetch failed`**, no matter what
+ * `lmStudio.rest.timeoutMs` or `--timeout` say. That is not a corner case for
+ * this project: it is the normal shape of a local 27B model writing a file, and
+ * it was hit within two turns of a real sample run against
+ * `prism-ml/bonsai-27b`.
+ *
+ * The AbortController `_execute` already installs stays the single authority on
+ * how long a request may take. This shim only implements the surface `_execute`
+ * uses — `ok`, `status`, `statusText`, `headers.get`, `text()` — so an injected
+ * `fetchImpl` (every unit test) is unaffected.
+ */
+export function createNodeHttpFetch({ httpModule, httpsModule } = {}) {
+  return function nodeHttpFetch(url, init = {}) {
+    const target = new URL(String(url));
+    const isHttps = target.protocol === "https:";
+    return new Promise((resolve, reject) => {
+      const transport = isHttps
+        ? (httpsModule ?? require("node:https"))
+        : (httpModule ?? require("node:http"));
+      const body =
+        typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : undefined;
+      const headers = { ...(init.headers ?? {}) };
+      if (body !== undefined && headers["Content-Length"] === undefined) {
+        headers["Content-Length"] = Buffer.byteLength(body);
+      }
+      const request = transport.request(
+        target,
+        { method: init.method ?? "GET", headers },
+        (response) => {
+          const chunks = [];
+          response.on("data", (chunk) => chunks.push(chunk));
+          response.on("error", reject);
+          response.on("end", () => {
+            const text = Buffer.concat(chunks).toString("utf8");
+            const status = response.statusCode ?? 0;
+            resolve({
+              ok: status >= 200 && status < 300,
+              status,
+              statusText: response.statusMessage ?? "",
+              headers: {
+                get: (name) => response.headers[String(name).toLowerCase()] ?? null,
+              },
+              async text() {
+                return text;
+              },
+              async json() {
+                return JSON.parse(text);
+              },
+            });
+          });
+        },
+      );
+      // The caller's AbortSignal is the only deadline. Without this the socket
+      // would outlive an aborted request and keep the model busy.
+      const signal = init.signal;
+      if (signal) {
+        if (signal.aborted) {
+          request.destroy(new Error("The operation was aborted"));
+        } else {
+          signal.addEventListener(
+            "abort",
+            () => request.destroy(new Error("The operation was aborted")),
+            { once: true },
+          );
+        }
+      }
+      request.on("error", reject);
+      if (body !== undefined) {
+        request.write(body);
+      }
+      request.end();
+    });
+  };
+}
+
+export function toCompatibleReasoningEffort(effort) {
+  const normalized = String(effort ?? "").trim().toLowerCase();
+  if (COMPATIBLE_REASONING_EFFORTS.has(normalized)) {
+    return normalized;
+  }
+  return COMPATIBLE_REASONING_ALIASES.get(normalized) ?? "medium";
+}
 const require = createRequire(import.meta.url);
 let SDK_VERSION = null;
 try {
@@ -260,7 +375,11 @@ export class LMStudioRestClient {
             process.env.LMSTUDIO_API_TOKEN.trim()
           ? process.env.LMSTUDIO_API_TOKEN.trim()
           : null;
-    this.fetchImpl = options?.fetchImpl ?? globalThis.fetch;
+    // Not `globalThis.fetch`: undici caps a response at 300s and offers no way
+    // to raise it, so a local model that needs longer than five minutes to
+    // finish a completion fails with "fetch failed" however MiniPhi's own
+    // timeout is configured. See createNodeHttpFetch.
+    this.fetchImpl = options?.fetchImpl ?? createNodeHttpFetch();
     this.executionRegister = options?.executionRegister ?? null;
     this.executionContext = options?.executionContext ?? null;
     this.defaultReasoning =
@@ -467,7 +586,18 @@ export class LMStudioRestClient {
       error: null,
     };
     if (configuredEffort) {
+      // Two keys for one setting, because the two LM Studio routes name it
+      // differently. The native v1 route takes `reasoning`; the compatible
+      // `/chat/completions` route — the one every schema-bound MiniPhi prompt
+      // uses — takes `reasoning_effort`, and it *silently ignores* `reasoning`.
+      // Sending only the native key meant every "reasoning off" run still paid
+      // full reasoning: measured against prism-ml/bonsai-27b, an off-profile
+      // request still burned its entire token budget on reasoning and returned
+      // empty content. Whichever key the server does not know is ignored, so
+      // sending both is what makes the setting actually apply.
       body.reasoning = configuredEffort;
+      body.reasoning_effort = toCompatibleReasoningEffort(configuredEffort);
+      reasoningMetadata.sentEffort = body.reasoning_effort;
     }
     try {
       const completion = await this._post("/chat/completions", body, timeoutMs);
@@ -491,6 +621,7 @@ export class LMStudioRestClient {
       }
       this.reasoningSupport.set(model, false);
       delete body.reasoning;
+      delete body.reasoning_effort;
       reasoningMetadata.supported = false;
       reasoningMetadata.fallback = true;
       reasoningMetadata.error =
