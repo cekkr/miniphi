@@ -161,7 +161,16 @@ Persistence per session: `.miniphi/agent-sessions/<id>/` holds `session.json`,
 | LM Studio transport + reasoning | [`src/libs/lmstudio-api.js`](src/libs/lmstudio-api.js), [`src/libs/reasoning-profile.js`](src/libs/reasoning-profile.js) |
 | Model inventory, Auto, context window | [`src/libs/model-catalog.js`](src/libs/model-catalog.js) |
 | Vision review + screenshots | [`src/libs/vision-reviewer.js`](src/libs/vision-reviewer.js) |
+| Page structure, as written and as rendered | [`src/libs/page-inspector.js`](src/libs/page-inspector.js) |
+| Page region decomposition (vision subtasks) | [`src/libs/page-understanding.js`](src/libs/page-understanding.js) |
 | Web research | [`src/libs/web-researcher.js`](src/libs/web-researcher.js), [`src/libs/web-browser.js`](src/libs/web-browser.js) |
+| Real token limits + model loading | [`src/libs/model-limits.js`](src/libs/model-limits.js) |
+| Per-call sampling | [`src/libs/sampling-profiles.js`](src/libs/sampling-profiles.js) |
+| Complete prompt/subprompt debug log | [`src/libs/prompt-trace.js`](src/libs/prompt-trace.js) |
+| Mission → ordered verifiable subtasks | [`src/libs/subprompt-composer.js`](src/libs/subprompt-composer.js) |
+| Turning repeated failures into durable rules | [`src/libs/error-learning.js`](src/libs/error-learning.js) |
+| Workspace version history + scored rollback | [`src/libs/workspace-checkpoints.js`](src/libs/workspace-checkpoints.js) |
+| Navigation rules + project handbook | [`src/libs/project-guidelines.js`](src/libs/project-guidelines.js), [`src/libs/agents-bootstrapper.js`](src/libs/agents-bootstrapper.js), [`docs/guidelines/`](docs/guidelines) |
 | Schemas | [`docs/prompts/`](docs/prompts) |
 | Interactive UI | [`src/ui/`](src/ui) |
 
@@ -216,8 +225,12 @@ adjudicated by the adapter, never taken from the model's own `grounded` field.
 | Web research | a researcher is injected | `web_research` |
 | Vision review | the live catalog reports a `vision` model | `visual_review` (workspace `path` **or** loopback `url`) |
 | Knowledge lookup | `knowledgeLookup.enabled` **and** one `SYSTEM_STATS` probe succeeds | `knowledge_lookup` |
+| Page structure | a `pageInspect` function is injected | `page_inspect` (workspace `path` **or** loopback `url`) |
+| Page understanding | a `pageUnderstand` function is injected (needs a `vision` model) | `page_understand` |
 | Cheetah context | `context.engine: "cheetah"` | (no action; changes selection) |
 | Durable memory | on unless disabled | (no action; changes selection) |
+| Error learning | an `ErrorLearner` is injected | (no action; writes lessons into `contract`, `.miniphi/memory` and Cheetah) |
+| Subtask plan | a `SubpromptComposer` is injected | (no action; pins an ordered plan into `contract`) |
 
 The pattern is the same for all of them: **probe once, wire only if healthy, and never advertise an
 action in the system prompt that would just answer `unavailable`.**
@@ -279,6 +292,17 @@ is fetched from the running server, and screenshot at `networkidle2` rather than
 A validator reports the complete current issue set every run. Feed back a small, dependency-ordered
 prefix; a local model cannot act on ten instructions at once.
 
+### A whole-file rewrite destroys a working file
+`write_file` replaces the entire target, and a model that means to patch will sometimes send only
+the patch. A 302-line application replaced by a 22-line fragment passes the syntax check and dies at
+runtime. `detectPartialOverwrite` refuses a write leaving under half of an existing 30+-line file;
+`edit_file` with full `content` stays the deliberate whole-file replacement.
+
+### A turn makes things worse and the run repairs forward from rubble
+Check the score, not the intention. `WorkspaceCheckpoints` records every validated state in a shadow
+git repo with a score, detects a regression against a state actually held, and restores it — and
+exposes `revert_changes` so the model can do the same deliberately.
+
 ### A local model keeps failing to write one large file
 A syntax error in a 240-line one-shot generation is not a typo — it is the file being longer than
 the model can emit correctly, and re-proposing it whole moves the error rather than fixing it. From
@@ -292,10 +316,44 @@ mistake it never made. Check `finish_reason` and say "length", not "syntax".
 A vision model has no upper bound on taste. Gate on it for a bounded number of attempts, then
 demote it to advisory — or a functionally complete app iterates forever.
 
+### A request that needs more than ~300 seconds is lost, not truncated
+LM Studio's API server gives up on its own engine call at ~300s and answers
+`400 Engine protocol predict request failed: fetch failed`. Measured 2026-08-10: six benchmark
+attempts failed at exactly ~305.6s, every attempt under 300s succeeded. On a ~7 tok/s model that is
+a ceiling of ~1700 output tokens per request. Size requests in *seconds* — pass measured
+`tokensPerSecond` to `planOutputTokens`, which applies `MAX_REQUEST_SECONDS` as a `request-time`
+cap — not only in context tokens.
+
 ### A long generation dies with a bare "fetch failed"
 Not the model, not the network: Node's global `fetch` has a 300-second ceiling of its own. See §4.
 Two of those in a row also wedge LM Studio's engine into answering 400
 `Engine protocol predict request failed` — recover with `models --unload` then `--load`.
+
+### A benchmark or sub-call scores a reasoning model at zero
+A fixed output cap measures MiniPhi, not the model: a reasoning model spends the budget thinking and
+returns `finish_reason: "length"` with empty content. `prism-ml/bonsai-27b` scored 0/100 in all six
+Easy categories this way on 2026-08-10. Budgets are now derived
+(`resolveTrialTokenBudget`, `planOutputTokens`) and an exhausted budget grows for the retry.
+
+### An app passes every route check and still ignores the design it was given
+Route assertions, JSON shapes and a vision score are all satisfied by markup written from memory. If
+the task says "use this template", something has to assert that the template is actually being used —
+see `scripts/photos-social/template-fidelity.js`, which counts the template's own classes on each
+served page. Every such check must produce a **textual** verdict, or a model without vision cannot
+act on it.
+
+### A rule the run learned dies with the turn that learned it
+Corrections live in `contract` nodes with a TTL, so the same run relearns the same lesson and the
+next run starts from zero. `ErrorLearner` promotes a *repeated* failure into a durable rule written
+to `.miniphi/memory` and the Cheetah knowledge base, and re-injects it into the live session.
+
+### The fixed prompt eats the whole window
+Measure it before blaming the model. On an 8192-token instance MiniPhi's own system prompt, guides,
+project handbook and `agent-action` schema block cost ~5958 tokens, so the derived context budget
+lands on the 512-token floor and the run cannot see the workspace at all. `AgentSession` and the
+sample runner both warn when that happens. Never pass an explicit `--context-budget` larger than the
+window minus that fixed cost — a run configured with `--context-budget 6500` on an 8192 window
+overshoots by thousands of tokens.
 
 ### JIT context overflow
 Advertising a static `context_length` exceeds a JIT-loaded model's smaller window and LM Studio

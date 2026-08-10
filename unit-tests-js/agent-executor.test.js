@@ -550,3 +550,143 @@ test("writes into installed or generated directories are refused, reads are not"
     true,
   );
 });
+
+test("an absolute path inside the workspace is rewritten, not mangled", async () => {
+  const workspace = await createTempWorkspace();
+  await fs.mkdir(path.join(workspace, "server"), { recursive: true });
+
+  // The model naming the file the way a log line shows it.
+  const inside = normalizeAgentAction(
+    { type: "write_file", path: path.join(workspace, "server", "db.js"), content: "export const a=1;\n", reason: "db" },
+    workspace,
+  );
+  assert.equal(inside.ok, true);
+  assert.equal(inside.action.path, path.join("server", "db.js"));
+});
+
+test("a leading slash means the workspace root only when it names something here", async () => {
+  const workspace = await createTempWorkspace();
+  await fs.mkdir(path.join(workspace, "html-template"), { recursive: true });
+
+  // `/html-template/home.html` -> workspace-relative: the first segment exists.
+  const template = normalizeAgentAction(
+    { type: "read_file", path: "/html-template/home.html", reason: "look" },
+    workspace,
+  );
+  assert.equal(template.ok, true);
+  assert.equal(template.action.path, path.join("html-template", "home.html"));
+
+  // A bare filename at the root is unambiguous.
+  const bare = normalizeAgentAction(
+    { type: "write_file", path: "/notes.md", content: "hi\n", reason: "note" },
+    workspace,
+  );
+  assert.equal(bare.ok, true);
+  assert.equal(bare.action.path, "notes.md");
+});
+
+test("an absolute path outside the workspace is refused, never nested inside it", async () => {
+  const workspace = await createTempWorkspace();
+  // Stripping the slash here would have created
+  // <workspace>/Users/someone/elsewhere/server/db.js — a junk path that resolves
+  // happily inside the sandbox. Seen live on the first db.js write.
+  const outside = normalizeAgentAction(
+    { type: "write_file", path: "/Users/someone/elsewhere/server/db.js", content: "x\n", reason: "db" },
+    workspace,
+  );
+  assert.equal(outside.ok, false);
+  assert.match(outside.error, /absolute|escapes the workspace/i);
+});
+
+test("a patch fragment sent as a whole file is refused before it destroys the file", async () => {
+  const workspace = await createTempWorkspace();
+  const existing = Array.from({ length: 300 }, (_, index) => `const line${index} = ${index};`).join("\n");
+  await fs.writeFile(path.join(workspace, "app.js"), existing, "utf8");
+
+  const proposal = await buildMutationProposal({
+    action: {
+      type: "write_file",
+      path: "app.js",
+      // The shape seen live: one route and no imports, replacing a whole app.
+      content: "app.get('/api/posts', (req, res) => {\n  res.json([]);\n});\n",
+    },
+    cwd: workspace,
+  });
+
+  assert.equal(proposal.ok, false);
+  assert.equal(proposal.status, "partial-content");
+  assert.match(proposal.error, /currently has 300 lines and your content has only/);
+  assert.match(proposal.error, /edit_file/);
+  // And the file on disk is untouched.
+  assert.equal(await fs.readFile(path.join(workspace, "app.js"), "utf8"), existing);
+});
+
+test("a deliberate full rewrite through edit_file is still allowed", async () => {
+  const workspace = await createTempWorkspace();
+  const existing = Array.from({ length: 300 }, (_, index) => `const line${index} = ${index};`).join("\n");
+  await fs.writeFile(path.join(workspace, "app.js"), existing, "utf8");
+
+  const proposal = await buildMutationProposal({
+    action: { type: "edit_file", path: "app.js", content: "export const app = 1;\n" },
+    cwd: workspace,
+  });
+  assert.equal(proposal.ok, true, "edit_file is the deliberate way to say 'replace all of it'");
+});
+
+test("shrinking a short file, or growing a long one, is not treated as truncation", async () => {
+  const workspace = await createTempWorkspace();
+  await fs.writeFile(path.join(workspace, "small.js"), "const a = 1;\nconst b = 2;\n", "utf8");
+  const small = await buildMutationProposal({
+    action: { type: "write_file", path: "small.js", content: "const a = 1;\n" },
+    cwd: workspace,
+  });
+  assert.equal(small.ok, true, "a short file has no meaningful shrink signal");
+
+  const existing = Array.from({ length: 300 }, (_, index) => `const line${index} = ${index};`).join("\n");
+  await fs.writeFile(path.join(workspace, "big.js"), existing, "utf8");
+  const grown = await buildMutationProposal({
+    action: { type: "write_file", path: "big.js", content: `${existing}\nconst extra = 1;\n` },
+    cwd: workspace,
+  });
+  assert.equal(grown.ok, true);
+});
+
+test("a file that over-runs into a trailing fence is repaired, not lost", async () => {
+  const workspace = await createTempWorkspace();
+  // The exact shape seen live: a complete module, then the model's own JSON
+  // continuation leaking into the content string.
+  const good = "export const getDbPath = () => DB_PATH;\n";
+  const proposal = await buildMutationProposal({
+    action: { type: "write_file", path: "db.js", content: `${good}\`\`\`}, { ` },
+    cwd: workspace,
+  });
+  assert.equal(proposal.ok, true, "four junk characters must not cost the whole file");
+  assert.equal(proposal.proposal.afterContent, good);
+});
+
+test("the repair never hides a fence that leaves the code broken", async () => {
+  const workspace = await createTempWorkspace();
+  // Stripping the trailing fence here would leave an unterminated function, so
+  // the repair must decline and let the error name the fence — that message is
+  // the only thing that turns an unrelated "Unexpected end of input" into a
+  // one-line fix.
+  const broken = "export function f() {\n  const a = 1;\n```\n  }  ]  }, ";
+  const proposal = await buildMutationProposal({
+    action: { type: "write_file", path: "broken.js", content: broken },
+    cwd: workspace,
+  });
+  assert.equal(proposal.ok, false);
+  assert.equal(proposal.status, "invalid-content");
+  assert.match(proposal.error, /markdown code fence/);
+});
+
+test("ordinary content is never altered", async () => {
+  const workspace = await createTempWorkspace();
+  const content = "export const a = 1;\n// a comment mentioning backticks `like this`\n";
+  const proposal = await buildMutationProposal({
+    action: { type: "write_file", path: "plain.js", content },
+    cwd: workspace,
+  });
+  assert.equal(proposal.ok, true);
+  assert.equal(proposal.proposal.afterContent, content);
+});

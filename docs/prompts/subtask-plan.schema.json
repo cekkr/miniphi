@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Subtask Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_restated",
+    "strategy",
+    "subtasks",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "schema_version": { "const": "subtask-plan@v1" },
+    "mission_restated": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The mission in your own words, in one or two sentences. Used to check you understood it before any work starts."
+    },
+    "strategy": {
+      "type": "string",
+      "description": "One paragraph: the order you will work in and why that order is the cheapest way to be correct."
+    },
+    "subtasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "description": "Ordered, independently verifiable units of work. Each one must be small enough to finish in one or two turns.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "goal", "acceptance"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+            "description": "Short stable slug, e.g. 'inspect-template' or 'db-schema'."
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What must be true when this subtask is done. State the outcome, not the activity."
+          },
+          "why": {
+            "type": "string",
+            "description": "Why this is needed before the subtasks that depend on it."
+          },
+          "inputs": {
+            "type": "array",
+            "maxItems": 8,
+            "items": { "type": "string" },
+            "description": "Exact workspace-relative paths, loopback URLs or node ids this subtask needs loaded before it starts."
+          },
+          "actions": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "enum": [
+                "read_file",
+                "list_dir",
+                "search_text",
+                "web_research",
+                "knowledge_lookup",
+                "page_inspect",
+                "page_understand",
+                "visual_review",
+                "write_file",
+                "edit_file",
+                "run_cmd"
+              ]
+            },
+            "description": "The action types you expect to use. Declaring them is a commitment, not a reservation."
+          },
+          "acceptance": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": { "type": "string" },
+            "description": "Checks that decide done-ness, each one machine-verifiable from text: a command that exits 0, an HTTP response, a string present in a file or page. Never 'it looks right'."
+          },
+          "depends_on": {
+            "type": "array",
+            "maxItems": 6,
+            "items": { "type": "string" },
+            "description": "Ids of subtasks that must complete first."
+          },
+          "estimated_turns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "How many turns this should take. Above 3 means it is still too big; split it."
+          },
+          "risk": {
+            "type": "string",
+            "enum": ["low", "mid", "high"],
+            "description": "How likely this is to fail or need rework."
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string" },
+      "description": "Things you could not determine from the given facts and will have to discover."
+    },
+    "needs_more_context": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when you cannot plan without more of the workspace."
+    },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Minimal repo-relative files needed before planning can proceed."
+    },
+    "stop_reason": { "type": "string" }
+  }
+}

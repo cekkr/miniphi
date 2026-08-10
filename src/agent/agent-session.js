@@ -6,10 +6,15 @@ import { buildJsonSchemaResponseFormat } from "../libs/json-schema-utils.js";
 import { resolveMissingSnippets, buildSnippetContextBlock } from "../libs/plan-executor.js";
 import ContextGraph, {
   CONTEXT_LANGUAGE_GUIDE,
+  MIN_BUDGET_TOKENS,
   deriveContextBudget,
   estimateTokens,
 } from "../libs/context-graph.js";
 import ContextReferenceComposer from "../libs/context-reference-composer.js";
+import { NULL_PROMPT_TRACE } from "../libs/prompt-trace.js";
+import { resolveSampling } from "../libs/sampling-profiles.js";
+import { planOutputTokens } from "../libs/model-limits.js";
+import { renderPlanBlock } from "../libs/subprompt-composer.js";
 import {
   buildMutationProposal,
   classifyActionType,
@@ -39,6 +44,71 @@ const MAX_ACTION_SCAN_MULTIPLIER = 3;
 const MAX_PINNED_FILE_BYTES = 6000;
 const MAX_RESEARCH_OUTPUT_CHARS = 6000;
 const MAX_READONLY_OUTPUT_CHARS = 6000;
+// Structural page reports are the reference an implementation is written
+// against, and the part that names dynamic data fields sits at the end of the
+// JSON. Cutting them at the research budget removes exactly that.
+const MAX_PAGE_REPORT_CHARS = 12000;
+// Action types that only *gather*. A plan subtask declaring nothing else is
+// finished by having performed one of them; it can never be finished by a
+// validator, because reading a file changes nothing a validator can see.
+const PLAN_GATHERING_ACTIONS = new Set([
+  "read_file",
+  "list_dir",
+  "search_text",
+  "web_research",
+  "knowledge_lookup",
+  "page_inspect",
+  "page_understand",
+  "visual_review",
+]);
+// How long one subtask may remain current before the plan moves on regardless.
+const DEFAULT_MAX_TURNS_PER_SUBTASK = 3;
+// LM Studio's API server gives up on its own engine call at ~300s.
+const DEFAULT_REQUEST_CEILING_MS = 300000;
+const DEFAULT_MAX_AUTO_REVERTS = 3;
+// After this many validations reporting the identical issue while edits keep
+// landing, the model is changing the wrong code and needs to be told so.
+const STALLED_VALIDATION_TURNS = 3;
+
+/**
+ * A distinctive thing to grep for, pulled out of a validator sentence: a route
+ * path, a quoted field name, or a code-formatted identifier. Returns null when
+ * the sentence offers nothing specific enough to search for, because a vague
+ * suggestion is worse than none.
+ */
+export function extractSearchTerm(issue) {
+  const text = String(issue ?? "");
+  const route = /(?:GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9/_:.-]+)/.exec(text);
+  if (route) {
+    // A sentence ends in a full stop and a path does not; keeping it would send
+    // the model searching for a string that appears nowhere.
+    return route[1].replace(/[.,;:]+$/, "");
+  }
+  const quoted = /"([A-Za-z_][A-Za-z0-9_]{2,})"/.exec(text);
+  if (quoted) {
+    return quoted[1];
+  }
+  const backticked = /`([A-Za-z_][A-Za-z0-9_./-]{2,})`/.exec(text);
+  return backticked ? backticked[1] : null;
+}
+// Above this fraction of the ceiling a turn is "nearly too slow to serve" and
+// the context budget is cut before the next one crosses it.
+const REQUEST_LATENCY_ALARM = 0.75;
+// How much of the budget survives a shrink, and how far it may fall.
+const BUDGET_SHRINK_FACTOR = 0.65;
+const MIN_SHRUNK_BUDGET_TOKENS = 2000;
+const MAX_BUDGET_SHRINKS = 4;
+
+/**
+ * True for the failure that means "the inference engine is wedged", as opposed
+ * to any other 400. Matching the message is unavoidable: LM Studio returns a
+ * plain 400 for this, with the engine's own text as the only distinguishing
+ * signal.
+ */
+const isEngineProtocolFailure = (error) => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /engine protocol|predict request failed/i.test(message);
+};
 const MAX_MUTATION_CONTEXT_CHARS = 12000;
 
 /**
@@ -92,6 +162,18 @@ const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. U
 // that would just report "unavailable".
 const KNOWLEDGE_LOOKUP_GUIDE = `A knowledge base (taught via the separate "cheetah-learn" command, e.g. from Wikipedia text) is available this session. Use knowledge_lookup (subject: an entity/topic name, e.g. "Springfield") before asserting a real-world fact you are not certain of; it runs automatically and returns structured JSON (resolved, facts, evidence) grounded in what was actually taught. resolved=false means nothing is recorded there - say so rather than guessing.`;
 
+// Only appended when page tooling was wired (see AgentSession.pageInspect /
+// pageUnderstand). Both are auto-run and read-only.
+// Only appended when a checkpoint history is wired.
+const CHECKPOINT_GUIDE = `MiniPhi keeps a version history of this workspace. Every validated state is recorded as a checkpoint with a score: a workspace that boots and validates scores far above one that does not, fewer outstanding issues score above more, and a passing test suite adds to it. The recent checkpoints and their scores are shown in your context.
+Use revert_changes when a change you made left the workspace worse than it was - a file you rewrote broke the app, or the issue count went up. Give it a checkpoint id to go back to that exact state, or omit the id to return to the best-scoring state MiniPhi has recorded. Reverting is itself recorded, so nothing is lost by trying it.
+Repairing forward from a broken state is almost always more expensive than going back to the last state that worked and making a smaller change from there.`;
+
+const PAGE_TOOLS_GUIDE = `Two read-only page tools are available this session, and they answer different questions.
+page_inspect returns a page's STRUCTURE as bounded JSON instead of raw markup: for a workspace file (path) it reports the title, stylesheets, scripts, image paths, forms and their field names, the layout outline and the classes the design reuses; for a running app (url, loopback only) it reports the same from the live DOM plus each region's geometry, which images actually loaded, and any console/page/network errors. Use it INSTEAD of read_file on a large HTML template - reading a 900-line page into a small context budget crowds out the task, and the structure is what you need to reuse it.
+page_understand looks at the page and decomposes it: it screenshots the page, asks a vision model what the main regions are, then crops each primary region and asks about that crop alone, returning per-region elements, the dynamic data fields each region needs, the interactions it implies and notes on reproducing it with the template's own markup. Use it once per page you must implement, before writing that page, and again on the running app's url when you need to know why it does not look right.
+When the task tells you to use an existing template, the deliverable must serve or include those exact files. Re-creating similar markup from memory discards the design you were told to use and is a task failure even if the page works.`;
+
 /**
  * Drives one interactive agent task: plan → act → (approve) → apply → repeat.
  * UI-agnostic: it emits events and awaits an injected `approver`, so the same
@@ -115,6 +197,70 @@ export default class AgentSession extends EventEmitter {
     this.visionReview = typeof options?.visionReview === "function" ? options.visionReview : null;
     this.knowledgeLookup =
       typeof options?.knowledgeLookup === "function" ? options.knowledgeLookup : null;
+    // Read-only page tooling. Wired only when the caller provides it, following
+    // the same "probe once, wire only if healthy, otherwise never advertise the
+    // action" pattern web_research/visual_review/knowledge_lookup use.
+    this.pageInspect = typeof options?.pageInspect === "function" ? options.pageInspect : null;
+    this.pageUnderstand =
+      typeof options?.pageUnderstand === "function" ? options.pageUnderstand : null;
+    // Complete prompt/subprompt debug log. Defaults to the no-op trace so every
+    // call site can write `this.trace.record(...)` unconditionally.
+    this.trace = options?.trace ?? NULL_PROMPT_TRACE;
+    // Pre-written navigation rules + the workspace's own handbook, composed once
+    // by the caller (see project-guidelines.js) and carried in the system prompt.
+    this.guidelines =
+      typeof options?.guidelines === "string" && options.guidelines.trim()
+        ? options.guidelines.trim()
+        : null;
+    // Turns the mission into ordered, independently verifiable subtasks before
+    // turn 1. Optional: without one the session behaves exactly as before.
+    this.subpromptComposer = options?.subpromptComposer ?? null;
+    this.planFacts = typeof options?.planFacts === "string" ? options.planFacts : "";
+    this.planConstraints =
+      typeof options?.planConstraints === "string" ? options.planConstraints : "";
+    this.errorLearner = options?.errorLearner ?? null;
+    this._plan = null;
+    this._planNodeId = null;
+    this._planCompleted = new Set();
+    this._planCurrent = null;
+    this._planTurnsOnCurrent = 0;
+    this.maxTurnsPerSubtask =
+      Number.isFinite(options?.maxTurnsPerSubtask) && options.maxTurnsPerSubtask > 0
+        ? Math.floor(options.maxTurnsPerSubtask)
+        : DEFAULT_MAX_TURNS_PER_SUBTASK;
+    // Set when a read-only action actually ran this turn, which is what closes
+    // a gathering subtask (see _advancePlan).
+    this._gatheredThisTurn = false;
+    // Recovery from a wedged inference engine. RECAP.md has documented since
+    // July that two consecutive over-ceiling requests make LM Studio answer
+    // `400 Engine protocol predict request failed` until the model is unloaded
+    // and reloaded — and nothing implemented that recovery, so the documented
+    // cure was only ever available to a human reading the log afterwards.
+    this.reloadModel = typeof options?.reloadModel === "function" ? options.reloadModel : null;
+    // Wall-clock budget for one request, used to shrink the context when turns
+    // start running close to it.
+    this.requestCeilingMs =
+      Number.isFinite(options?.requestCeilingMs) && options.requestCeilingMs > 0
+        ? Math.floor(options.requestCeilingMs)
+        : DEFAULT_REQUEST_CEILING_MS;
+    this._budgetShrinks = 0;
+    this._engineRecoveries = 0;
+    this._stalledIssueSignature = null;
+    this._stalledIssueTurns = 0;
+    this._stalledHintGiven = false;
+    // Version history of the workspace, so a turn that makes things worse can
+    // be undone instead of repaired forward from a broken state.
+    this.checkpoints = options?.checkpoints ?? null;
+    this.autoRevertOnRegression = options?.autoRevertOnRegression !== false;
+    this._reverts = 0;
+    // A cap on automatic reverts. Undoing a bad turn is cheap; undoing every
+    // turn is a different failure, and a run that only reverts makes no
+    // progress at all.
+    this.maxAutoReverts =
+      Number.isFinite(options?.maxAutoReverts) && options.maxAutoReverts >= 0
+        ? Math.floor(options.maxAutoReverts)
+        : DEFAULT_MAX_AUTO_REVERTS;
+    this._autoReverts = 0;
     this.validateWorkspace =
       typeof options?.validateWorkspace === "function" ? options.validateWorkspace : null;
     this.requireWebResearch = Boolean(options?.requireWebResearch);
@@ -138,6 +284,13 @@ export default class AgentSession extends EventEmitter {
       Number.isFinite(options?.maxTurnTokens) && options.maxTurnTokens > 0
         ? Math.floor(options.maxTurnTokens)
         : -1;
+    // Measured generation speed, used to keep one request inside the server's
+    // request-time ceiling (see model-limits.js MAX_REQUEST_SECONDS). Null
+    // disables the time cap, which is right for a fast host.
+    this.tokensPerSecond =
+      Number.isFinite(options?.tokensPerSecond) && options.tokensPerSecond > 0
+        ? options.tokensPerSecond
+        : null;
     this.model = typeof options?.model === "string" && options.model.trim() ? options.model.trim() : null;
     this.modelSelection =
       options?.modelSelection && typeof options.modelSelection === "object"
@@ -195,12 +348,24 @@ export default class AgentSession extends EventEmitter {
       : null;
     this._hasExplicitContextBudget =
       Number.isFinite(options?.contextBudgetTokens) && options.contextBudgetTokens > 0;
+    this._fixedPromptTokens = this._estimateFixedPromptTokens();
     this.contextBudgetTokens = this._hasExplicitContextBudget
       ? Math.floor(options.contextBudgetTokens)
       : deriveContextBudget({
           contextLength: this.contextLength,
-          reservedTokens: this._estimateFixedPromptTokens(),
+          reservedTokens: this._fixedPromptTokens,
         });
+    // A budget pinned at the floor means MiniPhi's own fixed prompt — system
+    // prompt, guides, project handbook, JSON schema — has eaten the window, and
+    // the model gets essentially no room for the task. It is a configuration
+    // failure that otherwise shows up only as a run that reads nothing and
+    // writes nonsense, so say it out loud. Seen on an 8192-token instance of
+    // prism-ml/bonsai-27b: ~5400 fixed tokens, 512 left.
+    if (!this._hasExplicitContextBudget && this.contextBudgetTokens <= MIN_BUDGET_TOKENS) {
+      this._log(
+        `[AgentSession] WARNING: the fixed prompt costs ~${this._fixedPromptTokens} tokens of a ${this.contextLength ?? "?"}-token window, leaving only ${this.contextBudgetTokens} for context. Load the model with a larger context length, or the run cannot see the workspace.`,
+      );
+    }
     this.context = options?.context instanceof ContextGraph
       ? options.context
       : new ContextGraph({ budgetTokens: this.contextBudgetTokens });
@@ -360,13 +525,30 @@ export default class AgentSession extends EventEmitter {
     }
   }
 
-  /** SYSTEM_PROMPT plus the visual_review/knowledge_lookup guides, only when configured. */
+  /**
+   * SYSTEM_PROMPT plus the pre-written navigation rules and the guides for the
+   * optional capabilities that are actually wired.
+   *
+   * The rules go *first*, before the mechanics: they are the part that decides
+   * whether the run inspects the reference material or invents an equivalent,
+   * and a local model weights the opening of a system prompt far more heavily
+   * than a paragraph buried under a JSON schema.
+   */
   _systemPrompt() {
     const guides = [
       typeof this.visionReview === "function" ? VISUAL_REVIEW_GUIDE : null,
+      typeof this.pageInspect === "function" || typeof this.pageUnderstand === "function"
+        ? PAGE_TOOLS_GUIDE
+        : null,
       typeof this.knowledgeLookup === "function" ? KNOWLEDGE_LOOKUP_GUIDE : null,
+      this.checkpoints ? CHECKPOINT_GUIDE : null,
     ].filter(Boolean);
-    return guides.length ? `${SYSTEM_PROMPT}\n\n${guides.join("\n\n")}` : SYSTEM_PROMPT;
+    const parts = [
+      this.guidelines ? `${this.guidelines}\n\n---\n` : null,
+      SYSTEM_PROMPT,
+      ...guides,
+    ].filter(Boolean);
+    return parts.join("\n\n");
   }
 
   /** Tokens the system prompt + schema block always cost, excluded from the context budget. */
@@ -740,6 +922,7 @@ export default class AgentSession extends EventEmitter {
     const userBody = [
       contextBlock,
       referenceSelection.block || null,
+      this._renderChangeHistory(),
       "Respond with the next turn as JSON.",
     ].filter(Boolean).join("\n\n");
     return [
@@ -748,18 +931,153 @@ export default class AgentSession extends EventEmitter {
     ];
   }
 
-  async _requestTurn(messages, responseFormat) {
-    const completion = await this.client.createChatCompletion({
+  /**
+   * The turn's output budget, from what the loaded window actually has left.
+   *
+   * A fixed cap is a guess in both directions: too small truncates a legitimate
+   * whole-file write (the failure `_noteTruncatedTurn` exists to explain), and
+   * `-1` lets one turn generate the rest of the window, which on a ~7 tok/s
+   * local model is an hour inside a single HTTP request. `maxTurnTokens` stays
+   * authoritative as a *pacing* cap, but it is now applied to a measured
+   * headroom rather than standing in for one.
+   */
+  _turnTokenBudget(messages) {
+    const promptTokens = messages.reduce(
+      (total, message) =>
+        total +
+        estimateTokens(
+          typeof message?.content === "string" ? message.content : JSON.stringify(message?.content ?? ""),
+        ),
+      0,
+    );
+    return {
+      promptTokens,
+      ...planOutputTokens({
+        contextLength: this.contextLength,
+        promptTokens,
+        hardCap: this.maxTurnTokens > 0 ? this.maxTurnTokens : null,
+        minTokens: 512,
+        // Measured throughput turns the server's request-time ceiling into a
+        // token cap. Without it a legitimate large turn is not truncated — it is
+        // rejected outright with a 400 and the turn is lost.
+        tokensPerSecond: this.tokensPerSecond,
+      }),
+    };
+  }
+
+  /**
+   * The recent checkpoints, so `revert_changes` can name one. Kept to the last
+   * few plus the best-scoring state: a long history would cost budget without
+   * telling the model anything it can act on.
+   */
+  _renderChangeHistory() {
+    const all = this.checkpoints?.list?.() ?? [];
+    if (!all.length) {
+      return null;
+    }
+    const best = this.checkpoints.best();
+    const shown = all.slice(-4);
+    if (best && !shown.some((entry) => entry.id === best.id)) {
+      shown.unshift(best);
+    }
+    const lines = ["Change history (revert_changes can restore any of these):"];
+    for (const entry of shown) {
+      const marks = [
+        entry.id === best?.id ? "best" : null,
+        entry.id === all.at(-1)?.id ? "current" : null,
+      ].filter(Boolean);
+      lines.push(
+        `- ${entry.id} score ${entry.score}${entry.issues != null ? `, ${entry.issues} issue(s)` : ""}${marks.length ? ` (${marks.join(", ")})` : ""}: ${entry.label}`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  async _requestTurn(messages, responseFormat, { kind = "agent-turn", turn = null, attempt = 1 } = {}) {
+    // The agent turn both decides and writes. `agent` is the compromise the
+    // profile table exists to make explicit rather than leave at a bare 0.2.
+    const sampling = resolveSampling("agent", { temperature: this.temperature });
+    const budget = this._turnTokenBudget(messages);
+    const request = {
       messages,
-      temperature: this.temperature,
-      max_tokens: this.maxTurnTokens,
+      temperature: sampling.temperature,
+      top_p: sampling.top_p,
+      max_tokens: budget.maxTokens,
       response_format: responseFormat,
       ...(this.model ? { model: this.model } : {}),
       ...(this.reasoning?.model?.resolved &&
         typeof this.client?.setDefaultReasoning !== "function"
         ? { reasoning: this.reasoning.model.resolved }
         : {}),
+    };
+    const startedAt = Date.now();
+    this._lastPromptTokens = budget.promptTokens;
+    let completion = null;
+    let failure = null;
+    try {
+      completion = await this.client.createChatCompletion(request);
+    } catch (error) {
+      failure = error;
+    }
+    const elapsedMs = Date.now() - startedAt;
+    if (!failure) {
+      // A turn that *succeeded* near the ceiling is the last warning before one
+      // that does not. Act on it now rather than after the engine wedges.
+      this._noteRequestLatency({ promptTokens: budget.promptTokens, elapsedMs });
+    }
+    // Validate here purely so the trace carries the outcome. `_getTurn` runs the
+    // authoritative validation a moment later, but it does so *after* the trace
+    // entry is written, which left `valid: null` on every agent turn — the one
+    // field an operator reads first, missing from the one call that matters.
+    const responseText = completion?.choices?.[0]?.message?.content ?? "";
+    const traceValidation = failure
+      ? null
+      : this.schemaRegistry?.validate(AGENT_SCHEMA_ID, responseText) ?? null;
+    await this.trace.record({
+      kind,
+      turn,
+      attempt,
+      elapsedMs,
+      request: {
+        model: this.model,
+        messages,
+        response_format: responseFormat,
+        temperature: sampling.temperature,
+        top_p: sampling.top_p,
+        max_tokens: budget.maxTokens,
+        context_length: this.contextLength,
+        samplingProfile: sampling.samplingProfile,
+        reasoning: this.reasoning ?? null,
+      },
+      response: {
+        text: completion?.choices?.[0]?.message?.content ?? "",
+        reasoning:
+          completion?.choices?.[0]?.message?.reasoning ??
+          completion?.choices?.[0]?.message?.reasoning_content ??
+          null,
+        finish_reason: completion?.choices?.[0]?.finish_reason ?? null,
+        usage: completion?.usage ?? null,
+        tool_calls: completion?.choices?.[0]?.message?.tool_calls ?? null,
+      },
+      validation: traceValidation
+        ? {
+            valid: Boolean(traceValidation.valid),
+            status: traceValidation.status ?? null,
+            error: traceValidation.error ?? null,
+            preambleDetected: Boolean(traceValidation.preambleDetected),
+          }
+        : null,
+      outcome: {
+        headroomTokens: budget.headroom,
+        cappedByPacing: budget.capped,
+        limitedBy: budget.limitedBy,
+        timeCapTokens: budget.timeCap,
+      },
+      error: failure ? (failure instanceof Error ? failure.message : String(failure)) : null,
     });
+    if (failure) {
+      throw failure;
+    }
     if (completion?.miniphi_reasoning) {
       this.reasoningRequests.push({
         ...completion.miniphi_reasoning,
@@ -777,14 +1095,84 @@ export default class AgentSession extends EventEmitter {
     return choice?.message?.content ?? "";
   }
 
-  async _requestTurnWithRetry(messages, responseFormat) {
+  /**
+   * Shrinks the context budget when requests get close to the server's ceiling.
+   *
+   * The output-token cap cannot prevent this failure, which is what the live
+   * run proved: turn 5 spent its whole 307-second budget on a 25874-token
+   * prompt and emitted *zero* tokens before the engine gave up. What has to
+   * come down is the prompt, so the graph gets a smaller budget and sheds its
+   * lowest-value nodes to digests and stubs — which is exactly what the layered
+   * context was built to do under pressure.
+   */
+  _noteRequestLatency({ promptTokens, elapsedMs, failed = false }) {
+    const alarming = failed || elapsedMs >= this.requestCeilingMs * REQUEST_LATENCY_ALARM;
+    if (!alarming || this._budgetShrinks >= MAX_BUDGET_SHRINKS) {
+      return false;
+    }
+    const next = Math.max(
+      MIN_SHRUNK_BUDGET_TOKENS,
+      Math.floor(this.contextBudgetTokens * BUDGET_SHRINK_FACTOR),
+    );
+    if (next >= this.contextBudgetTokens) {
+      return false;
+    }
+    this._budgetShrinks += 1;
+    const previous = this.contextBudgetTokens;
+    this.contextBudgetTokens = next;
+    this.context.budgetTokens = next;
+    this._log(
+      `[AgentSession] a ${Math.round(elapsedMs / 1000)}s request on a ~${promptTokens}-token prompt is at the server's limit; context budget ${previous} -> ${next} tokens (shrink ${this._budgetShrinks}/${MAX_BUDGET_SHRINKS})`,
+    );
+    this.emit("context-budget", {
+      previous,
+      current: next,
+      promptTokens,
+      elapsedMs,
+      failed,
+      shrinks: this._budgetShrinks,
+    });
+    return true;
+  }
+
+  /**
+   * Unload/reload the model to clear a wedged engine, then let the caller retry.
+   * Only ever called for {@link isEngineProtocolFailure}; a wedged engine
+   * answers every subsequent request the same way, so retrying without this is
+   * guaranteed to fail exactly as the first attempt did — observed live, twice
+   * in a row at 306.7s each.
+   */
+  async _recoverEngine(error) {
+    if (typeof this.reloadModel !== "function") {
+      return false;
+    }
+    this._engineRecoveries += 1;
+    this._log(
+      `[AgentSession] inference engine wedged (${error instanceof Error ? error.message : error}); unloading and reloading the model`,
+    );
+    try {
+      await this.reloadModel();
+      this.emit("engine-recovered", { attempt: this._engineRecoveries });
+      return true;
+    } catch (failure) {
+      this._log(
+        `[AgentSession] engine reload failed: ${failure instanceof Error ? failure.message : failure}`,
+      );
+      return false;
+    }
+  }
+
+  async _requestTurnWithRetry(messages, responseFormat, traceContext = undefined) {
     let lastError = null;
     for (let attempt = 0; attempt <= DEFAULT_MODEL_REQUEST_RETRIES; attempt += 1) {
       if (this._budgetExhausted()) {
         throw new Error("session-timeout");
       }
       try {
-        return await this._requestTurn(messages, responseFormat);
+        return await this._requestTurn(messages, responseFormat, {
+          ...(traceContext ?? {}),
+          attempt: attempt + 1,
+        });
       } catch (error) {
         lastError = error;
         if (attempt < DEFAULT_MODEL_REQUEST_RETRIES) {
@@ -793,6 +1181,22 @@ export default class AgentSession extends EventEmitter {
               error instanceof Error ? error.message : error
             }`,
           );
+          // A wedged engine and an over-long prompt travel together: recover the
+          // engine *and* make the next prompt smaller, or the retry reproduces
+          // the failure byte for byte.
+          if (isEngineProtocolFailure(error)) {
+            await this._recoverEngine(error);
+            this._noteRequestLatency({
+              promptTokens: this._lastPromptTokens ?? 0,
+              elapsedMs: this.requestCeilingMs,
+              failed: true,
+            });
+            // The messages were built against the old budget; rebuild them so
+            // the retry actually benefits from the smaller one.
+            if (typeof traceContext?.rebuild === "function") {
+              messages = await traceContext.rebuild();
+            }
+          }
         }
       }
     }
@@ -865,6 +1269,11 @@ export default class AgentSession extends EventEmitter {
         ? " Your anchor removed text and left the surrounding punctuation behind — deleting the last entry of an object or array strands the comma before it. Extend the anchor to cover that separator too, or drop the anchor and send the whole corrected file as `content`."
         : "";
       return ` The content must be the complete, parseable text of the file.${anchorHint}${this._oversizedProposalHint(action)}`;
+    }
+    if (status === "partial-content") {
+      // The guard already explains itself in full; the repair hint only has to
+      // stop the model re-sending the same fragment.
+      return " Do not re-send the same shortened content.";
     }
     if (status === "missing-file") {
       return " Create it with write_file first; edit_file only changes a file that already exists.";
@@ -967,12 +1376,19 @@ export default class AgentSession extends EventEmitter {
     };
   }
 
-  async _getTurn(task, responseFormat) {
+  async _getTurn(task, responseFormat, turn = null) {
     let messages = null;
     let text = "";
     try {
       messages = await this._buildMessages(task);
-      text = await this._requestTurnWithRetry(messages, responseFormat);
+      text = await this._requestTurnWithRetry(messages, responseFormat, {
+        kind: "agent-turn",
+        turn,
+        // Lets the retry re-render the context after a shrink, so a smaller
+        // budget actually produces a smaller prompt instead of resending the
+        // one that just failed.
+        rebuild: () => this._buildMessages(task),
+      });
     } catch (error) {
       return this._fallbackTurn(task, `model request failed: ${error instanceof Error ? error.message : error}`);
     }
@@ -990,7 +1406,10 @@ export default class AgentSession extends EventEmitter {
     });
     try {
       const retryMessages = await this._buildMessages(task);
-      const retryText = await this._requestTurnWithRetry(retryMessages, responseFormat);
+      const retryText = await this._requestTurnWithRetry(retryMessages, responseFormat, {
+        kind: "agent-turn-schema-retry",
+        turn,
+      });
       const retryValidation = this.schemaRegistry.validate(AGENT_SCHEMA_ID, retryText);
       if (retryValidation?.valid && retryValidation.parsed) {
         return retryValidation.parsed;
@@ -1063,6 +1482,12 @@ export default class AgentSession extends EventEmitter {
         text: `${describeAction(action)} -> ${result.status}: ${result.error}${repairHint}`,
         importance: 0.9,
         ttlTurns: 1,
+      });
+      await this._observeFailure({
+        kind: `edit:${result.status}`,
+        detail: String(result.error ?? result.status),
+        path: action.path ?? null,
+        turn,
       });
       await this._appendTranscript({ kind: "action-result", ...result });
       return;
@@ -1181,6 +1606,8 @@ export default class AgentSession extends EventEmitter {
     }
     if (status === "executed") {
       this._progressThisTurn = true;
+      // A gathering subtask is finished by having gathered something.
+      this._gatheredThisTurn = true;
     }
     const result = { turn, action: { type: "run_cmd", command: action.command }, status, output };
     this.emit("action-result", result);
@@ -1191,6 +1618,14 @@ export default class AgentSession extends EventEmitter {
       importance: status === "failed" ? 0.9 : 0.7,
       kind: "command",
     });
+    if (status === "failed") {
+      await this._observeFailure({
+        kind: "run_cmd",
+        detail: String(output).slice(0, 1200),
+        turn,
+        context: action.command,
+      });
+    }
     await this._appendTranscript({ kind: "command", ...result });
   }
 
@@ -1362,6 +1797,8 @@ export default class AgentSession extends EventEmitter {
     }
     if (status === "executed") {
       this._progressThisTurn = true;
+      // A gathering subtask is finished by having gathered something.
+      this._gatheredThisTurn = true;
     }
     const result = { turn, action: { type: action.type, path: action.path, term: action.term }, status, output };
     this.emit("action-result", result);
@@ -1456,6 +1893,7 @@ export default class AgentSession extends EventEmitter {
 
     if (status === "executed") {
       this._progressThisTurn = true;
+      this._gatheredThisTurn = true;
       this._webResearchCompleted = true;
     }
     const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
@@ -1530,6 +1968,8 @@ export default class AgentSession extends EventEmitter {
 
     if (status === "executed") {
       this._progressThisTurn = true;
+      // A gathering subtask is finished by having gathered something.
+      this._gatheredThisTurn = true;
     }
     const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
     const result = {
@@ -1601,6 +2041,8 @@ export default class AgentSession extends EventEmitter {
 
     if (status === "executed") {
       this._progressThisTurn = true;
+      // A gathering subtask is finished by having gathered something.
+      this._gatheredThisTurn = true;
     }
     const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
     const result = {
@@ -1621,14 +2063,504 @@ export default class AgentSession extends EventEmitter {
   }
 
   /**
+   * `page_inspect` and `page_understand` share everything except which injected
+   * function they call and how expensive a repeat is, so they share a handler.
+   *
+   * The dedupe signature includes the applied-edit count for the same reason
+   * `visual_review`'s does: "look, fix, look again" is the intended loop, and a
+   * page is legitimately re-inspectable once something changed.
+   */
+  async _handlePageAction({ action, turn }) {
+    const isUnderstand = action.type === "page_understand";
+    const handler = isUnderstand ? this.pageUnderstand : this.pageInspect;
+    const signature = `${action.type}:${action.path ?? action.url}:${action.mode ?? ""}:${action.focus ?? ""}:e${this.appliedEdits.length}`;
+    if (this._actionSignatures.has(signature)) {
+      const result = {
+        turn,
+        action: { type: action.type, path: action.path ?? null, url: action.url ?? null },
+        status: "duplicate",
+      };
+      this.emit("action-result", result);
+      this._remember({
+        layer: "contract",
+        label: `duplicate ${describeAction(action)}`,
+        text: `${describeAction(action)} -> already inspected (skipped); use the report you already have.`,
+        importance: 0.8,
+        ttlTurns: 1,
+      });
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    this._actionSignatures.add(signature);
+    this.emit("action-start", { turn, action, description: describeAction(action) });
+
+    let status = "executed";
+    let output = "";
+    if (typeof handler !== "function") {
+      status = "unavailable";
+      output = JSON.stringify({
+        error: `${action.type} is not configured for this agent session`,
+      });
+    } else {
+      try {
+        const result = await handler({
+          relativePath: action.path ?? null,
+          url: action.url ?? null,
+          mode: action.mode ?? "auto",
+          focus: action.focus ?? null,
+          sessionDeadline: this.sessionDeadline,
+        });
+        if (!result?.ok) {
+          status = "failed";
+          output = JSON.stringify({ error: result?.error ?? `${action.type} failed` });
+        } else {
+          output = JSON.stringify(result.response, null, 2);
+        }
+      } catch (error) {
+        status = "failed";
+        output = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (status === "executed") {
+      this._progressThisTurn = true;
+      // A gathering subtask is finished by having gathered something.
+      this._gatheredThisTurn = true;
+    } else {
+      await this._observeFailure({
+        kind: action.type,
+        detail: output,
+        path: action.path ?? action.url ?? null,
+        turn,
+      });
+    }
+    // A structural report is denser and more reusable than raw search output,
+    // so it gets a bigger slice than MAX_RESEARCH_OUTPUT_CHARS: truncating a
+    // region breakdown in the middle throws away the part that names the data
+    // fields, which is the whole reason the call was made.
+    const boundedOutput = String(output).slice(0, MAX_PAGE_REPORT_CHARS);
+    const result = {
+      turn,
+      action: {
+        type: action.type,
+        path: action.path ?? null,
+        url: action.url ?? null,
+        focus: action.focus ?? null,
+      },
+      status,
+      output: boundedOutput,
+    };
+    this.emit("action-result", result);
+    this._remember({
+      layer: "evidence",
+      label: `${action.type} ${action.path ?? action.url}`,
+      text: `${describeAction(action)} -> ${status}\n${boundedOutput}`,
+      // A page report is the reference the implementation is written against;
+      // it should survive several turns of budget pressure.
+      importance: isUnderstand ? 0.95 : 0.85,
+      kind: "page",
+    });
+    await this._appendTranscript({ kind: "page", ...result });
+  }
+
+  /**
+   * Feeds one failure to the error learner and, when it has recurred, spends a
+   * model call turning it into a durable rule that is injected into this run's
+   * contract layer *and* persisted for the next one.
+   */
+  async _observeFailure({ kind, detail, path: failingPath = null, turn = null, context = null }) {
+    if (!this.errorLearner) {
+      return null;
+    }
+    const observation = this.errorLearner.observe({
+      kind,
+      detail,
+      path: failingPath,
+      turn,
+      context,
+    });
+    if (!observation.shouldLearn) {
+      return null;
+    }
+    const pending = this.errorLearner
+      .pending()
+      .find((entry) => entry.signature === observation.signature);
+    if (!pending) {
+      return null;
+    }
+    const learned = await this.errorLearner
+      .learn(pending, { sessionDeadline: this.sessionDeadline, mission: this._missionText })
+      .catch(() => ({ ok: false }));
+    if (!learned?.ok) {
+      return null;
+    }
+    // Retained-with-TTL, never `scratch`: a lesson demoted to a stub under the
+    // exact budget pressure it was meant to correct is the failure mode the
+    // context-graph notes already document.
+    this._remember({
+      layer: "contract",
+      label: `lesson: ${learned.lesson.title}`,
+      text: `You have hit this ${pending.count} times. ${learned.lesson.rule} (Cause: ${learned.lesson.cause})${learned.lesson.verification ? ` Verify with: ${learned.lesson.verification}` : ""}`,
+      importance: 1,
+      ttlTurns: 3,
+    });
+    this._grantCorrectionGrace(`lesson:${observation.signature}`);
+    this.emit("lesson", { turn, lesson: learned.lesson });
+    this._log(`[AgentSession] learned: ${learned.lesson.title}`);
+    return learned.lesson;
+  }
+
+  /**
+   * Decomposes the mission into ordered subtasks before turn 1 and pins the
+   * plan into the contract layer.
+   *
+   * A plan is worth a model call here for one reason: without it every turn
+   * re-derives an order from whatever survived the budget, and the order a
+   * local model re-derives under pressure is "start writing the thing". The
+   * plan makes "inspect the template first" a commitment that is still visible
+   * on turn 9.
+   */
+  async _composePlan(task) {
+    if (!this.subpromptComposer || typeof this.subpromptComposer.compose !== "function") {
+      return null;
+    }
+    const composed = await this.subpromptComposer
+      .compose({
+        mission: task,
+        facts: this.planFacts,
+        constraints: this.planConstraints,
+        sessionDeadline: this.sessionDeadline,
+      })
+      .catch((error) => {
+        this._log(`[AgentSession] plan composition failed: ${error?.message ?? error}`);
+        return null;
+      });
+    if (!composed?.plan?.subtasks?.length) {
+      return null;
+    }
+    this._plan = composed.plan;
+    this._planFallback = Boolean(composed.fallback);
+    this._planCurrent = composed.plan.subtasks[0]?.id ?? null;
+    await this._persist("subtask-plan.json", {
+      schemaVersion: "subtask-plan@v1",
+      sessionId: this.sessionId,
+      fallback: this._planFallback,
+      attempts: composed.attempts,
+      plan: composed.plan,
+    });
+    this._refreshPlanNode();
+    this.emit("plan", { plan: composed.plan, fallback: this._planFallback });
+    this._log(
+      `[AgentSession] plan: ${composed.plan.subtasks.map((subtask) => subtask.id).join(" -> ")}${this._planFallback ? " (deterministic fallback)" : ""}`,
+    );
+    return composed.plan;
+  }
+
+  /** Keeps the plan block in the contract layer current with progress. */
+  _refreshPlanNode() {
+    const block = renderPlanBlock(this._plan, {
+      completed: this._planCompleted,
+      current: this._planCurrent,
+    });
+    if (!block) {
+      return;
+    }
+    if (!this._planNodeId || !this.context.update(this._planNodeId, { text: block })) {
+      this._planNodeId =
+        this._remember({
+          layer: "contract",
+          label: "subtask plan",
+          text: block,
+          importance: 1,
+          kind: "plan",
+        })?.id ?? null;
+    }
+  }
+
+  /**
+   * Advances the plan. This is a **ratchet**, not a judgement: it must be
+   * impossible for one subtask to stay current forever.
+   *
+   * The first version only advanced on a passing validation or on the model
+   * naming the subtask id alongside real progress. Both are unreachable for an
+   * *inspection* subtask — reading files never makes a validator pass, and a
+   * local model does not quote plan ids — so the very first subtask stayed
+   * `[NOW]` and the plan block instructed the model to keep inspecting. Seen
+   * live: `inspect-server` was pinned for all ten turns of a photos-social run
+   * while the model dutifully re-read `server/index.js` six times and the run
+   * died `no-progress`. The plan caused the loop it existed to prevent.
+   *
+   * Three ways forward now, in order of confidence:
+   *   1. validation passes — the whole task is done, so this subtask is too;
+   *   2. the subtask's own declared work happened (its actions are read-only
+   *      and at least one read-only action executed, or real progress was made
+   *      while the model named it);
+   *   3. it has been current for `maxTurnsPerSubtask` turns — move on and say
+   *      so, because a subtask nobody can finish is worse than a skipped one.
+   */
+  _advancePlan({ summary, validationValid }) {
+    if (!this._plan?.subtasks?.length || !this._planCurrent) {
+      return;
+    }
+    const current = this._plan.subtasks.find((subtask) => subtask.id === this._planCurrent);
+    if (!current) {
+      return;
+    }
+    this._planTurnsOnCurrent += 1;
+    // Only a slug-shaped id counts as "the model named this subtask". A bare
+    // English word like `implement` or `verify` appears in almost every summary
+    // a model writes, so matching it advanced the plan on a coincidence —
+    // observed live, `implement` closed 80 seconds after opening because the
+    // summary happened to contain the word.
+    const slugLike = /[-_0-9]/.test(current.id);
+    const named =
+      slugLike &&
+      typeof summary === "string" &&
+      new RegExp(`\\b${current.id.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i").test(summary);
+    // A subtask that only declared read-only actions is satisfied by having
+    // performed one. It cannot be satisfied by anything else.
+    const readonlyOnly =
+      Array.isArray(current.actions) &&
+      current.actions.length > 0 &&
+      current.actions.every((action) => PLAN_GATHERING_ACTIONS.has(action));
+    const gathered = readonlyOnly && this._gatheredThisTurn;
+    const exhausted = this._planTurnsOnCurrent >= this.maxTurnsPerSubtask;
+    const done = validationValid === true || gathered || (named && this._progressThisTurn) || exhausted;
+    if (!done) {
+      return;
+    }
+    this._planCompleted.add(current.id);
+    const next = this._plan.subtasks.find((subtask) => !this._planCompleted.has(subtask.id));
+    this._planCurrent = next?.id ?? null;
+    this._planTurnsOnCurrent = 0;
+    this._refreshPlanNode();
+    if (exhausted && !gathered && validationValid !== true) {
+      // Say it out loud, in the layer the model is guaranteed to read: a forced
+      // advance is information, and leaving it silent invites the model to keep
+      // working the subtask it was just moved off.
+      this._remember({
+        layer: "contract",
+        label: "plan advanced",
+        text: `Subtask "${current.id}" spent ${this.maxTurnsPerSubtask} turns without finishing and has been closed. Do not keep working on it. The current subtask is now "${this._planCurrent ?? "(none — finish the task)"}"; act on that one.`,
+        importance: 1,
+        ttlTurns: 2,
+      });
+      this._grantCorrectionGrace(`plan:${current.id}`);
+    }
+    this.emit("plan-progress", {
+      completed: [...this._planCompleted],
+      current: this._planCurrent,
+      forced: Boolean(exhausted && !gathered && validationValid !== true),
+    });
+  }
+
+
+  /**
+   * Restores a previous workspace state. Approval-gated like any other
+   * mutation: it rewrites files, and the operator gets the same veto.
+   */
+  async _handleRevert({ action, turn }) {
+    const decision = await this.approver({
+      kind: "revert",
+      checkpoint: action.checkpoint ?? "(best scoring)",
+      danger: action.danger,
+      reason: action.reason,
+    });
+    if (!decision?.approved) {
+      const result = { turn, action: { type: action.type }, status: "rejected" };
+      this.emit("action-result", result);
+      this._remember({
+        layer: "plan",
+        label: "rejected revert",
+        text: `revert_changes -> rejected by operator`,
+        importance: 0.9,
+      });
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    if (!this.checkpoints) {
+      const result = { turn, action: { type: action.type }, status: "unavailable" };
+      this.emit("action-result", result);
+      this._remember({
+        layer: "contract",
+        label: "revert unavailable",
+        text: "revert_changes -> no change history is configured for this session; fix the workspace forward instead.",
+        importance: 0.9,
+        ttlTurns: 1,
+      });
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    const target = action.checkpoint ?? this.checkpoints.best()?.id ?? null;
+    if (!target) {
+      const result = { turn, action: { type: action.type }, status: "failed", error: "no checkpoint to restore" };
+      this.emit("action-result", result);
+      await this._appendTranscript({ kind: "action-result", ...result });
+      return;
+    }
+    const outcome = await this.checkpoints.restore(target).catch((error) => ({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    const result = {
+      turn,
+      action: { type: action.type, checkpoint: target },
+      status: outcome.ok ? "executed" : "failed",
+      error: outcome.ok ? undefined : outcome.error,
+    };
+    this.emit("action-result", result);
+    if (outcome.ok) {
+      this._reverts += 1;
+      this._progressThisTurn = true;
+      // Everything the model believed about file contents is now wrong, so the
+      // read dedupe has to forget: otherwise the next read of a restored file
+      // comes back "already gathered" with the *post-revert* text unread.
+      for (const signature of [...this._actionSignatures]) {
+        if (signature.startsWith("read_file:") || signature.startsWith("page_inspect:")) {
+          this._actionSignatures.delete(signature);
+        }
+      }
+      this._remember({
+        layer: "contract",
+        label: "workspace reverted",
+        text: `The workspace was restored to checkpoint ${outcome.target.id} ("${outcome.target.label}"). Every file is back to that state, so anything you read before this turn may be stale — re-read a file before editing it. Make a smaller change this time.`,
+        importance: 1,
+        ttlTurns: 2,
+      });
+      this._grantCorrectionGrace(`revert:${outcome.target.id}`);
+    }
+    await this._appendTranscript({ kind: "revert", ...result });
+  }
+
+  /**
+   * Notices "you keep changing files and this issue has not moved" and points
+   * the model at the tool that would locate the real code.
+   *
+   * The loop already handles a *rejected* edit and an *identical* edit. This is
+   * the third shape: edits that succeed, change real files, and leave the
+   * validator saying exactly what it said before — which means the code being
+   * changed is not the code that produces the failure. Observed live: ten turns,
+   * five accepted writes, every one of them rewriting `db.js` to add an
+   * `imageUrl` that `GET /api/posts` builds in `index.js`, and `search_text`
+   * never used once in the entire run.
+   */
+  _noteStalledValidation(validation) {
+    const issues = (validation?.issues ?? []).map((issue) => String(issue));
+    const signature = issues.join("\u0000");
+    if (!signature || validation?.valid === true) {
+      this._stalledIssueSignature = null;
+      this._stalledIssueTurns = 0;
+      return;
+    }
+    if (signature !== this._stalledIssueSignature) {
+      this._stalledIssueSignature = signature;
+      this._stalledIssueTurns = 1;
+      return;
+    }
+    this._stalledIssueTurns += 1;
+    if (this._stalledIssueTurns < STALLED_VALIDATION_TURNS || this._stalledHintGiven) {
+      return;
+    }
+    this._stalledHintGiven = true;
+    // An applied-edit record keeps the path under `action`, not at the top
+    // level; reading it from the wrong place produced "1 file change(s) ()".
+    const changed = [
+      ...new Set(
+        this.appliedEdits
+          .filter((edit) => edit.status === "written")
+          .map((edit) => edit.action?.path)
+          .filter(Boolean),
+      ),
+    ];
+    const term = extractSearchTerm(issues[0]);
+    this._remember({
+      layer: "contract",
+      label: "changes are not reaching the problem",
+      text: [
+        `You have applied ${changed.length} file change(s)${changed.length ? ` (${changed.slice(0, 4).join(", ")})` : ""} and this issue is word-for-word unchanged: ${issues[0].slice(0, 240)}`,
+        term
+          ? `That means the code producing it is somewhere you have not edited. Use search_text with ${JSON.stringify(term)} to find the file that actually implements it, read that file, and change it there.`
+          : "That means the code producing it is somewhere you have not edited. Use search_text to find the file that actually implements it before editing anything else.",
+      ].join(" "),
+      importance: 1,
+      ttlTurns: 3,
+    });
+    this._grantCorrectionGrace("stalled-validation");
+    this._log(
+      `[AgentSession] validation unchanged for ${this._stalledIssueTurns} turns; suggested search_text${term ? ` for ${term}` : ""}`,
+    );
+  }
+
+  /**
+   * Records the workspace state after a validation and, when the last turn made
+   * things measurably worse, says so — or undoes it.
+   *
+   * Automatic reverting is deliberately conservative: it only fires when the
+   * score *dropped* against a state MiniPhi actually held, which is a fact, not
+   * a judgement. Observed on photos-social: a working application replaced by a
+   * 22-line fragment took the score from "boots, one issue" to "does not start",
+   * and the run then spent every remaining turn repairing forward from rubble.
+   */
+  async _checkpointWorkspace({ label, turn, validation }) {
+    if (!this.checkpoints) {
+      return null;
+    }
+    const checkpoint = await this.checkpoints
+      .record({ label, turn, validation, tests: validation?.tests ?? null })
+      .catch(() => null);
+    const regression = this.checkpoints.regression?.();
+    if (!regression) {
+      return checkpoint;
+    }
+    this.emit("regression", regression);
+    if (!this.autoRevertOnRegression || this._autoReverts >= this.maxAutoReverts) {
+      this._remember({
+        layer: "contract",
+        label: "workspace got worse",
+        text: `Your last change made the workspace worse: it scored ${regression.current.score} against ${regression.bestBefore.score} at checkpoint ${regression.bestBefore.id} ("${regression.bestBefore.label}"). Consider revert_changes to go back to that state and make a smaller change.`,
+        importance: 1,
+        ttlTurns: 2,
+      });
+      return checkpoint;
+    }
+    this._log(
+      `[AgentSession] the last change scored ${regression.current.score} against ${regression.bestBefore.score}; restoring ${regression.bestBefore.id}`,
+    );
+    const outcome = await this.checkpoints
+      .restore(regression.bestBefore.id)
+      .catch(() => ({ ok: false }));
+    if (outcome.ok) {
+      this._reverts += 1;
+      this._autoReverts += 1;
+      for (const signature of [...this._actionSignatures]) {
+        if (signature.startsWith("read_file:") || signature.startsWith("page_inspect:")) {
+          this._actionSignatures.delete(signature);
+        }
+      }
+      this._remember({
+        layer: "contract",
+        label: "workspace restored automatically",
+        text: `Your last change made the workspace worse (score ${regression.current.score} against ${regression.bestBefore.score}), so MiniPhi restored checkpoint ${regression.bestBefore.id} ("${regression.bestBefore.label}"). The files are back to that state. Re-read anything you intend to edit, and make a smaller, more targeted change than the one that was undone — a whole-file rewrite is what broke it.`,
+        importance: 1,
+        ttlTurns: 3,
+      });
+      this._grantCorrectionGrace(`auto-revert:${regression.bestBefore.id}`);
+      this.emit("auto-reverted", { to: regression.bestBefore, from: regression.current });
+    }
+    return checkpoint;
+  }
+
+  /**
    * Runs the full task loop and resolves with a result summary. Also emits a
    * `done` event with the same payload.
    */
   async submitTask(task, selectedFiles = []) {
     const responseFormat = this._buildResponseFormat();
+    this._missionText = task;
     await this._ensureSessionDir();
     this._seedInvariants(task);
     await this._seedPinnedFiles(selectedFiles);
+    await this._composePlan(task);
     await this._persist("session.json", {
       sessionId: this.sessionId,
       task,
@@ -1651,7 +2583,12 @@ export default class AgentSession extends EventEmitter {
       });
     }
     if (typeof this.validateWorkspace === "function") {
-      await this._validateCurrentWorkspace({ task, turn: 0 });
+      const baseline = await this._validateCurrentWorkspace({ task, turn: 0 });
+      // The state the run inherited is itself a checkpoint: without it there is
+      // nothing to compare the first change against, and nothing to go back to.
+      await this._checkpointWorkspace({ label: "before the run", turn: 0, validation: baseline });
+    } else if (this.checkpoints) {
+      await this._checkpointWorkspace({ label: "before the run", turn: 0, validation: null });
     }
 
     let stopReason = "completed";
@@ -1673,7 +2610,7 @@ export default class AgentSession extends EventEmitter {
       // Age the graph one turn before rendering: fresh evidence outranks old
       // evidence at equal priority, without ever touching the invariant layers.
       this.context.decay({ turn });
-      const turnData = await this._getTurn(task, responseFormat);
+      const turnData = await this._getTurn(task, responseFormat, turn);
       this._noteTruncatedTurn(turn);
       finalSummary = turnData.summary ?? finalSummary;
       // Kept for the next turn's durable-memory seed: the model's own account of
@@ -1733,6 +2670,7 @@ export default class AgentSession extends EventEmitter {
       }
       let finished = false;
       this._progressThisTurn = false;
+      this._gatheredThisTurn = false;
       const mutationPathsThisTurn = new Set();
       let executableActions = 0;
       for (const rawAction of actions) {
@@ -1796,10 +2734,14 @@ export default class AgentSession extends EventEmitter {
           await this._handleResearch({ action, turn });
         } else if (category === "visual") {
           await this._handleVisualReview({ action, turn });
+        } else if (category === "page") {
+          await this._handlePageAction({ action, turn });
         } else if (category === "knowledge") {
           await this._handleKnowledgeLookup({ action, turn });
         } else if (action.type === "run_cmd") {
           await this._handleCommand({ action, turn });
+        } else if (action.type === "revert_changes") {
+          await this._handleRevert({ action, turn });
         } else {
           await this._handleMutation({ action, turn, mutationPathsThisTurn });
         }
@@ -1816,7 +2758,28 @@ export default class AgentSession extends EventEmitter {
           finalSummary = validation.summary || finalSummary;
         } else {
           finished = false;
+          // The validator is the run's most reliable failure signal, so its
+          // issues are what the error learner watches most closely. Each issue
+          // is observed separately: one recurring issue among five changing
+          // ones is exactly the pattern worth a rule.
+          for (const issue of validation.issues ?? []) {
+            await this._observeFailure({
+              kind: "validation",
+              detail: String(issue),
+              turn,
+              context: validation.summary ?? null,
+            });
+          }
         }
+        this._noteStalledValidation(validation);
+        await this._checkpointWorkspace({
+          label: `turn ${turn}: ${String(turnData.summary ?? "changes").slice(0, 80)}`,
+          turn,
+          validation,
+        });
+        this._advancePlan({ summary: turnData.summary, validationValid: validation.valid });
+      } else {
+        this._advancePlan({ summary: turnData.summary, validationValid: null });
       }
 
       if (finished) {
@@ -1953,7 +2916,26 @@ export default class AgentSession extends EventEmitter {
         engine: contextEngineStats,
         localMemory: this._localMemoryStats(),
       },
+      changes: this.checkpoints
+        ? { ...this.checkpoints.stats(), reverts: this._reverts }
+        : null,
+      requests: {
+        contextBudgetTokens: this.contextBudgetTokens,
+        budgetShrinks: this._budgetShrinks,
+        engineRecoveries: this._engineRecoveries,
+      },
+      plan: this._plan
+        ? {
+            fallback: Boolean(this._planFallback),
+            subtasks: this._plan.subtasks.map((subtask) => subtask.id),
+            completed: [...this._planCompleted],
+            current: this._planCurrent,
+          }
+        : null,
+      lessons: this.errorLearner?.stats?.() ?? null,
+      promptTrace: this.trace?.stats?.() ?? null,
     };
+    await this.trace?.finalize?.({ sessionId: this.sessionId, stopReason });
     await this._rememberSessionRecap(result);
     result.context.localMemory = this._localMemoryStats();
     await this._persistContextGraph();

@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Page Region Detail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "region",
+    "description",
+    "elements",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "schema_version": { "const": "page-region-detail@v1" },
+    "region": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The region name you were asked about."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What this region is composed of, described from the cropped image alone."
+    },
+    "elements": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 15,
+      "description": "The individual controls and content items inside the region.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "label"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "heading",
+              "image",
+              "avatar",
+              "icon",
+              "button",
+              "link",
+              "input",
+              "list",
+              "card",
+              "menu",
+              "badge",
+              "other"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Visible text or, when there is none, what the element depicts."
+          },
+          "role": {
+            "type": "string",
+            "description": "What it does when used, if that is apparent."
+          }
+        }
+      }
+    },
+    "dynamic_data": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string" },
+      "description": "The values this region must be filled with at runtime, named as data fields: 'post caption', 'author username', 'like count', 'uploaded photo url'."
+    },
+    "interactions": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string" },
+      "description": "What a user can do here and what the server must implement for it: 'clicking the heart posts a like and updates the count'."
+    },
+    "implementation_notes": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string" },
+      "description": "Concrete guidance for reproducing this region with the template's own markup: which classes and asset paths to reuse, which parts are static chrome and which must be generated per item."
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string" },
+      "description": "Anything visibly broken in this crop."
+    },
+    "needs_more_context": { "type": "boolean", "default": false },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "stop_reason": { "type": "string" }
+  }
+}

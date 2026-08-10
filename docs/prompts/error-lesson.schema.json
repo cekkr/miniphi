@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Error Lesson",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "title",
+    "cause",
+    "rule",
+    "applies_when",
+    "durable",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "schema_version": { "const": "error-lesson@v1" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 90,
+      "description": "The lesson in one line, phrased so it is useful before the failure happens again."
+    },
+    "cause": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the failure actually happened. Name the mechanism, not the symptom."
+    },
+    "rule": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The imperative rule that prevents it. One sentence a future turn can act on directly."
+    },
+    "applies_when": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The situation in which this rule matters, so it is not applied everywhere."
+    },
+    "verification": {
+      "type": "string",
+      "description": "How to check the rule was followed: a command, a response code, a string that must be present."
+    },
+    "durable": {
+      "type": "boolean",
+      "description": "True when this is a property of the environment, the platform or a library that will still be true in another run. False when it was a one-off mistake in this task."
+    },
+    "research_query": {
+      "type": "string",
+      "description": "A web search query that would confirm or refute the stated cause, when you are not certain of it. Leave empty when the cause is established by the evidence given."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "How certain the cause is, from the evidence you were given."
+    },
+    "needs_more_context": { "type": "boolean", "default": false },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "stop_reason": { "type": "string" }
+  }
+}

@@ -411,7 +411,18 @@ For prompt-scoring diagnostics, add `--debug-lm` to enable the semantic evaluato
 miniPhi stores reproducible artifacts in two places:
 
 - **Project-local:** `.miniphi/` (executions with `task-execution.json` request/response registers, prompt exchanges, agent-session transcripts/validation/rollbacks, helper scripts, reports, recompose edit logs/rollbacks)
-- **Project-local (extra):** `.miniphi/web/` for browser snapshots and `.miniphi/nitpick/` for writer/critic sessions
+- **Project-local (extra):** `.miniphi/web/` for browser snapshots, `.miniphi/nitpick/` for writer/critic sessions, `.miniphi/page-understanding/` for page screenshots and region crops
+- **Change history:** `.miniphi/changes.git` — a private git repository recording every state the
+  agent produced, scored by the workspace validator and the project's own tests. It never touches
+  your repository. Inspect it with ordinary git:
+  `git --git-dir=.miniphi/changes.git --work-tree=. log --oneline`, and see the scores in
+  `.miniphi/checkpoints.json`. When a change makes things measurably worse, miniPhi restores the
+  last state that worked and tells the model what it undid; the model can also revert deliberately.
+- **Prompt trace:** `.miniphi/prompt-trace/<session>/` — the complete debug log of every model
+  exchange the run made, main prompts *and* subprompts. `transcript.md` reads top to bottom;
+  `index.jsonl` is one line per call for `grep`/`jq`; `NNNN-<kind>.json` holds the exact messages,
+  sampling settings, token budget, usage, raw response and validation outcome, with images written
+  to `media/` rather than inlined. This is the first place to look when a run goes wrong.
 - **Project memory:** `.miniphi/memory/` — the one part worth keeping. See below.
 - **User-level:** `~/.miniphi/` (shared caches, preferences, prompt telemetry DB)
 
@@ -475,6 +486,13 @@ These are the commands most people start with:
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark models` produces model-selection evidence; `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
 - `miniphi cheetah-learn teach|ask|chat|questions|eval|wikipedia`
   Optional: teach a small "ignorant" model facts via Cheetah (from Hugging Face or a checkpointed local Wikipedia dump) and query them back, grounded only in retrieved source memory — see [Optional: teach a small "ignorant" model with Cheetah](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn).
+- `miniphi bootstrap-agents [dir]`
+  Write that project's own `AGENTS.md` — the handbook every later run reads — from the construction
+  protocol in [`docs/guidelines/AGENTS.bootstrap.md`](docs/guidelines/AGENTS.bootstrap.md) plus a
+  deterministic survey of the checked-out revision. One bounded model call per section, and anything
+  the survey did not establish is written in as an explicit gap instead of guessed. `--no-model`
+  produces the factual skeleton with no inference at all; `--sections`, `--output`, `--protocol`
+  (or `$MINIPHI_AGENTS_BOOTSTRAP`) and `--force` are also available.
 
 For the full list of flags and subcommands, run `miniphi --help` (or `node src/index.js --help`).
 
@@ -484,6 +502,7 @@ For the full list of flags and subcommands, run `miniphi --help` (or `node src/i
 - **AGENTS.md**: contributor + agent guardrails, JSON-first rules, deeper reference.
 - **ROADMAP.md**: milestones, exit criteria, and the current status snapshot.
 - `docs/`: implementation notes and LM Studio integration details.
+- `docs/guidelines/`: the rules agents run under — [`agent-navigation.md`](docs/guidelines/agent-navigation.md) (the compact ruleset injected into every prompt) and [`AGENTS.bootstrap.md`](docs/guidelines/AGENTS.bootstrap.md) (the full protocol `bootstrap-agents` applies to write a project's handbook).
 - `samples/`: recomposition and benchmark fixtures used to validate the runtime.
 - `dev_samples/task-tests.md` + `dev_samples/test_tasks/`: benchmark compendium source and cloned JSON suite used by unit tests (`node scripts/sync-test-task-catalog.js` to refresh artifacts).
 

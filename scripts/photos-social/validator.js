@@ -4,6 +4,11 @@ import net from "node:net";
 import path from "node:path";
 
 import { screenshotTarget } from "../../src/libs/vision-reviewer.js";
+import {
+  checkOwnTestSuite,
+  checkRenderedPage,
+  checkTemplateFidelity,
+} from "./template-fidelity.js";
 
 /**
  * Workspace validator for the `samples/photos-social` sample.
@@ -523,6 +528,10 @@ async function inspectDatabase(serverDir) {
  * @param {object} options
  * @param {string} options.workspaceRoot   `samples/photos-social`
  * @param {string} [options.serverDirName] Subdirectory the app must live in.
+ * @param {string} [options.templateDirName] The read-only design reference the
+ *   delivered app must actually be built from.
+ * @param {boolean} [options.requireOwnTests] Require `npm test` in the app.
+ * @param {Function} [options.runTestCommand] `(cmd, {cwd, timeoutMs}) => {code, output}`.
  * @param {Function} [options.visionReview] The same action wired into the session.
  * @param {string} [options.artifactsDir]  Where screenshots and reports are kept.
  * @param {Function} [options.logger]
@@ -530,12 +539,15 @@ async function inspectDatabase(serverDir) {
 export function createPhotosSocialValidator({
   workspaceRoot,
   serverDirName = "server",
+  templateDirName = "html-template",
   visionReview = null,
   artifactsDir = null,
   logger = null,
   port = DEFAULT_PORT,
   visionMinScore = 45,
   maxVisionOnlyFailures = 3,
+  requireOwnTests = true,
+  runTestCommand = null,
 } = {}) {
   const serverDir = path.join(workspaceRoot, serverDirName);
   const log = (message) => {
@@ -550,6 +562,7 @@ export function createPhotosSocialValidator({
     run += 1;
     const started = Date.now();
     const issues = [];
+    let tests = null;
     const report = { run, startedAt: new Date().toISOString(), facts: {} };
 
     if (!(await exists(serverDir))) {
@@ -662,6 +675,49 @@ export function createPhotosSocialValidator({
         );
       }
 
+      // Template fidelity, checked once the data layer works.
+      //
+      // This is the check whose absence let a hand-written mock pass: the whole
+      // task is "use the design in html-template/", and every other assertion
+      // here is satisfied by markup invented from scratch. It runs before the
+      // vision pass because it is cheap, deterministic, and its verdict is
+      // textual — a model with no vision at all can act on it, which is exactly
+      // what `docs/guidelines/agent-navigation.md` R6 requires of a check.
+      if (!issues.length) {
+        const fidelity = await checkTemplateFidelity({
+          origin,
+          templateDir: path.join(workspaceRoot, templateDirName),
+          pages: [
+            { name: "feed", pathname: "/feed" },
+            { name: "profile", pathname: `/u/${scenario.facts.registered}` },
+            { name: "login", pathname: "/login" },
+            { name: "register", pathname: "/register" },
+          ],
+        });
+        report.templateFidelity = fidelity.facts;
+        issues.push(...fidelity.issues);
+      }
+
+      if (!issues.length) {
+        const rendered = await checkRenderedPage({ url: `${origin}/feed` });
+        report.rendered = rendered.facts;
+        issues.push(...rendered.issues);
+      }
+
+      // The app's own suite. Requiring it is what makes "ship the test with the
+      // change" enforceable, and it gives the agent a fast vision-free way to
+      // check itself between validator runs.
+      if (!issues.length && requireOwnTests) {
+        const suite = await checkOwnTestSuite({ serverDir, runCommand: runTestCommand });
+        report.ownTests = suite.facts;
+        // Surfaced separately from `issues` so the checkpoint score can weigh a
+        // passing suite: "the tests pass" is a stronger statement about a state
+        // than "the validator found nothing", and it is what makes one
+        // checkpoint objectively better than another.
+        tests = { passed: suite.issues.length === 0, exitCode: suite.facts.testExitCode ?? null };
+        issues.push(...suite.issues);
+      }
+
       // Rendering is checked only once the API contract holds: a screenshot of
       // a page whose data layer is broken tells the model nothing it does not
       // already know, and each vision call is expensive.
@@ -766,6 +822,7 @@ export function createPhotosSocialValidator({
 
     return {
       valid: issues.length === 0,
+      tests,
       summary: issues.length
         ? `The photo social network is not working yet (${issues.length} issue(s)).`
         : "The photo social network registers, logs in, uploads, persists to SQLite, serves the feed/profile/API and renders correctly.",

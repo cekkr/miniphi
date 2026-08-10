@@ -18,6 +18,12 @@ import {
   createKnowledgeLookupAction,
 } from "../libs/cheetah-knowledge-client.js";
 import { createLocalContextMemory } from "../libs/local-context-memory.js";
+import { createPageInspectAction } from "../libs/page-inspector.js";
+import { createPageUnderstandAction } from "../libs/page-understanding.js";
+import { createPromptTrace } from "../libs/prompt-trace.js";
+import { composeGuidelines } from "../libs/project-guidelines.js";
+import SubpromptComposer from "../libs/subprompt-composer.js";
+import ErrorLearner from "../libs/error-learning.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -121,7 +127,59 @@ export async function launchAgentUi(options = undefined) {
         projectId: configData?.context?.cheetah?.projectId ?? null,
       }).catch(() => null)
     : null;
+
+  const schemaRegistry = new PromptSchemaRegistry();
+  // Page structure costs nothing to wire (it is Puppeteer plus a parser, both
+  // already dependencies) so it is always available; the vision decomposition
+  // follows the same rule visual_review does and is wired only when the live
+  // inventory actually reports a VLM.
+  const pageInspect = createPageInspectAction({ workspaceRoot: cwd });
+  // Complete prompt/subprompt debug log for this session; a no-op when the run
+  // has nowhere to persist to.
+  const sessionId = `agent-${Date.now()}`;
+  const trace = createPromptTrace({ baseDir, sessionId });
+  const pageUnderstand = visionModel
+    ? createPageUnderstandAction({
+        restClient: client,
+        schemaRegistry,
+        model: visionModel.id,
+        workspaceRoot: cwd,
+        artifactsDir: baseDir ? `${baseDir}/page-understanding` : null,
+        trace,
+      })
+    : null;
+  // The pre-written navigation rules, plus this workspace's own AGENTS.md when
+  // it has one. Sized against the loaded window so the handbook never crowds
+  // out the task it is meant to guide.
+  const guidelines = await composeGuidelines({
+    workspaceRoot: cwd,
+    handbookMaxChars: contextLength
+      ? Math.min(6000, Math.max(1500, Math.round(contextLength * 0.4)))
+      : 3000,
+  }).catch(() => ({ block: null, sources: [] }));
+
   const session = new AgentSession({
+    sessionId,
+    schemaRegistry,
+    trace,
+    guidelines: guidelines.block,
+    pageInspect,
+    pageUnderstand,
+    subpromptComposer: new SubpromptComposer({
+      client,
+      schemaRegistry,
+      model,
+      contextLength,
+      trace,
+    }),
+    errorLearner: new ErrorLearner({
+      client,
+      schemaRegistry,
+      model,
+      localMemory,
+      baseDir,
+      trace,
+    }),
     client,
     cwd,
     baseDir,

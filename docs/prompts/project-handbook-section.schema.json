@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Project Handbook Section",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "section",
+    "markdown",
+    "unknowns",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "schema_version": { "const": "project-handbook-section@v1" },
+    "section": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The section id you were asked to write."
+    },
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The section body as Markdown, starting at heading level 2. Only facts established by the survey you were given; never invent a file, command, flag or symbol."
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string" },
+      "description": "Facts this section needs that the survey did not establish. They are written into the handbook as explicit gaps rather than guessed."
+    },
+    "needs_more_context": { "type": "boolean", "default": false },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Repo-relative files that would let you finish this section."
+    },
+    "stop_reason": { "type": "string" }
+  }
+}

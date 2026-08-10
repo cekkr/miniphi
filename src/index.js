@@ -102,6 +102,7 @@ import { handlePromptTemplateCommand } from "./commands/prompt-template.js";
 import { handleRecomposeCommand } from "./commands/recompose.js";
 import { handleWebResearch } from "./commands/web-research.js";
 import { handleWebBrowse } from "./commands/web-browse.js";
+import { handleBootstrapAgentsCommand } from "./commands/bootstrap-agents.js";
 import { decideUiLaunch } from "./ui/route.js";
 
 const COMMANDS = new Set([
@@ -122,6 +123,7 @@ const COMMANDS = new Set([
   "nitpick",
   "models",
   "cheetah-learn",
+  "bootstrap-agents",
   "ui",
 ]);
 
@@ -1805,6 +1807,16 @@ async function main() {
     return;
   }
 
+  if (command === "bootstrap-agents") {
+    await handleBootstrapAgentsCommand({
+      options,
+      positionals,
+      verbose,
+      restBaseUrl: resolvedLmStudioBaseUrl,
+    });
+    return;
+  }
+
   if (command === "cheetah-learn") {
     await handleCheetahLearnCommand({
       options,
@@ -3244,6 +3256,20 @@ LM Studio models:
   --unload <instance-id>       Explicitly unload one exact loaded instance
   --context-length <tokens>    Optional context length used with --load
   --timeout <s>                Model inventory/lifecycle REST timeout
+
+Project handbook bootstrap:
+  bootstrap-agents [dir]       Write <dir>/AGENTS.md from docs/guidelines/AGENTS.bootstrap.md
+                               plus a deterministic survey of the checked-out revision.
+                               Later agent runs in that workspace load the generated
+                               handbook automatically (see docs/guidelines/).
+  --output <path>              Write somewhere other than <dir>/AGENTS.md
+  --sections <a,b>             Only these sections (mission, sources, principles,
+                               architecture, source-map, workflows, validation, status)
+  --no-model                   Survey only: no model calls, no invented facts
+  --protocol <path>            Use another AGENTS.bootstrap.md (env: MINIPHI_AGENTS_BOOTSTRAP)
+  --model <id>                 Model used to write the sections
+  --max-tokens <n>             Per-section output cap (default 2000)
+  --force                      Replace an existing AGENTS.md
 
 Web browse:
   --url <text>                 URL to open (can be repeated or passed as positional)

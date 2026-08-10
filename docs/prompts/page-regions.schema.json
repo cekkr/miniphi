@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniPhi Page Region Survey",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "page_purpose",
+    "regions",
+    "needs_more_context",
+    "missing_snippets"
+  ],
+  "properties": {
+    "schema_version": { "const": "page-regions@v1" },
+    "page_purpose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What this page is for, in one sentence, judged from what you can actually see."
+    },
+    "layout": {
+      "type": "string",
+      "description": "The overall arrangement, e.g. 'fixed top bar, left icon rail, centred single-column feed, right sidebar'."
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "description": "The distinct visual regions of the page, in reading order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "purpose", "box"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "description": "Short name, e.g. 'top navigation', 'post card', 'suggestions sidebar'."
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What this region does for the user."
+          },
+          "box": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y", "width", "height"],
+            "description": "Approximate position as fractions of the image, 0..1, origin top-left.",
+            "properties": {
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "width": { "type": "number", "minimum": 0, "maximum": 1 },
+              "height": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "repeats": {
+            "type": "boolean",
+            "description": "True when this region is one instance of a repeated item (a card in a list, a row in a table)."
+          },
+          "importance": {
+            "type": "string",
+            "enum": ["primary", "secondary", "decorative"],
+            "description": "How central this region is to the page's purpose. Only 'primary' regions are worth a detailed pass."
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string" },
+      "description": "Anything visibly wrong or missing: blank areas, broken images, unstyled text, overlapping content."
+    },
+    "needs_more_context": { "type": "boolean", "default": false },
+    "missing_snippets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "stop_reason": { "type": "string" }
+  }
+}

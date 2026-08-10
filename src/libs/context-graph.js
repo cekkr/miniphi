@@ -115,7 +115,7 @@ const DEFAULT_DECAY = 0.85;
 const DEFAULT_MAX_NODES = 400;
 const DEFAULT_DIGEST_CHARS = 320;
 const DEFAULT_MAX_OPS = 12;
-const MIN_BUDGET_TOKENS = 512;
+export const MIN_BUDGET_TOKENS = 512;
 // A single retained node may not eat more than this share of the budget.
 const RETAINED_NODE_BUDGET_SHARE = 0.4;
 // Smallest window worth sending for an explicitly expanded node that cannot fit.

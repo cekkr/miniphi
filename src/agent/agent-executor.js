@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import { existsSync } from "node:fs";
 import path from "path";
 import { createHash } from "crypto";
 import { spawnSync } from "child_process";
@@ -17,12 +18,23 @@ export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_t
 export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
 export const VISUAL_ACTION_TYPES = new Set(["visual_review"]);
 export const KNOWLEDGE_ACTION_TYPES = new Set(["knowledge_lookup"]);
-export const MUTATING_ACTION_TYPES = new Set(["write_file", "edit_file", "run_cmd"]);
+// Read-only page tooling: structure "as written" and "as rendered"
+// (page_inspect), and the vision region decomposition (page_understand).
+export const PAGE_ACTION_TYPES = new Set(["page_inspect", "page_understand"]);
+// Reverting is a mutation of the workspace like any other, so it goes through
+// the same approval gate rather than being a privileged side channel.
+export const MUTATING_ACTION_TYPES = new Set([
+  "write_file",
+  "edit_file",
+  "run_cmd",
+  "revert_changes",
+]);
 const KNOWN_ACTION_TYPES = new Set([
   ...READONLY_ACTION_TYPES,
   ...RESEARCH_ACTION_TYPES,
   ...VISUAL_ACTION_TYPES,
   ...KNOWLEDGE_ACTION_TYPES,
+  ...PAGE_ACTION_TYPES,
   ...MUTATING_ACTION_TYPES,
   "finish",
 ]);
@@ -40,6 +52,35 @@ const hashText = (text) => createHash("sha256").update(text ?? "", "utf8").diges
  * a raw newline inside a string, a trailing comma, and two concatenated
  * objects — each written to disk before anything complained.
  */
+/**
+ * Removes a trailing markdown fence and anything after it from proposed content.
+ *
+ * A model that finishes a file and then emits a fence — sometimes with the start
+ * of its next JSON object trailing behind it — has produced content that is
+ * unambiguously wrong at the end and entirely correct before it. Observed live:
+ * a complete 70-line `db.js` ending
+ * "export const getDbPath = () => DB_PATH;\n```}, { ", rejected wholesale for a
+ * defect in its last four characters.
+ *
+ * Only a *trailing* fence is stripped, and only when nothing but a fence remains
+ * afterwards. A fence in the middle of a file means something else entirely — a
+ * truncated or interleaved response — and must still be rejected, because
+ * salvaging that would silently write half a file.
+ */
+export function stripTrailingFence(content) {
+  if (typeof content !== "string" || !content) {
+    return { content, stripped: false };
+  }
+  const match = /\n[ \t]*(?:```|~~~)[^\n]*(?:\n[\s\S]{0,40})?$/.exec(content);
+  if (!match) {
+    return { content, stripped: false };
+  }
+  const trimmed = `${content.slice(0, match.index)}\n`;
+  return FENCE_LINE.test(trimmed)
+    ? { content, stripped: false }
+    : { content: trimmed, stripped: true };
+}
+
 const validateJsonSyntax = (filePath, content) => {
   if (path.extname(filePath).toLowerCase() !== ".json") {
     return null;
@@ -108,6 +149,9 @@ export function classifyActionType(type) {
   if (KNOWLEDGE_ACTION_TYPES.has(type)) {
     return "knowledge";
   }
+  if (PAGE_ACTION_TYPES.has(type)) {
+    return "page";
+  }
   if (MUTATING_ACTION_TYPES.has(type)) {
     return "mutating";
   }
@@ -132,6 +176,89 @@ export function describeAction(action) {
     "";
   return `${action.type}${target ? ` ${target}` : ""}`.trim();
 }
+
+/**
+ * A model writing `/html-template/home.html` means "from the workspace root",
+ * not "from the filesystem root" — `list_dir` has treated a bare `/` that way
+ * since 2026-07-25. Every other path-scoped action rejected it as an absolute
+ * path, which costs a whole turn to a leading character. Seen live: turn 10 of
+ * a photos-social run spent both its page actions on `/html-template/...` and
+ * got `invalid` for both.
+ *
+ * Only a *leading* slash is stripped. `..` traversal and true escapes are still
+ * resolved and rejected by {@link resolveWorkspacePath}, so this widens the
+ * spelling accepted, never the sandbox.
+ */
+const workspaceRelative = (value, cwd) => {
+  if (typeof value !== "string" || !value) {
+    return value;
+  }
+  // A real absolute path *inside* the workspace is the model naming the file
+  // the way it appears in a log line. Rewrite it rather than reject it.
+  if (path.isAbsolute(value)) {
+    const relative = path.relative(cwd, value);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return relative;
+    }
+  }
+  const stripped = value.replace(/^[/\\]+/, "");
+  if (stripped === value) {
+    return value;
+  }
+  // Blindly stripping the slash off an absolute path outside the workspace
+  // turns `/Users/me/proj/server/db.js` into a *nested* junk path that resolves
+  // happily inside the sandbox — MiniPhi would have created
+  // `<workspace>/Users/me/proj/server/db.js`. Seen live on the turn that first
+  // tried to write `db.js`. So only accept the strip when the result plausibly
+  // names something in this workspace: a bare filename, or a first segment that
+  // already exists here.
+  const [head] = stripped.split(/[/\\]/);
+  if (!stripped.includes("/") && !stripped.includes("\\")) {
+    return stripped;
+  }
+  return existsSync(path.resolve(cwd, head)) ? stripped : value;
+};
+
+// Below this an existing file is small enough that a large proportional shrink
+// is unremarkable, so the guard stays out of the way.
+const OVERWRITE_GUARD_MIN_LINES = 30;
+// A `write_file` leaving less than this fraction of an existing file is treated
+// as a fragment rather than a rewrite.
+const OVERWRITE_GUARD_RATIO = 0.5;
+
+/**
+ * Catches the single most destructive thing an agent does: sending a *patch*
+ * as the whole file.
+ *
+ * `write_file` replaces the entire target, and the system prompt has always
+ * said so. Nothing enforced it. Observed live on the photos-social sample: a
+ * working 302-line `server/index.js` — register, login, upload, feed, profile,
+ * likes, comments — was replaced by a 22-line fragment containing one route and
+ * no imports at all. It passed the JavaScript syntax check, because a fragment
+ * referencing undefined globals is perfectly valid JavaScript; the application
+ * simply ceased to exist, and the only reason it was recoverable is the
+ * guarded writer's rollback copy.
+ *
+ * `edit_file` with full `content` remains the deliberate way to say "yes, I
+ * really do mean to replace all of it", so an intentional rewrite is still one
+ * action away — it just cannot happen by accident.
+ */
+const detectPartialOverwrite = (action, beforeContent, afterContent) => {
+  if (action.type !== "write_file" || typeof beforeContent !== "string" || !beforeContent) {
+    return null;
+  }
+  const beforeLines = beforeContent.split("\n").length;
+  const afterLines = String(afterContent ?? "").split("\n").length;
+  if (beforeLines < OVERWRITE_GUARD_MIN_LINES || afterLines >= beforeLines * OVERWRITE_GUARD_RATIO) {
+    return null;
+  }
+  return (
+    `refusing to overwrite ${action.path}: it currently has ${beforeLines} lines and your content has only ${afterLines}. ` +
+    "write_file replaces the ENTIRE file, so this would delete the rest of it — and content this much shorter is almost always a patch fragment sent as a whole file. " +
+    "No file was changed. To change part of the file, send edit_file with an `anchor` copied verbatim from the current text plus its `replacement`. " +
+    "If you really do intend to replace the whole file, read it first and send edit_file with the complete new `content` and no anchor."
+  );
+};
 
 const normalizeDanger = (danger) => {
   const normalized = typeof danger === "string" ? danger.toLowerCase() : "";
@@ -186,6 +313,18 @@ export function normalizeAgentAction(rawAction, cwd) {
     return { ok: true, action, category };
   }
 
+  if (type === "revert_changes") {
+    // `checkpoint` is optional: with none, the runtime picks the best-scoring
+    // state, which is the answer the model usually wants and the one it is
+    // least able to work out for itself.
+    const checkpoint =
+      typeof rawAction.checkpoint === "string" ? rawAction.checkpoint.trim() : "";
+    if (checkpoint) {
+      action.checkpoint = checkpoint.slice(0, 64);
+    }
+    return { ok: true, action, category };
+  }
+
   if (type === "run_cmd") {
     const command = typeof rawAction.command === "string" ? rawAction.command.trim() : "";
     if (!command) {
@@ -204,6 +343,40 @@ export function normalizeAgentAction(rawAction, cwd) {
     return { ok: true, action, category };
   }
 
+  if (PAGE_ACTION_TYPES.has(type)) {
+    // Same two-target shape as visual_review, and the same loopback-only rule
+    // for the URL form: a model-authored string must never become an arbitrary
+    // outbound request from the operator's machine.
+    const pageUrl = normalizeReviewUrl(rawAction.url);
+    if (rawAction.url && !pageUrl) {
+      return {
+        ok: false,
+        error: `url "${rawAction.url}" must be an http(s) loopback address (e.g. http://127.0.0.1:3000/feed)`,
+      };
+    }
+    if (pageUrl) {
+      action.url = pageUrl;
+    } else {
+      const pagePath = resolveWorkspacePath(workspaceRelative(rawAction.path, cwd), cwd);
+      if (!pagePath) {
+        return {
+          ok: false,
+          error: `${type} needs either a workspace-relative path to an HTML file or a loopback url; path "${rawAction.path ?? ""}" is empty, absolute, or escapes the workspace`,
+        };
+      }
+      action.path = pagePath;
+    }
+    const focus = typeof rawAction.focus === "string" ? rawAction.focus.trim() : "";
+    if (focus) {
+      action.focus = focus.slice(0, 400);
+    }
+    if (type === "page_inspect") {
+      const mode = typeof rawAction.mode === "string" ? rawAction.mode.trim().toLowerCase() : "";
+      action.mode = ["source", "rendered", "both", "auto"].includes(mode) ? mode : "auto";
+    }
+    return { ok: true, action, category };
+  }
+
   if (type === "visual_review") {
     // A review target is either a workspace file or a loopback URL. The URL
     // form exists because an app the agent just wrote only renders once its own
@@ -219,7 +392,7 @@ export function normalizeAgentAction(rawAction, cwd) {
     if (reviewUrl) {
       action.url = reviewUrl;
     } else {
-      const visualPath = resolveWorkspacePath(rawAction.path, cwd);
+      const visualPath = resolveWorkspacePath(workspaceRelative(rawAction.path, cwd), cwd);
       if (!visualPath) {
         return {
           ok: false,
@@ -250,11 +423,26 @@ export function normalizeAgentAction(rawAction, cwd) {
       rawAction.path === "\\" ||
       rawAction.path === "./.");
   // Remaining types (read_file/list_dir/write_file/edit_file) are path-scoped.
-  const relPath = rootList ? "." : resolveWorkspacePath(rawAction.path, cwd);
+  const relPath = rootList ? "." : resolveWorkspacePath(workspaceRelative(rawAction.path, cwd), cwd);
   if (!relPath) {
+    // "path is empty, absolute, or escapes the workspace" is accurate and
+    // useless when the field is simply absent — and absent is the common case.
+    // Seen live: `edit_file` with a correct `anchor` and no `path` at all, twice
+    // in one turn; the model knew exactly which text to change and never said
+    // which file it was in. Name that mistake instead of listing three causes.
+    if (rawAction.path === undefined || rawAction.path === null || rawAction.path === "") {
+      const known =
+        typeof rawAction.anchor === "string" && rawAction.anchor
+          ? ` You gave an anchor (${JSON.stringify(rawAction.anchor.slice(0, 60))}) but no file to find it in.`
+          : "";
+      return {
+        ok: false,
+        error: `${type} did not include a "path", so there is no file to act on.${known} Add the workspace-relative path of the file, for example "server/db.js", and re-send this action.`,
+      };
+    }
     return {
       ok: false,
-      error: `path "${rawAction.path ?? ""}" is empty, absolute, or escapes the workspace`,
+      error: `path "${rawAction.path}" is empty, absolute, or escapes the workspace`,
     };
   }
   action.path = relPath;
@@ -367,9 +555,30 @@ export async function buildMutationProposal({ action, cwd }) {
     return { ok: false, status: "unsupported", error: `not a file mutation: ${action.type}` };
   }
 
-  const syntaxError =
+  const truncation = detectPartialOverwrite(action, beforeContent, afterContent);
+  if (truncation) {
+    return { ok: false, status: "partial-content", error: truncation };
+  }
+
+  let syntaxError =
     validateJavaScriptSyntax(action.path, afterContent ?? "") ??
     validateJsonSyntax(action.path, afterContent ?? "");
+  if (syntaxError) {
+    // A trailing fence is the model over-running the end of its own JSON string,
+    // not a mistake in the file it wrote. Repair it — but only when the repair
+    // actually produces a valid file. A fence that leaves broken code behind is
+    // evidence, and stripping it would hide the very thing the error must name.
+    const fence = stripTrailingFence(afterContent);
+    if (fence.stripped) {
+      const repairedError =
+        validateJavaScriptSyntax(action.path, fence.content) ??
+        validateJsonSyntax(action.path, fence.content);
+      if (!repairedError) {
+        afterContent = fence.content;
+        syntaxError = null;
+      }
+    }
+  }
   if (syntaxError) {
     return {
       ok: false,

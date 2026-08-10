@@ -131,9 +131,9 @@ When you add or change CLI behavior:
 - REST authentication is optional through `LMSTUDIO_API_TOKEN` or `lmStudio.rest.apiToken`; authorization headers are redacted from execution-register instrumentation.
 - `LMSTUDIO_REST_URL` is an operator override and takes precedence over configured REST endpoints; this keeps live tests and remote-host workflows from silently querying a checked-in loopback URL.
 - Transport default: REST-first (`lmStudio.transport: "rest"`); override with `lmStudio.transport: "ws"` or env `MINIPHI_FORCE_REST=1` for forced REST.
-- CLI entrypoints: `ui` (interactive agent, also the default for bare `miniphi` / free-form tasks on a TTY), `run`, `analyze-file`, `workspace` (`miniphi "<task>" --headless`), `recompose`, `benchmark models|general|recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, `cheetah-learn teach|ask|chat|questions|eval|wikipedia` (see "Cheetah-learn" below), and helper/command-library browsers.
+- CLI entrypoints: `ui` (interactive agent, also the default for bare `miniphi` / free-form tasks on a TTY), `run`, `analyze-file`, `workspace` (`miniphi "<task>" --headless`), `recompose`, `benchmark models|general|recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, `cheetah-learn teach|ask|chat|questions|eval|wikipedia` (see "Cheetah-learn" below), `bootstrap-agents [dir]` (writes a project's `AGENTS.md` from `docs/guidelines/AGENTS.bootstrap.md` plus a deterministic survey; `--no-model` for survey-only, `--sections`, `--protocol`, `--force`), and helper/command-library browsers.
 - UI routing (`src/ui/route.js` `decideUiLaunch`): on a TTY, bare `miniphi`, the `ui` command, and a free-form task open the Ink UI; `--headless`/`--no-ui`, a non-TTY (scripts/CI), and every explicit subcommand run headless. This keeps direct arguments always available while the UI is the primary interface. Bare UI starts on a home screen with Start task plus an Easy benchmark action and fresh cached score table; a seeded task goes directly to task/model selection. The UI path (`launchInteractiveUi` in `src/index.js`) scans native v1, asks for the task, presents benchmark-informed `Auto` plus manual model choices, then asks for the reasoning profile and previews model/decomposer budgets before starting; the resolved model/load/reasoning snapshot is persisted in session/result JSON. It builds its own lightweight REST client (never a static `context_length`) and dynamic-imports `src/ui/launch.js` so Ink/React never load on headless runs.
-- Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs.
+- Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs. `prompt-trace/<session>/` is the complete prompt/subprompt debug log (`index.jsonl`, `NNNN-<kind>.json`, `transcript.md`, `media/`, `summary.json`) written by `PromptTrace` for every model exchange, including subprompts; `page-understanding/<page>/` holds the screenshots and region crops those exchanges refer to.
 - Health probes (`lmstudio-health`) write snapshots to `.miniphi/health/lmstudio-status.json` (timeout configurable via `lmStudio.health.timeoutMs`).
 - `lmstudio-health --json` emits a machine-readable summary for CI checks.
 - Transport failover is automatic (REST -> WS) after timeouts; timeouts and max-retry settings are configurable via CLI flags or `config*.json` (profiles supported).
@@ -481,6 +481,184 @@ Delivered 2026-08-07 — a large file rejected twice is steered into modules (li
   ordinary literal-anchor repair hint — a one-off typo is not a restructuring problem.
 - Regression: `node --test unit-tests-js/agent-session.test.js` ("a large file rejected twice is
   steered into smaller modules", "a short file rejected twice keeps the ordinary repair hint").
+
+Delivered 2026-08-10 — Prompt tracing, real token limits, guideline-driven navigation, page understanding, and error learning:
+- **Complete prompt/subprompt debug log.** `src/libs/prompt-trace.js` (`PromptTrace`) persists *every*
+  model exchange under `.miniphi/prompt-trace/<session>/`: `index.jsonl` (one grep-able line per
+  call), `NNNN-<kind>.json` (the exact messages, response_format, sampling, usage, validation
+  outcome, raw response and reasoning — nothing elided), `transcript.md` (the same in reading order)
+  and `media/` (images lifted out of the messages, so a base64 screenshot never makes the trace
+  unreadable). `NULL_PROMPT_TRACE` lets every call site write `trace.record(...)` unconditionally.
+  Wired into `AgentSession` (`agent-turn`, `agent-turn-schema-retry`), `SubpromptComposer`,
+  `PageUnderstanding` and `ErrorLearner`; totals ride in `result.json.promptTrace`.
+- **Token limits are measured, not assumed.** `src/libs/model-limits.js` resolves the real loaded
+  window, the advertised maximum and the model's capabilities, and `planOutputTokens()` sizes each
+  request's `max_tokens` from the window's actual headroom, applying a pacing cap on top of a
+  measured number instead of standing in for one. `ensureModelLoaded()` asks LM Studio for the
+  window the run needs — bonsai-27b advertises 262144 and was being driven at the 4096 cold JIT
+  default — and still never unloads an operator-loaded instance without explicit consent
+  (`--reload-model`).
+- **Sampling is chosen per kind of thinking.** `src/libs/sampling-profiles.js`: `planning` 0.4,
+  `agent` 0.25, `code` 0.1, `repair` 0.3, `extraction` 0, `vision` 0.15, `summary` 0.3. `repair` is
+  deliberately warmer than `code`: at temperature 0 a local model re-emits the exact text that was
+  just rejected, which is the single most common way a run stalls.
+- **The benchmark measured MiniPhi's own cap, not the model.** `MODEL_BENCHMARK_MAX_TOKENS = 220`
+  made every trial of a reasoning model end `reasoning_budget_exhausted`; `prism-ml/bonsai-27b`
+  scored 0/100 in all six categories on 2026-08-10 with zero content produced. The budget now comes
+  from `resolveTrialTokenBudget({model, contextLength})` (2048 for a reasoning-capable model, capped
+  at half the loaded window), a third attempt is allowed, and an exhausted budget quadruples for the
+  retry instead of repeating the same failure.
+- **Pre-written navigation rules + AGENTS.md bootstrap.** `docs/guidelines/agent-navigation.md` is
+  the compact ruleset injected at the *top* of every system prompt (orient before building; a design
+  reference is to be used, not imitated; ask what you cannot see; smallest verifiable step; never
+  repeat a rejected action; validate with something executable; report the truth; record what you
+  learned). `docs/guidelines/AGENTS.bootstrap.md` is the operator's construction protocol, vendored
+  from `ai-agents-bootstrap` (override with `$MINIPHI_AGENTS_BOOTSTRAP`), plus a MiniPhi addendum
+  requiring unit tests, UI/end-to-end automation for any user-facing surface, and **textual verdicts
+  a model without vision can read** — a screenshot is an attachment to a verdict, never the verdict.
+  The protocol is never sent whole to a small model: `miniphi bootstrap-agents [dir]`
+  (`src/commands/bootstrap-agents.js`, `src/libs/agents-bootstrapper.js`) applies it one section at a
+  time over a deterministic repository survey and writes the project's own `AGENTS.md`, which
+  `src/libs/project-guidelines.js` then loads into later runs (truncated to fit the window).
+- **The model can read a page as written and as rendered.** `src/libs/page-inspector.js` gives the
+  new auto-run action `page_inspect`: for a workspace file, a bounded structural digest (title,
+  stylesheets, scripts, image paths, forms and their field names, layout outline, reused classes,
+  full class vocabulary) parsed by a dependency-free tolerant HTML reader; for a loopback URL, the
+  live DOM with per-region geometry, which images resolved, and console/page/network errors. Region
+  detection descends through layout wrappers instead of matching tag or class names, so a Tailwind
+  template yields its real regions (verified on `samples/photos-social/html-template`: sidebar +
+  stories + feed column + suggestions on `home.html`, five regions on `profile.html`).
+- **Vision subtasking over a page.** `src/libs/page-understanding.js` gives the auto-run action
+  `page_understand`: screenshot → one vision call surveying the page's regions
+  (`docs/prompts/page-regions.schema.json`) → each primary region **cropped from the live page** and
+  sent alone to a second vision call (`docs/prompts/page-region-detail.schema.json`) reporting its
+  elements, the dynamic data fields it needs, its interactions and how to reproduce it with the
+  template's markup. Model-named regions are paired to DOM elements by IoU so crops use real
+  geometry; regions the DOM does not express keep the model's own box. Screenshots and crops persist
+  under `.miniphi/page-understanding/`.
+- **Wired in both entry points.** `src/ui/launch.js` now builds the trace, the guidelines block, the
+  subprompt composer, the error learner and `page_inspect` for every interactive run, and adds
+  `page_understand` only when `selectVisionModel()` finds a VLM — the same "wire only if healthy,
+  otherwise never advertise the action" rule `visual_review` and `knowledge_lookup` follow.
+  `scripts/run-photos-social-sample.js` wires the same set plus the explicit model load and the
+  pre-run benchmark.
+- **Subprompt generation.** `src/libs/subprompt-composer.js` decomposes the mission into ordered,
+  independently verifiable subtasks (`docs/prompts/subtask-plan.schema.json`) from a *deterministic
+  survey of facts*, requires machine-checkable acceptance criteria per subtask, repairs dependency
+  cycles and dangling ids, and pins the plan into the retained `contract` layer via
+  `renderPlanBlock`. `AgentSession` advances it on observed progress (a passing validation, or the
+  model naming the subtask id alongside real work), never on the model asserting it is done.
+- **The agent learns from its errors.** `src/libs/error-learning.js` (`ErrorLearner`) observes every
+  rejected edit, failed command, failed page action and validator issue; a *repeat* (signature with
+  digits normalised) buys one model call that produces a rule, not a restatement
+  (`docs/prompts/error-lesson.schema.json`). A low-confidence cause spends one `web_research` and
+  re-derives. A lesson the model judges durable is written to `.miniphi/memory` (record + 
+  `notes/lessons.md`) and to the Cheetah knowledge base as a topic node with its exact sentence, so
+  `knowledge_lookup` finds it in later runs; it is also injected into the live session's `contract`
+  layer with a TTL and buys one correction grace.
+- **The photos-social validator now checks the thing the sample is about.**
+  `scripts/photos-social/template-fidelity.js` reads the template's own class vocabulary, stylesheets
+  and assets off disk and requires each served page to actually use them (>= 8 shared classes, a
+  linked stylesheet that serves 200, at least one reachable template asset), then opens `/feed` in
+  Chromium and asserts on counts and error lists, then runs the app's own `npm test` and requires
+  exit 0. Every verdict is textual. This is the check whose absence let a hand-written mock pass
+  every route assertion while never opening a template file.
+- **Measured on the reference host (2026-08-10, `http://192.168.1.5:1234`, `prism-ml/bonsai-27b`
+  @Q1_0, loaded at 8192 of an advertised 262144).** With the repaired benchmark the model scores
+  **overall 57, quality 67**: reasoning 100, coding 100, context 100, writing 100 — every trial it
+  could finish, it got right, first or second attempt. `research` and `tool_use` scored 0 for a
+  reason that has nothing to do with capability (below). Average trial latency **578 seconds**;
+  speed scored 0.
+- **The hard ceiling is time, not tokens.** Both zero-scoring trials failed identically on all three
+  attempts at **~305.6 seconds** with `400 Engine protocol predict request failed: fetch failed`.
+  That is LM Studio's own API-server-to-engine call giving out at 300s; no client timeout can move
+  it. Every attempt that finished under 300s succeeded. At ~7 tokens/second that is a hard ceiling
+  of roughly **1700 output tokens per request**, and a request that exceeds it is not truncated —
+  it is lost. `planOutputTokens({tokensPerSecond})` now derives a `request-time` cap from measured
+  throughput (`MAX_REQUEST_SECONDS = 240`), the sample runner measures the rate from the benchmark's
+  own completed attempts and passes it to both the session and the plan composer, and
+  `result.json` records which limit bound each request (`context` / `pacing-cap` / `request-time`).
+- **Reasoning cannot be turned off** on this model: `reasoning: off` *and* `reasoning_effort:
+  minimal` are both ignored on the compatible `/chat/completions` route and it still returns
+  `reasoning_content`. Any sub-call with a small `max_tokens` burns the whole budget on the trace and
+  returns empty content. The sample runner logs when a requested "off" was ignored rather than
+  leaving it to be inferred from a slow run.
+- **The finding that explains the photos-social failure.** On the 8192-token instance the fixed
+  prompt — system prompt + capability guides + navigation rules + project handbook + the
+  `agent-action` schema block — measures **~5958 tokens**, so `deriveContextBudget` returns the
+  512-token floor. The previous runs were started with `--context-budget 6500` against that same
+  window, i.e. a prompt configured to exceed the model's window by roughly 4300 tokens. The runner
+  no longer passes a flat fraction: the session derives the budget from the measured fixed cost,
+  and both the session and the runner now shout when it lands on the floor, naming the remedy
+  (`--reload-model --load-context-length 32768`). Treat a floor-level budget as a configuration
+  failure, never as a tight fit.
+- **Live wiring proof (2026-08-10, `--skip-benchmark --max-turns 1 --deadline-minutes 6` against
+  `http://192.168.1.5:1234`, scratch workspace):** the runner resolved the loaded window (8192 of an
+  advertised 262144) and *declined* to unload the operator's instance, derived a 4505-token context
+  budget from it, reported `vision=true tool_use=true reasoning-options=off/on`, wired
+  `page_inspect` + `page_understand`, loaded both guideline sources and truncated the handbook to
+  fit the window, opened the trace, and — when the plan call hit the 6-minute session deadline at
+  359985 ms — recorded the complete failed exchange (17.8 KB, full system+user prompt, temperature
+  0.4, max_tokens 1200, the abort as the error), fell back to the deterministic 3-subtask plan, ran
+  the validator ("Create the Node.js application inside server/…") and stopped `session-timeout`.
+  Every mechanism behaved as designed. It proves the wiring and the degradation path, **not** that
+  the model can produce a usable plan: at ~7 tok/s with reasoning it cannot be disabled, the plan
+  call needs far more than six minutes, so a real run needs a deadline in hours and
+  `--reload-model --load-context-length 32768`.
+- **A version history of the workspace, so a bad turn is undone rather than patched forward.**
+  `src/libs/workspace-checkpoints.js` keeps a **shadow git repository** (`--git-dir
+  .miniphi/changes.git`, work tree = the workspace) recording every validated state. The project's
+  own repository is never touched; `node_modules`/`.git`/`.miniphi` are excluded; if git is
+  unavailable the whole feature disables itself rather than failing a run. Each checkpoint carries a
+  **score** (`scoreCheckpoint`): a workspace that boots and validates outranks one that does not,
+  fewer issues outrank more, and a passing `npm test` adds to it — which is what makes "go back to
+  the last state that actually worked" a decidable question. `AgentSession` checkpoints the
+  inherited state before turn 1 and after every validation, detects a score **regression** against a
+  state it actually held, and restores it (capped at `maxAutoReverts`, default 3), telling the model
+  in a retained `contract` node what was undone and why. The model can also revert itself with the
+  new approval-gated `revert_changes` action; the recent checkpoints and their scores are rendered
+  into every prompt so it can name one. Reverting is itself checkpointed, so nothing is lost by
+  trying it, and `read-tree -u --reset` (not `checkout -- .`) is used so files created after the
+  target are removed instead of leaving a hybrid state.
+- **`write_file` can no longer silently destroy a file.** `detectPartialOverwrite` refuses a
+  `write_file` that leaves under half of an existing file of 30+ lines. Observed live: a working
+  302-line `server/index.js` — register, login, upload, feed, profile, likes, comments — was replaced
+  by a 22-line fragment with no imports, which passed the JavaScript syntax check (a fragment
+  referencing undefined globals is valid JavaScript) and killed the app with `ReferenceError: url is
+  not defined`. `edit_file` with full `content` remains the deliberate way to replace a whole file,
+  so an intentional rewrite is one action away and an accidental one is impossible.
+- **Nine live photos-social runs, 2026-08-10 (`prism-ml/bonsai-27b` @32768).** Each failed at a
+  different real defect, all now fixed and regression-tested: the plan ratchet pinning a subtask
+  forever; `requireWebResearch` gating every write behind research a resumed run was told not to do;
+  leading-slash paths; a missing-`path` message that listed three causes instead of naming the
+  absent field; guessed template filenames answered with `ENOENT` instead of the real names; a
+  *trailing markdown fence* discarding otherwise-correct files; `write_file` silently destroying a
+  302-line application; no adaptive context budget; no engine-wedge recovery; no change history.
+  Three of those defects were introduced by these same changes and caught by their own tests
+  (absolute-path mangling, `--force` over-excluding, a restore scoring a recovered state as 0).
+- **Run 8 is the best evidence of the runtime working: 55 turns, 25 accepted writes, 47
+  checkpoints, zero regressions, zero crashes, zero engine wedges** — against run 1's zero writes in
+  ten turns. It still ended `no-progress` on the issue it started with.
+- **The remaining blocker is the model, and it is specific.** `bonsai-27b` plans well, inspects
+  templates, decomposes pages with vision and emits valid modules, but it cannot connect a reported
+  symptom to the code that produces it: 55 turns rewriting `server/db.js` for an `imageUrl` that
+  `GET /api/posts` builds in `server/index.js`, with **`search_text` used zero times in 55 turns**,
+  and repeated reads of files that do not exist (`server/app.js`). `_noteStalledValidation` was
+  added for exactly this, but it is triggered per *validation* and validation only runs after a
+  successful write — in a run that stalls on reads it never fires (run 9: 12 turns, 2 validations,
+  hint count 0). Re-trigger it per turn, not per validation, before drawing conclusions from it.
+- **Do not treat the sample as passing.** It has never reached a clean validation. Before more
+  runtime work, try a coding-tuned model (`devstral-small-2-24b-instruct-2512` is installed, vision
+  capable, 393216 context).
+- Regression: `node --test unit-tests-js/prompt-trace.test.js unit-tests-js/model-limits.test.js
+  unit-tests-js/page-inspector.test.js unit-tests-js/page-understanding.test.js
+  unit-tests-js/subprompt-composer.test.js unit-tests-js/error-learning.test.js
+  unit-tests-js/project-guidelines.test.js unit-tests-js/agents-bootstrapper.test.js
+  unit-tests-js/template-fidelity.test.js` (46 tests, offline, fake clients).
+- Not yet done: no full photos-social run has yet completed under the new wiring, so the claim that
+  these changes produce a template-backed app is **unproven end to end** — the pieces are
+  individually tested and the live page tooling is verified against the real template, but the run
+  itself remains open.
 
 Delivered 2026-08-07 — a turn cut off by the token limit says so (live-found):
 - `AgentSession` treated a response truncated by `max_tokens` exactly like a response that drifted

@@ -12,8 +12,36 @@ export const MODEL_BENCHMARK_REVISION = "model-benchmarks@v1";
 export const MODEL_BENCHMARK_SCHEMA_VERSION = "model-benchmark-trial@v1";
 export const DEFAULT_MODEL_BENCHMARK_CONTEXT_LENGTH = 4096;
 export const DEFAULT_MODEL_BENCHMARK_TIMEOUT_MS = 30000;
-const MODEL_BENCHMARK_MAX_TOKENS = 220;
-const MODEL_BENCHMARK_MAX_ATTEMPTS = 2;
+// A budget sized for a non-reasoning model answering "return one integer".
+// It is the *floor*, not the setting: see resolveTrialTokenBudget.
+const MODEL_BENCHMARK_MIN_TOKENS = 220;
+// What a reasoning model needs before it writes its first JSON character. A
+// fixed 220 made every trial fail identically with `reasoning_budget_exhausted`
+// and scored prism-ml/bonsai-27b 0/100 in all six categories — a benchmark
+// measuring MiniPhi's own cap, not the model. Verified 2026-08-10 against
+// http://192.168.1.5:1234: six trials, six exhausted budgets, zero content.
+const MODEL_BENCHMARK_REASONING_TOKENS = 2048;
+// The share of the loaded window a single trial answer may claim. Trials are
+// tiny; this only exists so the budget follows a small window down.
+const MODEL_BENCHMARK_TOKEN_SHARE = 0.5;
+const MODEL_BENCHMARK_MAX_ATTEMPTS = 3;
+
+/**
+ * The output budget for one trial, from what the model actually is.
+ *
+ * A model that advertises a reasoning capability spends its budget thinking
+ * before it emits anything, so giving it the same cap as a plain instruct model
+ * does not measure it — it fails it.
+ */
+export function resolveTrialTokenBudget({ model, contextLength } = {}) {
+  const reasons = Array.isArray(model?.capabilities)
+    ? model.capabilities.includes("reasoning")
+    : false;
+  const base = reasons ? MODEL_BENCHMARK_REASONING_TOKENS : MODEL_BENCHMARK_MIN_TOKENS;
+  const window = Number.isFinite(contextLength) && contextLength > 0 ? contextLength : null;
+  const ceiling = window ? Math.floor(window * MODEL_BENCHMARK_TOKEN_SHARE) : base;
+  return Math.max(MODEL_BENCHMARK_MIN_TOKENS, Math.min(base, ceiling));
+}
 
 export const MODEL_BENCHMARK_TRIAL_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -404,7 +432,14 @@ function loadInstanceId(response) {
 
 async function ensureModelLoaded(restClient, model, contextLength) {
   if (model.loadedInstances?.length) {
-    return { created: false, instanceId: model.loadedInstances[0].id ?? null };
+    return {
+      created: false,
+      instanceId: model.loadedInstances[0].id ?? null,
+      // The operator's own instance decides the real window, not the flag we
+      // would have loaded with. A trial budgeted against the requested window
+      // can exceed what the live instance accepts.
+      contextLength: model.loadedInstances[0].contextLength ?? null,
+    };
   }
   const beforeIds = new Set(
     (model.loadedInstances ?? []).map((instance) => instance.id).filter(Boolean),
@@ -429,7 +464,11 @@ async function ensureModelLoaded(restClient, model, contextLength) {
   if (!instanceId) {
     throw new Error(`LM Studio loaded ${model.id} but returned no instance id.`);
   }
-  return { created: true, instanceId };
+  return {
+    created: true,
+    instanceId,
+    contextLength: Math.min(contextLength, model.maxContextLength ?? contextLength),
+  };
 }
 
 function buildTrialPrompt(trial, retryError = null) {
@@ -455,9 +494,11 @@ async function runTrial({
   trial,
   timeoutMs,
   onProgress,
+  contextLength = null,
 }) {
   const attempts = [];
   let retryError = null;
+  let maxTokens = resolveTrialTokenBudget({ model, contextLength });
   for (
     let attempt = 1;
     attempt <= MODEL_BENCHMARK_MAX_ATTEMPTS;
@@ -472,7 +513,7 @@ async function runTrial({
         },
       ],
       temperature: 0,
-      max_tokens: MODEL_BENCHMARK_MAX_TOKENS,
+      max_tokens: maxTokens,
       timeoutMs,
       response_format: buildJsonSchemaResponseFormat(
         MODEL_BENCHMARK_TRIAL_SCHEMA,
@@ -563,6 +604,21 @@ async function runTrial({
       };
     }
     retryError = attemptRecord.error ?? attemptRecord.status;
+    // A budget the reasoning trace alone consumed is not a wrong answer, and
+    // re-asking at the same cap can only reproduce it. Grow the budget instead,
+    // the same way the vision reviewer does when a VLM thinks past its cap.
+    if (reasoningBudgetExhausted) {
+      const grown = Math.min(
+        maxTokens * 4,
+        Number.isFinite(contextLength) && contextLength > 0
+          ? Math.floor(contextLength * 0.75)
+          : maxTokens * 4,
+      );
+      if (grown > maxTokens) {
+        maxTokens = grown;
+        retryError = `${retryError}; retrying with a ${maxTokens}-token budget`;
+      }
+    }
   }
   return {
     id: trial.id,
@@ -683,6 +739,9 @@ export class ModelBenchmarkRunner {
               trial,
               timeoutMs: this.timeoutMs,
               onProgress,
+              contextLength:
+                Number(loaded?.contextLength ?? resolvedLoadConfig?.context_length) ||
+                this.contextLength,
             }),
           );
         }

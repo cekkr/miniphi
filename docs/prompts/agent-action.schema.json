@@ -24,7 +24,9 @@
     "summary_updates": {
       "type": "array",
       "description": "Short chronological progress updates (can be empty).",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": []
     },
     "actions": {
@@ -33,7 +35,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["type", "reason"],
+        "required": [
+          "type",
+          "reason"
+        ],
         "properties": {
           "type": {
             "type": "string",
@@ -43,13 +48,16 @@
               "search_text",
               "web_research",
               "visual_review",
+              "page_inspect",
+              "page_understand",
               "knowledge_lookup",
               "write_file",
               "edit_file",
               "run_cmd",
+              "revert_changes",
               "finish"
             ],
-            "description": "The action kind. read_file/list_dir/search_text/web_research/visual_review/knowledge_lookup are auto-run; write_file/edit_file/run_cmd require operator approval; finish ends the session."
+            "description": "The action kind. read_file/list_dir/search_text/web_research/visual_review/page_inspect/page_understand/knowledge_lookup are auto-run; write_file/edit_file/run_cmd/revert_changes require operator approval; finish ends the session."
           },
           "reason": {
             "type": "string",
@@ -58,15 +66,25 @@
           },
           "path": {
             "type": "string",
-            "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file/visual_review (never absolute, no `..`)."
+            "description": "Repo-relative POSIX path for read_file/list_dir/write_file/edit_file/visual_review/page_inspect/page_understand (never absolute, no `..`)."
           },
           "url": {
             "type": "string",
-            "description": "For visual_review: a loopback http(s) URL to screenshot instead of `path`, e.g. 'http://127.0.0.1:3000/feed'. Use this when the page only renders correctly while the app's own server is running; a file:// screenshot of the template shows it unpopulated. Only localhost/127.0.0.1 addresses are accepted."
+            "description": "For visual_review/page_inspect/page_understand: a loopback http(s) URL to open instead of `path`, e.g. 'http://127.0.0.1:3000/feed'. Use this when the page only renders correctly while the app's own server is running; a file:// view of a server-rendered template shows it unpopulated. Only localhost/127.0.0.1 addresses are accepted."
           },
           "focus": {
             "type": "string",
-            "description": "For visual_review: what to look for in the rendered screenshot (e.g. 'does the ball look round and orange, is it moving'). Optional; a generic quality check is used when omitted."
+            "description": "For visual_review/page_understand: what to look for (e.g. 'does the ball look round and orange, is it moving'). Optional; a generic assessment is used when omitted."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "rendered",
+              "both",
+              "auto"
+            ],
+            "description": "For page_inspect: read the page 'source' (assets, classes, forms, outline as written), 'rendered' (live DOM geometry, loaded images, console/network errors), or 'both'. Default 'auto' returns both for a workspace file and rendered for a url."
           },
           "content": {
             "type": "string",
@@ -104,12 +122,20 @@
           },
           "danger": {
             "type": "string",
-            "enum": ["low", "mid", "high"],
+            "enum": [
+              "low",
+              "mid",
+              "high"
+            ],
             "description": "Operator-facing risk hint for write_file/edit_file/run_cmd."
           },
           "expected_hash": {
             "type": "string",
             "description": "Optional sha256 of the file content you last read, guarding edit_file against concurrent changes."
+          },
+          "checkpoint": {
+            "type": "string",
+            "description": "For revert_changes: the checkpoint id to restore, as listed in the change-history block. Omit it to restore the best-scoring state MiniPhi has recorded, which is usually what you want after a change made things worse."
           }
         }
       }
@@ -122,7 +148,9 @@
     "missing_snippets": {
       "type": "array",
       "description": "Minimal repo-relative files/snippets required before proceeding (e.g. src/index.js).",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": []
     },
     "context_sufficient": {
@@ -141,7 +169,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["op"],
+        "required": [
+          "op"
+        ],
         "properties": {
           "op": {
             "type": "string",
@@ -174,7 +204,12 @@
           },
           "layer": {
             "type": "string",
-            "enum": ["plan", "subtask", "evidence", "scratch"],
+            "enum": [
+              "plan",
+              "subtask",
+              "evidence",
+              "scratch"
+            ],
             "description": "Layer for note (mission/contract are runtime-owned)."
           },
           "importance": {
