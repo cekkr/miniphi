@@ -161,3 +161,6 @@ miniphi-prompts.db-wal
 /samples/besh/.venv
 
 local/
+
+.miniphi
+
