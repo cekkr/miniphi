@@ -1,0 +1,630 @@
+{
+  "at": "2026-10-26T20:17:03.669Z",
+  "provenance": {
+    "provider": "wordnet",
+    "version": "PWN-3.0+OMW-1.4",
+    "languages": [
+      "eng",
+      "ita",
+      "fra",
+      "spa"
+    ],
+    "packages": [
+      {
+        "id": "wordnet",
+        "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+      },
+      {
+        "id": "omw-1.4",
+        "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+      }
+    ]
+  },
+  "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e",
+  "availableLanguages": [
+    "als",
+    "arb",
+    "bul",
+    "cat",
+    "cmn",
+    "dan",
+    "ell",
+    "eng",
+    "eus",
+    "fin",
+    "fra",
+    "glg",
+    "heb",
+    "hrv",
+    "ind",
+    "isl",
+    "ita",
+    "jpn",
+    "lit",
+    "nld",
+    "nno",
+    "nob",
+    "pol",
+    "por",
+    "ron",
+    "slk",
+    "slv",
+    "spa",
+    "swe",
+    "tha",
+    "zsm"
+  ],
+  "synsetCount": 117659,
+  "probes": [
+    {
+      "context": "A-Rosa Luna was built by Neptun Werft",
+      "term": "built",
+      "senses": [
+        {
+          "id": "01654628-v",
+          "score": 0,
+          "gloss": "make by combining materials and parts; \"this little pig made his house out of straw\"; \"Some eccentric constructed an electric brassiere warmer\""
+        }
+      ],
+      "terms": [
+        {
+          "term": "construct",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "congegnare",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "assembler",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "construir",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "build",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "costruire",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "bâtir",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "edificar",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "make",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "fabbricare",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "construire",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "construcción",
+          "language": "spa",
+          "kind": "derivation_translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0,
+          "targetSynset": "00911048-n"
+        },
+        {
+          "term": "builder",
+          "language": "eng",
+          "kind": "derivation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0,
+          "targetSynset": "09878275-n"
+        },
+        {
+          "term": "fare",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0
+        },
+        {
+          "term": "bâtisseur",
+          "language": "fra",
+          "kind": "derivation_translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0,
+          "targetSynset": "09878275-n"
+        },
+        {
+          "term": "edificación",
+          "language": "spa",
+          "kind": "derivation_translation",
+          "synset": "01654628-v",
+          "pos": "v",
+          "senseScore": 0,
+          "targetSynset": "00911048-n"
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "Almond is part of the Rosaceae family.",
+      "term": "family",
+      "senses": [
+        {
+          "id": "08107499-n",
+          "score": 12,
+          "gloss": "(biology) a taxonomic group containing one or more genera; \"sharks belong to the fish family\""
+        }
+      ],
+      "terms": [
+        {
+          "term": "family",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famiglia",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famille",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "familia",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "Almond is part of the Rosales order.",
+      "term": "order",
+      "senses": [
+        {
+          "id": "08106934-n",
+          "score": 12,
+          "gloss": "(biology) taxonomic group containing one or more families"
+        }
+      ],
+      "terms": [
+        {
+          "term": "order",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "08106934-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "ordine",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "08106934-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "ordre",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "08106934-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "orden",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "08106934-n",
+          "pos": "n",
+          "senseScore": 12
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "Almond Rosaceae",
+      "term": "famiglia",
+      "senses": [
+        {
+          "id": "08107499-n",
+          "score": 12,
+          "gloss": "(biology) a taxonomic group containing one or more genera; \"sharks belong to the fish family\""
+        }
+      ],
+      "terms": [
+        {
+          "term": "family",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famiglia",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famille",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "familia",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "Almond Rosaceae",
+      "term": "famille",
+      "senses": [
+        {
+          "id": "08107499-n",
+          "score": 12,
+          "gloss": "(biology) a taxonomic group containing one or more genera; \"sharks belong to the fish family\""
+        }
+      ],
+      "terms": [
+        {
+          "term": "family",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famiglia",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famille",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "familia",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "Almond Rosaceae",
+      "term": "familia",
+      "senses": [
+        {
+          "id": "08107499-n",
+          "score": 12,
+          "gloss": "(biology) a taxonomic group containing one or more genera; \"sharks belong to the fish family\""
+        }
+      ],
+      "terms": [
+        {
+          "term": "family",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famiglia",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "famille",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        },
+        {
+          "term": "familia",
+          "language": "spa",
+          "kind": "translation",
+          "synset": "08107499-n",
+          "pos": "n",
+          "senseScore": 12
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    },
+    {
+      "context": "A-Rosa Luna ship builder",
+      "term": "constructeur",
+      "senses": [
+        {
+          "id": "15097209-n",
+          "score": 2,
+          "gloss": "a substance added to soaps or detergents to increase their cleansing action"
+        }
+      ],
+      "terms": [
+        {
+          "term": "builder",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "15097209-n",
+          "pos": "n",
+          "senseScore": 2
+        },
+        {
+          "term": "builder",
+          "language": "ita",
+          "kind": "translation",
+          "synset": "15097209-n",
+          "pos": "n",
+          "senseScore": 2
+        },
+        {
+          "term": "bâtisseur",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "15097209-n",
+          "pos": "n",
+          "senseScore": 2
+        },
+        {
+          "term": "detergent builder",
+          "language": "eng",
+          "kind": "synonym",
+          "synset": "15097209-n",
+          "pos": "n",
+          "senseScore": 2
+        },
+        {
+          "term": "constructeur",
+          "language": "fra",
+          "kind": "translation",
+          "synset": "15097209-n",
+          "pos": "n",
+          "senseScore": 2
+        }
+      ],
+      "provenance": {
+        "provider": "wordnet",
+        "version": "PWN-3.0+OMW-1.4",
+        "languages": [
+          "eng",
+          "ita",
+          "fra",
+          "spa"
+        ],
+        "packages": [
+          {
+            "id": "wordnet",
+            "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+          },
+          {
+            "id": "omw-1.4",
+            "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+          }
+        ]
+      },
+      "fingerprint": "84a367f0f6278a24e18d58038764a7e9705286c56c4a5ad31678911a7ad9d28e"
+    }
+  ]
+}

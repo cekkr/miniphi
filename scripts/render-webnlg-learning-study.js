@@ -115,6 +115,7 @@ function answerStage(c, phase, label) {
 }
 add("# WebNLG learning and delayed retrieval with a small language model", "",
   "For selected concepts, a compact worked example and current prompt contracts, read the [practical guide](cheetah-webnlg-learning.md). This file retains the complete recorded exchanges.", "",
+  "The later optional [associative-vocabulary workflow](cheetah-webnlg-learning.md#associative-vocabulary-learning) uses independent WordNet/OMW vocabulary to learn retrieval cues and correlate entity/aspect words through Cheetah. Its separate results do not replace the historical measurements in this transcript.", "",
   ...(!hasResponseTemplates ? ["These recorded prompts already included exact JSON schemas, but predate the concrete response templates added to the runtime afterward. The practical guide describes that later change; the historical requests and measurements below are preserved.", ""] : []),
   `Recorded study: **2026-10-26**. Model: **${state.model}**, LM Studio at \`${state.baseUrl}\`, loaded context **${state.loadedContextTokens} tokens**.`, "",
   `This document contains **${cases.length} real subject/aspect examples across ${metrics.categoryCount} WebNLG dataset categories**. There are ${facetCount} predeclared answer facets. The category labels are the dataset's original labels: botanical taxonomy, currency, language distribution and rocket engineering are separate concepts even where WebNLG groups them under Food, Airport, WrittenWork or MeanOfTransportation.`, "",

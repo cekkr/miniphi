@@ -105,3 +105,22 @@ test("context enum constraints narrow the actual response schema and survive a J
   }
   assert.throws(() => registry.buildResponseContract("cheetah-graph-query", { templates: [], enumConstraints: [{ path: ["__proto__"], values: ["x"] }] }), /Unknown response enum/);
 });
+
+test("citation-repair contracts reject mixed answer/lookup modes at the schema boundary", () => {
+  const c = buildGraphResponseContract(registry, "cheetah-graph-reason", { citation_repair: { answer_entity: "Rome", evidence_ids: ["e1", "e2"] } });
+  assert.equal(c.response_schema.properties.lookups.maxItems, 0);
+});
+
+test("observed answer choices prefill JSON and narrow enums without forbidding further graph queries", () => {
+  const payload = { observed_answer_candidates: [
+    { answer_entity: "North Corp", evidence_ids: ["e1"] },
+    { answer_entity: "Rome", evidence_ids: ["e1", "e2"] },
+  ] };
+  const c = buildGraphResponseContract(registry, "cheetah-concept-reason", payload);
+  assert.equal(c.response_templates[0].response.answer_entity, "North Corp");
+  assert.deepEqual(c.response_templates[0].response.evidence_ids, ["e1"]);
+  assert.deepEqual(c.response_schema.properties.answer_entity.enum, ["", "North Corp", "Rome"]);
+  assert.deepEqual(c.response_schema.properties.evidence_ids.items.enum, ["e1", "e2"]);
+  assert(c.response_schema.properties.lookups.maxItems > 0, "a connected endpoint is not proof that a chain question is answered");
+  assert.equal(registry.validateOutcome("cheetah-concept-reason", JSON.stringify(c.response_templates[1].response)).status, "ok");
+});

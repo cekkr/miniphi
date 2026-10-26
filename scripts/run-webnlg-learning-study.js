@@ -37,7 +37,7 @@ await fs.mkdir(root, { recursive: true });
 const stateFile = path.join(root, "study.json");
 const fingerprint = createHash("sha256").update(manifestRaw).digest("hex");
 const runtimeHash = createHash("sha256");
-for (const file of ["src/libs/cheetah-graph-learning.js", "src/libs/cheetah-knowledge-assessment.js", "src/libs/cheetah-prompt-contract.js", "src/libs/prompt-schema-registry.js", "src/libs/lmstudio-handler.js"]) {
+for (const file of ["src/libs/cheetah-graph-identity.js", "src/libs/cheetah-graph-io.js", "src/libs/cheetah-graph-correlations.js", "src/libs/wordnet-lexicon.js", "src/libs/wordnet-installer.js", "src/libs/cheetah-graph-learning.js", "src/libs/cheetah-knowledge-assessment.js", "src/libs/cheetah-prompt-contract.js", "src/libs/prompt-schema-registry.js", "src/libs/lmstudio-handler.js"]) {
   runtimeHash.update(file).update(await fs.readFile(file));
 }
 let state = { version: 1, model, baseUrl, manifestSha256: fingerprint, caseIds: cases.map(c => c.id), startedAt: new Date().toISOString(),

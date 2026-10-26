@@ -283,7 +283,279 @@ node scripts/render-webnlg-response-structure.js --state .miniphi/cheetah/respon
 ```
 <!-- response-structure-results:end -->
 
+## Associative vocabulary learning
+
+With `--correlate`, Cheetah acts as a “digital hippocampus”: the entity, requested
+role and related words jointly select context. **WordNet supplies vocabulary;
+Qwen supplies decomposition and source-grounded answers.** The same model does
+not generate the synonyms used to test its retrieval.
+
+```sh
+node scripts/install-wordnet.js
+node src/index.js cheetah-learn webnlg --offset 2049 --limit 1 --correlate --checkpoint .miniphi/cheetah/webnlg/ship-builder-wordnet.json
+node src/index.js cheetah-learn webnlg --offset 2053 --limit 1 --correlate --checkpoint .miniphi/cheetah/webnlg/ship-engine-wordnet.json
+node src/index.js cheetah-learn graph-ask "Identify the builder of A-Rosa Luna and the engine maker powering A-Rosa Luna." --decompose --correlate --max-rounds 6 --json
+```
+
+The explicit installer downloads [Princeton WordNet 3.0](https://wordnet.princeton.edu/documentation/wndb5wn)
+and [Open Multilingual WordNet 1.4](https://omwn.org/omw1.html) from NLTK's official
+package repository. It verifies pinned SHA-256 checksums and preserves component
+licenses ([notices for the documented languages](licenses/wordnet/README.md)). Data stays under `.miniphi/lexicons/wordnet`, outside Git. Inference
+runs locally without downloads or Python/NLTK dependencies. Configure
+`--wordnet-dir <path>` (or `MINIPHI_WORDNET_DIR`) and
+`--wordnet-languages eng,ita,fra,spa`; these four languages are the defaults.
+Other installed three-letter OMW language codes can be selected explicitly.
+
+Learning is bounded and auditable:
+
+1. Extract claims from the source with the existing schema/template contract.
+2. Pre-check known relation correlations in Cheetah and choose source-literal
+   role anchors. WordNet resolves inflections such as **built → build**.
+3. Select lexical senses from source context. Keep synonyms, translations and
+   derivations separately labelled with synset IDs, language and corpus hashes.
+4. Probe cue nodes and links; save unknown associations, at most sixteen terms
+   for each of four claims. These nodes/links have `factual:false`.
+5. On a later question, expand role/question words through WordNet and run a
+   bounded two-hop recall. Re-read every selected factual edge by exact endpoints
+   and relation before giving its quote to Qwen. The cue graph cannot be cited.
+
+For example, an actual local reader probe returned:
+
+```json
+{
+  "anchor": "family",
+  "context": "Almond is part of the Rosaceae family.",
+  "synset": "08107499-n",
+  "gloss_excerpt": "(biology) a taxonomic group containing one or more genera",
+  "terms": [
+    {"term": "family", "language": "eng", "kind": "synonym"},
+    {"term": "famiglia", "language": "ita", "kind": "translation"},
+    {"term": "famille", "language": "fra", "kind": "translation"},
+    {"term": "familia", "language": "spa", "kind": "translation"}
+  ]
+}
+```
+
+This is a compact view of the [recorded reader audit](benchmarks/wordnet-lexicon-2026-10-26.json),
+which retains complete glosses, scores, language inventory and corpus checksums.
+The separate **order** anchor selects biological synset `08106934-n`, with
+*ordine*, *ordre* and *orden*. Source context selects the taxonomic family sense
+rather than the household sense. Gloss/ancestry scoring is approximate: the audit
+also retains an ambiguous French *constructeur* probe with an unsuitable detergent
+sense. Dataset lookup removes same-model vocabulary feedback, not lexical ambiguity.
+
+```mermaid
+flowchart LR
+  W[wncue: ita famiglia] -->|wordnet_cue_for: retrieval only| C[claim: Almond / family]
+  C -->|claim_subject: retrieval only| A[Almond]
+  A -->|part_of: quoted source fact| F[Rosaceae family]
+```
+
+Qwen still reports prior answers and self-confidence for each atomic concept.
+These diagnostics do not supply vocabulary, create facts or establish truth.
+At answer time, explicit family/genus/order requests require that rank in the
+terminal source evidence; learning a family cannot establish an untaught genus.
+The learning helper retains factual writes if optional indexing fails, returning
+a deterministic setup hint. The WebNLG runner requires a completed corpus
+installation before starting.
+A fresh checkpoint is required when changing correlation mode, corpus or languages.
+`--json` retains pre-checks, lexical lookups, rejected terms and exact edge reads.
+
+Cheetah now indexes readable `name`, `title`, `aliases` and `terms` properties,
+so words can reach hash-identified nodes. New writes update the term index; older
+databases need `GRAPH_TERM_INDEX action=rebuild` in Cheetah's console. Declared
+synonym edges respect both weight and confidence, including zero-confidence exclusion.
+Reusable MiniPhi code is in `src/libs/wordnet-lexicon.js` and
+`src/libs/cheetah-graph-correlations.js`.
+
+The answer prompt now lists observed connected endpoints and pre-fills one
+possible answer JSON with its exact citation path. The active schema enumerates
+those endpoint names and evidence IDs. Qwen must still decide whether the cited
+relation answers the requested aspect; lookup and decline modes remain available
+for incomplete chains. WordNet search seeds and activation mechanics are retained
+in the audit, outside the model's source-evidence context.
+
+### Earlier model-vocabulary experiment
+
+Before WordNet, Qwen proposed “shipyard”, “shipbuilder” and “vessel constructor”
+for **built**, but also “genus classification” for a family claim. Across the same
+twenty cases, correlation and ordinary discovery both covered **25/30** question-B
+facets; correlation used **68** model calls versus **97**. Both covered **6/7**
+additional vocabulary facets. This was a historical model-vocabulary experiment,
+not evidence for the WordNet provider. Its [complete audit](benchmarks/webnlg-correlations-model-2026-10-26.json.gz)
+preserves the mixed results and two earlier pilots. Two sources yielded no saved
+claims in that run; both remain in its denominator. Later source-name repairs and
+WordNet are evaluated separately below.
+
+<!-- graph-correlation-results:start -->
+### Measured WordNet results
+
+Run: 2026-10-26T20:42:48.323Z → 2026-10-26T21:02:11.986Z; exact model `qwen3-4b-thinking-2507-mlx`, loaded context 8192 tokens.
+
+This is a retrieval continuation: it copied the completed database from the earlier WordNet run (2026-10-26T20:13:52.668Z → 2026-10-26T20:38:14.537Z), retained its learning records and restarted Cheetah. No source was retaught. The active runtime hashes are in this report; original teaching hashes are under reusedLearning.
+
+The [earlier WordNet audit](benchmarks/webnlg-correlations-wordnet-initial-2026-10-26.json.gz) recorded **27/30** ordinary versus **25/30** correlated question-B facets (98 versus 74 calls), and **6/7** versus **5/7** additional vocabulary facets. The final continuation tests concrete observed-answer JSON choices plus removal of lexical mechanics from the model context, on those same saved facts. Both retrieval arms use the updated runtime. This is not a new learning score or a repeated-trial accuracy estimate.
+
+This run taught all twenty sources once, adding WordNet cues without an LM vocabulary call, then restarted Cheetah. Both retrieval arms used identical factual edges and fresh model histories; order alternated by case. Question B and evaluator aliases are unchanged. Four additional vocabulary questions were fixed before inference and excluded from learning. The older 17/30 → 26/30 history and model-vocabulary pilot are separate experiments.
+
+| Measurement | Ordinary graph discovery | Correlated context |
+| --- | --- | --- |
+| Original rephrased question B | 26/30 facets; 16/20 complete | 28/30 facets; 18/20 complete |
+| Four additional vocabulary questions | 6/7 facets | 6/7 facets |
+| Model calls for question B | 88 | 63 |
+| Recorded question-B stage duration | 461.5 s | 357.8 s |
+| Concepts with recalled factual context, question B | 0 | 23 |
+| Untaught-subject control declined | 1/1 | 1/1 |
+| Unsupported genus control declined | 1/1 | 1/1 |
+
+Learning added 344 cue-to-claim links, created 314 cue nodes and reused 30 existing cue nodes. Vocabulary generation used **zero model calls**. Learning/correlation stages reporting failure: 0; sources without any saved claims: 0. Only subsequent exact source-edge reads can support answers.
+
+All twenty rephrased cases:
+
+| Concept | Ordinary | WordNet context |
+| --- | --- | --- |
+| 01-aviation | 1/1 | 1/1 |
+| 02-music | 2/2 | 2/2 |
+| 03-spaceflight | 2/2 | 2/2 |
+| 04-athletics | 1/1 | 1/1 |
+| 05-architecture | 1/2 | 1/2 |
+| 06-astronomy | 1/1 | 1/1 |
+| 07-demography | 1/1 | 1/1 |
+| 08-comics | 1/1 | 1/1 |
+| 09-business | 1/1 | 1/1 |
+| 10-cuisine | 2/2 | 2/2 |
+| 11-shipbuilding | 1/2 | 2/2 |
+| 12-memorials | 1/2 | 1/2 |
+| 13-politics | 1/1 | 1/1 |
+| 14-football | 1/1 | 1/1 |
+| 15-education | 1/2 | 2/2 |
+| 16-literature | 1/1 | 1/1 |
+| 17-botany | 2/2 | 2/2 |
+| 18-economics | 2/2 | 2/2 |
+| 19-linguistics | 1/1 | 1/1 |
+| 20-rocket_engineering | 2/2 | 2/2 |
+
+A concrete change in different-wording retrieval:
+
+```json
+{
+  "source_sentences": [
+    "Neptun Werft built the A-Rosa Luna.",
+    "The A-Rosa Luna is powered by a MTU Friedrichshafen engine."
+  ],
+  "later_question": "Identify the builder of A-Rosa Luna and the engine maker powering A-Rosa Luna.",
+  "outcomes": {
+    "baseline": [
+      {
+        "aspect": "builder",
+        "prior_answer": "",
+        "prior_self_confidence": 0,
+        "answer": "MTU Friedrichshafen engine",
+        "grounded": true,
+        "cited_facts": [
+          {
+            "subject": "A-Rosa Luna",
+            "relation": "powered_by",
+            "object": "MTU Friedrichshafen engine"
+          }
+        ]
+      },
+      {
+        "aspect": "engine maker",
+        "prior_answer": "",
+        "prior_self_confidence": 0,
+        "answer": "MTU Friedrichshafen engine",
+        "grounded": true,
+        "cited_facts": [
+          {
+            "subject": "A-Rosa Luna",
+            "relation": "powered_by",
+            "object": "MTU Friedrichshafen engine"
+          }
+        ]
+      }
+    ],
+    "correlated": [
+      {
+        "aspect": "builder",
+        "prior_answer": "",
+        "prior_self_confidence": 0,
+        "answer": "Neptun Werft",
+        "grounded": true,
+        "cited_facts": [
+          {
+            "subject": "Neptun Werft",
+            "relation": "built",
+            "object": "A-Rosa Luna"
+          }
+        ]
+      },
+      {
+        "aspect": "engine maker",
+        "prior_answer": "",
+        "prior_self_confidence": 0,
+        "answer": "MTU Friedrichshafen engine",
+        "grounded": true,
+        "cited_facts": [
+          {
+            "subject": "A-Rosa Luna",
+            "relation": "powered_by",
+            "object": "MTU Friedrichshafen engine"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Separate multilingual probes use the previously learned English Almond facts. These are a small lexical/answer demonstration, not a multilingual WebNLG benchmark:
+
+| Language / query | Fresh source-edge reads | Model calls |
+| --- | --- | --- |
+| ita: Almond famiglia | Rosaceae family [part_of] | 0 |
+| ita: Almond ordine | Rosales order [member_of] | 0 |
+| fra: Almond famille | Rosaceae family [part_of] | 0 |
+| fra: Almond ordre | Rosales order [member_of] | 0 |
+| spa: Almond familia | Rosaceae family [part_of] | 0 |
+| spa: Almond orden | Rosales order [member_of] | 0 |
+
+- ita: “Qual è la famiglia botanica di Almond?” → **Rosaceae family**, grounded=true.
+- fra: “Quelle est la famille botanique de Almond ?” → **Rosaceae family**, grounded=true.
+- spa: “¿Cuál es la familia botánica de Almond?” → **Rosaceae family**, grounded=true.
+
+Coverage checks predeclared answer aliases across accepted answers. It does not establish general accuracy, semantic entailment or correct assignment to every subquestion. Negative controls cover the stated cases, not all possible misleading synonyms.
+
+The [full WordNet audit](benchmarks/webnlg-correlations-wordnet-2026-10-26.json.gz) retains every model request/response, Cheetah operation, lexical lookup, pre-check and runtime fingerprint. A [readable JSON summary](benchmarks/webnlg-correlations-wordnet-2026-10-26.summary.json) keeps the twenty sources, actual decompositions, confidence, answers and quoted evidence. Cheetah revision: `1e42635ce5db81a3dd3d82abed4b31de3b0751e9`. The compressed audit is ordinary UTF-8 JSON after gzip decompression.
+
+Run the same protocol with the model loaded and the current Cheetah binary built:
+
+```sh
+node scripts/install-wordnet.js # once, unless already installed
+node scripts/benchmark-webnlg-correlations.js --output .miniphi/cheetah/correlations/new-run
+node scripts/render-webnlg-correlations.js --state .miniphi/cheetah/correlations/new-run/report.json
+# Optional: retest a copy of compatible completed data without reteaching
+node scripts/benchmark-webnlg-correlations.js --reuse-state .miniphi/cheetah/correlations/new-run/report.json --output .miniphi/cheetah/correlations/retrieval-followup
+```
+
+To reopen this machine's measured WordNet graph, start its saved database in one terminal and ask from another:
+
+```sh
+CHEETAH_HEADLESS=1 CHEETAH_LISTEN_ADDR=127.0.0.1:4455 CHEETAH_DATA_DIR="$PWD/.miniphi/cheetah/correlations/wordnet-20-final/data" thirds/cheetah/cheetah-server
+node src/index.js cheetah-learn graph-ask "Identify the builder of A-Rosa Luna and the engine maker powering A-Rosa Luna." --cheetah-database webnlg_correlations --decompose --correlate --max-rounds 6 --json
+```
+
+The saved database is local and is not shipped in Git. The compressed audit and readable summary are portable.
+
+<!-- graph-correlation-results:end -->
+
 ## What remains unreliable
+
+The latest WordNet continuation declines only the city/country facets whose
+quotes do not explicitly establish the requested endpoint type. Builder and
+taxonomic-order answers now pass. The separate “shipwright” wording still misses
+the builder in both modes (6/7 additional vocabulary facets). These are observed
+results on this cohort; the following failures belong to the earlier transcript.
 
 The twenty-example transcript deliberately retains the four missed facets:
 
@@ -346,12 +618,19 @@ above. Those earlier measurements have their own
 [audit](benchmarks/webnlg-qwen3-4b-2026-10-26.json).
 
 ```sh
-node --test unit-tests-js/structured-response-contract.test.js unit-tests-js/cheetah-graph-learning.test.js unit-tests-js/context-reference-composer.test.js
+node --test unit-tests-js/wordnet-lexicon.test.js unit-tests-js/structured-response-contract.test.js unit-tests-js/cheetah-graph-learning.test.js unit-tests-js/context-reference-composer.test.js
 MINIPHI_LMSTUDIO_INTEGRATION=1 MINIPHI_CHEETAH_INTEGRATION=1 \
   LMSTUDIO_REST_URL=http://127.0.0.1:1234 \
   MINIPHI_LIVE_MODEL=qwen3-4b-thinking-2507-mlx \
   node --test unit-tests-js/cheetah-webnlg.live.test.js
 ```
+
+Validation of this revision: **59/59 focused tests passed**. The existing live
+two-hop/untaught-control/restart test passed in **31.2 seconds**. The full
+JavaScript suite recorded **530 passes, 12 skips and four existing failures**:
+those CLI fixtures request the unavailable `mistralai/devstral-small-2-2512` model.
+Cheetah passed `go build ./...`, `go vet ./...` and `go test ./src` before its
+`main` commit. The source-answer coverage above is a separate measured workload.
 
 Run real-model checks sequentially. Prompts, raw responses/reasoning, tool calls,
 tool definitions and validation outcomes persist under `.miniphi/`; keep failed

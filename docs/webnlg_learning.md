@@ -2,6 +2,8 @@
 
 For selected concepts, a compact worked example and current prompt contracts, read the [practical guide](cheetah-webnlg-learning.md). This file retains the complete recorded exchanges.
 
+The later optional [associative-vocabulary workflow](cheetah-webnlg-learning.md#associative-vocabulary-learning) uses independent WordNet/OMW vocabulary to learn retrieval cues and correlate entity/aspect words through Cheetah. Its separate results do not replace the historical measurements in this transcript.
+
 These recorded prompts already included exact JSON schemas, but predate the concrete response templates added to the runtime afterward. The practical guide describes that later change; the historical requests and measurements below are preserved.
 
 Recorded study: **2026-10-26**. Model: **qwen3-4b-thinking-2507-mlx**, LM Studio at `http://127.0.0.1:1234`, loaded context **8192 tokens**.

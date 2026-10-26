@@ -29,6 +29,12 @@ const schema = {
   },
 };
 
+test("array upper bounds are enforced, including zero lookup slots during citation repair", () => {
+  const s = { type: "object", required: ["lookups"], properties: { lookups: { type: "array", maxItems: 0 } } };
+  assert.equal(validateJsonAgainstSchema(s, '{"lookups":[]}').valid, true);
+  assert.equal(validateJsonAgainstSchema(s, '{"lookups":[{}]}').valid, false);
+});
+
 test("validateJsonAgainstSchema accepts helper_script null with oneOf", () => {
   const response = JSON.stringify({ helper_script: null });
   const result = validateJsonAgainstSchema(schema, response);

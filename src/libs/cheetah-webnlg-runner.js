@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { getWordNetLexicon } from "./wordnet-lexicon.js";
 import { learnGraphText, reasonGraph, graphName } from "./cheetah-graph-learning.js";
 
 function label(value) {
@@ -29,6 +30,7 @@ export async function runWebNlgLearning({
   datasetPath, checkpointFile, handler, cheetahClient, schemaRegistry, modelKey,
   limit = 20, offset = 0, resume = true, question = null, maxRounds = 4,
   sessionTimeoutMs = 900000, onProgress = () => {},
+  correlate = false, lexicon = getWordNetLexicon(),
 } = {}) {
   for (const [name, value, min, max] of [["limit", limit, 1, 13211], ["offset", offset, 0, 13210], ["maxRounds", maxRounds, 1, 8], ["sessionTimeoutMs", sessionTimeoutMs, 1000, 86400000]]) {
     if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${name} must be ${min}..${max}`);
@@ -39,7 +41,8 @@ export async function runWebNlgLearning({
   const raw = await fs.readFile(file, "utf8");
   const data = JSON.parse(raw);
   if (data.language !== "en" || !Array.isArray(data.values)) throw new Error("Expected English WebNLG values export");
-  const identity = { dataset: createHash("sha256").update(raw).digest("hex"), database: cheetahClient.database, modelKey, offset };
+  if (correlate) await lexicon.load?.();
+  const identity = { dataset: createHash("sha256").update(raw).digest("hex"), database: cheetahClient.database, modelKey, offset, ...(correlate ? { correlationVersion: 2, lexiconFingerprint: lexicon.fingerprint } : {}) };
   let state = { version: 1, identity, nextIndex: offset, records: [], answers: [], totals: { processed: 0, written: 0, known: 0, rejected: 0, expectedPairs: 0, predictedPairs: 0, matchingPairs: 0 } };
   if (resume && checkpointFile) {
     try {
@@ -60,7 +63,7 @@ export async function runWebNlgLearning({
       if (!Array.isArray(row.input) || !row.input.length || !Array.isArray(row.target) || typeof row.target[0] !== "string" || !row["webnlg-id"]?.startsWith("train/")) throw new Error(`Invalid WebNLG row ${state.nextIndex}`);
       // No RDF labels or endpoint hints cross into the learner. Gold is scored AFTER.
       const result = await learnGraphText(row.target[0], { handler, cheetahClient, schemaRegistry,
-        sourceId: row["webnlg-id"], deadline });
+        sourceId: row["webnlg-id"], deadline, correlate, lexicon });
       const metrics = scoreWebNlgClaims(row.input, result.claims ?? []);
       const record = { index: state.nextIndex, text: row.target[0], gold: row.input, ...result, metrics };
       if (checkpointFile) await save(path.join(`${checkpointFile}.rows`, `${state.nextIndex}.json`), record);
@@ -74,7 +77,7 @@ export async function runWebNlgLearning({
       await onProgress({ index: state.nextIndex - 1, result, metrics });
     }
     if (!stopReason && question) {
-      const answer = await reasonGraph(question, { handler, cheetahClient, schemaRegistry, deadline, maxRounds });
+      const answer = await reasonGraph(question, { handler, cheetahClient, schemaRegistry, deadline, maxRounds, correlate, lexicon });
       state.answers.push(answer);
       state.answers = state.answers.slice(-20);
     }

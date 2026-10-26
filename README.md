@@ -326,6 +326,37 @@ The study guide explains how to reopen its saved database and repeat the experim
 Its source-answer metric and selected examples differ from the earlier 20-row
 endpoint benchmark above.
 
+Install the optional local vocabulary datasets, then add `--correlate` to
+`webnlg` teaching and `graph-ask` retrieval:
+
+```bash
+node scripts/install-wordnet.js
+miniphi cheetah-learn graph-ask "Identify the builder and engine of A-Rosa Luna" --decompose --correlate --json
+```
+
+MiniPhi uses **WordNet 3.0 + Open Multilingual WordNet 1.4**, independently of
+Qwen, to find synonyms, translations and related word forms. It pre-checks known
+associations, saves unknown vocabulary as retrieval cues, and re-reads exact
+source-backed edges before answering. Defaults: English, Italian, French and
+Spanish; use `--wordnet-languages eng,ita,fra,spa` and `--wordnet-dir <directory>`
+to select a local installation. Ordinary inference never downloads datasets.
+The [practical guide](docs/cheetah-webnlg-learning.md#associative-vocabulary-learning)
+shows the pipeline, multilingual examples and measured comparison.
+
+<!-- wordnet-results:start -->
+Recorded on the same saved graph with twenty rephrased questions:
+
+| Retrieval | Source-answer coverage | Model calls |
+| --- | --- | --- |
+| Ordinary discovery | 26/30 facets | 88 |
+| WordNet context | 28/30 facets | 63 |
+
+Untaught-subject and unsupported-genus controls declined: ordinary 2/2; WordNet 2/2.
+Vocabulary lookup used **zero LM calls**. The guide records separate multilingual
+probes and earlier regressions. This cohort measures source-answer coverage, not
+general accuracy. [Recorded outcomes](docs/benchmarks/webnlg-correlations-wordnet-2026-10-26.summary.json).
+<!-- wordnet-results:end -->
+
 ##### Other knowledge workflows: layered Wikipedia memory
 
 This is a **different** use of Cheetah from the context engine above (a separate database,

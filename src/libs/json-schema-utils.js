@@ -262,6 +262,9 @@ export function validateSchemaData(schema, value, pointer) {
       if (typeof schema.minItems === "number" && value.length < schema.minItems) {
         errors.push(`${pointer}: expected at least ${schema.minItems} items (found ${value.length}).`);
       }
+      if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+        errors.push(`${pointer}: expected at most ${schema.maxItems} items (found ${value.length}).`);
+      }
       value.forEach((item, index) => {
         if (schema.items) {
           errors.push(...validateSchemaData(schema.items, item, `${pointer}[${index}]`));

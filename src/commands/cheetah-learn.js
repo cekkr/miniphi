@@ -29,6 +29,7 @@ import { reasonGraph } from "../libs/cheetah-graph-learning.js";
 import { resolveContextWindow } from "../libs/model-catalog.js";
 import { deriveContextBudget, estimateTokens } from "../libs/context-graph.js";
 import { answerGraphConcepts, KNOWLEDGE_ASSESSMENT_SYSTEM_PROMPT } from "../libs/cheetah-knowledge-assessment.js";
+import { getWordNetLexicon } from "../libs/wordnet-lexicon.js";
 
 // Kept out of global auto-selection by design: this command defaults to a
 // deliberately small, "ignorant" model driven entirely by Cheetah, while
@@ -644,14 +645,18 @@ export async function handleCheetahLearnCommand({
         const assessmentHandler = options.decompose ? buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder,
           promptTimeoutMs: 120000, maxOutputTokens, acceptReasoningJson: true, systemPrompt: KNOWLEDGE_ASSESSMENT_SYSTEM_PROMPT }) : null;
         if (assessmentHandler) assessmentHandler.graphPromptBudgetTokens = handler.graphPromptBudgetTokens;
+        const correlate = Boolean(options.correlate);
+        const lexicon = correlate ? getWordNetLexicon({ directory: optionsString(options["wordnet-dir"]),
+          languages: optionsString(options["wordnet-languages"]) ?? "eng,ita,fra,spa" }) : undefined;
         const result = action === "graph-ask"
           ? options.decompose
-            ? await answerGraphConcepts(question, { assessmentHandler, handler, cheetahClient, schemaRegistry, maxRounds })
-            : await reasonGraph(question, { handler, cheetahClient, schemaRegistry, maxRounds })
+            ? await answerGraphConcepts(question, { assessmentHandler, handler, cheetahClient, schemaRegistry, maxRounds, correlate, lexicon })
+            : await reasonGraph(question, { handler, cheetahClient, schemaRegistry, maxRounds, correlate, lexicon })
           : await runWebNlgLearning({
             datasetPath: optionsString(options["dataset-path"]) ?? path.join(process.cwd(), "thirds/cheetah/studies/datasets/web_nlg"),
             checkpointFile: noSave ? null : path.resolve(optionsString(options.checkpoint) ?? path.join(process.cwd(), ".miniphi/cheetah/webnlg", `${cheetahClient.database}.json`)),
             handler, cheetahClient, schemaRegistry, modelKey, question, maxRounds,
+            correlate, lexicon,
             limit: parseNumericSetting(options.limit, "--limit") ?? 20,
             offset: parseNumericSetting(options.offset, "--offset") ?? 0,
             sessionTimeoutMs: (parseNumericSetting(options["session-timeout"], "--session-timeout") ?? 900) * 1000,

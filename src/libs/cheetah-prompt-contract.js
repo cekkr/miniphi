@@ -37,18 +37,18 @@ export function buildGraphResponseContract(schemaRegistry, schemaId, payload) {
     } else {
       const confidence = schemaId === "cheetah-concept-reason"
         ? { self_confidence: 0, reasoning_summary: "<brief explanation of supporting or missing evidence>" } : {};
-      templates = [
-        template("More evidence is needed: query an observed endpoint", { ...lookup, answer_entity: "", evidence_ids: [], ...confidence }),
-        template("Evidence answers the requested aspect: cite its connected path", {
-          lookups: [], answer_entity: payload.citation_repair?.answer_entity ?? "<exact final endpoint from graph evidence>",
-          evidence_ids: payload.citation_repair?.evidence_ids ?? ["<supporting evidence id>"], ...common, ...confidence,
-        }),
-        template("No supported answer or useful lookup remains: decline", {
-          lookups: [], answer_entity: "", evidence_ids: [], ...common, ...confidence,
-        }),
-      ];
+      // The caller derives these choices from validated, connected source edges.
+      // They are possible endpoints, not expected/gold answers or model priors.
+      const observed = payload.observed_answer_candidates?.[0];
+      const answerMode = template("If the cited relation answers the requested aspect: return this observed endpoint, or another listed observed answer choice", {
+        lookups: [], answer_entity: payload.citation_repair?.answer_entity ?? observed?.answer_entity ?? "<exact final endpoint from graph evidence>",
+        evidence_ids: payload.citation_repair?.evidence_ids ?? observed?.evidence_ids ?? ["<supporting evidence id>"], ...common, ...confidence,
+      });
+      const lookupMode = template("If the observed relations do not yet answer the requested aspect: query an observed endpoint", { ...lookup, answer_entity: "", evidence_ids: [], ...confidence });
+      const declineMode = template("No supported answer or useful lookup remains: decline", { lookups: [], answer_entity: "", evidence_ids: [], ...common, ...confidence });
+      templates = observed ? [answerMode, lookupMode, declineMode] : [lookupMode, answerMode, declineMode];
       if (payload.citation_repair) {
-        templates = templates.slice(1);
+        templates = [answerMode, declineMode];
         instructions.push("Your previously proposed endpoint has an observed connected path shown in the answer template. Re-cite ALL its evidence ids with lookups=[] or decline. No additional graph lookup is needed. This candidate is not accepted until you return valid connected citations.");
       }
       instructions.push("Choose exactly one mode. Do not combine a final answer with lookups. The cited relation must answer the question/requested_aspect, not merely reach a named node. If support is missing, request another observed endpoint or decline. Replace confidence numbers with your evidence-based estimate.");
@@ -65,5 +65,13 @@ export function buildGraphResponseContract(schemaRegistry, schemaId, payload) {
     { path: ["properties", "answer_entity"], values: ["", payload.citation_repair.answer_entity] },
     { path: ["properties", "evidence_ids", "items"], values: payload.citation_repair.evidence_ids },
   );
-  return schemaRegistry.buildResponseContract(schemaId, { templates, instructions, enumConstraints });
+  else if (["cheetah-graph-reason", "cheetah-concept-reason"].includes(schemaId) && payload.observed_answer_candidates?.length) enumConstraints.push(
+    { path: ["properties", "answer_entity"], values: ["", ...payload.observed_answer_candidates.map(c => c.answer_entity)] },
+    { path: ["properties", "evidence_ids", "items"], values: [...new Set(payload.observed_answer_candidates.flatMap(c => c.evidence_ids))] },
+  );
+  const contract = schemaRegistry.buildResponseContract(schemaId, { templates, instructions, enumConstraints });
+  // All evidence is already present in this phase. Prevent the small model
+  // from mixing a correct answer with another, unnecessary lookup.
+  if (payload.citation_repair) contract.response_schema.properties.lookups.maxItems = 0;
+  return contract;
 }

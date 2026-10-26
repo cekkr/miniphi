@@ -48,7 +48,8 @@
     "sqlite3": "^5.1.7",
     "tree-sitter-c": "^0.24.1",
     "web-tree-sitter": "^0.25.10",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "yauzl": "2.10.0"
   },
   "devDependencies": {
     "ink-testing-library": "^4.0.0"

@@ -68,7 +68,18 @@ one bounded source-only repair, preserving already accepted claims.
 Retrieval repair narrows the active schema to an observed unqueried lookup; if
 only citations are incomplete, a separate full-path template requires the model
 to re-cite all connected edges. Prompt, transport and validators share that active
-schema. No uncited edge is accepted as an answer.
+schema. Observed answer choices prefill exact connected endpoints/citations and
+narrow active answer enums; query/decline modes remain available for incomplete
+chains. Lexical retrieval mechanics stay outside the source-evidence prompt.
+No uncited edge is accepted as an answer.
+The optional WebNLG `--correlate` workflow uses local **PWN 3.0 + OMW 1.4**
+for synonyms/translations/derivations, with no LM vocabulary calls. Explicit setup:
+`node scripts/install-wordnet.js`; data/language flags and manifest fingerprints
+keep it reproducible. Source-derived anchors and exact unknown-node/edge probes
+populate non-factual `wncue:`/`claim:` indexes. Entity/role/WordNet seeds spread
+through Cheetah; only a fresh exact source edge can enter answer evidence. Cues
+never establish entity identity or a taxonomic rank. Missing corpora degrade with
+a setup hint. This world-knowledge index is separate from session-context recall.
 
 ### Context is a budgeted graph, never a transcript
 Prompts are rendered per turn from [`src/libs/context-graph.js`](src/libs/context-graph.js) against

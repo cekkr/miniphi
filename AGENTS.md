@@ -93,6 +93,11 @@ When you add or change CLI behavior:
   before the retry. `ContextReferenceComposer` also sends JSON correction fields.
   Regressions: `unit-tests-js/structured-response-contract.test.js` and
   `unit-tests-js/context-reference-composer.test.js`.
+- The shared schema validator enforces array `maxItems` as well as `minItems`.
+  Citation-repair contracts narrow `lookups.maxItems` to zero: an answer cannot
+  silently carry another lookup. A malformed entity's resolved canonical name
+  can restore the assessor's original atomic question, provided that question
+  contains the observed canonical name and is not a meta-instruction.
 - `agent-action` anchored edits are literal substring replacements, not start/end ranges: replacing a whole block requires the whole old block in `anchor`. JavaScript proposals are syntax-checked before approval/commit; `invalid-content` leaves disk untouched and feeds the literal-anchor repair contract back into the next prompt.
 - Prompt-chain interpreter treats preambles as invalid and emits a deterministic fallback with `stop_reason: preamble_detected` when strict parsing fails.
 - All suggested actions must be structured arrays/objects with reasons and a declared `schema_version`/`schema_uri`; normalize through `SchemaAdapterRegistry` before use.
@@ -151,6 +156,74 @@ When you add or change CLI behavior:
 ## Runtime posture
 
 ### WebNLG structured knowledge experiment (2026-10-26)
+- `webnlg --correlate` enables optional WordNet vocabulary learning;
+  `graph-ask --correlate` enables associative recall (`--decompose` keeps each
+  requested aspect separate). `webnlg --question` forwards the same mode. The
+  checkpoint identity includes `correlationVersion: 2` and the lexicon fingerprint
+  only when enabled; use a fresh checkpoint when changing mode/data/languages.
+- `node scripts/install-wordnet.js [--directory <path>]` explicitly downloads
+  checksum-pinned official NLTK `wordnet` and `omw-1.4` ZIPs, checks SHA-256 before
+  bounded traversal-safe extraction and preserves all component licenses.
+  Default location: `.miniphi/lexicons/wordnet` or `MINIPHI_WORDNET_DIR`.
+  Inference never downloads or generates synonyms with an LM. Flags:
+  `--wordnet-dir <path>`, `--wordnet-languages eng,ita,fra,spa` (default; English
+  is always loaded, plus selected three-letter OMW language codes).
+- Reusable `src/libs/wordnet-lexicon.js` exposes `WordNetLexicon`,
+  `getWordNetLexicon()` and `expand(term,{context,limit})`. It reads PWN index
+  sense ordering, irregular morphology, synsets/glosses and lexical derivation
+  pointers with source/target word indexes; OMW lemmas share PWN 3.0 ids. Context
+  gloss overlap and bounded hypernym ancestry select at most two tied senses;
+  absent positive context, use the first sense. This is approximate lexical
+  disambiguation, not factual entailment. Synonyms, translations, derivations and
+  translated derivations remain distinct provenance kinds. Corpus manifest hashes,
+  languages, selected synsets and sense scores persist in correlation telemetry.
+- `src/libs/cheetah-graph-correlations.js` owns the non-factual index. Identity and
+  deadline/command helpers live in `cheetah-graph-identity.js` and
+  `cheetah-graph-io.js`. Learning recalls known relation vocabulary, chooses
+  source-literal role anchors for at most four claims, then reads WordNet locally.
+  It caps each claim at sixteen terms, rejects entity-bearing/invalid cues and
+  probes exact nodes/edges before writing previously unknown associations.
+- `claim:<triple-hash>` indexes source-backed edges; `wncue:<language-term-hash>`
+  keeps multilingual cues separate. `wordnet_cue_for`, `claim_subject` and
+  `claim_object` edges carry `factual:false`. No entity identity alias is asserted.
+  Claim metadata must have provider `wordnet`, version 2 and the active lexicon
+  fingerprint; earlier model-generated cue edges are excluded from this path.
+  Cue weights are fixed retrieval weights (1 source-only anchor, .95 synonym/translation,
+  .8 derivation), not model confidence or probabilities of factual truth.
+- Query expansion uses WordNet for at most twelve role/question terms, with up to
+  32 recall seeds, two hops, a 384-edge budget, 64 associations, eight hydrated
+  claims and four selected facts. Source terms and per-seed activation rank
+  context. Only a fresh `GRAPH_EDGE_GET` with matching source-overlap grounding,
+  endpoints, relation and quote can enter evidence. Deleted facts cannot be
+  resurrected by cues. Explicit family/genus/order must occur in terminal evidence.
+- Self-confidence and prior answers remain model diagnostics, never write authority.
+  The assessor does not propose synonyms. Query correlation is read-only; optional
+  failures fall back to ordinary graph discovery. The learning helper reports an
+  explicit setup hint after a missing-corpus indexing failure and retains factual
+  writes; the WebNLG runner preflights the corpus before starting. Leading articles
+  are removed from extracted subjects only before an exact hinted name present in
+  the same quote. An invented parenthesized assessment qualifier is removed only
+  when its exact base entity occurs in the parent question. Both repairs are logged.
+- Graph answer contracts prefill an observed endpoint/citation path and enumerate
+  every connected candidate from the current evidence (up to the sixteen-edge
+  evidence cap). Choices come only from fresh, grounded graph reads, never prior
+  answers or evaluator gold. An observed endpoint may still be an intermediate
+  node; query and decline modes remain available. Lexical search mechanics stay
+  in correlation telemetry, outside the model's source-evidence prompt.
+- Citation-repair contracts set `lookups.maxItems=0`; schema validation enforces
+  array upper bounds so mixed query/answer modes fail before use.
+- `scripts/benchmark-webnlg-correlations.js` teaches one shared factual graph,
+  restarts Cheetah, and alternates baseline/correlated order on the unchanged
+  twenty-case question-B manifest. `--reuse-state <completed-report.json>` copies
+  a compatible saved database and retains original learning records/hashes; it
+  never silently reteaches during a prompt-contract comparison. Four additional vocabulary questions never
+  enter learning. Untaught-subject/genus controls, separate multilingual recall
+  probes, every request/response and runtime fingerprints remain in the report.
+  This world-knowledge experiment is separate from session context and `topic:`
+  memory. Historical model-vocabulary reports are preserved as earlier evidence.
+  The renderer publishes the guide, compressed full audit, readable summary and
+  README score block together; `--guide <custom-path>` skips the default README
+  update unless `--readme <path>` is explicitly supplied.
 - `cheetah-learn webnlg|graph-ask` defaults to `qwen3-4b-thinking-2507-mlx` and
   `miniphi_webnlg`, independent of the previous `teach|ask` defaults. Runtime owners:
   `src/libs/cheetah-graph-learning.js` (multi-subject source-overlap extraction,

@@ -1,10 +1,11 @@
+import { containsGraphName } from "./cheetah-graph-identity.js";
 import { graphName, reasonGraph, runGraphPrompt } from "./cheetah-graph-learning.js";
 
 export const KNOWLEDGE_ASSESSMENT_SYSTEM_PROMPT = "You assess your remembered factual knowledge without external sources. Decompose questions into atomic concepts and report a short uncertainty basis and self-confidence. These are diagnostic claims, never authoritative facts. Reply only with JSON matching the exact requested schema.";
 
 /** Self-report is a diagnostic, never a fact or permission to write knowledge. */
 export async function assessGraphKnowledge(question, {
-  handler, schemaRegistry, deadline = Date.now() + 300000,
+  handler, schemaRegistry, deadline = Date.now() + 300000, correlate = false,
 } = {}) {
   const trace = [];
   try {
@@ -17,10 +18,17 @@ export async function assessGraphKnowledge(question, {
       payload: {
         task: "Split QUESTION into one atomic concept per requested fact (at most 3). For a compound question, do not omit its second part. Each entity must be copied as an exact name from QUESTION; do not append the aspect to it. Write a standalone question for each concept. Before consulting memory, report prior_answer from your own remembered knowledge (empty if unknown), self_confidence 0..1, and a short basis explaining uncertainty. This is a closed-book diagnostic, not a factual answer to the user. No source text or database results are available. Do not invent confidence or confuse familiarity with evidence. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
         question, requested_concept_count: explicitParts,
+
       },
     });
-    const concepts = response.concepts.filter((concept) => concept.entity.trim() &&
-      graphName(question).includes(graphName(concept.entity)) &&
+    const concepts = response.concepts.map(concept => {
+      const base = concept.entity.replace(/\s*\([^()]+\)\s*$/u, "").trim();
+      if (base !== concept.entity && !containsGraphName(question, concept.entity) && containsGraphName(question, base)) {
+        return { ...concept, entity: base, original_entity: concept.entity, entityRepair: "literal-base-without-unrequested-qualifier" };
+      }
+      return concept;
+    }).filter((concept) => concept.entity.trim() &&
+      containsGraphName(question, concept.entity) &&
       Number.isFinite(concept.self_confidence) && concept.self_confidence >= 0 && concept.self_confidence <= 1).map((concept) => {
       if (graphName(concept.question).includes(graphName(concept.entity)) && !/we are given|the task is|decompose the question/iu.test(concept.question)) return concept;
       return { ...concept, original_question: concept.question,
@@ -40,13 +48,14 @@ export async function assessGraphKnowledge(question, {
 export async function answerGraphConcepts(question, {
   assessmentHandler, handler, cheetahClient, schemaRegistry,
   maxRounds = 6, deadline = Date.now() + 900000,
+  correlate = false, lexicon,
 } = {}) {
-  const assessment = await assessGraphKnowledge(question, { handler: assessmentHandler, schemaRegistry, deadline });
+  const assessment = await assessGraphKnowledge(question, { handler: assessmentHandler, schemaRegistry, deadline, correlate });
   const results = [];
   for (const concept of assessment.concepts) {
     const recalled = await reasonGraph(concept.question, { handler, cheetahClient, schemaRegistry,
       maxRounds, deadline, rootQuestion: question, focusEntity: concept.entity, aspect: concept.aspect,
-      diagnosticConfidence: true });
+      diagnosticConfidence: true, correlate, lexicon, originalConceptQuestion: concept.original_question ?? null });
     results.push({ concept, recalled, memoryGap: !recalled.grounded });
   }
   return { question, assessment, results, needsLearning: !results.length || results.some((r) => r.memoryGap),

@@ -7,6 +7,7 @@ import PromptSchemaRegistry from "../src/libs/prompt-schema-registry.js";
 import { learnGraphText, reasonGraph, graphEntityId, filterGraphClaims } from "../src/libs/cheetah-graph-learning.js";
 import { runWebNlgLearning, scoreWebNlgClaims } from "../src/libs/cheetah-webnlg-runner.js";
 import { assessGraphKnowledge, answerGraphConcepts } from "../src/libs/cheetah-knowledge-assessment.js";
+import { recallGraphCorrelations, graphClaimId } from "../src/libs/cheetah-graph-correlations.js";
 
 const schemaRegistry = new PromptSchemaRegistry();
 const payload = (value) => ({ ok: true, fields: { payload: Buffer.from(JSON.stringify(value)).toString("base64"), next_cursor: "*" } });
@@ -28,7 +29,10 @@ function memoryClient() {
           nodes.set(id, { id, props: field(line, "props") ? decode(line, "props") : {}, references: field(line, "references") ? decode(line, "references") : [] });
           return ok();
         }
-        if (line.startsWith("GRAPH_EDGE_GET")) return edges.has(key({ from: field(line, "from"), to: field(line, "to"), type: field(line, "type") })) ? payload({}) : missing("edge");
+        if (line.startsWith("GRAPH_EDGE_GET")) {
+          const edge = edges.get(key({ from: field(line, "from"), to: field(line, "to"), type: field(line, "type") }));
+          return edge ? payload(edge) : missing("edge");
+        }
         if (line.startsWith("GRAPH_EDGE_SET_BATCH")) {
           const items = decode(line, "items");
           for (const e of items) edges.set(key(e), { ...e, id: key(e) });
@@ -317,4 +321,145 @@ test("normalizes redundant/reordered citations using only the edges the model ci
   assert.equal(result.citationRepair, "connected-subpath-of-cited-evidence");
   const invalid = await reasonGraph("Where does Alice work?", { handler: handler([query("Alice"), answer("North Corp", ["e1", "invented"])]), cheetahClient: client, schemaRegistry, maxRounds: 2 });
   assert.equal(invalid.grounded, false);
+});
+
+const lexicon = {
+  fingerprint: "fixture-wordnet-v1", provenance: { provider: "wordnet", languages: ["eng", "ita"] },
+  async load() {},
+  async expand(term) {
+    const values = { works: ["employment", "occupation"], located: ["situated"] }[term] ?? [];
+    return { terms: values.map(term => ({ term, language: "eng", kind: "synonym", synset: "00000001-n" })) };
+  },
+};
+async function correlationFixture() {
+  const client = memoryClient();
+  const base = client.execute;
+  client.execute = async commands => commands[0].startsWith("GRAPH_RECALL")
+    ? (client.calls.push(...commands), [payload({ associations: [...client.nodes.keys()].filter(id => id.startsWith("claim:")).map(id => ({ id, score: 0.9, sources: [{ seed: "employment", activation: 0.9 }] })) })]) : base(commands);
+  const result = await learnGraphText(text, { handler: handler([extract(facts)]), lexicon, correlate: true, cheetahClient: client, schemaRegistry });
+  return { client, result };
+}
+
+test("pre-checks vocabulary, stores bounded non-factual cues and probes before adding unknown links", async () => {
+  const { client, result } = await correlationFixture();
+  assert.equal(result.written, 2);
+  assert.equal(result.correlations.written, 5);
+  assert(result.correlations.trace[0].command.startsWith("GRAPH_RECALL"));
+  assert.equal(result.correlations.provenance.provider, "wordnet");
+  assert.equal(result.correlations.trace.filter(step => step.schemaId).length, 0, "lexical lookup must never prompt the LM");
+  assert.equal([...client.edges.values()].filter(e => e.props?.grounding === "source-overlap").length, 2);
+  assert([...client.edges.values()].filter(e => e.type === "wordnet_cue_for").every(e => e.props.factual === false && e.confidence >= 0.8));
+  const again = await learnGraphText(text, { handler: handler([extract(facts)]), lexicon, correlate: true, cheetahClient: client, schemaRegistry });
+  assert.equal(again.correlations.written, 0);
+  assert.equal(again.correlations.known, 5);
+});
+
+test("correlation selects role-specific context but a fresh factual edge is mandatory", async () => {
+  const { client } = await correlationFixture();
+  const recalled = await recallGraphCorrelations("Who employs Alice?", { cheetahClient: client, lexicon, focusEntity: "Alice", aspect: "occupation", searchTerms: ["employment"] });
+  assert.equal(recalled.facts.length, 1);
+  assert.equal(recalled.facts[0].edge.props.object, "North Corp");
+  assert.equal(recalled.facts[0].conceptId, graphClaimId(facts[0]));
+  const h = handler([answer("North Corp", ["e1"])]);
+  const result = await reasonGraph("Who employs Alice?", { handler: h, cheetahClient: client, schemaRegistry, focusEntity: "Alice", aspect: "occupation", searchTerms: ["employment"], correlate: true, lexicon });
+  assert.equal(result.answer, "North Corp");
+  assert.equal(h.prompts[0].schema_id, "cheetah-graph-reason");
+  assert.equal(result.correlations.facts.length, 1);
+  for (const [key, edge] of client.edges) if (edge.props?.grounding === "source-overlap") client.edges.delete(key);
+  const stale = await recallGraphCorrelations("Who employs Alice?", { cheetahClient: client, lexicon, focusEntity: "Alice", aspect: "occupation" });
+  assert.equal(stale.facts.length, 0, "cues must not resurrect deleted facts");
+});
+
+test("legacy model vocabulary and another lexicon fingerprint cannot supply WordNet context", async () => {
+  const { client } = await correlationFixture();
+  for (const node of client.nodes.values()) if (node.id.startsWith("claim:")) {
+    node.props.correlationVersion = 1;
+    node.props.lexicalProvider = "model";
+  }
+  const options = { cheetahClient: client, lexicon, focusEntity: "Alice", aspect: "occupation" };
+  assert.equal((await recallGraphCorrelations("Who employs Alice?", options)).facts.length, 0);
+  for (const node of client.nodes.values()) if (node.id.startsWith("claim:")) {
+    node.props.correlationVersion = 2;
+    node.props.lexicalProvider = "wordnet";
+    node.props.lexiconFingerprint = "different-language-or-corpus";
+  }
+  assert.equal((await recallGraphCorrelations("Who employs Alice?", options)).facts.length, 0);
+});
+
+test("missing WordNet leaves factual learning intact and reports deterministic setup guidance", async () => {
+  const client = memoryClient();
+  const unavailable = { async load() { throw new Error("ENOENT missing WordNet"); } };
+  const result = await learnGraphText(text, { handler: handler([extract(facts)]), lexicon: unavailable, correlate: true, cheetahClient: client, schemaRegistry });
+  assert.equal(result.written, 2);
+  assert.equal(result.correlations.written, 0);
+  assert.equal(result.correlations.fallback, true);
+  assert.equal(result.correlations.setupHint, "node scripts/install-wordnet.js");
+  assert.equal([...client.nodes.keys()].filter(id => id.startsWith("claim:")).length, 0);
+});
+
+test("a correlated search cue cannot turn a family fact into a genus answer", async () => {
+  const client = memoryClient(), base = client.execute;
+  client.execute = async commands => commands[0].startsWith("GRAPH_RECALL")
+    ? [payload({ associations: [...client.nodes.keys()].filter(id => id.startsWith("claim:")).map(id => ({ id, score: 0.9, sources: [{ seed: "family", activation: 0.9 }] })) })] : base(commands);
+  const fact = { subject: "Almond", relation: "part_of", object: "Rosaceae family", quote: "Almond is part of the Rosaceae family." };
+  const related = { ...lexicon, async expand() { return { terms: [{ term: "genus classification", kind: "synonym", language: "eng", synset: "00000001-n" }] }; } };
+  await learnGraphText(fact.quote, { handler: handler([extract([fact])]), correlate: true, lexicon: related, cheetahClient: client, schemaRegistry });
+  const result = await reasonGraph("What genus does Almond belong to?", { handler: handler([answer("Rosaceae family", ["e1"])]), cheetahClient: client, schemaRegistry,
+    focusEntity: "Almond", aspect: "genus", searchTerms: ["family"], correlate: true, lexicon: related, maxRounds: 1 });
+  assert.equal(result.correlations.facts.length, 1);
+  assert.equal(result.grounded, false, "a search association is not proof of a taxonomic rank");
+});
+
+test("canonical entity completion restores a valid original atomic question", async () => {
+  const client = await taught(), base = client.execute;
+  client.execute = async commands => commands[0].startsWith("GRAPH_RECALL") ? [payload({ associations: [{ id: graphEntityId("Alice") }] })] : base(commands);
+  const h = handler([query("focus"), answer("North Corp", ["e1"])]);
+  const result = await reasonGraph("For Name the employer of Alice, retrieve the workplace", { handler: h, cheetahClient: client, schemaRegistry,
+    rootQuestion: "Where does Alice work?", focusEntity: "Name the employer of Alice", originalConceptQuestion: "Where does Alice work?" });
+  assert.equal(result.answer, "North Corp");
+  assert.equal(h.prompts[0].question, "Where does Alice work?");
+});
+
+test("correlation learning is checkpoint-scoped and forwards to an immediate question", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "webnlg-correlation-mode-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(path.join(dir, "train.json"), JSON.stringify({ language: "en", values: [{ input: ["Alice | worksAt | North_Corp"], target: [facts[0].quote], "webnlg-id": "train/Test/1/Id1" }] }));
+  const options = { datasetPath: dir, checkpointFile: path.join(dir, "checkpoint.json"), cheetahClient: memoryClient(), schemaRegistry, modelKey: "fixture", limit: 1 };
+  const state = await runWebNlgLearning({ ...options, correlate: true, lexicon,
+    handler: handler([extract([facts[0]]), query("Alice"), answer("North Corp", ["e1"])]), question: "Where does Alice work?" });
+  assert.equal(state.stopReason, null);
+  assert.equal(state.identity.correlationVersion, 2);
+  assert.equal(state.answers[0].answer, "North Corp");
+  assert(state.answers[0].correlations, "the immediate question must retain correlation mode");
+  await assert.rejects(() => runWebNlgLearning({ ...options, correlate: false, handler: handler([]) }), /identity mismatch/);
+});
+
+test("source entity repair removes only a leading article before an exact hinted name", () => {
+  const quote = "The English language is spoken in England.";
+  const fact = { subject: "The English language", relation: "spoken_in", object: "England", quote };
+  const result = filterGraphClaims([fact], quote, { entityHints: ["English language"] });
+  assert.equal(result.accepted[0].subject, "English language");
+  assert.equal(result.entityNormalizations[0].basis, "leading-article-before-exact-source-hint");
+  const decorated = filterGraphClaims([{ ...fact, subject: "The population of English language" }], quote, { entityHints: ["English language"] });
+  assert.equal(decorated.accepted.length, 0);
+});
+
+test("answer JSON choices come from connected observations and keep intermediate lookup available", async () => {
+  const client = await taught();
+  const h = handler([query("Alice"), lookup("North Corp"), answer("Rome", ["e1", "e2"])]);
+  const result = await reasonGraph("Where is Alice's workplace located?", { handler: h, cheetahClient: client, schemaRegistry });
+  assert.equal(result.answer, "Rome");
+  assert.equal(h.prompts[0].observed_answer_candidates, undefined, "no answer example before a graph read");
+  assert.deepEqual(h.prompts[1].observed_answer_candidates, [{ answer_entity: "North Corp", evidence_ids: ["e1"] }]);
+  assert(h.prompts[2].response_schema.properties.answer_entity.enum.includes("Rome"));
+  assert(h.prompts[1].response_templates.some(t => t.response.lookups.length), "intermediate facts must not force an answer to a chain question");
+});
+
+test("assessment discards an invented qualifier only when its exact base name is in the question", async () => {
+  const response = { concepts: [{ id: "c1", entity: "Airman (comic-character)", aspect: "creator", question: "Who created Airman?", prior_answer: "", self_confidence: 0, basis: "unknown" }], needs_more_context: true, missing_snippets: [], stop_reason: "completed" };
+  const fixed = await assessGraphKnowledge("Who created Airman?", { handler: handler([response]), schemaRegistry });
+  assert.equal(fixed.concepts[0].entity, "Airman");
+  assert.equal(fixed.concepts[0].original_entity, "Airman (comic-character)");
+  const rejected = await assessGraphKnowledge("Who created Superman?", { handler: handler([response]), schemaRegistry });
+  assert.equal(rejected.concepts.length, 0);
 });

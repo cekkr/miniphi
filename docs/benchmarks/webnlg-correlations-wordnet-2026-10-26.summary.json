@@ -1,0 +1,3790 @@
+{
+  "provider": {
+    "provider": "wordnet",
+    "version": "PWN-3.0+OMW-1.4",
+    "languages": [
+      "eng",
+      "ita",
+      "fra",
+      "spa"
+    ],
+    "packages": [
+      {
+        "id": "wordnet",
+        "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+      },
+      {
+        "id": "omw-1.4",
+        "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d"
+      }
+    ]
+  },
+  "startedAt": "2026-10-26T20:42:48.323Z",
+  "finishedAt": "2026-10-26T21:02:11.986Z",
+  "reusedLearning": {
+    "sourceFile": "/Users/richard/Sources/GitHub/miniphi/.miniphi/cheetah/correlations/wordnet-20/report.json",
+    "sha256": "be22581ee3db64be0f063d9b1b6f6d7c22590f0c08ddba5df3dbd99e5011c128",
+    "runtimeHashes": {
+      "src/libs/wordnet-lexicon.js": "aee228f76d01b8bc5dc23edeb970b3f4b1703047506629507fab0711a4b51e32",
+      "src/libs/wordnet-installer.js": "02a6ea81164d58935bf13f6934a07a99a480fa870700af55457743fbf16a025a",
+      "src/libs/cheetah-graph-learning.js": "1e2def7e7457956d308c44b84d399d5b1c1ff52b058e6442b876cd278d41bba1",
+      "src/libs/cheetah-graph-correlations.js": "8459938d1697644b3b6e1e4de00c3c8cdc818ee8ae6568ac048dcb053c29fa4e",
+      "src/libs/cheetah-graph-identity.js": "309b531877b0a7fb8ed443caff3cafb602e05b19c6083a86cec51f5da46e49c8",
+      "src/libs/cheetah-graph-io.js": "848fbb133b4305da3799f8605028e0aa758f54c70e8a707e66ee75e8d540014b",
+      "src/libs/cheetah-knowledge-assessment.js": "9da72bca3c9e53c9666cee410dd8995905f16da029bce8a13359b968e9b8e459",
+      "src/libs/cheetah-prompt-contract.js": "168cd5643b9f455f43d5d6f84912e9c86ef26528c9af1a653a1fb2c78b0fd886",
+      "src/libs/prompt-schema-registry.js": "bee2a3c4c5a0100685272083ebcd77e82f63b660362554446cfec68a01d4e53a",
+      "src/libs/lmstudio-handler.js": "84935552e98d9899b7799e87a70bbf41336ead44ae3d6ee37e604862acdd83e2",
+      "src/commands/cheetah-learn.js": "3b677d6ccb3424f228b9801f7b125891ab2c701369ed85f29753913d19fa41b0"
+    },
+    "startedAt": "2026-10-26T20:13:52.668Z",
+    "finishedAt": "2026-10-26T20:38:14.537Z"
+  },
+  "summary": {
+    "baseline": {
+      "question_b": {
+        "matched": 26,
+        "total": 30,
+        "complete": 16,
+        "cases": 20,
+        "correlationHits": 0,
+        "modelCalls": 88
+      },
+      "withheld": {
+        "matched": 6,
+        "total": 7,
+        "complete": 3,
+        "cases": 4,
+        "correlationHits": 0,
+        "modelCalls": 18
+      },
+      "controlsDeclined": 1,
+      "unsupportedRolesDeclined": 1
+    },
+    "correlated": {
+      "question_b": {
+        "matched": 28,
+        "total": 30,
+        "complete": 18,
+        "cases": 20,
+        "correlationHits": 23,
+        "modelCalls": 63
+      },
+      "withheld": {
+        "matched": 6,
+        "total": 7,
+        "complete": 3,
+        "cases": 4,
+        "correlationHits": 4,
+        "modelCalls": 14
+      },
+      "controlsDeclined": 1,
+      "unsupportedRolesDeclined": 1
+    }
+  },
+  "learning": {
+    "newCueLinks": 344,
+    "knownCueLinks": 0,
+    "failures": [],
+    "emptySourceCases": [],
+    "newCueNodes": 314,
+    "reusedCueNodes": 30
+  },
+  "modelCalls": 229,
+  "vocabularyModelCalls": 0,
+  "rawReportSha256": "341fe61c2bbfb40d87a2de35058d60617fbcced4fbb7b71f424d55a25e2ef04f",
+  "recordedStageSeconds": {
+    "baseline": {
+      "question_b": 461.532,
+      "withheld": 94.342
+    },
+    "correlated": {
+      "question_b": 357.775,
+      "withheld": 75.749
+    }
+  },
+  "cases": [
+    {
+      "id": "01-aviation",
+      "question": "For Abilene Regional Airport, give the recorded length of its runway.",
+      "source": [
+        "The runway length of Abilene Regional Airport is 2194.0."
+      ],
+      "claims": [
+        {
+          "subject": "Abilene Regional Airport",
+          "relation": "runway_length",
+          "object": "2194.0",
+          "quote": "The runway length of Abilene Regional Airport is 2194.0."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "runway length",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Abilene Regional Airport",
+                "aspect": "runway length",
+                "question": "What is the recorded runway length of Abilene Regional Airport?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific runway length data known for this airport in prior knowledge; airports have varying runway specs."
+              },
+              "answer": "2194.0",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjViYTZkNjdhZGE1OTI4MTIxMDRlZjhlZTJlNDdjMWJjMzkxZjY2MDRkNDBlMDc5MzdmOWM5MzE4MzA0MzM5NHxydW53YXlfbGVuZ3RofGtub3dsZWRnZTo1MzlmMDIxMTQ0ODA1ODNmMzk2MWQ4NjFiZmYxYTAwZWI5YjUxNzY2M2YzMTc5YTIwNDg3YjY0MzhkN2ZlOTQ2",
+                  "subject": "Abilene Regional Airport",
+                  "relation": "runway_length",
+                  "object": "2194.0",
+                  "start": "Abilene Regional Airport",
+                  "end": "2194.0",
+                  "quote": "The runway length of Abilene Regional Airport is 2194.0.",
+                  "sourceId": "train/Airport/1/Id22",
+                  "src": "1"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "runway length",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Abilene Regional Airport",
+                "aspect": "recorded length of its runway",
+                "question": "What is the recorded length of Abilene Regional Airport's runway?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific runway length data is commonly known or stored in general knowledge; airport runways are typically documented with precise measurements but this is not a standard fact I can recall."
+              },
+              "answer": "2194.0",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjViYTZkNjdhZGE1OTI4MTIxMDRlZjhlZTJlNDdjMWJjMzkxZjY2MDRkNDBlMDc5MzdmOWM5MzE4MzA0MzM5NHxydW53YXlfbGVuZ3RofGtub3dsZWRnZTo1MzlmMDIxMTQ0ODA1ODNmMzk2MWQ4NjFiZmYxYTAwZWI5YjUxNzY2M2YzMTc5YTIwNDg3YjY0MzhkN2ZlOTQ2",
+                  "subject": "Abilene Regional Airport",
+                  "relation": "runway_length",
+                  "object": "2194.0",
+                  "start": "Abilene Regional Airport",
+                  "end": "2194.0",
+                  "quote": "The runway length of Abilene Regional Airport is 2194.0.",
+                  "sourceId": "train/Airport/1/Id22",
+                  "src": "1"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "02-music",
+      "question": "Identify an instrument played by Aaron Deer and the place Aaron Deer comes from.",
+      "source": [
+        "Aaron Deer plays the piano.",
+        "Aaron Deer comes from Indiana."
+      ],
+      "claims": [
+        {
+          "subject": "Aaron Deer",
+          "relation": "plays",
+          "object": "the piano",
+          "quote": "Aaron Deer plays the piano."
+        },
+        {
+          "subject": "Aaron Deer",
+          "relation": "comes_from",
+          "object": "Indiana",
+          "quote": "Aaron Deer comes from Indiana."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "instrument",
+                "matched": true
+              },
+              {
+                "aspect": "origin",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Aaron Deer",
+                "aspect": "instrument played by",
+                "question": "What instrument is played by Aaron Deer?",
+                "prior_answer": "",
+                "self_confidence": 0.15,
+                "basis": "Notable musicians by that name; lack of prominent known instruments"
+              },
+              "answer": "the piano",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxjb21lc19mcm9tfGtub3dsZWRnZTozODFlYWQzYTMxNDViY2MzYzE1MWExOWY0YzdkODA0ZDEwMzhlOTAyMzk0ZThlODY5MzI0MzhhNzkyZjhlMDA3",
+                  "subject": "Aaron Deer",
+                  "relation": "comes_from",
+                  "object": "Indiana",
+                  "start": "Aaron Deer",
+                  "end": "Indiana",
+                  "quote": "Aaron Deer comes from Indiana.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxwbGF5c3xrbm93bGVkZ2U6YjAxOTI5YmZjYTY2NTJjYzEzZDQyOWIzMjIzMGNhODM0MDBiZTAxMTM3MzQ2NzkxZWZkMzY3OGY0OTQ4MzE2OQ",
+                  "subject": "Aaron Deer",
+                  "relation": "plays",
+                  "object": "the piano",
+                  "start": "Aaron Deer",
+                  "end": "the piano",
+                  "quote": "Aaron Deer plays the piano.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Aaron Deer",
+                "aspect": "place comes from",
+                "question": "Where does Aaron Deer come from?",
+                "prior_answer": "",
+                "self_confidence": 0.15,
+                "basis": "No widely recognized Aaron Deer in public records; could be local figure"
+              },
+              "answer": "Indiana",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxjb21lc19mcm9tfGtub3dsZWRnZTozODFlYWQzYTMxNDViY2MzYzE1MWExOWY0YzdkODA0ZDEwMzhlOTAyMzk0ZThlODY5MzI0MzhhNzkyZjhlMDA3",
+                  "subject": "Aaron Deer",
+                  "relation": "comes_from",
+                  "object": "Indiana",
+                  "start": "Aaron Deer",
+                  "end": "Indiana",
+                  "quote": "Aaron Deer comes from Indiana.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxwbGF5c3xrbm93bGVkZ2U6YjAxOTI5YmZjYTY2NTJjYzEzZDQyOWIzMjIzMGNhODM0MDBiZTAxMTM3MzQ2NzkxZWZkMzY3OGY0OTQ4MzE2OQ",
+                  "subject": "Aaron Deer",
+                  "relation": "plays",
+                  "object": "the piano",
+                  "start": "Aaron Deer",
+                  "end": "the piano",
+                  "quote": "Aaron Deer plays the piano.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "instrument",
+                "matched": true
+              },
+              {
+                "aspect": "origin",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Aaron Deer",
+                "aspect": "instrument played by",
+                "question": "What instrument is played by Aaron Deer?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No prior knowledge of this person's instrument"
+              },
+              "answer": "the piano",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxwbGF5c3xrbm93bGVkZ2U6YjAxOTI5YmZjYTY2NTJjYzEzZDQyOWIzMjIzMGNhODM0MDBiZTAxMTM3MzQ2NzkxZWZkMzY3OGY0OTQ4MzE2OQ",
+                  "subject": "Aaron Deer",
+                  "relation": "plays",
+                  "object": "the piano",
+                  "start": "Aaron Deer",
+                  "end": "the piano",
+                  "quote": "Aaron Deer plays the piano.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Aaron Deer",
+                "aspect": "place comes from",
+                "question": "Where does Aaron Deer come from?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No prior knowledge of this person's origin"
+              },
+              "answer": "Indiana",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OWE1Y2U5NDU0MmFhMWFiOGYyOGE2YjFkMTUyOGY2ZTczYzJmMzI2NTIzNzk0MjFhNjJhMGY0Yzc2OTQwODMzZXxjb21lc19mcm9tfGtub3dsZWRnZTozODFlYWQzYTMxNDViY2MzYzE1MWExOWY0YzdkODA0ZDEwMzhlOTAyMzk0ZThlODY5MzI0MzhhNzkyZjhlMDA3",
+                  "subject": "Aaron Deer",
+                  "relation": "comes_from",
+                  "object": "Indiana",
+                  "start": "Aaron Deer",
+                  "end": "Indiana",
+                  "quote": "Aaron Deer comes from Indiana.",
+                  "sourceId": "train/Artist/1/Id14+train/Artist/1/Id16",
+                  "src": "897"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "03-spaceflight",
+      "question": "Name the mission Alan Shepard served on and give Alan Shepard's retirement date.",
+      "source": [
+        "Alan Shepard was a crew member of Apollo 14.",
+        "Alan Shepard retired on 1974-08-01."
+      ],
+      "claims": [
+        {
+          "subject": "Alan Shepard",
+          "relation": "was_a_crew_member_of",
+          "object": "Apollo 14",
+          "quote": "Alan Shepard was a crew member of Apollo 14."
+        },
+        {
+          "subject": "Alan Shepard",
+          "relation": "retired_on",
+          "object": "1974-08-01",
+          "quote": "Alan Shepard retired on 1974-08-01."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "mission",
+                "matched": true
+              },
+              {
+                "aspect": "retirement",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Name the mission Alan Shepard served on",
+                "aspect": "mission name",
+                "question": "For Name the mission Alan Shepard served on, retrieve the mission name requested in: Name the mission Alan Shepard served on and give Alan Shepard's retirement date.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific mission name in memory for Shepard",
+                "original_question": "What was Alan Shepard's space mission?",
+                "questionRepair": "entity-missing-or-meta-instruction"
+              },
+              "answer": "Apollo 14",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHxyZXRpcmVkX29ufGtub3dsZWRnZToxYjBmYWE3OWIzZDVhMGJhZDMxNjQ2ZmJmNDU3NTg0NzAzYWE3ZDYxZWE1ZTI2ZTg0MjVmMmE5ZGFhNGM0Mzg0",
+                  "subject": "Alan Shepard",
+                  "relation": "retired_on",
+                  "object": "1974-08-01",
+                  "start": "Alan Shepard",
+                  "end": "1974-08-01",
+                  "quote": "Alan Shepard retired on 1974-08-01.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHx3YXNfYV9jcmV3X21lbWJlcl9vZnxrbm93bGVkZ2U6MjE5NWEzYmFkZDZkYTU5YjliYzg4YjhmMjUzNTM1ZmUyNmVkYjZmM2RhMGE0MTE3NGNhZDU3MGNkY2Y5MGZiOQ",
+                  "subject": "Alan Shepard",
+                  "relation": "was_a_crew_member_of",
+                  "object": "Apollo 14",
+                  "start": "Alan Shepard",
+                  "end": "Apollo 14",
+                  "quote": "Alan Shepard was a crew member of Apollo 14.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Alan Shepard's retirement date",
+                "aspect": "retirement date",
+                "question": "For Alan Shepard's retirement date, retrieve the retirement date requested in: Name the mission Alan Shepard served on and give Alan Shepard's retirement date.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific retirement date for Shepard in memory",
+                "original_question": "When did Alan Shepard retire from NASA?",
+                "questionRepair": "entity-missing-or-meta-instruction"
+              },
+              "answer": "1974-08-01",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHxyZXRpcmVkX29ufGtub3dsZWRnZToxYjBmYWE3OWIzZDVhMGJhZDMxNjQ2ZmJmNDU3NTg0NzAzYWE3ZDYxZWE1ZTI2ZTg0MjVmMmE5ZGFhNGM0Mzg0",
+                  "subject": "Alan Shepard",
+                  "relation": "retired_on",
+                  "object": "1974-08-01",
+                  "start": "Alan Shepard",
+                  "end": "1974-08-01",
+                  "quote": "Alan Shepard retired on 1974-08-01.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHx3YXNfYV9jcmV3X21lbWJlcl9vZnxrbm93bGVkZ2U6MjE5NWEzYmFkZDZkYTU5YjliYzg4YjhmMjUzNTM1ZmUyNmVkYjZmM2RhMGE0MTE3NGNhZDU3MGNkY2Y5MGZiOQ",
+                  "subject": "Alan Shepard",
+                  "relation": "was_a_crew_member_of",
+                  "object": "Apollo 14",
+                  "start": "Alan Shepard",
+                  "end": "Apollo 14",
+                  "quote": "Alan Shepard was a crew member of Apollo 14.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "mission",
+                "matched": true
+              },
+              {
+                "aspect": "retirement",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Name the mission Alan Shepard served on",
+                "aspect": "mission",
+                "question": "For Name the mission Alan Shepard served on, retrieve the mission requested in: Name the mission Alan Shepard served on and give Alan Shepard's retirement date.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific mission name recalled; space history varies by country and era",
+                "original_question": "What was Alan Shepard's space mission name?",
+                "questionRepair": "entity-missing-or-meta-instruction"
+              },
+              "answer": "Apollo 14",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHxyZXRpcmVkX29ufGtub3dsZWRnZToxYjBmYWE3OWIzZDVhMGJhZDMxNjQ2ZmJmNDU3NTg0NzAzYWE3ZDYxZWE1ZTI2ZTg0MjVmMmE5ZGFhNGM0Mzg0",
+                  "subject": "Alan Shepard",
+                  "relation": "retired_on",
+                  "object": "1974-08-01",
+                  "start": "Alan Shepard",
+                  "end": "1974-08-01",
+                  "quote": "Alan Shepard retired on 1974-08-01.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHx3YXNfYV9jcmV3X21lbWJlcl9vZnxrbm93bGVkZ2U6MjE5NWEzYmFkZDZkYTU5YjliYzg4YjhmMjUzNTM1ZmUyNmVkYjZmM2RhMGE0MTE3NGNhZDU3MGNkY2Y5MGZiOQ",
+                  "subject": "Alan Shepard",
+                  "relation": "was_a_crew_member_of",
+                  "object": "Apollo 14",
+                  "start": "Alan Shepard",
+                  "end": "Apollo 14",
+                  "quote": "Alan Shepard was a crew member of Apollo 14.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Alan Shepard's retirement date",
+                "aspect": "retirement date",
+                "question": "What was Alan Shepard's retirement date?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No exact retirement date stored; NASA astronaut retirements are complex"
+              },
+              "answer": "1974-08-01",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHxyZXRpcmVkX29ufGtub3dsZWRnZToxYjBmYWE3OWIzZDVhMGJhZDMxNjQ2ZmJmNDU3NTg0NzAzYWE3ZDYxZWE1ZTI2ZTg0MjVmMmE5ZGFhNGM0Mzg0",
+                  "subject": "Alan Shepard",
+                  "relation": "retired_on",
+                  "object": "1974-08-01",
+                  "start": "Alan Shepard",
+                  "end": "1974-08-01",
+                  "quote": "Alan Shepard retired on 1974-08-01.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6NzY2NjVkYjM2YzE5MzdiZjBjNmZjZDg3NmVkNjg3ODZhNGE0NDJjZjZiMWI5ODNmZTE4NTFmNjg5ODQ5ZDkwNHx3YXNfYV9jcmV3X21lbWJlcl9vZnxrbm93bGVkZ2U6MjE5NWEzYmFkZDZkYTU5YjliYzg4YjhmMjUzNTM1ZmUyNmVkYjZmM2RhMGE0MTE3NGNhZDU3MGNkY2Y5MGZiOQ",
+                  "subject": "Alan Shepard",
+                  "relation": "was_a_crew_member_of",
+                  "object": "Apollo 14",
+                  "start": "Alan Shepard",
+                  "end": "Apollo 14",
+                  "quote": "Alan Shepard was a crew member of Apollo 14.",
+                  "sourceId": "train/Astronaut/1/Id22+train/Astronaut/1/Id14",
+                  "src": "4175"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "04-athletics",
+      "question": "Identify Akeem Dent's playing role on the field.",
+      "source": [
+        "Akeem Dent's position is a linebacker."
+      ],
+      "claims": [
+        {
+          "subject": "Akeem Dent",
+          "relation": "position",
+          "object": "linebacker",
+          "quote": "Akeem Dent's position is a linebacker."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "position",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Akeem Dent",
+                "aspect": "playing role on the field",
+                "question": "What is Akeem Dent's playing role on the field?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No prior knowledge on athlete roles; need to verify context"
+              },
+              "answer": "linebacker",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZWVlM2NlMzYxOTA3MjRlZmUwYTIxN2VmN2IxZDU3Y2YxMTE3OTI2M2RjMjVlNDJhZTg4MWVlZjY0NTA2NjI0ZHxwb3NpdGlvbnxrbm93bGVkZ2U6NGJkNGUzMWQyNTgwMTJjODRlZGExZGE1NzRjNGNlMGFjMWExMjJiMjRkMjI4ZGJhOWU2M2EyYzg3YzU4ZWE3NA",
+                  "subject": "Akeem Dent",
+                  "relation": "position",
+                  "object": "linebacker",
+                  "start": "Akeem Dent",
+                  "end": "linebacker",
+                  "quote": "Akeem Dent's position is a linebacker.",
+                  "sourceId": "train/Athlete/1/Id89",
+                  "src": "5684"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "position",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Akeem Dent",
+                "aspect": "playing role on the field",
+                "question": "What is Akeem Dent's playing role on the field?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge of Akeem Dent's role; may be a newer or less-known player"
+              },
+              "answer": "linebacker",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZWVlM2NlMzYxOTA3MjRlZmUwYTIxN2VmN2IxZDU3Y2YxMTE3OTI2M2RjMjVlNDJhZTg4MWVlZjY0NTA2NjI0ZHxwb3NpdGlvbnxrbm93bGVkZ2U6NGJkNGUzMWQyNTgwMTJjODRlZGExZGE1NzRjNGNlMGFjMWExMjJiMjRkMjI4ZGJhOWU2M2EyYzg3YzU4ZWE3NA",
+                  "subject": "Akeem Dent",
+                  "relation": "position",
+                  "object": "linebacker",
+                  "start": "Akeem Dent",
+                  "end": "linebacker",
+                  "quote": "Akeem Dent's position is a linebacker.",
+                  "sourceId": "train/Athlete/1/Id89",
+                  "src": "5684"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "05-architecture",
+      "question": "Identify the architect of 20 Fenchurch Street and the city containing 20 Fenchurch Street.",
+      "source": [
+        "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+        "20 Fenchurch Street is located in London."
+      ],
+      "claims": [
+        {
+          "subject": "20 Fenchurch Street",
+          "relation": "designed_by",
+          "object": "Rafael Viñoly",
+          "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly."
+        },
+        {
+          "subject": "20 Fenchurch Street",
+          "relation": "located_in",
+          "object": "London",
+          "quote": "20 Fenchurch Street is located in London."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "architect",
+                "matched": true
+              },
+              {
+                "aspect": "location",
+                "matched": false
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "20 Fenchurch Street",
+                "aspect": "architect",
+                "question": "Who is the architect of 20 Fenchurch Street?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No memory of specific architect for this building; could be known through architectural history but not recalled specifically"
+              },
+              "answer": "Rafael Viñoly",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xkZXNpZ25lZF9ieXxrbm93bGVkZ2U6YzJjYzQ0ZTUxYmY3NGY2OWNkMDNkYjljMTdkMTJmNmVlYWJiMTE0YTQ1MDcxM2Q5ZjI1YWE2MzczMWU4MmU1Nw",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "designed_by",
+                  "object": "Rafael Viñoly",
+                  "start": "20 Fenchurch Street",
+                  "end": "Rafael Viñoly",
+                  "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xsb2NhdGVkX2lufGtub3dsZWRnZTo2MDg5ODU0Yzk0Y2E1NDU0Yjc2YmU2NzUyYzU2MjkwMWE5ODVmNjRjOWE5NDZmNjI5NzZhZWFiNTkzYjgzMTYx",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "located_in",
+                  "object": "London",
+                  "start": "20 Fenchurch Street",
+                  "end": "London",
+                  "quote": "20 Fenchurch Street is located in London.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "20 Fenchurch Street",
+                "aspect": "city",
+                "question": "What city contains 20 Fenchurch Street?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No memory of the city where 20 Fenchurch Street is located; likely London but not recalled specifically"
+              },
+              "answer": "I don't know.",
+              "grounded": false,
+              "evidenceIds": [],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xkZXNpZ25lZF9ieXxrbm93bGVkZ2U6YzJjYzQ0ZTUxYmY3NGY2OWNkMDNkYjljMTdkMTJmNmVlYWJiMTE0YTQ1MDcxM2Q5ZjI1YWE2MzczMWU4MmU1Nw",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "designed_by",
+                  "object": "Rafael Viñoly",
+                  "start": "20 Fenchurch Street",
+                  "end": "Rafael Viñoly",
+                  "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xsb2NhdGVkX2lufGtub3dsZWRnZTo2MDg5ODU0Yzk0Y2E1NDU0Yjc2YmU2NzUyYzU2MjkwMWE5ODVmNjRjOWE5NDZmNjI5NzZhZWFiNTkzYjgzMTYx",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "located_in",
+                  "object": "London",
+                  "start": "20 Fenchurch Street",
+                  "end": "London",
+                  "quote": "20 Fenchurch Street is located in London.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e3",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xkZXNpZ25lZF9ieXxrbm93bGVkZ2U6YzJjYzQ0ZTUxYmY3NGY2OWNkMDNkYjljMTdkMTJmNmVlYWJiMTE0YTQ1MDcxM2Q5ZjI1YWE2MzczMWU4MmU1Nw",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "designed_by",
+                  "object": "Rafael Viñoly",
+                  "start": "Rafael Viñoly",
+                  "end": "20 Fenchurch Street",
+                  "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                }
+              ],
+              "modelConfidence": 0,
+              "stopReason": "max-turns"
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "architect",
+                "matched": true
+              },
+              {
+                "aspect": "location",
+                "matched": false
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "20 Fenchurch Street",
+                "aspect": "architect",
+                "question": "Who is the architect of 20 Fenchurch Street?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific architect is widely recognized for this building; common knowledge attributes it to a firm but not an individual"
+              },
+              "answer": "Rafael Viñoly",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xkZXNpZ25lZF9ieXxrbm93bGVkZ2U6YzJjYzQ0ZTUxYmY3NGY2OWNkMDNkYjljMTdkMTJmNmVlYWJiMTE0YTQ1MDcxM2Q5ZjI1YWE2MzczMWU4MmU1Nw",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "designed_by",
+                  "object": "Rafael Viñoly",
+                  "start": "20 Fenchurch Street",
+                  "end": "Rafael Viñoly",
+                  "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xsb2NhdGVkX2lufGtub3dsZWRnZTo2MDg5ODU0Yzk0Y2E1NDU0Yjc2YmU2NzUyYzU2MjkwMWE5ODVmNjRjOWE5NDZmNjI5NzZhZWFiNTkzYjgzMTYx",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "located_in",
+                  "object": "London",
+                  "start": "20 Fenchurch Street",
+                  "end": "London",
+                  "quote": "20 Fenchurch Street is located in London.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "20 Fenchurch Street",
+                "aspect": "city",
+                "question": "Which city contains 20 Fenchurch Street?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "Known as 'The Walkie' in London; but need to confirm city is London"
+              },
+              "answer": "I don't know.",
+              "grounded": false,
+              "evidenceIds": [],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xsb2NhdGVkX2lufGtub3dsZWRnZTo2MDg5ODU0Yzk0Y2E1NDU0Yjc2YmU2NzUyYzU2MjkwMWE5ODVmNjRjOWE5NDZmNjI5NzZhZWFiNTkzYjgzMTYx",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "located_in",
+                  "object": "London",
+                  "start": "20 Fenchurch Street",
+                  "end": "London",
+                  "quote": "20 Fenchurch Street is located in London.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xkZXNpZ25lZF9ieXxrbm93bGVkZ2U6YzJjYzQ0ZTUxYmY3NGY2OWNkMDNkYjljMTdkMTJmNmVlYWJiMTE0YTQ1MDcxM2Q5ZjI1YWE2MzczMWU4MmU1Nw",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "designed_by",
+                  "object": "Rafael Viñoly",
+                  "start": "20 Fenchurch Street",
+                  "end": "Rafael Viñoly",
+                  "quote": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                },
+                {
+                  "id": "e3",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTBiZWUwZGUwMmZlYzg0ODg1MDA1YTU4NmZlZmU4Mzk0NDM3MWU1ZmQzMDk2YjBkY2UzNzA5MzdmNmUwZmIxY3xsb2NhdGVkX2lufGtub3dsZWRnZTo2MDg5ODU0Yzk0Y2E1NDU0Yjc2YmU2NzUyYzU2MjkwMWE5ODVmNjRjOWE5NDZmNjI5NzZhZWFiNTkzYjgzMTYx",
+                  "subject": "20 Fenchurch Street",
+                  "relation": "located_in",
+                  "object": "London",
+                  "start": "London",
+                  "end": "20 Fenchurch Street",
+                  "quote": "20 Fenchurch Street is located in London.",
+                  "sourceId": "train/Building/1/Id26+train/Building/1/Id30",
+                  "src": "6411"
+                }
+              ],
+              "modelConfidence": 0,
+              "stopReason": "no-actions"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "06-astronomy",
+      "question": "Name a discoverer of the celestial body 15788 1993 SB.",
+      "source": [
+        "Alan Fitzsimmons was the discoverer of 15788 1993 SB."
+      ],
+      "claims": [
+        {
+          "subject": "Alan Fitzsimmons",
+          "relation": "discoverer",
+          "object": "15788 1993 SB",
+          "quote": "Alan Fitzsimmons was the discoverer of 15788 1993 SB."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "discoverer",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "15788 1993 SB",
+                "aspect": "discoverer",
+                "question": "Name a discoverer of 15788 1993 SB.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about minor asteroid discoveries; likely requires external lookup"
+              },
+              "answer": "Alan Fitzsimmons",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NmMwZjg2ODA3ZjM1NmY4NjFhNmIxOGQ3MjkyZmJiODlhZTA0ZTAwZjk5MTFkNWEwMzVkMTZlYjQ4Y2JmN2U0ZXxkaXNjb3ZlcmVyfGtub3dsZWRnZTpkNTE0YjY5MzZjOTZkNDcwMTJiZTIxMzIwOTM4ODhiNTEwZGRlYTNiNGIwYTlhOTQ1ZDQ2ZDUzYjI3YTg2NTQ5",
+                  "subject": "Alan Fitzsimmons",
+                  "relation": "discoverer",
+                  "object": "15788 1993 SB",
+                  "start": "15788 1993 SB",
+                  "end": "Alan Fitzsimmons",
+                  "quote": "Alan Fitzsimmons was the discoverer of 15788 1993 SB.",
+                  "sourceId": "train/CelestialBody/1/Id2",
+                  "src": "9709"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "discoverer",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "15788 1993 SB",
+                "aspect": "discoverer",
+                "question": "Name a discoverer of 15788 1993 SB.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on minor celestial bodies; confidence low due to lack of general recognition for this minor planet's discoverer."
+              },
+              "answer": "Alan Fitzsimmons",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6NmMwZjg2ODA3ZjM1NmY4NjFhNmIxOGQ3MjkyZmJiODlhZTA0ZTAwZjk5MTFkNWEwMzVkMTZlYjQ4Y2JmN2U0ZXxkaXNjb3ZlcmVyfGtub3dsZWRnZTpkNTE0YjY5MzZjOTZkNDcwMTJiZTIxMzIwOTM4ODhiNTEwZGRlYTNiNGIwYTlhOTQ1ZDQ2ZDUzYjI3YTg2NTQ5",
+                  "subject": "Alan Fitzsimmons",
+                  "relation": "discoverer",
+                  "object": "15788 1993 SB",
+                  "start": "15788 1993 SB",
+                  "end": "Alan Fitzsimmons",
+                  "quote": "Alan Fitzsimmons was the discoverer of 15788 1993 SB.",
+                  "sourceId": "train/CelestialBody/1/Id2",
+                  "src": "9709"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "07-demography",
+      "question": "How many people are recorded as living in Antioch California?",
+      "source": [
+        "The population of Antioch California is 102372."
+      ],
+      "claims": [
+        {
+          "subject": "Antioch California",
+          "relation": "population",
+          "object": "102372",
+          "quote": "The population of Antioch California is 102372."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "population",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Antioch California",
+                "aspect": "people recorded living",
+                "question": "How many people are recorded as living in Antioch California?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific population data for Antioch, California is recalled; this requires census or official records"
+              },
+              "answer": "102372",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjJjM2NlMjkzYjZmYjdmODA1YTI4OTRjNzY1NGJmNGIxMDIzY2IxOThhMDhjYjVhNzQyMzVmYjE4NTYwOGU2ZHxwb3B1bGF0aW9ufGtub3dsZWRnZTpmN2E4NzE1OGU3MzA1NzY1MDcxYjRiMzE0NzU0ZmFiMGZiMDFkYTVmMmY2NDE0ZGJmODg3OTY1YmVlOWEwMjll",
+                  "subject": "Antioch California",
+                  "relation": "population",
+                  "object": "102372",
+                  "start": "Antioch California",
+                  "end": "102372",
+                  "quote": "The population of Antioch California is 102372.",
+                  "sourceId": "train/City/1/Id108",
+                  "src": "11305"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "population",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Antioch California",
+                "aspect": "people recorded living in",
+                "question": "How many people are recorded as living in Antioch California?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific population data for Antioch California is known to me; this requires census or demographic sources"
+              },
+              "answer": "102372",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjJjM2NlMjkzYjZmYjdmODA1YTI4OTRjNzY1NGJmNGIxMDIzY2IxOThhMDhjYjVhNzQyMzVmYjE4NTYwOGU2ZHxwb3B1bGF0aW9ufGtub3dsZWRnZTpmN2E4NzE1OGU3MzA1NzY1MDcxYjRiMzE0NzU0ZmFiMGZiMDFkYTVmMmY2NDE0ZGJmODg3OTY1YmVlOWEwMjll",
+                  "subject": "Antioch California",
+                  "relation": "population",
+                  "object": "102372",
+                  "start": "Antioch California",
+                  "end": "102372",
+                  "quote": "The population of Antioch California is 102372.",
+                  "sourceId": "train/City/1/Id108",
+                  "src": "11305"
+                }
+              ],
+              "modelConfidence": 0.9,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "08-comics",
+      "question": "Name a creator of Airman from the comic-character source.",
+      "source": [
+        "The comic character, Airman, was created by Harry Sahle."
+      ],
+      "claims": [
+        {
+          "subject": "Airman",
+          "relation": "created_by",
+          "object": "Harry Sahle",
+          "quote": "The comic character, Airman, was created by Harry Sahle."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "creator",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Airman from the comic-character source",
+                "aspect": "creator",
+                "question": "Name a creator of Airman from the comic-character source.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on comic character Airman's creator; \"Airman\" is ambiguous (multiple interpretations)"
+              },
+              "answer": "Harry Sahle",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZTQ3ZjgxODVlNTA3NTUxOWNmMTMzNzdlZGIxNTIyOTA2NTRjN2IwMThiZjA2OTYwYzEwMzY1MzEwMzM2NDJkYXxjcmVhdGVkX2J5fGtub3dsZWRnZTo3YTI2M2Y3NDg0NTEwNmJjNWU4MmUwNjM3ZDVkM2ZmZGJlMDg2YjkxMTRjMGU0YzU4YjNjOWRiMjAyZGZiMjlk",
+                  "subject": "Airman",
+                  "relation": "created_by",
+                  "object": "Harry Sahle",
+                  "start": "Airman",
+                  "end": "Harry Sahle",
+                  "quote": "The comic character, Airman, was created by Harry Sahle.",
+                  "sourceId": "train/ComicsCharacter/1/Id3",
+                  "src": "12962"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "creator",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Airman",
+                "aspect": "creator of the comic-character source",
+                "question": "Who is a creator of Airman from the comic-character source?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No direct memory of 'Airman' as a comic character; possible confusion with other entities named 'Airman'"
+              },
+              "answer": "Harry Sahle",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZTQ3ZjgxODVlNTA3NTUxOWNmMTMzNzdlZGIxNTIyOTA2NTRjN2IwMThiZjA2OTYwYzEwMzY1MzEwMzM2NDJkYXxjcmVhdGVkX2J5fGtub3dsZWRnZTo3YTI2M2Y3NDg0NTEwNmJjNWU4MmUwNjM3ZDVkM2ZmZGJlMDg2YjkxMTRjMGU0YzU4YjNjOWRiMjAyZGZiMjlk",
+                  "subject": "Airman",
+                  "relation": "created_by",
+                  "object": "Harry Sahle",
+                  "start": "Airman",
+                  "end": "Harry Sahle",
+                  "quote": "The comic character, Airman, was created by Harry Sahle.",
+                  "sourceId": "train/ComicsCharacter/1/Id3",
+                  "src": "12962"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "09-business",
+      "question": "Give the founding date recorded for AmeriGas.",
+      "source": [
+        "AmeriGas was founded on 01-01-1959."
+      ],
+      "claims": [
+        {
+          "subject": "AmeriGas",
+          "relation": "founded_on",
+          "object": "01-01-1959",
+          "quote": "AmeriGas was founded on 01-01-1959."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "founding date",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "AmeriGas",
+                "aspect": "founding date recorded",
+                "question": "What is the founding date recorded for AmeriGas?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific founding date information is commonly known as a recorded fact for AmeriGas in this context."
+              },
+              "answer": "01-01-1959",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjE3YmQyYTg0ZWZhM2RkMjVlNWM2YmY3YzI5NTJhZjQwZGNmYmI0MWNjODY4ZGI2MTU5ZmVjMDJmNjIxZGQ3Y3xmb3VuZGVkX29ufGtub3dsZWRnZToyNTBiOWZmMDNjOWRkNTk0ODE5OGZjYmU5OWEyMGI5MDAxYzVmMGExYjgyNTkxNWMzM2I0YmM4OWU0MTI0Zjk2",
+                  "subject": "AmeriGas",
+                  "relation": "founded_on",
+                  "object": "01-01-1959",
+                  "start": "AmeriGas",
+                  "end": "01-01-1959",
+                  "quote": "AmeriGas was founded on 01-01-1959.",
+                  "sourceId": "train/Company/1/Id2",
+                  "src": "14562"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "founding date",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "AmeriGas",
+                "aspect": "founding date",
+                "question": "What is the founding date of AmeriGas?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific founding date is widely recognized as the official founding date for AmeriGas; it may have been established through mergers or acquisitions."
+              },
+              "answer": "01-01-1959",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjE3YmQyYTg0ZWZhM2RkMjVlNWM2YmY3YzI5NTJhZjQwZGNmYmI0MWNjODY4ZGI2MTU5ZmVjMDJmNjIxZGQ3Y3xmb3VuZGVkX29ufGtub3dsZWRnZToyNTBiOWZmMDNjOWRkNTk0ODE5OGZjYmU5OWEyMGI5MDAxYzVmMGExYjgyNTkxNWMzM2I0YmM4OWU0MTI0Zjk2",
+                  "subject": "AmeriGas",
+                  "relation": "founded_on",
+                  "object": "01-01-1959",
+                  "start": "AmeriGas",
+                  "end": "01-01-1959",
+                  "quote": "AmeriGas was founded on 01-01-1959.",
+                  "sourceId": "train/Company/1/Id2",
+                  "src": "14562"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "10-cuisine",
+      "question": "What is Ajoblanco made with, and which country is the origin of Ajoblanco?",
+      "source": [
+        "Ajoblanco has almond as one of its ingredients.",
+        "Ajoblanco originates from the country of Spain."
+      ],
+      "claims": [
+        {
+          "subject": "Ajoblanco",
+          "relation": "has_ingredient",
+          "object": "almond",
+          "quote": "Ajoblanco has almond as one of its ingredients."
+        },
+        {
+          "subject": "Ajoblanco",
+          "relation": "originates_from",
+          "object": "Spain",
+          "quote": "Ajoblanco originates from the country of Spain."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "ingredient",
+                "matched": true
+              },
+              {
+                "aspect": "country",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Ajoblanco",
+                "aspect": "what is it made with",
+                "question": "What ingredients are used to make Ajoblanco?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific recipes recalled for Ajoblanco; likely a regional dish with common ingredients but not universally defined"
+              },
+              "answer": "almond",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxoYXNfaW5ncmVkaWVudHxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiYw",
+                  "subject": "Ajoblanco",
+                  "relation": "has_ingredient",
+                  "object": "almond",
+                  "start": "Ajoblanco",
+                  "end": "almond",
+                  "quote": "Ajoblanco has almond as one of its ingredients.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxvcmlnaW5hdGVzX2Zyb218a25vd2xlZGdlOjRjNzk5NDU0Y2NmMzcyNzlkMzc4ODQ4YmY0MWFkOWVlMTJjYzRmM2QyYTQ3NDBhNTRiNDI0MTJjMzZhZjYwYzA",
+                  "subject": "Ajoblanco",
+                  "relation": "originates_from",
+                  "object": "Spain",
+                  "start": "Ajoblanco",
+                  "end": "Spain",
+                  "quote": "Ajoblanco originates from the country of Spain.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                }
+              ],
+              "modelConfidence": 0.9,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Ajoblanco",
+                "aspect": "which country is the origin of",
+                "question": "Which country originated Ajoblanco?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No clear knowledge of Ajoblanco's country of origin; depends on regional variations"
+              },
+              "answer": "Spain",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxoYXNfaW5ncmVkaWVudHxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiYw",
+                  "subject": "Ajoblanco",
+                  "relation": "has_ingredient",
+                  "object": "almond",
+                  "start": "Ajoblanco",
+                  "end": "almond",
+                  "quote": "Ajoblanco has almond as one of its ingredients.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxvcmlnaW5hdGVzX2Zyb218a25vd2xlZGdlOjRjNzk5NDU0Y2NmMzcyNzlkMzc4ODQ4YmY0MWFkOWVlMTJjYzRmM2QyYTQ3NDBhNTRiNDI0MTJjMzZhZjYwYzA",
+                  "subject": "Ajoblanco",
+                  "relation": "originates_from",
+                  "object": "Spain",
+                  "start": "Ajoblanco",
+                  "end": "Spain",
+                  "quote": "Ajoblanco originates from the country of Spain.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "ingredient",
+                "matched": true
+              },
+              {
+                "aspect": "country",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Ajoblanco",
+                "aspect": "what it is made with",
+                "question": "What is Ajoblanco made with?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "Generic knowledge about dishes does not specify ingredients for this dish"
+              },
+              "answer": "almond",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxoYXNfaW5ncmVkaWVudHxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiYw",
+                  "subject": "Ajoblanco",
+                  "relation": "has_ingredient",
+                  "object": "almond",
+                  "start": "Ajoblanco",
+                  "end": "almond",
+                  "quote": "Ajoblanco has almond as one of its ingredients.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxvcmlnaW5hdGVzX2Zyb218a25vd2xlZGdlOjRjNzk5NDU0Y2NmMzcyNzlkMzc4ODQ4YmY0MWFkOWVlMTJjYzRmM2QyYTQ3NDBhNTRiNDI0MTJjMzZhZjYwYzA",
+                  "subject": "Ajoblanco",
+                  "relation": "originates_from",
+                  "object": "Spain",
+                  "start": "Ajoblanco",
+                  "end": "Spain",
+                  "quote": "Ajoblanco originates from the country of Spain.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                }
+              ],
+              "modelConfidence": 0.8,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Ajoblanco",
+                "aspect": "origin country",
+                "question": "Which country is the origin of Ajoblanco?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about Ajoblanco's origin country from memory"
+              },
+              "answer": "Spain",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YjI1YjQxYzdhM2Q3YzBjNjBjYjJmMjM3NTM1OWQxZjk0YjA5MmE5N2Q0MGVmMmE5Y2FjMzFhYzU5ODE3YjI0MnxvcmlnaW5hdGVzX2Zyb218a25vd2xlZGdlOjRjNzk5NDU0Y2NmMzcyNzlkMzc4ODQ4YmY0MWFkOWVlMTJjYzRmM2QyYTQ3NDBhNTRiNDI0MTJjMzZhZjYwYzA",
+                  "subject": "Ajoblanco",
+                  "relation": "originates_from",
+                  "object": "Spain",
+                  "start": "Ajoblanco",
+                  "end": "Spain",
+                  "quote": "Ajoblanco originates from the country of Spain.",
+                  "sourceId": "train/Food/1/Id2+train/Food/1/Id1",
+                  "src": "16280"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "11-shipbuilding",
+      "question": "Identify the builder of A-Rosa Luna and the engine maker powering A-Rosa Luna.",
+      "source": [
+        "Neptun Werft built the A-Rosa Luna.",
+        "The A-Rosa Luna is powered by a MTU Friedrichshafen engine."
+      ],
+      "claims": [
+        {
+          "subject": "Neptun Werft",
+          "relation": "built",
+          "object": "A-Rosa Luna",
+          "quote": "Neptun Werft built the A-Rosa Luna."
+        },
+        {
+          "subject": "A-Rosa Luna",
+          "relation": "powered_by",
+          "object": "MTU Friedrichshafen engine",
+          "quote": "The A-Rosa Luna is powered by a MTU Friedrichshafen engine."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "builder",
+                "matched": false
+              },
+              {
+                "aspect": "engine",
+                "matched": true
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "A-Rosa Luna",
+                "aspect": "builder",
+                "question": "Who is the builder of A-Rosa Luna?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific information on A-Rosa Luna's builder in common knowledge"
+              },
+              "answer": "MTU Friedrichshafen engine",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YzdkZGM4ZGNlOWY0MmE5YzYxMTk2YjgyZTI3YTc1OGVjYjNiODBhMmRlZGZmNjc3YmY5NDNlYjk2NzBmM2ZiNnxwb3dlcmVkX2J5fGtub3dsZWRnZTowMTQ5NWFhOGExZTcyYzc0NDU0OTRmNTZlM2RhN2MzYWJjOThhZDQ4NjBjMTY0MTM1YWMwMjJjZGI2ODRlMGIx",
+                  "subject": "A-Rosa Luna",
+                  "relation": "powered_by",
+                  "object": "MTU Friedrichshafen engine",
+                  "start": "A-Rosa Luna",
+                  "end": "MTU Friedrichshafen engine",
+                  "quote": "The A-Rosa Luna is powered by a MTU Friedrichshafen engine.",
+                  "sourceId": "train/MeanOfTransportation/1/Id17+train/MeanOfTransportation/1/Id21",
+                  "src": "18705"
+                }
+              ],
+              "modelConfidence": 0.8,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "A-Rosa Luna",
+                "aspect": "engine maker",
+                "question": "Who is the engine maker powering A-Rosa Luna?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "Vague knowledge of cruise ships but no exact engine manufacturer specifics"
+              },
+              "answer": "MTU Friedrichshafen engine",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YzdkZGM4ZGNlOWY0MmE5YzYxMTk2YjgyZTI3YTc1OGVjYjNiODBhMmRlZGZmNjc3YmY5NDNlYjk2NzBmM2ZiNnxwb3dlcmVkX2J5fGtub3dsZWRnZTowMTQ5NWFhOGExZTcyYzc0NDU0OTRmNTZlM2RhN2MzYWJjOThhZDQ4NjBjMTY0MTM1YWMwMjJjZGI2ODRlMGIx",
+                  "subject": "A-Rosa Luna",
+                  "relation": "powered_by",
+                  "object": "MTU Friedrichshafen engine",
+                  "start": "A-Rosa Luna",
+                  "end": "MTU Friedrichshafen engine",
+                  "quote": "The A-Rosa Luna is powered by a MTU Friedrichshafen engine.",
+                  "sourceId": "train/MeanOfTransportation/1/Id17+train/MeanOfTransportation/1/Id21",
+                  "src": "18705"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "builder",
+                "matched": true
+              },
+              {
+                "aspect": "engine",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "A-Rosa Luna",
+                "aspect": "builder",
+                "question": "Who built A-Rosa Luna?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about A-Rosa Luna's construction"
+              },
+              "answer": "Neptun Werft",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTkxNjgwOGUzYTE1NDI0ZDRmMmYzMjBhNTM4ZDM2ZjEyZWUzNzJhNzM4ODUyMmQxNmJkOWMxMDE1NjdkNDAxZnxidWlsdHxrbm93bGVkZ2U6YzdkZGM4ZGNlOWY0MmE5YzYxMTk2YjgyZTI3YTc1OGVjYjNiODBhMmRlZGZmNjc3YmY5NDNlYjk2NzBmM2ZiNg",
+                  "subject": "Neptun Werft",
+                  "relation": "built",
+                  "object": "A-Rosa Luna",
+                  "start": "A-Rosa Luna",
+                  "end": "Neptun Werft",
+                  "quote": "Neptun Werft built the A-Rosa Luna.",
+                  "sourceId": "train/MeanOfTransportation/1/Id17+train/MeanOfTransportation/1/Id21",
+                  "src": "18705"
+                }
+              ],
+              "modelConfidence": 0.85,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "A-Rosa Luna",
+                "aspect": "engine maker",
+                "question": "Who made the engine powering A-Rosa Luna?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about A-Rosa Luna's engine specifications"
+              },
+              "answer": "MTU Friedrichshafen engine",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YzdkZGM4ZGNlOWY0MmE5YzYxMTk2YjgyZTI3YTc1OGVjYjNiODBhMmRlZGZmNjc3YmY5NDNlYjk2NzBmM2ZiNnxwb3dlcmVkX2J5fGtub3dsZWRnZTowMTQ5NWFhOGExZTcyYzc0NDU0OTRmNTZlM2RhN2MzYWJjOThhZDQ4NjBjMTY0MTM1YWMwMjJjZGI2ODRlMGIx",
+                  "subject": "A-Rosa Luna",
+                  "relation": "powered_by",
+                  "object": "MTU Friedrichshafen engine",
+                  "start": "A-Rosa Luna",
+                  "end": "MTU Friedrichshafen engine",
+                  "quote": "The A-Rosa Luna is powered by a MTU Friedrichshafen engine.",
+                  "sourceId": "train/MeanOfTransportation/1/Id17+train/MeanOfTransportation/1/Id21",
+                  "src": "18705"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "12-memorials",
+      "question": "Identify the material used for Dead Man's Plack and the country containing Dead Man's Plack.",
+      "source": [
+        "The Dead Man's Plack is made from rock.",
+        "The Dead Man's Plack is located in England."
+      ],
+      "claims": [
+        {
+          "subject": "Dead Man's Plack",
+          "relation": "made_from",
+          "object": "rock",
+          "quote": "The Dead Man's Plack is made from rock."
+        },
+        {
+          "subject": "Dead Man's Plack",
+          "relation": "located_in",
+          "object": "England",
+          "quote": "The Dead Man's Plack is located in England."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "material",
+                "matched": true
+              },
+              {
+                "aspect": "location",
+                "matched": false
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Dead Man's Plack",
+                "aspect": "material used",
+                "question": "What material is used for Dead Man's Plack?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific historical knowledge on Dead Man's Plack material"
+              },
+              "answer": "rock",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "Dead Man's Plack",
+                  "end": "England",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5ZnxtYWRlX2Zyb218a25vd2xlZGdlOjM1MGE3NzBjMGVjOWYzNTNlMWE1NjI5ODk1ZjM3NGZkYWEyOTk4NzZjMzg3MGMwM2ZlYjYwZWI0YTM3NjlkOTQ",
+                  "subject": "Dead Man's Plack",
+                  "relation": "made_from",
+                  "object": "rock",
+                  "start": "Dead Man's Plack",
+                  "end": "rock",
+                  "quote": "The Dead Man's Plack is made from rock.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Dead Man's Plack",
+                "aspect": "country containing",
+                "question": "Which country contains Dead Man's Plack?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific historical knowledge on Dead Man's Plack location"
+              },
+              "answer": "I don't know.",
+              "grounded": false,
+              "evidenceIds": [],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "Dead Man's Plack",
+                  "end": "England",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5ZnxtYWRlX2Zyb218a25vd2xlZGdlOjM1MGE3NzBjMGVjOWYzNTNlMWE1NjI5ODk1ZjM3NGZkYWEyOTk4NzZjMzg3MGMwM2ZlYjYwZWI0YTM3NjlkOTQ",
+                  "subject": "Dead Man's Plack",
+                  "relation": "made_from",
+                  "object": "rock",
+                  "start": "Dead Man's Plack",
+                  "end": "rock",
+                  "quote": "The Dead Man's Plack is made from rock.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e3",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "England",
+                  "end": "Dead Man's Plack",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                }
+              ],
+              "modelConfidence": 0,
+              "stopReason": "max-turns"
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "material",
+                "matched": true
+              },
+              {
+                "aspect": "location",
+                "matched": false
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Dead Man's Plack",
+                "aspect": "material used",
+                "question": "What material is used for Dead Man's Plack?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on Dead Man's Plack materials; unclear if it's a real term or fictional"
+              },
+              "answer": "rock",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "Dead Man's Plack",
+                  "end": "England",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5ZnxtYWRlX2Zyb218a25vd2xlZGdlOjM1MGE3NzBjMGVjOWYzNTNlMWE1NjI5ODk1ZjM3NGZkYWEyOTk4NzZjMzg3MGMwM2ZlYjYwZWI0YTM3NjlkOTQ",
+                  "subject": "Dead Man's Plack",
+                  "relation": "made_from",
+                  "object": "rock",
+                  "start": "Dead Man's Plack",
+                  "end": "rock",
+                  "quote": "The Dead Man's Plack is made from rock.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Dead Man's Plack",
+                "aspect": "country containing",
+                "question": "Which country contains Dead Man's Plack?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No known entity named Dead Man's Plack; likely fictional or misspelled"
+              },
+              "answer": "I don't know.",
+              "grounded": false,
+              "evidenceIds": [],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "Dead Man's Plack",
+                  "end": "England",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5ZnxtYWRlX2Zyb218a25vd2xlZGdlOjM1MGE3NzBjMGVjOWYzNTNlMWE1NjI5ODk1ZjM3NGZkYWEyOTk4NzZjMzg3MGMwM2ZlYjYwZWI0YTM3NjlkOTQ",
+                  "subject": "Dead Man's Plack",
+                  "relation": "made_from",
+                  "object": "rock",
+                  "start": "Dead Man's Plack",
+                  "end": "rock",
+                  "quote": "The Dead Man's Plack is made from rock.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                },
+                {
+                  "id": "e3",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZjM1NmE3OTBhMTdhYWIxNzE3YjUxY2IxOWQ4ZDM5YTlhMTY3ODhkNWMxNjk1OWY2ZTFkMTlmMTI2ZTE2ZTA5Znxsb2NhdGVkX2lufGtub3dsZWRnZTpkNTZkMGZmNjliNjI3OTJhMDBhMzYxZmJmNmUwMmUyYTYzNGE3YThkYTFjM2U0OWQ1OWU3MWUwZjE5YzI3ODc1",
+                  "subject": "Dead Man's Plack",
+                  "relation": "located_in",
+                  "object": "England",
+                  "start": "England",
+                  "end": "Dead Man's Plack",
+                  "quote": "The Dead Man's Plack is located in England.",
+                  "sourceId": "train/Monument/1/Id26+train/Monument/1/Id25",
+                  "src": "21509"
+                }
+              ],
+              "modelConfidence": null,
+              "stopReason": "max-turns"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "13-politics",
+      "question": "Name the party affiliation recorded for Ab Klink.",
+      "source": [
+        "Ab Klink belongs to the Christian Democratic Appeal party."
+      ],
+      "claims": [
+        {
+          "subject": "Ab Klink",
+          "relation": "belongs_to",
+          "object": "Christian Democratic Appeal party",
+          "quote": "Ab Klink belongs to the Christian Democratic Appeal party."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "party",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Ab Klink",
+                "aspect": "party affiliation",
+                "question": "Name the party affiliation for Ab Klink.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific party affiliation for Ab Klink in general knowledge; may be context-dependent."
+              },
+              "answer": "Christian Democratic Appeal party",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZTZlMTlmYjE3Y2I2NTMyNjFhZWRjYTQ3NDcyMjJjNDA5ZmIwOTg5ZDA1OTkyZWVmNjgwZTQ1YTVmMGU2MzNlZHxiZWxvbmdzX3RvfGtub3dsZWRnZToxZjFjNzFjM2Y0MjM2YTBiMGM3ZmY1OWZjZWY4NzkzNmM2NTIxNTQzZDQ1MDBmN2UzNDY5YTIwY2Q0ZWQ0ZjIz",
+                  "subject": "Ab Klink",
+                  "relation": "belongs_to",
+                  "object": "Christian Democratic Appeal party",
+                  "start": "Ab Klink",
+                  "end": "Christian Democratic Appeal party",
+                  "quote": "Ab Klink belongs to the Christian Democratic Appeal party.",
+                  "sourceId": "train/Politician/1/Id27",
+                  "src": "23009"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "party",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Ab Klink",
+                "aspect": "party affiliation recorded",
+                "question": "What is Ab Klink's party affiliation?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No prior knowledge of Ab Klink's party affiliation; this is a specific political figure requiring current context"
+              },
+              "answer": "Christian Democratic Appeal party",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ZTZlMTlmYjE3Y2I2NTMyNjFhZWRjYTQ3NDcyMjJjNDA5ZmIwOTg5ZDA1OTkyZWVmNjgwZTQ1YTVmMGU2MzNlZHxiZWxvbmdzX3RvfGtub3dsZWRnZToxZjFjNzFjM2Y0MjM2YTBiMGM3ZmY1OWZjZWY4NzkzNmM2NTIxNTQzZDQ1MDBmN2UzNDY5YTIwY2Q0ZWQ0ZjIz",
+                  "subject": "Ab Klink",
+                  "relation": "belongs_to",
+                  "object": "Christian Democratic Appeal party",
+                  "start": "Ab Klink",
+                  "end": "Christian Democratic Appeal party",
+                  "quote": "Ab Klink belongs to the Christian Democratic Appeal party.",
+                  "sourceId": "train/Politician/1/Id27",
+                  "src": "23009"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "14-football",
+      "question": "At which named stadium does A.C. Cesena play its home games?",
+      "source": [
+        "A.C. Cesena's ground is Stadio Dino Manuzzi."
+      ],
+      "claims": [
+        {
+          "subject": "A.C. Cesena",
+          "relation": "ground",
+          "object": "Stadio Dino Manuzzi",
+          "quote": "A.C. Cesena's ground is Stadio Dino Manuzzi."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "ground",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "A.C. Cesena",
+                "aspect": "home stadium",
+                "question": "Where does A.C. Cesena play its home games?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about Italian football clubs' stadiums; this requires current data not recalled"
+              },
+              "answer": "Stadio Dino Manuzzi",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODlhNWNhMDAzNzNjMzI0ZDg4MjQxMTBhZGM1ZTQ5ZDMxMTM0MmM0Zjc3OTE5NWVmMjNjM2M0YjQxYTQ4YzI4Mnxncm91bmR8a25vd2xlZGdlOjRlMGQwMzg1ZDBlYzIxNWU3Y2FhNzI3MDQwOWE4NzVmN2YzMTE0ODQzNTBkOTg4MWRjZmFlMGU1OWYzNWVlZjY",
+                  "subject": "A.C. Cesena",
+                  "relation": "ground",
+                  "object": "Stadio Dino Manuzzi",
+                  "start": "A.C. Cesena",
+                  "end": "Stadio Dino Manuzzi",
+                  "quote": "A.C. Cesena's ground is Stadio Dino Manuzzi.",
+                  "sourceId": "train/SportsTeam/1/Id10",
+                  "src": "24056"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "ground",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "A.C. Cesena",
+                "aspect": "stadium",
+                "question": "At which named stadium does A.C. Cesena play its home games?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge of Italian football clubs' home stadiums; may require context about league or location"
+              },
+              "answer": "Stadio Dino Manuzzi",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODlhNWNhMDAzNzNjMzI0ZDg4MjQxMTBhZGM1ZTQ5ZDMxMTM0MmM0Zjc3OTE5NWVmMjNjM2M0YjQxYTQ4YzI4Mnxncm91bmR8a25vd2xlZGdlOjRlMGQwMzg1ZDBlYzIxNWU3Y2FhNzI3MDQwOWE4NzVmN2YzMTE0ODQzNTBkOTg4MWRjZmFlMGU1OWYzNWVlZjY",
+                  "subject": "A.C. Cesena",
+                  "relation": "ground",
+                  "object": "Stadio Dino Manuzzi",
+                  "start": "A.C. Cesena",
+                  "end": "Stadio Dino Manuzzi",
+                  "quote": "A.C. Cesena's ground is Stadio Dino Manuzzi.",
+                  "sourceId": "train/SportsTeam/1/Id10",
+                  "src": "24056"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "15-education",
+      "question": "Give the slogan used as the motto of Acharya Institute of Technology and the founding year of Acharya Institute of Technology.",
+      "source": [
+        "Acharya Institute of Technology's motto is Nurturing Excellence.",
+        "The Acharya Institute of Technology was established in the year 2000."
+      ],
+      "claims": [
+        {
+          "subject": "Acharya Institute of Technology",
+          "relation": "motto",
+          "object": "Nurturing Excellence",
+          "quote": "Acharya Institute of Technology's motto is Nurturing Excellence."
+        },
+        {
+          "subject": "Acharya Institute of Technology",
+          "relation": "established_in",
+          "object": "2000",
+          "quote": "The Acharya Institute of Technology was established in the year 2000."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "motto",
+                "matched": false
+              },
+              {
+                "aspect": "established",
+                "matched": true
+              }
+            ],
+            "complete": false
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "slogan used as the motto of Acharya Institute of Technology",
+                "aspect": "slogan",
+                "question": "What is the slogan used as the motto of Acharya Institute of Technology?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific slogan memorized for this institute"
+              },
+              "answer": "2000",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxlc3RhYmxpc2hlZF9pbnxrbm93bGVkZ2U6ODFhODM1NDRjZjkzYzI0NTE3OGNiYzE2MjAwMzBmMTEyM2Y0MzVhZjg2N2M3OWQ4NzEzNTk4M2M1MmFiMzlkOQ",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "established_in",
+                  "object": "2000",
+                  "start": "Acharya Institute of Technology",
+                  "end": "2000",
+                  "quote": "The Acharya Institute of Technology was established in the year 2000.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxtb3R0b3xrbm93bGVkZ2U6NjhhNjU4ODE4YWRlYzZhM2IwYTBlYTIxNDVkY2Q4ZjRkYTIxYTVhYTc4YjYxYTQ2YzBhNzE1ZDdlZTI4MGRlOA",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "motto",
+                  "object": "Nurturing Excellence",
+                  "start": "Acharya Institute of Technology",
+                  "end": "Nurturing Excellence",
+                  "quote": "Acharya Institute of Technology's motto is Nurturing Excellence.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                }
+              ],
+              "modelConfidence": 0.8,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "founding year of Acharya Institute of Technology",
+                "aspect": "founding year",
+                "question": "What is the founding year of Acharya Institute of Technology?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific founding year memorized for this institute"
+              },
+              "answer": "2000",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxlc3RhYmxpc2hlZF9pbnxrbm93bGVkZ2U6ODFhODM1NDRjZjkzYzI0NTE3OGNiYzE2MjAwMzBmMTEyM2Y0MzVhZjg2N2M3OWQ4NzEzNTk4M2M1MmFiMzlkOQ",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "established_in",
+                  "object": "2000",
+                  "start": "Acharya Institute of Technology",
+                  "end": "2000",
+                  "quote": "The Acharya Institute of Technology was established in the year 2000.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxtb3R0b3xrbm93bGVkZ2U6NjhhNjU4ODE4YWRlYzZhM2IwYTBlYTIxNDVkY2Q4ZjRkYTIxYTVhYTc4YjYxYTQ2YzBhNzE1ZDdlZTI4MGRlOA",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "motto",
+                  "object": "Nurturing Excellence",
+                  "start": "Acharya Institute of Technology",
+                  "end": "Nurturing Excellence",
+                  "quote": "Acharya Institute of Technology's motto is Nurturing Excellence.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                }
+              ],
+              "modelConfidence": 0.8,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "motto",
+                "matched": true
+              },
+              {
+                "aspect": "established",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "slogan used as the motto of Acharya Institute of Technology",
+                "aspect": "motto",
+                "question": "What is the slogan used as the motto of Acharya Institute of Technology?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about this institute's motto is recalled; could be unique to its context."
+              },
+              "answer": "Nurturing Excellence",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxtb3R0b3xrbm93bGVkZ2U6NjhhNjU4ODE4YWRlYzZhM2IwYTBlYTIxNDVkY2Q4ZjRkYTIxYTVhYTc4YjYxYTQ2YzBhNzE1ZDdlZTI4MGRlOA",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "motto",
+                  "object": "Nurturing Excellence",
+                  "start": "Acharya Institute of Technology",
+                  "end": "Nurturing Excellence",
+                  "quote": "Acharya Institute of Technology's motto is Nurturing Excellence.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "founding year of Acharya Institute of Technology",
+                "aspect": "year",
+                "question": "What is the founding year of Acharya Institute of Technology?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about this institute's founding year is recalled; common universities have known years but this may be lesser-known."
+              },
+              "answer": "2000",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxlc3RhYmxpc2hlZF9pbnxrbm93bGVkZ2U6ODFhODM1NDRjZjkzYzI0NTE3OGNiYzE2MjAwMzBmMTEyM2Y0MzVhZjg2N2M3OWQ4NzEzNTk4M2M1MmFiMzlkOQ",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "established_in",
+                  "object": "2000",
+                  "start": "Acharya Institute of Technology",
+                  "end": "2000",
+                  "quote": "The Acharya Institute of Technology was established in the year 2000.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6YTJhOTcwMDI4NTI0YWJmZWViMjA2YmE0NjAxNTc5YzdmNTQ5YTI4YzI0ZjdlYjMzNTk3ZGIxZTRmY2ZkNzc0Nnxtb3R0b3xrbm93bGVkZ2U6NjhhNjU4ODE4YWRlYzZhM2IwYTBlYTIxNDVkY2Q4ZjRkYTIxYTVhYTc4YjYxYTQ2YzBhNzE1ZDdlZTI4MGRlOA",
+                  "subject": "Acharya Institute of Technology",
+                  "relation": "motto",
+                  "object": "Nurturing Excellence",
+                  "start": "Acharya Institute of Technology",
+                  "end": "Nurturing Excellence",
+                  "quote": "Acharya Institute of Technology's motto is Nurturing Excellence.",
+                  "sourceId": "train/University/1/Id25+train/University/1/Id24",
+                  "src": "25620"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "16-literature",
+      "question": "Name a writer credited with 1634: The Baltic War.",
+      "source": [
+        "David Weber is the author of 1634: The Baltic War."
+      ],
+      "claims": [
+        {
+          "subject": "David Weber",
+          "relation": "author",
+          "object": "1634: The Baltic War",
+          "quote": "David Weber is the author of 1634: The Baltic War."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "author",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "1634: The Baltic War",
+                "aspect": "writer credited with",
+                "question": "Name a writer credited with 1634: The Baltic War.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "Fictional book title; no real writer credited with it"
+              },
+              "answer": "David Weber",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MDk4ODk1NjUzNDEzYjU4ZGMzYTQyZjgxOGM2MDg2NmIxZTNiZDJhNDRlNTA2MzRjM2UwODM5MjA4YmI0MmUwM3xhdXRob3J8a25vd2xlZGdlOmEzZTBlYWY3ZDQwNDY5MDU1ZjJjZjYxYmRkYzdkYTk3ZDI0N2QwNzEwMmJmMWYzN2RlMmM4MGU4ZjRmNzZkMmE",
+                  "subject": "David Weber",
+                  "relation": "author",
+                  "object": "1634: The Baltic War",
+                  "start": "1634: The Baltic War",
+                  "end": "David Weber",
+                  "quote": "David Weber is the author of 1634: The Baltic War.",
+                  "sourceId": "train/WrittenWork/1/Id1",
+                  "src": "28206"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "author",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "1634: The Baltic War",
+                "aspect": "writer credited with",
+                "question": "Name a writer credited with 1634: The Baltic War.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific author known for this title; likely a fictional work with multiple authors or an error in the question."
+              },
+              "answer": "David Weber",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MDk4ODk1NjUzNDEzYjU4ZGMzYTQyZjgxOGM2MDg2NmIxZTNiZDJhNDRlNTA2MzRjM2UwODM5MjA4YmI0MmUwM3xhdXRob3J8a25vd2xlZGdlOmEzZTBlYWY3ZDQwNDY5MDU1ZjJjZjYxYmRkYzdkYTk3ZDI0N2QwNzEwMmJmMWYzN2RlMmM4MGU4ZjRmNzZkMmE",
+                  "subject": "David Weber",
+                  "relation": "author",
+                  "object": "1634: The Baltic War",
+                  "start": "1634: The Baltic War",
+                  "end": "David Weber",
+                  "quote": "David Weber is the author of 1634: The Baltic War.",
+                  "sourceId": "train/WrittenWork/1/Id1",
+                  "src": "28206"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "17-botany",
+      "question": "For Almond, identify its plant family and its taxonomic order.",
+      "source": [
+        "Almond is part of the Rosaceae family.",
+        "Almond is one of the members of the Rosales order."
+      ],
+      "claims": [
+        {
+          "subject": "Almond",
+          "relation": "part_of",
+          "object": "Rosaceae family",
+          "quote": "Almond is part of the Rosaceae family."
+        },
+        {
+          "subject": "Almond",
+          "relation": "member_of",
+          "object": "Rosales order",
+          "quote": "Almond is one of the members of the Rosales order."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "family",
+                "matched": true
+              },
+              {
+                "aspect": "order",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Almond",
+                "aspect": "plant family",
+                "question": "What is the plant family of Almond?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific memory for Almond's plant family; common knowledge is limited to nut crops, not botanical classification."
+              },
+              "answer": "Rosaceae family",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xtZW1iZXJfb2Z8a25vd2xlZGdlOjE3NWRhNmM2NTk5YmEwNGIxMzMzYzFlMDM5YzgzMzBlNTA3YzMxNjRhOGIzZDM5NGUzZTdiNTk2MWNhODJiMjI",
+                  "subject": "Almond",
+                  "relation": "member_of",
+                  "object": "Rosales order",
+                  "start": "Almond",
+                  "end": "Rosales order",
+                  "quote": "Almond is one of the members of the Rosales order.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+                  "subject": "Almond",
+                  "relation": "part_of",
+                  "object": "Rosaceae family",
+                  "start": "Almond",
+                  "end": "Rosaceae family",
+                  "quote": "Almond is part of the Rosaceae family.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                }
+              ],
+              "modelConfidence": 0.95,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Almond",
+                "aspect": "taxonomic order",
+                "question": "What is the taxonomic order of Almond?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific memory for Almond's taxonomic order; this level of taxonomy is uncommon in general knowledge."
+              },
+              "answer": "Rosales order",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xtZW1iZXJfb2Z8a25vd2xlZGdlOjE3NWRhNmM2NTk5YmEwNGIxMzMzYzFlMDM5YzgzMzBlNTA3YzMxNjRhOGIzZDM5NGUzZTdiNTk2MWNhODJiMjI",
+                  "subject": "Almond",
+                  "relation": "member_of",
+                  "object": "Rosales order",
+                  "start": "Almond",
+                  "end": "Rosales order",
+                  "quote": "Almond is one of the members of the Rosales order.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+                  "subject": "Almond",
+                  "relation": "part_of",
+                  "object": "Rosaceae family",
+                  "start": "Almond",
+                  "end": "Rosaceae family",
+                  "quote": "Almond is part of the Rosaceae family.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                }
+              ],
+              "modelConfidence": 0.85,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "family",
+                "matched": true
+              },
+              {
+                "aspect": "order",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Almond",
+                "aspect": "plant family",
+                "question": "What is the plant family of Almond?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about Almond's plant family in memory"
+              },
+              "answer": "Rosaceae family",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+                  "subject": "Almond",
+                  "relation": "part_of",
+                  "object": "Rosaceae family",
+                  "start": "Almond",
+                  "end": "Rosaceae family",
+                  "quote": "Almond is part of the Rosaceae family.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Almond",
+                "aspect": "taxonomic order",
+                "question": "What is the taxonomic order of Almond?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about Almond's taxonomic order in memory"
+              },
+              "answer": "Rosales order",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xtZW1iZXJfb2Z8a25vd2xlZGdlOjE3NWRhNmM2NTk5YmEwNGIxMzMzYzFlMDM5YzgzMzBlNTA3YzMxNjRhOGIzZDM5NGUzZTdiNTk2MWNhODJiMjI",
+                  "subject": "Almond",
+                  "relation": "member_of",
+                  "object": "Rosales order",
+                  "start": "Almond",
+                  "end": "Rosales order",
+                  "quote": "Almond is one of the members of the Rosales order.",
+                  "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+                  "src": "29798"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "18-economics",
+      "question": "Give the monetary currency of Iraq and the language with official status in Iraq.",
+      "source": [
+        "The currency in Iraq is the Iraqi dinar.",
+        "The official language of Iraq is Arabic."
+      ],
+      "claims": [
+        {
+          "subject": "Iraq",
+          "relation": "currency",
+          "object": "the Iraqi dinar",
+          "quote": "The currency in Iraq is the Iraqi dinar."
+        },
+        {
+          "subject": "Iraq",
+          "relation": "language",
+          "object": "Arabic",
+          "quote": "The official language of Iraq is Arabic."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "currency",
+                "matched": true
+              },
+              {
+                "aspect": "official language",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Iraq",
+                "aspect": "monetary currency",
+                "question": "What is the monetary currency of Iraq?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific memory of Iraq's currency; possible confusion with other Middle Eastern countries"
+              },
+              "answer": "the Iraqi dinar",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxjdXJyZW5jeXxrbm93bGVkZ2U6MTY0NjE1ZTIxODBjNzZhYzhhZmNjNjkxOTAzY2YwZmUxN2Q4MjE4ZGQ0ZWM0YzMwNTdkNTlmMTE5ODJmN2ZjNA",
+                  "subject": "Iraq",
+                  "relation": "currency",
+                  "object": "the Iraqi dinar",
+                  "start": "Iraq",
+                  "end": "the Iraqi dinar",
+                  "quote": "The currency in Iraq is the Iraqi dinar.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxsYW5ndWFnZXxrbm93bGVkZ2U6ZmJlYzk3ZTIzN2QzYTk1NmNjM2JkMTMyN2E1MzEzOWRlZmU1OTI2YmM4YzJiYTgzM2M3OThkMThmOGIwOGE4OA",
+                  "subject": "Iraq",
+                  "relation": "language",
+                  "object": "Arabic",
+                  "start": "Iraq",
+                  "end": "Arabic",
+                  "quote": "The official language of Iraq is Arabic.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Iraq",
+                "aspect": "language with official status",
+                "question": "What language has official status in Iraq?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific memory of Iraqi official language; likely Arabic but need verification"
+              },
+              "answer": "Arabic",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxjdXJyZW5jeXxrbm93bGVkZ2U6MTY0NjE1ZTIxODBjNzZhYzhhZmNjNjkxOTAzY2YwZmUxN2Q4MjE4ZGQ0ZWM0YzMwNTdkNTlmMTE5ODJmN2ZjNA",
+                  "subject": "Iraq",
+                  "relation": "currency",
+                  "object": "the Iraqi dinar",
+                  "start": "Iraq",
+                  "end": "the Iraqi dinar",
+                  "quote": "The currency in Iraq is the Iraqi dinar.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxsYW5ndWFnZXxrbm93bGVkZ2U6ZmJlYzk3ZTIzN2QzYTk1NmNjM2JkMTMyN2E1MzEzOWRlZmU1OTI2YmM4YzJiYTgzM2M3OThkMThmOGIwOGE4OA",
+                  "subject": "Iraq",
+                  "relation": "language",
+                  "object": "Arabic",
+                  "start": "Iraq",
+                  "end": "Arabic",
+                  "quote": "The official language of Iraq is Arabic.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "currency",
+                "matched": true
+              },
+              {
+                "aspect": "official language",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "Iraq",
+                "aspect": "monetary currency",
+                "question": "What is the monetary currency of Iraq?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on current Iraqi currency; possible confusion with historical currencies like dinar"
+              },
+              "answer": "the Iraqi dinar",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxjdXJyZW5jeXxrbm93bGVkZ2U6MTY0NjE1ZTIxODBjNzZhYzhhZmNjNjkxOTAzY2YwZmUxN2Q4MjE4ZGQ0ZWM0YzMwNTdkNTlmMTE5ODJmN2ZjNA",
+                  "subject": "Iraq",
+                  "relation": "currency",
+                  "object": "the Iraqi dinar",
+                  "start": "Iraq",
+                  "end": "the Iraqi dinar",
+                  "quote": "The currency in Iraq is the Iraqi dinar.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "Iraq",
+                "aspect": "language with official status",
+                "question": "What is the language with official status in Iraq?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on official language; possible confusion with Kurdish or Arabic"
+              },
+              "answer": "Arabic",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6ODE4ZDc2ZDY1ODY0MzdhMDkwZTcwYjZlYWE1MTNhNGExNzI4OGU4NmJlNzhmZjVmNDQ4NjY5NjAxOWU5YTBhNHxsYW5ndWFnZXxrbm93bGVkZ2U6ZmJlYzk3ZTIzN2QzYTk1NmNjM2JkMTMyN2E1MzEzOWRlZmU1OTI2YmM4YzJiYTgzM2M3OThkMThmOGIwOGE4OA",
+                  "subject": "Iraq",
+                  "relation": "language",
+                  "object": "Arabic",
+                  "start": "Iraq",
+                  "end": "Arabic",
+                  "quote": "The official language of Iraq is Arabic.",
+                  "sourceId": "train/Airport/1/Id237+train/Airport/1/Id241",
+                  "src": "30916"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "19-linguistics",
+      "question": "Name the place where the English language is spoken in the learned statement.",
+      "source": [
+        "The English language is spoken in Great Britain."
+      ],
+      "claims": [
+        {
+          "subject": "English language",
+          "relation": "spoken_in",
+          "object": "Great Britain",
+          "quote": "The English language is spoken in Great Britain."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "spoken in",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "the English language",
+                "aspect": "place where it is spoken",
+                "question": "For the English language, retrieve the place where it is spoken requested in: Name the place where the English language is spoken in the learned statement.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific place for English language as a spoken language; multiple countries and regions",
+                "original_question": "Name the place where English is spoken?",
+                "questionRepair": "entity-missing-or-meta-instruction"
+              },
+              "answer": "Great Britain",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MWNkZGU3YWJhNjQ0MzdjM2ExZTc1NDFjOTA1YmFjMjZjOTliZTFhNjU2NzNkODQzOGMyNjIzODI2MGE1MTYyZXxzcG9rZW5faW58a25vd2xlZGdlOjVlY2ViNTU5ZjFjNTQ5OGI4YmMxY2Y4MWQwZmZjODc2NWQ1YTgzMGJkNDRkNzc0NmY0ZTdkNzJkOTZiMTE5ODE",
+                  "subject": "English language",
+                  "relation": "spoken_in",
+                  "object": "Great Britain",
+                  "start": "English language",
+                  "end": "Great Britain",
+                  "quote": "The English language is spoken in Great Britain.",
+                  "sourceId": "train/WrittenWork/1/Id173",
+                  "src": "32959"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 1,
+            "total": 1,
+            "facets": [
+              {
+                "aspect": "spoken in",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "English language",
+                "aspect": "spoken in the learned statement",
+                "question": "For English language, retrieve the spoken in the learned statement requested in: Name the place where the English language is spoken in the learned statement.",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific place identified as the answer in learned statements without context",
+                "original_question": "Name the place where English is spoken.",
+                "questionRepair": "entity-missing-or-meta-instruction"
+              },
+              "answer": "Great Britain",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MWNkZGU3YWJhNjQ0MzdjM2ExZTc1NDFjOTA1YmFjMjZjOTliZTFhNjU2NzNkODQzOGMyNjIzODI2MGE1MTYyZXxzcG9rZW5faW58a25vd2xlZGdlOjVlY2ViNTU5ZjFjNTQ5OGI4YmMxY2Y4MWQwZmZjODc2NWQ1YTgzMGJkNDRkNzc0NmY0ZTdkNzJkOTZiMTE5ODE",
+                  "subject": "English language",
+                  "relation": "spoken_in",
+                  "object": "Great Britain",
+                  "start": "English language",
+                  "end": "Great Britain",
+                  "quote": "The English language is spoken in Great Britain.",
+                  "sourceId": "train/WrittenWork/1/Id173",
+                  "src": "32959"
+                }
+              ],
+              "modelConfidence": 0.9,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "20-rocket_engineering",
+      "question": "For ALV X-1, give its stage count and its diameter.",
+      "source": [
+        "The ALV X-1 has 2 rocket stages.",
+        "The diameter of the ALV X-1 is 1.524 metres."
+      ],
+      "claims": [
+        {
+          "subject": "ALV X-1",
+          "relation": "stages",
+          "object": "2",
+          "quote": "The ALV X-1 has 2 rocket stages."
+        },
+        {
+          "subject": "ALV X-1",
+          "relation": "diameter",
+          "object": "1.524 metres",
+          "quote": "The diameter of the ALV X-1 is 1.524 metres."
+        }
+      ],
+      "arms": {
+        "baseline": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "stages",
+                "matched": true
+              },
+              {
+                "aspect": "diameter",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "ALV X-1",
+                "aspect": "stage count",
+                "question": "What is the stage count of ALV X-1?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on ALV X-1 stage count"
+              },
+              "answer": "2",
+              "grounded": true,
+              "evidenceIds": [
+                "e2"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxkaWFtZXRlcnxrbm93bGVkZ2U6NmNhYzM5YmUzMTJkYWNhNGUzNTU0MWQxM2RlMmVmNzcxM2ZiODM0MjBmZjBkMzdkZGMxNzdmMjBkMTE5MzZhMA",
+                  "subject": "ALV X-1",
+                  "relation": "diameter",
+                  "object": "1.524 metres",
+                  "start": "ALV X-1",
+                  "end": "1.524 metres",
+                  "quote": "The diameter of the ALV X-1 is 1.524 metres.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxzdGFnZXN8a25vd2xlZGdlOmQ0NzM1ZTNhMjY1ZTE2ZWVlMDNmNTk3MThiOWI1ZDAzMDE5YzA3ZDhiNmM1MWY5MGRhM2E2NjZlZWMxM2FiMzU",
+                  "subject": "ALV X-1",
+                  "relation": "stages",
+                  "object": "2",
+                  "start": "ALV X-1",
+                  "end": "2",
+                  "quote": "The ALV X-1 has 2 rocket stages.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "ALV X-1",
+                "aspect": "diameter",
+                "question": "What is the diameter of ALV X-1?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge on ALV X-1 diameter"
+              },
+              "answer": "1.524 metres",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxkaWFtZXRlcnxrbm93bGVkZ2U6NmNhYzM5YmUzMTJkYWNhNGUzNTU0MWQxM2RlMmVmNzcxM2ZiODM0MjBmZjBkMzdkZGMxNzdmMjBkMTE5MzZhMA",
+                  "subject": "ALV X-1",
+                  "relation": "diameter",
+                  "object": "1.524 metres",
+                  "start": "ALV X-1",
+                  "end": "1.524 metres",
+                  "quote": "The diameter of the ALV X-1 is 1.524 metres.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                },
+                {
+                  "id": "e2",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxzdGFnZXN8a25vd2xlZGdlOmQ0NzM1ZTNhMjY1ZTE2ZWVlMDNmNTk3MThiOWI1ZDAzMDE5YzA3ZDhiNmM1MWY5MGRhM2E2NjZlZWMxM2FiMzU",
+                  "subject": "ALV X-1",
+                  "relation": "stages",
+                  "object": "2",
+                  "start": "ALV X-1",
+                  "end": "2",
+                  "quote": "The ALV X-1 has 2 rocket stages.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                }
+              ],
+              "modelConfidence": 0.9,
+              "stopReason": null
+            }
+          ]
+        },
+        "correlated": {
+          "score": {
+            "matched": 2,
+            "total": 2,
+            "facets": [
+              {
+                "aspect": "stages",
+                "matched": true
+              },
+              {
+                "aspect": "diameter",
+                "matched": true
+              }
+            ],
+            "complete": true
+          },
+          "results": [
+            {
+              "concept": {
+                "id": "c1",
+                "entity": "ALV X-1",
+                "aspect": "stage count",
+                "question": "What is the stage count of ALV X-1?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about ALV X-1 stage count in memory"
+              },
+              "answer": "2",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxzdGFnZXN8a25vd2xlZGdlOmQ0NzM1ZTNhMjY1ZTE2ZWVlMDNmNTk3MThiOWI1ZDAzMDE5YzA3ZDhiNmM1MWY5MGRhM2E2NjZlZWMxM2FiMzU",
+                  "subject": "ALV X-1",
+                  "relation": "stages",
+                  "object": "2",
+                  "start": "ALV X-1",
+                  "end": "2",
+                  "quote": "The ALV X-1 has 2 rocket stages.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                }
+              ],
+              "modelConfidence": 0.9,
+              "stopReason": null
+            },
+            {
+              "concept": {
+                "id": "c2",
+                "entity": "ALV X-1",
+                "aspect": "diameter",
+                "question": "What is the diameter of ALV X-1?",
+                "prior_answer": "",
+                "self_confidence": 0,
+                "basis": "No specific knowledge about ALV X-1 diameter in memory"
+              },
+              "answer": "1.524 metres",
+              "grounded": true,
+              "evidenceIds": [
+                "e1"
+              ],
+              "evidence": [
+                {
+                  "id": "e1",
+                  "edgeId": "MXxrbm93bGVkZ2U6MjU0ZjVkOWRiZDQzMjU1YjE3ZWYwOTg4MDZiMGU5OTNjZTdhNTdhMDgyZjEwMjliYjQzNzg1OWI2ZjBiZTcxYXxkaWFtZXRlcnxrbm93bGVkZ2U6NmNhYzM5YmUzMTJkYWNhNGUzNTU0MWQxM2RlMmVmNzcxM2ZiODM0MjBmZjBkMzdkZGMxNzdmMjBkMTE5MzZhMA",
+                  "subject": "ALV X-1",
+                  "relation": "diameter",
+                  "object": "1.524 metres",
+                  "start": "ALV X-1",
+                  "end": "1.524 metres",
+                  "quote": "The diameter of the ALV X-1 is 1.524 metres.",
+                  "sourceId": "train/MeanOfTransportation/1/Id58+train/MeanOfTransportation/1/Id56",
+                  "src": "34444"
+                }
+              ],
+              "modelConfidence": 1,
+              "stopReason": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "multilingual": [
+    {
+      "phase": "multilingual_recall",
+      "language": "ita",
+      "question": "Almond famiglia",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "famiglia",
+          "family",
+          "famille",
+          "familia",
+          "family unit",
+          "unidad familiar",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "relation": "part_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "family",
+              "famiglia",
+              "famille",
+              "familia"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_recall",
+      "language": "ita",
+      "question": "Almond ordine",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "ordine",
+          "holy order",
+          "ordination sacerdotale",
+          "orden sagrada",
+          "ordre",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosales order",
+            "quote": "Almond is one of the members of the Rosales order.",
+            "relation": "member_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "order",
+              "ordine",
+              "ordre",
+              "orden"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_recall",
+      "language": "fra",
+      "question": "Almond famille",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "famille",
+          "family",
+          "famiglia",
+          "familia",
+          "family unit",
+          "unidad familiar",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "relation": "part_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "family",
+              "famiglia",
+              "famille",
+              "familia"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_recall",
+      "language": "fra",
+      "question": "Almond ordre",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "ordre",
+          "order",
+          "commander",
+          "régler",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosales order",
+            "quote": "Almond is one of the members of the Rosales order.",
+            "relation": "member_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "order",
+              "ordre",
+              "almond"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_recall",
+      "language": "spa",
+      "question": "Almond familia",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "familia",
+          "kin",
+          "clan",
+          "kin group",
+          "genia",
+          "tribu",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "relation": "part_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "familia"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_recall",
+      "language": "spa",
+      "question": "Almond orden",
+      "result": {
+        "seeds": [
+          "knowledge:90e62b92a956add6e1c3871b7f592616665e610f12c6468eaad9533ef50834bc",
+          "orden",
+          "arrangement",
+          "organizzazione",
+          "organisation",
+          "disposición",
+          "organization",
+          "sistema",
+          "système",
+          "almond",
+          "prunus dulcis",
+          "amande",
+          "sweet almond",
+          "mandorlo",
+          "amandier"
+        ],
+        "facts": [
+          {
+            "grounding": "source-overlap",
+            "object": "Rosales order",
+            "quote": "Almond is one of the members of the Rosales order.",
+            "relation": "member_of",
+            "source_id": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798",
+            "subject": "Almond",
+            "matched_terms": [
+              "orden",
+              "almond"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "phase": "multilingual_answer",
+      "language": "ita",
+      "question": "Qual è la famiglia botanica di Almond?",
+      "result": {
+        "answer": "Rosaceae family",
+        "grounded": true,
+        "evidenceIds": [
+          "e1"
+        ],
+        "evidence": [
+          {
+            "id": "e1",
+            "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+            "subject": "Almond",
+            "relation": "part_of",
+            "object": "Rosaceae family",
+            "start": "Almond",
+            "end": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798"
+          }
+        ],
+        "stopReason": null
+      }
+    },
+    {
+      "phase": "multilingual_answer",
+      "language": "fra",
+      "question": "Quelle est la famille botanique de Almond ?",
+      "result": {
+        "answer": "Rosaceae family",
+        "grounded": true,
+        "evidenceIds": [
+          "e1"
+        ],
+        "evidence": [
+          {
+            "id": "e1",
+            "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+            "subject": "Almond",
+            "relation": "part_of",
+            "object": "Rosaceae family",
+            "start": "Almond",
+            "end": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798"
+          }
+        ],
+        "stopReason": null
+      }
+    },
+    {
+      "phase": "multilingual_answer",
+      "language": "spa",
+      "question": "¿Cuál es la familia botánica de Almond?",
+      "result": {
+        "answer": "Rosaceae family",
+        "grounded": true,
+        "evidenceIds": [
+          "e1"
+        ],
+        "evidence": [
+          {
+            "id": "e1",
+            "edgeId": "MXxrbm93bGVkZ2U6OTBlNjJiOTJhOTU2YWRkNmUxYzM4NzFiN2Y1OTI2MTY2NjVlNjEwZjEyYzY0NjhlYWFkOTUzM2VmNTA4MzRiY3xwYXJ0X29mfGtub3dsZWRnZTpmMTcwMDYyMDRiM2M1ZDBiNWFhMDhiYzU0NjZjNDlmZDJhYjUxYTgxNDQ3ZmRlNzk1NWQ5ZGQ5ZjUxODg4MjEz",
+            "subject": "Almond",
+            "relation": "part_of",
+            "object": "Rosaceae family",
+            "start": "Almond",
+            "end": "Rosaceae family",
+            "quote": "Almond is part of the Rosaceae family.",
+            "sourceId": "train/Food/1/Id9+train/Food/1/Id10",
+            "src": "29798"
+          }
+        ],
+        "stopReason": null
+      }
+    }
+  ]
+}
