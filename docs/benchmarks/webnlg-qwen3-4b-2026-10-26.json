@@ -1,0 +1,689 @@
+{
+  "recorded_on": "2026-10-26",
+  "model": "qwen3-4b-thinking-2507-mlx",
+  "lm_studio_url": "http://127.0.0.1:1234",
+  "loaded_context_tokens": 8192,
+  "cheetah_transport": "binary",
+  "methodology": {
+    "input": "First human-written target sentence of each selected English WebNLG training entry.",
+    "gold_usage": "RDF input triples are withheld from prompts and used only for post-extraction endpoint scoring.",
+    "learning": "Claims are stored in Cheetah; model weights are unchanged.",
+    "transcript_format": "Recorded JSON prompts with repeated inline response_schema omitted; schema_file identifies the checked-in schema. Model responses are parsed from recorded response text.",
+    "endpoint_metric": "Directed subject/object pairs after case, whitespace, underscore and enclosing-quote normalization; predicates are not scored. This is not RDF triple F1.",
+    "limits": "Source overlap is not an entailment proof. These are small diagnostic samples without a closed-book baseline or held-out generalization measurement."
+  },
+  "coverage_run": {
+    "source_artifact": ".miniphi/cheetah/webnlg/coverage-proof.json",
+    "dataset_sha256": "959646a986465c436362dfc44bb4966d5a2d39f2725b39fe32701981daf666d0",
+    "dataset_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "database": "miniphi_webnlg",
+    "initial_database_state": "Reused the manual proof database; one proposed claim was already stored.",
+    "totals": {
+      "processed": 20,
+      "written": 8,
+      "known": 1,
+      "rejected": 4,
+      "expectedPairs": 20,
+      "predictedPairs": 9,
+      "matchingPairs": 5
+    },
+    "empty_extractions": 7,
+    "gold_endpoint_pair_coverage": 0.25,
+    "stop_reason": null
+  },
+  "fresh_database_acceptance": {
+    "source_artifact": ".miniphi/cheetah/webnlg/live-1793021620390/",
+    "test": "unit-tests-js/cheetah-webnlg.live.test.js",
+    "total_elapsed_seconds_rounded": 30.5,
+    "timing_scope": "Complete test: server startup, two teaching calls, known question, untaught control, Cheetah shutdown/restart and repeated known question. Not per-answer latency.",
+    "teaching": [
+      {
+        "dataset_index": 3,
+        "source_id": "train/Airport/1/Id4",
+        "source_text": "Aarhus Airport is located in Tirstrup.",
+        "written": 1,
+        "endpoint_metrics": {
+          "expectedPairs": 1,
+          "predictedPairs": 1,
+          "matchingPairs": 1
+        },
+        "turns": [
+          {
+            "schema_file": "../prompts/cheetah-graph-extract.schema.json",
+            "prompt_without_inline_schema": {
+              "task": "Extract directed subject/relation/object claims from SOURCE only. Copy subject and object from one exact quote. Extract ALL subjects, not only the first. Relations are snake_case verbs or roles written in that quote (e.g. located_in, born_in, language, leader). Save explicit noun-based facts too. No background knowledge. No negated or speculative claims. Empty facts only if unsupported. stop_reason=completed; needs_more_context=false; missing_snippets=[].",
+              "source_id": "train/Airport/1/Id4",
+              "source_text": "Aarhus Airport is located in Tirstrup.",
+              "schema_id": "cheetah-graph-extract"
+            },
+            "model_response": {
+              "facts": [
+                {
+                  "subject": "Aarhus Airport",
+                  "relation": "located_in",
+                  "object": "Tirstrup",
+                  "quote": "Aarhus Airport is located in Tirstrup."
+                }
+              ],
+              "needs_more_context": false,
+              "missing_snippets": [],
+              "stop_reason": "completed"
+            }
+          }
+        ]
+      },
+      {
+        "dataset_index": 278,
+        "source_id": "train/Airport/1/Id279",
+        "source_text": "Tirstrup is located in the country of Denmark.",
+        "written": 1,
+        "endpoint_metrics": {
+          "expectedPairs": 1,
+          "predictedPairs": 1,
+          "matchingPairs": 1
+        },
+        "turns": [
+          {
+            "schema_file": "../prompts/cheetah-graph-extract.schema.json",
+            "prompt_without_inline_schema": {
+              "task": "Extract directed subject/relation/object claims from SOURCE only. Copy subject and object from one exact quote. Extract ALL subjects, not only the first. Relations are snake_case verbs or roles written in that quote (e.g. located_in, born_in, language, leader). Save explicit noun-based facts too. No background knowledge. No negated or speculative claims. Empty facts only if unsupported. stop_reason=completed; needs_more_context=false; missing_snippets=[].",
+              "source_id": "train/Airport/1/Id279",
+              "source_text": "Tirstrup is located in the country of Denmark.",
+              "schema_id": "cheetah-graph-extract"
+            },
+            "model_response": {
+              "facts": [
+                {
+                  "subject": "Tirstrup",
+                  "relation": "located_in",
+                  "object": "Denmark",
+                  "quote": "Tirstrup is located in the country of Denmark."
+                }
+              ],
+              "needs_more_context": false,
+              "missing_snippets": [],
+              "stop_reason": "completed"
+            }
+          }
+        ]
+      }
+    ],
+    "question_before_restart": {
+      "result": {
+        "question": "In which country is Aarhus Airport located?",
+        "answer": "Denmark",
+        "grounded": true,
+        "rounds": 4,
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ],
+        "stopReason": null
+      },
+      "turns": [
+        {
+          "schema_file": "../prompts/cheetah-graph-query.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Choose a graph lookup for the named entity in QUESTION. Copy its name from QUESTION. relation='' discovers all stored relations. direction=out normally; in if asking who has a relation TO that entity. The database has not been read yet: request a lookup, never assume it is empty. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 1,
+            "rounds_remaining": 5,
+            "evidence": [],
+            "observations": [],
+            "available_endpoints": [],
+            "schema_id": "cheetah-graph-query"
+          },
+          "model_response": {
+            "lookups": [
+              {
+                "entity": "Aarhus Airport",
+                "relation": "located_in",
+                "direction": "out"
+              }
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-reason.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 2,
+            "rounds_remaining": 4,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "located_in",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup"
+            ],
+            "schema_id": "cheetah-graph-reason"
+          },
+          "model_response": {
+            "lookups": [],
+            "answer_entity": "Tirstrup",
+            "evidence_ids": [
+              "e1"
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-query.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Your answer lacked a connected citation chain. Fetch the missing relation by looking up an AVAILABLE ENDPOINT below, using its exact name, relation='' and direction=out. Do not repeat a previous lookup. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 3,
+            "rounds_remaining": 3,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "located_in",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              },
+              {
+                "rejected_answer": "Tirstrup",
+                "reason": "answer-lacks-connected-citations-or-requested-role",
+                "required_action": "lookup-observed-endpoint"
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup"
+            ],
+            "schema_id": "cheetah-graph-query"
+          },
+          "model_response": {
+            "lookups": [
+              {
+                "entity": "Tirstrup",
+                "relation": "located_in",
+                "direction": "out"
+              }
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-reason.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 4,
+            "rounds_remaining": 2,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              },
+              {
+                "id": "e2",
+                "subject": "Tirstrup",
+                "relation": "located_in",
+                "object": "Denmark",
+                "start": "Tirstrup",
+                "end": "Denmark",
+                "quote": "Tirstrup is located in the country of Denmark.",
+                "sourceId": "train/Airport/1/Id279"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "located_in",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              },
+              {
+                "rejected_answer": "Tirstrup",
+                "reason": "answer-lacks-connected-citations-or-requested-role",
+                "required_action": "lookup-observed-endpoint"
+              },
+              {
+                "lookup": {
+                  "entity": "Tirstrup",
+                  "relation": "located_in",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e2"
+                ],
+                "truncated": false
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup",
+              "Denmark"
+            ],
+            "schema_id": "cheetah-graph-reason"
+          },
+          "model_response": {
+            "lookups": [],
+            "answer_entity": "Denmark",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "id": "e1",
+          "edgeId": "MXxrbm93bGVkZ2U6ZGMwYjM4NWVhMWJmZmVhZjg0MDdjNTUwOWFhMmRkZjg4NDg5YTZlOTBjYmNhYTUwNmZlYTJhYmE4MGVhOGM0MXxsb2NhdGVkX2lufGtub3dsZWRnZTowNDhlYWQ4NWE3ZGI4NzAyYTRhZDA3Y2ZiNWIwM2QxYTJjZjYxYjgyNmZiODk0N2U5MDMyMThmNDYwNjMwYjA0",
+          "subject": "Aarhus Airport",
+          "relation": "located_in",
+          "object": "Tirstrup",
+          "start": "Aarhus Airport",
+          "end": "Tirstrup",
+          "quote": "Aarhus Airport is located in Tirstrup.",
+          "sourceId": "train/Airport/1/Id4",
+          "src": "1"
+        },
+        {
+          "id": "e2",
+          "edgeId": "MXxrbm93bGVkZ2U6MDQ4ZWFkODVhN2RiODcwMmE0YWQwN2NmYjViMDNkMWEyY2Y2MWI4MjZmYjg5NDdlOTAzMjE4ZjQ2MDYzMGIwNHxsb2NhdGVkX2lufGtub3dsZWRnZTo1ZjBiZjNmZjZiNzJhYzA5Zjg4MTIyMWZjOGJkODhiYTlmMjRhMzkzYzJlNTQ0NzE2ZGJmNzkyOTc4YTdmMzEz",
+          "subject": "Tirstrup",
+          "relation": "located_in",
+          "object": "Denmark",
+          "start": "Tirstrup",
+          "end": "Denmark",
+          "quote": "Tirstrup is located in the country of Denmark.",
+          "sourceId": "train/Airport/1/Id279",
+          "src": "231"
+        }
+      ]
+    },
+    "untaught_control": {
+      "result": {
+        "question": "In which country is NeverTaught Airfield ZQ7419 located?",
+        "answer": "I don't know.",
+        "grounded": false,
+        "rounds": 2,
+        "evidenceIds": [],
+        "stopReason": "no-actions"
+      },
+      "turns": [
+        {
+          "schema_file": "../prompts/cheetah-graph-query.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Choose a graph lookup for the named entity in QUESTION. Copy its name from QUESTION. relation='' discovers all stored relations. direction=out normally; in if asking who has a relation TO that entity. The database has not been read yet: request a lookup, never assume it is empty. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
+            "question": "In which country is NeverTaught Airfield ZQ7419 located?",
+            "round": 1,
+            "rounds_remaining": 3,
+            "evidence": [],
+            "observations": [],
+            "available_endpoints": [],
+            "schema_id": "cheetah-graph-query"
+          },
+          "model_response": {
+            "lookups": [
+              {
+                "entity": "NeverTaught Airfield ZQ7419",
+                "relation": "",
+                "direction": "out"
+              }
+            ],
+            "needs_more_context": true,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-reason.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
+            "question": "In which country is NeverTaught Airfield ZQ7419 located?",
+            "round": 2,
+            "rounds_remaining": 2,
+            "evidence": [],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "NeverTaught Airfield ZQ7419",
+                  "relation": "",
+                  "direction": "out"
+                },
+                "returned": [],
+                "truncated": false
+              }
+            ],
+            "available_endpoints": [],
+            "schema_id": "cheetah-graph-reason"
+          },
+          "model_response": {
+            "lookups": [],
+            "answer_entity": "",
+            "evidence_ids": [],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        }
+      ],
+      "observations": [
+        {
+          "lookup": {
+            "entity": "NeverTaught Airfield ZQ7419",
+            "relation": "",
+            "direction": "out"
+          },
+          "returned": [],
+          "truncated": false
+        }
+      ]
+    },
+    "question_after_restart": {
+      "result": {
+        "question": "In which country is Aarhus Airport located?",
+        "answer": "Denmark",
+        "grounded": true,
+        "rounds": 4,
+        "evidenceIds": [
+          "e1",
+          "e2"
+        ],
+        "stopReason": null
+      },
+      "turns": [
+        {
+          "schema_file": "../prompts/cheetah-graph-query.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Choose a graph lookup for the named entity in QUESTION. Copy its name from QUESTION. relation='' discovers all stored relations. direction=out normally; in if asking who has a relation TO that entity. The database has not been read yet: request a lookup, never assume it is empty. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 1,
+            "rounds_remaining": 5,
+            "evidence": [],
+            "observations": [],
+            "available_endpoints": [],
+            "schema_id": "cheetah-graph-query"
+          },
+          "model_response": {
+            "lookups": [
+              {
+                "entity": "Aarhus Airport",
+                "relation": "",
+                "direction": "out"
+              }
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-reason.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 2,
+            "rounds_remaining": 4,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup"
+            ],
+            "schema_id": "cheetah-graph-reason"
+          },
+          "model_response": {
+            "lookups": [],
+            "answer_entity": "Tirstrup",
+            "evidence_ids": [
+              "e1"
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-query.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Your answer lacked a connected citation chain. Fetch the missing relation by looking up an AVAILABLE ENDPOINT below, using its exact name, relation='' and direction=out. Do not repeat a previous lookup. needs_more_context=true; missing_snippets=[]; stop_reason=completed.",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 3,
+            "rounds_remaining": 3,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              },
+              {
+                "rejected_answer": "Tirstrup",
+                "reason": "answer-lacks-connected-citations-or-requested-role",
+                "required_action": "lookup-observed-endpoint"
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup"
+            ],
+            "schema_id": "cheetah-graph-query"
+          },
+          "model_response": {
+            "lookups": [
+              {
+                "entity": "Tirstrup",
+                "relation": "",
+                "direction": "out"
+              }
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "schema_file": "../prompts/cheetah-graph-reason.schema.json",
+          "prompt_without_inline_schema": {
+            "task": "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
+            "question": "In which country is Aarhus Airport located?",
+            "round": 4,
+            "rounds_remaining": 2,
+            "evidence": [
+              {
+                "id": "e1",
+                "subject": "Aarhus Airport",
+                "relation": "located_in",
+                "object": "Tirstrup",
+                "start": "Aarhus Airport",
+                "end": "Tirstrup",
+                "quote": "Aarhus Airport is located in Tirstrup.",
+                "sourceId": "train/Airport/1/Id4"
+              },
+              {
+                "id": "e2",
+                "subject": "Tirstrup",
+                "relation": "located_in",
+                "object": "Denmark",
+                "start": "Tirstrup",
+                "end": "Denmark",
+                "quote": "Tirstrup is located in the country of Denmark.",
+                "sourceId": "train/Airport/1/Id279"
+              }
+            ],
+            "observations": [
+              {
+                "lookup": {
+                  "entity": "Aarhus Airport",
+                  "relation": "",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e1"
+                ],
+                "truncated": false
+              },
+              {
+                "rejected_answer": "Tirstrup",
+                "reason": "answer-lacks-connected-citations-or-requested-role",
+                "required_action": "lookup-observed-endpoint"
+              },
+              {
+                "lookup": {
+                  "entity": "Tirstrup",
+                  "relation": "",
+                  "direction": "out"
+                },
+                "returned": [
+                  "e2"
+                ],
+                "truncated": false
+              }
+            ],
+            "available_endpoints": [
+              "Tirstrup",
+              "Denmark"
+            ],
+            "schema_id": "cheetah-graph-reason"
+          },
+          "model_response": {
+            "lookups": [],
+            "answer_entity": "Denmark",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "needs_more_context": false,
+            "missing_snippets": [],
+            "stop_reason": "completed"
+          }
+        }
+      ]
+    }
+  },
+  "longer_question_failure": {
+    "source_artifact": ".miniphi/cheetah/webnlg/language-proof.json",
+    "source_text": "Denmark language is Danish language.",
+    "extracted_claims": [],
+    "result": {
+      "question": "Which language is used in the country where Aarhus Airport is located?",
+      "answer": "I don't know.",
+      "grounded": false,
+      "rounds": 4,
+      "evidenceIds": [],
+      "stopReason": "no-progress"
+    }
+  }
+}

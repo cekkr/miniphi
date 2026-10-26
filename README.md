@@ -192,13 +192,111 @@ itself and records it under `transport` in `context-engine.json`; set `binary: f
 
 #### Optional: teach a small "ignorant" model with Cheetah (`cheetah-learn`)
 
-For the local WebNLG text-to-graph experiment, use `miniphi cheetah-learn webnlg
---limit 20`, then `miniphi cheetah-learn graph-ask "Where is Aarhus Airport
-located?"`. These actions default to `qwen3-4b-thinking-2507-mlx` at the local LM
-Studio endpoint and database `miniphi_webnlg`. The model extracts quoted claims
-from training text, then requests graph lookups and cites connected edges to answer.
-See the [WebNLG guide](docs/cheetah-webnlg-learning.md) for setup, resumable slices,
-validation and limits.
+The local WebNLG experiment uses **Qwen3 4B Thinking 2507 MLX**
+(`qwen3-4b-thinking-2507-mlx`) through LM Studio at `http://127.0.0.1:1234`, with an
+8,192-token loaded context. `cheetah-learn webnlg` asks this small language model
+to extract claims from text; `cheetah-learn graph-ask` lets it request Cheetah
+lookups and answer from the returned edges. Learning writes external graph memory;
+the model's weights stay unchanged.
+
+##### Recorded WebNLG benchmark — 2026-10-26
+
+The model received the **first human-written target sentence** of each selected
+English training entry. WebNLG's RDF triples stayed outside prompts and were used
+after extraction to score directed subject/object pairs.
+
+| Measurement | Observed result |
+| --- | --- |
+| Coverage sample | First 20 training entries, indices 0–19 |
+| New claims written to Cheetah | 8 |
+| Proposed claims already stored | 1 |
+| Unsupported proposals rejected by MiniPhi | 4 |
+| Entries producing no proposed claims | 7 |
+| Gold endpoint pairs recovered | **5/20 (25%)** |
+
+This coverage run reused the manual proof database, explaining the already-stored
+claim. Endpoint scoring normalizes spelling separators/case and ignores predicates;
+it is not RDF triple F1 or an entailment score. This small training slice has no
+closed-book baseline or held-out generalization measurement.
+
+A **separate fresh-database acceptance test**, with Qwen already loaded, taught two
+entries, asked a question through their combined graph, tested an untaught control,
+restarted Cheetah, and asked again. Known questions allowed up to six model rounds.
+The complete test took **30.5 seconds**, including server lifecycle and all model
+calls; this is not single-answer latency or model-loading time.
+
+| Question/check | Recorded outcome |
+| --- | --- |
+| In which country is Aarhus Airport located? | `Denmark`, grounded by two edges, 4 model rounds |
+| In which country is NeverTaught Airfield ZQ7419 located? | `I don't know.`, no evidence, open question saved |
+| Repeat the airport question after Cheetah restart | `Denmark`, both citations retained, 4 model rounds |
+| Separate longer language-question probe | Declined after its teaching turn extracted no claims |
+
+The [checked-in benchmark and transcript](docs/benchmarks/webnlg-qwen3-4b-2026-10-26.json)
+contains the measured counters, teaching prompts/responses, retrieval turns, control
+and restart results. Extraction coverage and longer reasoning remain incomplete.
+
+##### Recorded learning prompts and answer sequence
+
+The teaching task begins: **“Extract directed subject/relation/object claims from
+SOURCE only.”** The following are selected fields from two separate recorded
+prompts. Each real request also carries the exact
+[`cheetah-graph-extract` schema](docs/prompts/cheetah-graph-extract.schema.json) and
+`response_format=json_schema`.
+
+| Teaching turn | Prompt `source_text` | Claim extracted and stored |
+| --- | --- | --- |
+| Train index 3 (`train/Airport/1/Id4`) | Aarhus Airport is located in Tirstrup. | `Aarhus Airport —located_in→ Tirstrup` |
+| Train index 278 (`train/Airport/1/Id279`) | Tirstrup is located in the country of Denmark. | `Tirstrup —located_in→ Denmark` |
+
+The first turn returned this model JSON; the second used the same structure with
+`Tirstrup`, `located_in`, `Denmark` and its own source quote:
+
+```json
+{
+  "facts": [{
+    "subject": "Aarhus Airport",
+    "relation": "located_in",
+    "object": "Tirstrup",
+    "quote": "Aarhus Airport is located in Tirstrup."
+  }],
+  "needs_more_context": false,
+  "missing_snippets": [],
+  "stop_reason": "completed"
+}
+```
+
+MiniPhi checked source support, probed for an existing edge, then wrote each claim
+with its source quote. The question **“In which country is Aarhus Airport located?”**
+then produced this recorded sequence. JSON cells show selected response fields;
+the linked transcript retains complete model responses.
+
+| Round | Prompt/evidence supplied to the model | Model response and runtime result |
+| --- | --- | --- |
+| 1 | Question; no graph evidence yet. Ask for a lookup of the named entity. | `{"lookups":[{"entity":"Aarhus Airport","relation":"located_in","direction":"out"}]}` → Cheetah returns `e1`: airport → Tirstrup. |
+| 2 | Question plus `e1` and its source quote. | `{"answer_entity":"Tirstrup","evidence_ids":["e1"]}` → **rejected**: this evidence identifies a location without establishing the requested country. |
+| 3 | Rejection feedback; available endpoint `Tirstrup`; request its missing relation. | `{"lookups":[{"entity":"Tirstrup","relation":"located_in","direction":"out"}]}` → Cheetah returns `e2`: Tirstrup → Denmark, with the country quote. |
+| 4 | Question plus `e1`, `e2` and both source quotes. | `{"answer_entity":"Denmark","evidence_ids":["e1","e2"]}` → **accepted**: connected citations and country evidence. |
+
+The final adapter result was `answer: "Denmark"`, `grounded: true`,
+`rounds: 4`, `evidenceIds: ["e1", "e2"]`, `stopReason: null`. MiniPhi's validation
+and bounded repair are part of this result: the small model's first answer was wrong.
+
+To repeat the live acceptance test, build Cheetah and load the model, then run:
+
+```bash
+node src/index.js models --load qwen3-4b-thinking-2507-mlx --context-length 8192
+MINIPHI_LMSTUDIO_INTEGRATION=1 MINIPHI_CHEETAH_INTEGRATION=1 \
+  LMSTUDIO_REST_URL=http://127.0.0.1:1234 \
+  MINIPHI_LIVE_MODEL=qwen3-4b-thinking-2507-mlx \
+  node --test unit-tests-js/cheetah-webnlg.live.test.js
+```
+
+The test starts its own isolated Cheetah server. For manual teaching/query commands,
+resumable slices and reopening the learned database, see the
+[WebNLG guide](docs/cheetah-webnlg-learning.md). Results may vary between model calls.
+
+##### Other knowledge workflows: layered Wikipedia memory
 
 This is a **different** use of Cheetah from the context engine above (a separate database,
 `miniphi_knowledge` by default instead of the project-derived context mirror): here Cheetah is the model's

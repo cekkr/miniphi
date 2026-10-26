@@ -180,6 +180,13 @@ When you add or change CLI behavior:
   5/20 gold endpoint pairs matched. This is partial extraction coverage, not
   full-corpus learning or RDF F1. A separate language-source probe extracted no
   claims and its three-hop question correctly remained unanswered.
+- README's WebNLG benchmark/learning sequence is backed by the checked-in
+  `docs/benchmarks/webnlg-qwen3-4b-2026-10-26.json`: recorded prompt payloads with
+  repeated inline schemas omitted and linked, complete parsed model responses,
+  coverage counters, unknown-control and restart results. Keep the 20-entry
+  reused-database coverage measurement separate from the fresh two-fact live
+  acceptance test; 30.5 s is whole-test elapsed time, not answer latency. Never
+  turn the endpoint metric into RDF F1 or claim model-weight training.
 - Limits: endpoint coverage is not RDF triple F1; source overlap cannot establish
   entailment/direction; aliases/contradictions and the coding agent's integration
   remain open. Existing `ask`/`knowledge_lookup` still read the earlier shape.
