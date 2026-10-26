@@ -298,6 +298,11 @@ resumable slices and reopening the learned database, see the
 
 ##### Twenty-concept learning and delayed retrieval study
 
+Start with the [practical WebNLG guide](docs/cheetah-webnlg-learning.md) for selected
+concepts, a worked teach/retrieve example, results and the current response JSON
+templates. The shared runtime builder supplies different shapes for assessment,
+extraction, graph lookup, answering and context-reference selection.
+
 The [extended WebNLG study](docs/webnlg_learning.md) follows **20 distinct concepts
 across all 16 dataset categories**, with 30 predeclared answer facets. It records
 closed-book self-confidence and question decomposition, graph gaps before teaching,

@@ -1,5 +1,9 @@
 # WebNLG learning and delayed retrieval with a small language model
 
+For selected concepts, a compact worked example and current prompt contracts, read the [practical guide](cheetah-webnlg-learning.md). This file retains the complete recorded exchanges.
+
+These recorded prompts already included exact JSON schemas, but predate the concrete response templates added to the runtime afterward. The practical guide describes that later change; the historical requests and measurements below are preserved.
+
 Recorded study: **2026-10-26**. Model: **qwen3-4b-thinking-2507-mlx**, LM Studio at `http://127.0.0.1:1234`, loaded context **8192 tokens**.
 
 This document contains **20 real subject/aspect examples across 16 WebNLG dataset categories**. There are 30 predeclared answer facets. The category labels are the dataset's original labels: botanical taxonomy, currency, language distribution and rocket engineering are separate concepts even where WebNLG groups them under Food, Airport, WrittenWork or MeanOfTransportation.

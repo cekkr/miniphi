@@ -67,6 +67,32 @@ When you add or change CLI behavior:
 - PromptSchemaRegistry now exposes `validateOutcome()` and normalizes validation metadata (`status`, `error`, `preambleDetected`) for shared use by LMStudioHandler, EfficientLogAnalyzer, ApiNavigator, and PromptDecomposer.
 - Strip `<think>`/markdown preambles, parse strictly, and treat non-JSON as failure; trigger a deterministic fallback JSON if the model drifts.
 - Never salvage JSON from mixed prose; only accept payloads that are valid JSON after stripping `<think>` blocks and JSON fences.
+- For graph and context-reference prompts, `PromptSchemaRegistry.buildResponseContract(id, {templates, instructions})`
+  adds the exact schema plus 1..3 context-specific response templates. Each template
+  has `when` and a complete schema-valid `response`. Templates teach field/item
+  structure, not answers; never use them as deterministic fallback facts. Graph
+  phase policies live in `src/libs/cheetah-prompt-contract.js`; assessment cardinality,
+  extraction items, required first lookup and lookup/answer/decline modes differ.
+  The entire contract counts against the graph prompt budget. Context-reference
+  selection uses the same builder with candidate-id/no-match modes.
+- `buildResponseContract` can narrow existing schema paths with `enumConstraints`
+  (`{path: ["properties", ...], values: [...]}`). Lookup repair binds an observed
+  unqueried entity/direction/relation. That active definition must be identical in
+  the JSON prompt, `response_format`, handler validation and adapter validation;
+  schema retries must retain it. The static registry definition remains unchanged.
+  If a proposed answer is reachable but its citations omit an edge or mix answer
+  and lookup modes, one bounded citation repair presents its full observed path.
+  The next prompt permits answer or decline, and the model must explicitly re-cite
+  the connected ids; the runtime never accepts edges absent from that response.
+- `LMStudioHandler` repairs schema failures once on the same transport before
+  considering transport errors; exhausted schema repair must not flip REST to WS.
+  When the original prompt is a JSON object, its repair remains a JSON object
+  preserving templates/context/schema and adding `response_correction` (code,
+  attempt, error, instruction). Prose-based legacy callers retain their existing
+  repair layout. Failed response text/reasoning/tools/validation are recorded
+  before the retry. `ContextReferenceComposer` also sends JSON correction fields.
+  Regressions: `unit-tests-js/structured-response-contract.test.js` and
+  `unit-tests-js/context-reference-composer.test.js`.
 - `agent-action` anchored edits are literal substring replacements, not start/end ranges: replacing a whole block requires the whole old block in `anchor`. JavaScript proposals are syntax-checked before approval/commit; `invalid-content` leaves disk untouched and feeds the literal-anchor repair contract back into the next prompt.
 - Prompt-chain interpreter treats preambles as invalid and emits a deterministic fallback with `stop_reason: preamble_detected` when strict parsing fails.
 - All suggested actions must be structured arrays/objects with reasons and a declared `schema_version`/`schema_uri`; normalize through `SchemaAdapterRegistry` before use.
@@ -231,7 +257,12 @@ When you add or change CLI behavior:
   wrong-direction miss can use at most three adjacency queries per requested
   lookup, all built upstream and fully traced.
 - `learnGraphText` supports source-validated `entityHints` and one repair for
-  empty **or partly rejected** extraction. Accepted first-pass claims survive;
+  empty, partly rejected **or quote-incomplete** extraction. English sentence
+  segmentation (`Intl.Segmenter`) sizes 1..4 illustrative claim slots without
+  copying answers. At most eight sentences absent from accepted quotes are sent
+  back as `uncovered_source_sentences` in the same bounded repair. This checks
+  quote coverage, not extraction of every claim within one sentence.
+  Accepted first-pass claims survive;
   all rejected proposals remain in the audit. A decorated hinted subject such as
   `The population of Antioch California` is rejected rather than silently filed
   under the wrong anchor; a repair must return a source-backed entity name.
@@ -1486,6 +1517,34 @@ Shared JSON-schema response-format builder and validator — the single source f
 ### [`src/libs/prompt-schema-registry.js`](src/libs/prompt-schema-registry.js) + [`src/libs/schema-adapter-registry.js`](src/libs/schema-adapter-registry.js)
 
 `PromptSchemaRegistry` loads schemas from [`docs/prompts/*.schema.json`](docs/prompts), injects instruction blocks, and exposes `validateOutcome()` with normalized metadata (`status`, `error`, `preambleDetected`) shared by the handler, analyzer, navigator, and decomposer. `SchemaAdapterRegistry` normalizes evolving JSON layouts (`schema_version`) at runtime so prompt revisions do not require client patches. Tests: [`prompt-schema-registry.test.js`](unit-tests-js/prompt-schema-registry.test.js).
+
+`buildResponseContract(id, {templates, instructions, enumConstraints})` is the shared entry point
+for concrete output JSON shapes. Supply 1..3 `{when, response}` objects with the
+current phase's full required fields. It validates examples through the existing
+validator and returns independent `schema_id`, `response_schema`,
+`response_templates` and `response_instructions` values. Dispatch still supplies
+the exact `response_format=json_schema`; template values never become fallback
+facts. Graph policies are in `cheetah-prompt-contract.js`; sentence selection in
+`context-reference-composer.js` uses the same mechanism. See
+`unit-tests-js/structured-response-contract.test.js` for wire-level repair checks.
+
+`scripts/benchmark-webnlg-response-structure.js` compares the templates with a
+schema-only ablation over frozen cases, alternating arm order and restarting fresh
+graphs per repeat. `--case-ids` accepts 1..4 manifest ids, `--arms` accepts
+`both|schema-only|templates`, and `--repeats` accepts 1..3. No answer alias enters
+inference. `scripts/render-webnlg-response-structure.js --state <report.json>
+[--followup-state <report.json>]` copies the complete audit and updates the
+practical guide's marked results block. Preserve unsuccessful prototypes; raw
+JSON validity, source coverage and repeated-answer agreement are separate metrics.
+`--live-dir <dir>` includes the final acceptance results and complete prompt
+records; `--failed-live-dirs <dir,dir>` preserves preceding failures. The recorded
+prototype comparison was 24/28 source facets for schemas alone versus 22/28 for
+one-item templates, with 100% schema-valid responses in both arms. Source-aware
+templates plus completeness repair retained eight edges in the two-case follow-up
+(10/16 retrieved facets). Final context-narrowed lookup/citation repair passed
+the two-hop/restart live gate in 38.5 seconds. Do not claim a general accuracy
+gain from response templates or compare those repeated-case scores with 26/30
+from the earlier twenty-concept cohort.
 
 ### [`src/libs/prompt-decomposer.js`](src/libs/prompt-decomposer.js)
 

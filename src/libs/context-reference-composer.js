@@ -157,26 +157,32 @@ export default class ContextReferenceComposer {
       };
     }
 
-    const schemaBlock = this.schemaRegistry.buildInstructionBlock(
-      CONTEXT_REFERENCE_SCHEMA_ID,
-      { compact: true },
-    );
     const responseFormat = buildJsonSchemaResponseFormat(
       schema.definition,
       CONTEXT_REFERENCE_SCHEMA_ID,
     );
     const system = `You select grounded memory sentences for MiniPhi.
-Reply with ONLY JSON matching the exact schema below. Select the smallest useful
+Reply with ONLY JSON matching the exact schema in the request. Select the smallest useful
 set of candidate ids for the current task, ordered by usefulness. Never rewrite
 or synthesize sentence text; only return candidate ids. Prefer complete,
-specific evidence over generic policy or task restatements.
-
-Exact JSON schema:
-${schemaBlock}`;
-    const user = JSON.stringify({
+specific evidence over generic policy or task restatements.`;
+    const user = {
       task: String(task ?? ""),
       candidates: bounded,
-    });
+      ...this.schemaRegistry.buildResponseContract(CONTEXT_REFERENCE_SCHEMA_ID, {
+        templates: [
+          { when: "Useful candidate sentences exist", response: {
+            schema_version: "context-reference-selection@v1", selected_references: ["<candidate id>"],
+            needs_more_context: false, missing_snippets: [], stop_reason: "",
+          } },
+          { when: "No candidate supports this task", response: {
+            schema_version: "context-reference-selection@v1", selected_references: [],
+            needs_more_context: true, missing_snippets: [], stop_reason: "no-relevant-candidates",
+          } },
+        ],
+        instructions: ["Replace <candidate id> only with actual candidate ids, ordered by usefulness. Never copy or rewrite candidate sentence text into the response."],
+      }),
+    };
     let lastError = "invalid-response";
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const remainingMs = Number.isFinite(sessionDeadline)
@@ -190,10 +196,9 @@ ${schemaBlock}`;
         { role: "system", content: system },
         {
           role: "user",
-          content:
-            attempt === 0
-              ? user
-              : `${user}\n\nYour previous response was invalid. Return only schema-valid JSON.`,
+          content: JSON.stringify({ ...user, ...(attempt === 0 ? {} : {
+            response_correction: { code: "invalid-response", instruction: "Return only schema-valid JSON using the supplied response templates." },
+          }) }),
         },
       ];
       let completion = null;

@@ -30,6 +30,9 @@ const total = (phase) => summary.reduce((sum, c) => sum + c[phase].matched, 0);
 const facetCount = summary.reduce((sum, c) => sum + c.a.total, 0);
 const allEvents = [...cases.flatMap(c => phases.flatMap(p => c[p].events)), ...[state.initialBonus, state.initialControl, state.bonus, state.control].flatMap(r => r?.events ?? [])];
 const modelEvents = allEvents.filter(e => e.kind === "lmstudio" && e.request.body?.messages);
+const hasResponseTemplates = modelEvents.some(e => e.request.body.messages.some(m => {
+  try { return Boolean(JSON.parse(m.content).response_templates); } catch { return false; }
+}));
 const schemas = new Map();
 for (const e of modelEvents) {
   const body = e.request.body;
@@ -111,6 +114,8 @@ function answerStage(c, phase, label) {
   exchanges(record);
 }
 add("# WebNLG learning and delayed retrieval with a small language model", "",
+  "For selected concepts, a compact worked example and current prompt contracts, read the [practical guide](cheetah-webnlg-learning.md). This file retains the complete recorded exchanges.", "",
+  ...(!hasResponseTemplates ? ["These recorded prompts already included exact JSON schemas, but predate the concrete response templates added to the runtime afterward. The practical guide describes that later change; the historical requests and measurements below are preserved.", ""] : []),
   `Recorded study: **2026-10-26**. Model: **${state.model}**, LM Studio at \`${state.baseUrl}\`, loaded context **${state.loadedContextTokens} tokens**.`, "",
   `This document contains **${cases.length} real subject/aspect examples across ${metrics.categoryCount} WebNLG dataset categories**. There are ${facetCount} predeclared answer facets. The category labels are the dataset's original labels: botanical taxonomy, currency, language distribution and rocket engineering are separate concepts even where WebNLG groups them under Food, Airport, WrittenWork or MeanOfTransportation.`, "",
   "Learning here means writing source-backed claims to Cheetah. Model weights are unchanged. Every model call declares an exact JSON schema and uses `response_format=json_schema`. The small model's confidence, the graph's contents and source-answer scoring are kept separate.", "",

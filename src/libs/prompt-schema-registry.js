@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { sanitizeJsonResponseText } from "./core-utils.js";
-import { validateJsonObjectAgainstSchema } from "./json-schema-utils.js";
+import { validateJsonAgainstSchema, validateJsonObjectAgainstSchema } from "./json-schema-utils.js";
 
 function stripJsonFences(payload) {
   return sanitizeJsonResponseText(payload);
@@ -69,6 +69,49 @@ export default class PromptSchemaRegistry {
         ? `${content.slice(0, maxLength)}...`
         : content;
     return ["```json", trimmed, "```"].join("\n");
+  }
+
+  /** Build a JSON prompt contract with context-specific, schema-valid examples.
+   * Templates describe output shape; they are never responses or fallbacks.
+   * Callers own the phase semantics and still enforce their prompt budget.
+   */
+  buildResponseContract(id, { templates, instructions = [], enumConstraints = [] } = {}) {
+    const schema = this.getSchema(id);
+    if (!schema) throw new Error(`Missing schema ${id}`);
+    const definition = structuredClone(schema.definition);
+    if (!Array.isArray(enumConstraints) || enumConstraints.length > 16) throw new Error("Invalid response enum constraints");
+    for (const constraint of enumConstraints) {
+      if (!Array.isArray(constraint?.path) || !constraint.path.length || constraint.path.length > 12 || !Array.isArray(constraint.values) || !constraint.values.length || constraint.values.length > 64) throw new Error("Invalid response enum constraint");
+      let target = definition;
+      for (const key of constraint.path) {
+        if (typeof key !== "string" || !target || !Object.hasOwn(target, key)) throw new Error("Unknown response enum constraint path");
+        target = target[key];
+      }
+      if (!target || typeof target !== "object" || Array.isArray(target)) throw new Error("Response enum constraint must target a schema");
+      if (constraint.values.some(value => !validateJsonAgainstSchema(target, JSON.stringify(value))?.valid)) throw new Error("Response enum constraint must narrow valid schema values");
+      target.enum = [...new Set(constraint.values)];
+    }
+    if (!Array.isArray(templates) || !templates.length || templates.length > 3) {
+      throw new Error("Response contract requires 1..3 templates");
+    }
+    if (!Array.isArray(instructions) || instructions.some(line => typeof line !== "string")) throw new Error("Response instructions must be strings");
+    const names = new Set();
+    for (const template of templates) {
+      if (typeof template?.when !== "string" || !template.when.trim() || names.has(template.when)) throw new Error("Response templates need distinct nonempty conditions");
+      names.add(template.when);
+      const outcome = validateJsonObjectAgainstSchema(definition, JSON.stringify(template.response));
+      if (outcome?.status !== "ok") throw new Error(`Invalid response template for ${id}: ${outcome?.error ?? "invalid JSON"}`);
+    }
+    return structuredClone({
+      schema_id: schema.id,
+      response_schema: definition,
+      response_instructions: [
+        "Return ONE response object matching a template and the exact schema, never this contract wrapper or the template list.",
+        "Replace every <...> placeholder using the supplied context. Templates are output shapes, not facts or evidence. Array examples show item structure; use only as many items as needed within the schema bounds.",
+        ...instructions,
+      ],
+      response_templates: templates,
+    });
   }
 
   /**

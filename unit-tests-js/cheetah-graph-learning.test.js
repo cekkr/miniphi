@@ -116,6 +116,17 @@ test("follows model-selected intermediate entities and returns a cited two-edge 
   assert.equal(client.calls.filter((c) => typeof c === "string" && c.startsWith("GRAPH_QUERY")).length, 2);
 });
 
+test("incomplete citations get one complete observed-path template without another graph read", async () => {
+  const client = await taught();
+  const h = handler([query("Alice"), lookup("North Corp"), { ...answer("Rome", ["e2"]), lookups: [{ entity: "North Corp", relation: "", direction: "in" }] }, answer("Rome", ["e1", "e2"])]);
+  const result = await reasonGraph("Where is Alice's workplace located?", { handler: h, cheetahClient: client, schemaRegistry });
+  assert.equal(result.grounded, true);
+  assert.deepEqual(h.prompts[3].citation_repair.evidence_ids, ["e1", "e2"]);
+  assert.deepEqual(h.prompts[3].response_templates[0].response.evidence_ids, ["e1", "e2"]);
+  assert.deepEqual(result.evidenceIds, ["e1", "e2"]);
+  assert.equal(result.trace.filter(s => s.command?.startsWith("GRAPH_QUERY")).length, 2);
+});
+
 test("supports reverse lookup without reversing stored facts", async () => {
   const result = await reasonGraph("Which company is located in Rome?", {
     handler: handler([query("Rome", "in"), answer("North Corp", ["e1"])]), cheetahClient: await taught(), schemaRegistry,
@@ -134,6 +145,8 @@ test("a location alone cannot answer a country question; repair fetches the miss
   assert.equal(result.rounds, 4);
   assert.equal(h.prompts[2].schema_id, "cheetah-graph-query");
   assert.equal(h.prompts[2].observations.at(-1).required_action, "lookup-observed-endpoint");
+  assert.equal(h.prompts[2].next_lookup.entity, "Rome");
+  assert.equal(h.prompts[2].response_templates[0].response.lookups[0].entity, "Rome");
 });
 
 test("refuses unobserved lookups, invented citations and disconnected answers", async () => {
@@ -265,6 +278,15 @@ test("partial extraction repairs rejected names without losing accepted claims",
   assert.equal(result.written, 2);
   assert.equal(result.rejected[0].reason, "endpoint-not-in-quote");
   assert.equal(h.prompts.length, 2);
+});
+
+test("a schema-valid extraction that omits a source sentence gets one source-only completeness repair", async () => {
+  const h = handler([extract([facts[0]]), extract([facts[1]])]);
+  const result = await learnGraphText(text, { handler: h, cheetahClient: memoryClient(), schemaRegistry });
+  assert.equal(result.written, 2);
+  assert.equal(h.prompts.length, 2);
+  assert.deepEqual(h.prompts[1].uncovered_source_sentences, [facts[1].quote]);
+  assert.equal(h.prompts[0].response_templates[0].response.facts.length, 2);
 });
 
 test("question-backed entity hints reject role phrases as graph identities", async () => {

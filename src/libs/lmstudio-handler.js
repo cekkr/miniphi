@@ -589,7 +589,22 @@ export class LMStudioHandler {
           }
           continue;
         }
-        if (useRestTransport && !restFallbackUsed) {
+        // A schema mismatch is a response problem, not a failed REST transport.
+        // Repair it on the same route before considering transport failover.
+        const schemaRetryAllowed = schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
+        if (schemaRetryAllowed) {
+          await this._recordPromptExchange(traceContext, requestSnapshot, {
+            text: result ?? "", rawResponseText: restRawText ?? result ?? "",
+            structuredOutputSource, usage: responseUsage, reasoning: capturedThoughts,
+            startedAt, finishedAt, schemaId: schemaDetails?.id ?? null, schemaValidation,
+            tool_calls: responseToolCalls ?? null, tool_definitions: traceContext?.toolDefinitions ?? null,
+          });
+          attempt += 1;
+          schemaRetryCount += 1;
+          currentPrompt = this._buildSchemaRetryPrompt(basePrompt, schemaDetails, schemaFailureDetails.summary, schemaRetryCount);
+          continue;
+        }
+        if (useRestTransport && !restFallbackUsed && !schemaFailureDetails) {
           restFallbackUsed = true;
           attempt += 1;
           this.preferRestTransport = false;
@@ -665,19 +680,6 @@ export class LMStudioHandler {
             this._formatProtocolErrorMessage(protocolWarning, metadata),
             metadata,
           );
-        }
-        const schemaRetryAllowed =
-          schemaFailureDetails && schemaRetryCount < maxSchemaRetries;
-        if (schemaRetryAllowed) {
-          attempt += 1;
-          schemaRetryCount += 1;
-          currentPrompt = this._buildSchemaRetryPrompt(
-            basePrompt,
-            schemaDetails,
-            schemaFailureDetails.summary,
-            schemaRetryCount,
-          );
-          continue;
         }
         let errorForThrow = error;
         if (onError) {
@@ -1407,7 +1409,8 @@ export class LMStudioHandler {
         `Schema "${traceContext.schemaId}" was not found in docs/prompts. Add the schema or remove the schemaId.`,
       );
     }
-    return schema;
+    const activeDefinition = traceContext.responseFormat?.type === "json_schema" ? traceContext.responseFormat.json_schema?.schema : null;
+    return activeDefinition ? { ...schema, definition: activeDefinition, text: JSON.stringify(activeDefinition), activeDefinition } : schema;
   }
 
   _validateSchema(schemaDetails, responseText) {
@@ -1415,7 +1418,9 @@ export class LMStudioHandler {
       return null;
     }
     if (typeof this.schemaRegistry.validateOutcome === "function") {
-      const outcome = this.schemaRegistry.validateOutcome(schemaDetails.id, responseText);
+      const outcome = schemaDetails.activeDefinition
+        ? validateJsonObjectAgainstSchema(schemaDetails.activeDefinition, responseText)
+        : this.schemaRegistry.validateOutcome(schemaDetails.id, responseText);
       if (!outcome) {
         return null;
       }
@@ -1458,6 +1463,20 @@ export class LMStudioHandler {
 
   _buildSchemaRetryPrompt(basePrompt, schemaDetails, summary, retryCount) {
     const normalizedBase = typeof basePrompt === "string" ? basePrompt.trimEnd() : "";
+    // Preserve JSON request envelopes and their context-specific output shapes.
+    // Appended prose/fences made a structured first request become mixed text
+    // precisely when the small model needed an unambiguous correction.
+    try {
+      const payload = JSON.parse(normalizedBase);
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        return JSON.stringify({ ...payload,
+          schema_id: schemaDetails?.id ?? payload.schema_id,
+          response_schema: schemaDetails?.definition ?? payload.response_schema,
+          response_correction: { code: "schema-invalid", attempt: retryCount,
+            error: summary, instruction: "Return one strict JSON response matching the exact schema and supplied response templates. Omit commentary, fences and greetings." },
+        });
+      }
+    } catch { /* Existing prose-based callers retain their established repair. */ }
     const reminderLines = [
       normalizedBase,
       "",

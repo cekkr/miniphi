@@ -58,6 +58,9 @@ test("the same session model selects grounded sentence ids with strict JSON sche
   assert.equal(calls[0].model, "qwen/qwen3-4b-thinking-2507");
   assert.equal(calls[0].response_format.type, "json_schema");
   assert.equal(calls[0].response_format.json_schema.name, "context-reference-selection");
+  const payload = JSON.parse(calls[0].messages.find(m => m.role === "user").content);
+  assert.equal(payload.response_templates.length, 2);
+  assert.equal(payload.response_templates[0].response.selected_references[0], "<candidate id>");
   assert.deepEqual(result.selected.map((item) => item.id), ["c2:ref_auth"]);
   assert.match(composer.render(result.selected), /The production deployment token is 5821\./);
   assert.equal(result.audit.attempts[0].response.text.includes("selected_references"), true);
@@ -69,8 +72,11 @@ test("invalid narrative reference selection retries then emits deterministic JSO
   let requests = 0;
   const composer = new ContextReferenceComposer({
     client: {
-      async createChatCompletion() {
+      async createChatCompletion(request) {
         requests += 1;
+        const payload = JSON.parse(request.messages.find(m => m.role === "user").content);
+        assert.equal(payload.response_templates.length, 2);
+        if (requests === 2) assert.equal(payload.response_correction.code, "invalid-response");
         return { choices: [{ message: { content: "Use the first sentence." } }] };
       },
     },

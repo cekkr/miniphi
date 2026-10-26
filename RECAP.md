@@ -58,6 +58,17 @@ Every LM Studio call declares a schema id from [`docs/prompts/`](docs/prompts) a
 `response_format=json_schema`. Responses are parsed strictly after stripping `<think>` blocks and
 JSON fences. Prose is never mined for a JSON-shaped fragment. A drifting model gets one bounded
 retry and then a deterministic fallback object carrying a canonical `stop_reason`.
+Graph and context-reference prompts also include phase-specific response JSON
+templates through `PromptSchemaRegistry.buildResponseContract()`. Templates are
+schema-validated output shapes, never fallback facts. JSON request envelopes retain
+their templates during schema repair via `response_correction`; invalid output is
+repaired on the same transport before failing, without a REST-to-WS switch.
+Extraction shapes reflect source sentence count; quote-uncovered sentences get
+one bounded source-only repair, preserving already accepted claims.
+Retrieval repair narrows the active schema to an observed unqueried lookup; if
+only citations are incomplete, a separate full-path template requires the model
+to re-cite all connected edges. Prompt, transport and validators share that active
+schema. No uncited edge is accepted as an answer.
 
 ### Context is a budgeted graph, never a transcript
 Prompts are rendered per turn from [`src/libs/context-graph.js`](src/libs/context-graph.js) against

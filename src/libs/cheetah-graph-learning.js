@@ -7,6 +7,8 @@ import { logEpisode, recordOpenQuestion } from "./cheetah-knowledge-client.js";
 import { classifyLmStudioError } from "./lmstudio-error-utils.js";
 import { estimateTokens } from "./context-graph.js";
 import { contentWords } from "./cheetah-memory-layers.js";
+import { buildGraphResponseContract, graphSourceSentences } from "./cheetah-prompt-contract.js";
+import { buildJsonSchemaResponseFormat, validateJsonObjectAgainstSchema } from "./json-schema-utils.js";
 
 function failureReason(error) {
   if (error.message === "session-timeout") return "session-timeout";
@@ -66,7 +68,8 @@ export async function runGraphPrompt({ handler, schemaRegistry, schemaId, payloa
     evidence: payload.evidence.map(({ edgeId, src, ...entry }) => entry),
     observations: payload.observations.slice(-6),
   } : payload;
-  const prompt = JSON.stringify({ ...compactPayload, schema_id: schemaId, response_schema: schema.definition });
+  const contract = buildGraphResponseContract(schemaRegistry, schemaId, compactPayload);
+  const prompt = JSON.stringify({ ...compactPayload, ...contract });
   if (estimateTokens(prompt) > (handler.graphPromptBudgetTokens ?? 2400)) {
     trace.push({ schemaId, validation: "context-overflow", estimatedTokens: estimateTokens(prompt) });
     throw new Error("context-overflow: graph prompt exceeds loaded context budget");
@@ -77,9 +80,10 @@ export async function runGraphPrompt({ handler, schemaRegistry, schemaId, payloa
   handler.clearHistory();
   const raw = await handler.chatStream(prompt, undefined, undefined, undefined, {
     scope: "sub", label: schemaId, schemaId,
+    responseFormat: buildJsonSchemaResponseFormat(contract.response_schema, schemaId),
     metadata: { mode: "cheetah-graph", schemaId },
   });
-  const outcome = schemaRegistry.validateOutcome(schemaId, raw);
+  const outcome = validateJsonObjectAgainstSchema(contract.response_schema, raw);
   trace.push({ schemaId, prompt, response: raw, validation: outcome?.status ?? "missing-schema" });
   if (outcome?.status !== "ok") throw new Error("invalid-response");
   checkDeadline(deadline);
@@ -130,11 +134,13 @@ export async function learnGraphText(text, {
     });
     const first = filterGraphClaims(response.facts, text, { entityHints: hints });
     extractionRejections.push(...first.rejected);
-    if (repairEmpty && (first.accepted.length === 0 || first.rejected.length > 0) && !/\b(?:not|never|might|perhaps)\b/iu.test(text)) {
+    const uncoveredSentences = graphSourceSentences(text).filter(sentence => !first.accepted.some(fact => graphName(fact.quote).includes(graphName(sentence)))).slice(0, 8);
+    if (repairEmpty && (first.accepted.length === 0 || first.rejected.length > 0 || uncoveredSentences.length > 0) && !/\b(?:not|never|might|perhaps)\b/iu.test(text)) {
       const repair = await runGraphPrompt({ handler, schemaRegistry, trace, deadline,
         schemaId: "cheetah-graph-extract-repair",
-        payload: { ...payload, task: `${payload.task} Some previous claims were empty or failed source/identity checks. Re-read the source and repair the rejected claims. Extract at least one supported atomic claim; use a role noun from the source instead of bare 'is'/'has'.`,
+        payload: { ...payload, task: `${payload.task} Previous extraction was empty, failed source/identity checks, or left source sentences without supporting claims. Re-read the uncovered sentences and repair missing/rejected claims. Extract at least one supported atomic claim; use a role noun from the source instead of bare 'is'/'has'.`,
           previous_candidates: response.facts.slice(0, 4).map(({ quote, ...fact }) => fact),
+          uncovered_source_sentences: uncoveredSentences,
           rejection_reasons: first.rejected.map((fact) => fact.reason) },
       });
       response = { ...repair, facts: [...first.accepted, ...repair.facts] };
@@ -212,6 +218,7 @@ export async function reasonGraph(question, {
   if (typeof question !== "string" || !question.trim() || question.length > 1000) throw new Error("Question must contain 1..1000 characters");
   const trace = [], evidence = [], observations = [], roots = new Set(), seen = new Set();
   let stopReason = "max-turns", proposed = null, rounds = 0, requireLookup = true;
+  let citationRepair = null, citationRepairUsed = false;
   try {
     if (focusEntity) {
       const [exact] = await execute(cheetahClient, [buildNodeGet(graphEntityId(focusEntity))], trace, deadline);
@@ -244,6 +251,21 @@ export async function reasonGraph(question, {
         entityCandidates.set(`${item.id}_object`, item.object);
       }
       const focusedQuery = Boolean(entityCandidates.has("focus"));
+      // A repair must show a usable *new* request, not the first lookup again.
+      // These values are query arguments from observed evidence, never answers.
+      const nextNames = [...new Set([...evidence.map(edge => edge.end), ...entityCandidates.values()])];
+      let nextLookup;
+      for (const name of nextNames) {
+        const ref = [...entityCandidates].find(([, value]) => graphName(value) === graphName(name))?.[0];
+        if (focusedQuery && !ref) continue;
+        for (const direction of ["out", "in"]) {
+          if (!seen.has(JSON.stringify([graphName(name), "", direction]))) {
+            nextLookup = { entity: focusedQuery ? ref : name, relation: "", direction };
+            break;
+          }
+        }
+        if (nextLookup) break;
+      }
       proposed = await runGraphPrompt({ handler, schemaRegistry, trace, deadline,
         schemaId: requireLookup ? focusedQuery ? "cheetah-focused-query" : "cheetah-graph-query" : diagnosticConfidence ? "cheetah-concept-reason" : "cheetah-graph-reason",
         payload: {
@@ -256,13 +278,17 @@ export async function reasonGraph(question, {
           confidence_instruction: diagnosticConfidence ? "Report self_confidence between 0 and 1 for support by these retrieved items, plus a short reasoning_summary naming the missing or supporting evidence. Confidence alone never licenses an answer." : undefined,
           entity_reference_instruction: focusedQuery ? "In lookups[].entity use a candidate id from entity_candidates (initially focus), not a retyped name. MiniPhi resolves that id to the exact name. To follow an intermediate endpoint, choose its eN_object or eN_subject id." : undefined,
           entity_candidates: focusedQuery ? [...entityCandidates].map(([id, name]) => ({ id, name })) : undefined,
+          next_lookup: nextLookup,
+          required_lookup: requireLookup && round > 0 ? nextLookup : undefined,
+          citation_repair: citationRepair,
           round: round + 1, rounds_remaining: maxRounds - round - 1, evidence, observations,
           available_endpoints: [...new Set(evidence.map((edge) => edge.end))],
         },
       });
+      citationRepair = null;
       requireLookup = false;
       const citationPath = proposed.answer_entity ? supportedPath(proposed.answer_entity, proposed.evidence_ids, evidence, roots) : null;
-      if (proposed.answer_entity && !proposed.needs_more_context && citationPath &&
+      if (proposed.answer_entity && !proposed.needs_more_context && !proposed.lookups.length && citationPath &&
           matchesRequestedKind(question, citationPath, evidence)) {
         const endpoint = evidence.find((entry) => entry.id === citationPath.at(-1)).end;
         return { question, answer: endpoint, grounded: true, evidenceIds: citationPath,
@@ -270,6 +296,19 @@ export async function reasonGraph(question, {
           citationRepair: JSON.stringify(citationPath) === JSON.stringify(proposed.evidence_ids) ? null : "connected-subpath-of-cited-evidence",
           modelConfidence: proposed.self_confidence ?? null, reasoningSummary: proposed.reasoning_summary ?? null,
           evidence, rounds, trace, stopReason: null, stopReasonCode: null };
+      }
+      // The evidence may already be complete while the model cites only the
+      // final hop or mixes answer/query modes. Ask it to re-cite the observed
+      // full path once; never accept uncited edges or fetch gratuitous context.
+      const availablePath = proposed.answer_entity
+        ? supportedPath(proposed.answer_entity, evidence.map(edge => edge.id), evidence, roots) : null;
+      if (!citationRepairUsed && proposed.answer_entity && !proposed.needs_more_context && availablePath &&
+          matchesRequestedKind(question, availablePath, evidence) && round < maxRounds - 1) {
+        citationRepairUsed = true;
+        citationRepair = { answer_entity: proposed.answer_entity, evidence_ids: availablePath };
+        observations.push({ rejected_answer: proposed.answer_entity, reason: "citation-chain-incomplete-or-mixed-mode",
+          required_action: "recite-observed-connected-path-or-decline" });
+        continue;
       }
       if (!proposed.lookups.length) {
         if (proposed.answer_entity && evidence.length && round < maxRounds - 1) {
