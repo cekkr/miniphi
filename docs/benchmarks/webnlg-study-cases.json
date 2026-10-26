@@ -1,0 +1,674 @@
+{
+  "version": 1,
+  "dataset_sha256": "959646a986465c436362dfc44bb4966d5a2d39f2725b39fe32701981daf666d0",
+  "selection": "Twenty predeclared subject/aspect units across all sixteen dataset categories; sources selected for conceptual diversity before model calls. Expected answers are evaluation-only and never passed to the model.",
+  "cases": [
+    {
+      "id": "01-aviation",
+      "theme": "Airport runway measurement",
+      "entity": "Abilene Regional Airport",
+      "category": "Airport",
+      "sources": [
+        {
+          "index": 21,
+          "id": "train/Airport/1/Id22",
+          "text": "The runway length of Abilene Regional Airport is 2194.0.",
+          "gold_triples": [
+            "Abilene_Regional_Airport | runwayLength | 2194.0"
+          ]
+        }
+      ],
+      "question_a": "What is the runway length of Abilene Regional Airport?",
+      "question_b": "For Abilene Regional Airport, give the recorded length of its runway.",
+      "expected_facets": [
+        {
+          "aspect": "runway length",
+          "answers": [
+            "2194.0",
+            "2194"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02-music",
+      "theme": "Musical instrument and origin",
+      "entity": "Aaron Deer",
+      "category": "Artist",
+      "sources": [
+        {
+          "index": 314,
+          "id": "train/Artist/1/Id14",
+          "text": "Aaron Deer plays the piano.",
+          "gold_triples": [
+            "Aaron_Deer | instrument | Piano"
+          ]
+        },
+        {
+          "index": 316,
+          "id": "train/Artist/1/Id16",
+          "text": "Aaron Deer comes from Indiana.",
+          "gold_triples": [
+            "Aaron_Deer | origin | Indiana"
+          ]
+        }
+      ],
+      "question_a": "What instrument does Aaron Deer play, and where does Aaron Deer come from?",
+      "question_b": "Identify an instrument played by Aaron Deer and the place Aaron Deer comes from.",
+      "expected_facets": [
+        {
+          "aspect": "instrument",
+          "answers": [
+            "piano"
+          ]
+        },
+        {
+          "aspect": "origin",
+          "answers": [
+            "Indiana"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03-spaceflight",
+      "theme": "Astronaut mission and retirement",
+      "entity": "Alan Shepard",
+      "category": "Astronaut",
+      "sources": [
+        {
+          "index": 598,
+          "id": "train/Astronaut/1/Id22",
+          "text": "Alan Shepard was a crew member of Apollo 14.",
+          "gold_triples": [
+            "Alan_Shepard | mission | Apollo_14"
+          ]
+        },
+        {
+          "index": 590,
+          "id": "train/Astronaut/1/Id14",
+          "text": "Alan Shepard retired on 1974-08-01.",
+          "gold_triples": [
+            "Alan_Shepard | dateOfRetirement | \"1974-08-01\""
+          ]
+        }
+      ],
+      "question_a": "Which mission included Alan Shepard, and on what date did Alan Shepard retire?",
+      "question_b": "Name the mission Alan Shepard served on and give Alan Shepard's retirement date.",
+      "expected_facets": [
+        {
+          "aspect": "mission",
+          "answers": [
+            "Apollo 14"
+          ]
+        },
+        {
+          "aspect": "retirement",
+          "answers": [
+            "1974-08-01",
+            "August 1 1974",
+            "1 August 1974"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04-athletics",
+      "theme": "American-football playing position",
+      "entity": "Akeem Dent",
+      "category": "Athlete",
+      "sources": [
+        {
+          "index": 736,
+          "id": "train/Athlete/1/Id89",
+          "text": "Akeem Dent's position is a linebacker.",
+          "gold_triples": [
+            "Akeem_Dent | position | Linebacker"
+          ]
+        }
+      ],
+      "question_a": "What position does Akeem Dent play?",
+      "question_b": "Identify Akeem Dent's playing role on the field.",
+      "expected_facets": [
+        {
+          "aspect": "position",
+          "answers": [
+            "linebacker"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "05-architecture",
+      "theme": "Architect and building location",
+      "entity": "20 Fenchurch Street",
+      "category": "Building",
+      "sources": [
+        {
+          "index": 958,
+          "id": "train/Building/1/Id26",
+          "text": "20 Fenchurch Street was designed by the architect Rafael Viñoly.",
+          "gold_triples": [
+            "20_Fenchurch_Street | architect | Rafael_Viñoly"
+          ]
+        },
+        {
+          "index": 962,
+          "id": "train/Building/1/Id30",
+          "text": "20 Fenchurch Street is located in London.",
+          "gold_triples": [
+            "20_Fenchurch_Street | location | London"
+          ]
+        }
+      ],
+      "question_a": "Who designed 20 Fenchurch Street, and where is 20 Fenchurch Street located?",
+      "question_b": "Identify the architect of 20 Fenchurch Street and the city containing 20 Fenchurch Street.",
+      "expected_facets": [
+        {
+          "aspect": "architect",
+          "answers": [
+            "Rafael Viñoly"
+          ]
+        },
+        {
+          "aspect": "location",
+          "answers": [
+            "London"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06-astronomy",
+      "theme": "Minor-planet discovery",
+      "entity": "15788 1993 SB",
+      "category": "CelestialBody",
+      "sources": [
+        {
+          "index": 1170,
+          "id": "train/CelestialBody/1/Id2",
+          "text": "Alan Fitzsimmons was the discoverer of 15788 1993 SB.",
+          "gold_triples": [
+            "(15788)_1993_SB | discoverer | Alan_Fitzsimmons"
+          ]
+        }
+      ],
+      "question_a": "Who discovered 15788 1993 SB?",
+      "question_b": "Name a discoverer of the celestial body 15788 1993 SB.",
+      "expected_facets": [
+        {
+          "aspect": "discoverer",
+          "answers": [
+            "Alan Fitzsimmons"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "07-demography",
+      "theme": "City population",
+      "entity": "Antioch California",
+      "category": "City",
+      "sources": [
+        {
+          "index": 1445,
+          "id": "train/City/1/Id108",
+          "text": "The population of Antioch California is 102372.",
+          "gold_triples": [
+            "Antioch,_California | populationTotal | 102372"
+          ]
+        }
+      ],
+      "question_a": "What is the population of Antioch California?",
+      "question_b": "How many people are recorded as living in Antioch California?",
+      "expected_facets": [
+        {
+          "aspect": "population",
+          "answers": [
+            "102372",
+            "102,372"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "08-comics",
+      "theme": "Comic-character creation",
+      "entity": "Airman",
+      "category": "ComicsCharacter",
+      "sources": [
+        {
+          "index": 1583,
+          "id": "train/ComicsCharacter/1/Id3",
+          "text": "The comic character, Airman, was created by Harry Sahle.",
+          "gold_triples": [
+            "Airman_(comicsCharacter) | creator | Harry_Sahle"
+          ]
+        }
+      ],
+      "question_a": "Who created the comic character Airman?",
+      "question_b": "Name a creator of Airman from the comic-character source.",
+      "expected_facets": [
+        {
+          "aspect": "creator",
+          "answers": [
+            "Harry Sahle"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "09-business",
+      "theme": "Company founding date",
+      "entity": "AmeriGas",
+      "category": "Company",
+      "sources": [
+        {
+          "index": 1680,
+          "id": "train/Company/1/Id2",
+          "text": "AmeriGas was founded on 01-01-1959.",
+          "gold_triples": [
+            "AmeriGas | foundingDate | 1959-01-01"
+          ]
+        }
+      ],
+      "question_a": "On what date was AmeriGas founded?",
+      "question_b": "Give the founding date recorded for AmeriGas.",
+      "expected_facets": [
+        {
+          "aspect": "founding date",
+          "answers": [
+            "01-01-1959",
+            "1959-01-01",
+            "January 1 1959",
+            "1 January 1959"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "10-cuisine",
+      "theme": "Soup ingredient and origin",
+      "entity": "Ajoblanco",
+      "category": "Food",
+      "sources": [
+        {
+          "index": 1763,
+          "id": "train/Food/1/Id2",
+          "text": "Ajoblanco has almond as one of its ingredients.",
+          "gold_triples": [
+            "Ajoblanco | ingredient | Almond"
+          ]
+        },
+        {
+          "index": 1762,
+          "id": "train/Food/1/Id1",
+          "text": "Ajoblanco originates from the country of Spain.",
+          "gold_triples": [
+            "Ajoblanco | country | Spain"
+          ]
+        }
+      ],
+      "question_a": "Name an ingredient of Ajoblanco and the country Ajoblanco originates from.",
+      "question_b": "What is Ajoblanco made with, and which country is the origin of Ajoblanco?",
+      "expected_facets": [
+        {
+          "aspect": "ingredient",
+          "answers": [
+            "almond"
+          ]
+        },
+        {
+          "aspect": "country",
+          "answers": [
+            "Spain"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "11-shipbuilding",
+      "theme": "Ship builder and propulsion",
+      "entity": "A-Rosa Luna",
+      "category": "MeanOfTransportation",
+      "sources": [
+        {
+          "index": 2049,
+          "id": "train/MeanOfTransportation/1/Id17",
+          "text": "Neptun Werft built the A-Rosa Luna.",
+          "gold_triples": [
+            "A-Rosa_Luna | builder | Neptun_Werft"
+          ]
+        },
+        {
+          "index": 2053,
+          "id": "train/MeanOfTransportation/1/Id21",
+          "text": "The A-Rosa Luna is powered by a MTU Friedrichshafen engine.",
+          "gold_triples": [
+            "A-Rosa_Luna | powerType | MTU_Friedrichshafen"
+          ]
+        }
+      ],
+      "question_a": "Who built A-Rosa Luna, and what engine powers A-Rosa Luna?",
+      "question_b": "Identify the builder of A-Rosa Luna and the engine maker powering A-Rosa Luna.",
+      "expected_facets": [
+        {
+          "aspect": "builder",
+          "answers": [
+            "Neptun Werft"
+          ]
+        },
+        {
+          "aspect": "engine",
+          "answers": [
+            "MTU Friedrichshafen"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "12-memorials",
+      "theme": "Monument material and location",
+      "entity": "Dead Man's Plack",
+      "category": "Monument",
+      "sources": [
+        {
+          "index": 2356,
+          "id": "train/Monument/1/Id26",
+          "text": "The Dead Man's Plack is made from rock.",
+          "gold_triples": [
+            "Dead_Man's_Plack | material | Rock_(geology)"
+          ]
+        },
+        {
+          "index": 2355,
+          "id": "train/Monument/1/Id25",
+          "text": "The Dead Man's Plack is located in England.",
+          "gold_triples": [
+            "Dead_Man's_Plack | location | England"
+          ]
+        }
+      ],
+      "question_a": "What material is Dead Man's Plack made from, and where is Dead Man's Plack located?",
+      "question_b": "Identify the material used for Dead Man's Plack and the country containing Dead Man's Plack.",
+      "expected_facets": [
+        {
+          "aspect": "material",
+          "answers": [
+            "rock"
+          ]
+        },
+        {
+          "aspect": "location",
+          "answers": [
+            "England"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "13-politics",
+      "theme": "Political-party membership",
+      "entity": "Ab Klink",
+      "category": "Politician",
+      "sources": [
+        {
+          "index": 2394,
+          "id": "train/Politician/1/Id27",
+          "text": "Ab Klink belongs to the Christian Democratic Appeal party.",
+          "gold_triples": [
+            "Ab_Klink | party | Christian_Democratic_Appeal"
+          ]
+        }
+      ],
+      "question_a": "Which political party does Ab Klink belong to?",
+      "question_b": "Name the party affiliation recorded for Ab Klink.",
+      "expected_facets": [
+        {
+          "aspect": "party",
+          "answers": [
+            "Christian Democratic Appeal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "14-football",
+      "theme": "Football-club home ground",
+      "entity": "A.C. Cesena",
+      "category": "SportsTeam",
+      "sources": [
+        {
+          "index": 2676,
+          "id": "train/SportsTeam/1/Id10",
+          "text": "A.C. Cesena's ground is Stadio Dino Manuzzi.",
+          "gold_triples": [
+            "A.C._Cesena | ground | Stadio_Dino_Manuzzi"
+          ]
+        }
+      ],
+      "question_a": "What is the home ground of A.C. Cesena?",
+      "question_b": "At which named stadium does A.C. Cesena play its home games?",
+      "expected_facets": [
+        {
+          "aspect": "ground",
+          "answers": [
+            "Stadio Dino Manuzzi"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "15-education",
+      "theme": "Institution motto and founding",
+      "entity": "Acharya Institute of Technology",
+      "category": "University",
+      "sources": [
+        {
+          "index": 2942,
+          "id": "train/University/1/Id25",
+          "text": "Acharya Institute of Technology's motto is Nurturing Excellence.",
+          "gold_triples": [
+            "Acharya_Institute_of_Technology | motto | \"Nurturing Excellence\""
+          ]
+        },
+        {
+          "index": 2941,
+          "id": "train/University/1/Id24",
+          "text": "The Acharya Institute of Technology was established in the year 2000.",
+          "gold_triples": [
+            "Acharya_Institute_of_Technology | established | 2000"
+          ]
+        }
+      ],
+      "question_a": "What is the motto of Acharya Institute of Technology, and when was Acharya Institute of Technology established?",
+      "question_b": "Give the slogan used as the motto of Acharya Institute of Technology and the founding year of Acharya Institute of Technology.",
+      "expected_facets": [
+        {
+          "aspect": "motto",
+          "answers": [
+            "Nurturing Excellence"
+          ]
+        },
+        {
+          "aspect": "established",
+          "answers": [
+            "2000"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "16-literature",
+      "theme": "Novel authorship",
+      "entity": "1634: The Baltic War",
+      "category": "WrittenWork",
+      "sources": [
+        {
+          "index": 2976,
+          "id": "train/WrittenWork/1/Id1",
+          "text": "David Weber is the author of 1634: The Baltic War.",
+          "gold_triples": [
+            "1634:_The_Baltic_War | author | David_Weber"
+          ]
+        }
+      ],
+      "question_a": "Who is an author of 1634: The Baltic War?",
+      "question_b": "Name a writer credited with 1634: The Baltic War.",
+      "expected_facets": [
+        {
+          "aspect": "author",
+          "answers": [
+            "David Weber"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "17-botany",
+      "theme": "Botanical family and order",
+      "entity": "Almond",
+      "category": "Food",
+      "sources": [
+        {
+          "index": 1770,
+          "id": "train/Food/1/Id9",
+          "text": "Almond is part of the Rosaceae family.",
+          "gold_triples": [
+            "Almond | family | Rosaceae"
+          ]
+        },
+        {
+          "index": 1771,
+          "id": "train/Food/1/Id10",
+          "text": "Almond is one of the members of the Rosales order.",
+          "gold_triples": [
+            "Almond | order | Rosales"
+          ]
+        }
+      ],
+      "question_a": "Which botanical family and taxonomic order does Almond belong to?",
+      "question_b": "For Almond, identify its plant family and its taxonomic order.",
+      "expected_facets": [
+        {
+          "aspect": "family",
+          "answers": [
+            "Rosaceae"
+          ]
+        },
+        {
+          "aspect": "order",
+          "answers": [
+            "Rosales"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "18-economics",
+      "theme": "Currency and official language",
+      "entity": "Iraq",
+      "category": "Airport",
+      "sources": [
+        {
+          "index": 236,
+          "id": "train/Airport/1/Id237",
+          "text": "The currency in Iraq is the Iraqi dinar.",
+          "gold_triples": [
+            "Iraq | currency | Iraqi_dinar"
+          ]
+        },
+        {
+          "index": 240,
+          "id": "train/Airport/1/Id241",
+          "text": "The official language of Iraq is Arabic.",
+          "gold_triples": [
+            "Iraq | officialLanguage | Arabic"
+          ]
+        }
+      ],
+      "question_a": "What currency is used in Iraq, and what is the official language of Iraq?",
+      "question_b": "Give the monetary currency of Iraq and the language with official status in Iraq.",
+      "expected_facets": [
+        {
+          "aspect": "currency",
+          "answers": [
+            "Iraqi dinar"
+          ]
+        },
+        {
+          "aspect": "official language",
+          "answers": [
+            "Arabic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "19-linguistics",
+      "theme": "Language distribution",
+      "entity": "English language",
+      "category": "WrittenWork",
+      "sources": [
+        {
+          "index": 3148,
+          "id": "train/WrittenWork/1/Id173",
+          "text": "The English language is spoken in Great Britain.",
+          "gold_triples": [
+            "English_language | spokenIn | Great_Britain"
+          ]
+        }
+      ],
+      "question_a": "Where is the English language spoken according to the recorded source?",
+      "question_b": "Name the place where the English language is spoken in the learned statement.",
+      "expected_facets": [
+        {
+          "aspect": "spoken in",
+          "answers": [
+            "Great Britain"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "20-rocket_engineering",
+      "theme": "Rocket stages and diameter",
+      "entity": "ALV X-1",
+      "category": "MeanOfTransportation",
+      "sources": [
+        {
+          "index": 2090,
+          "id": "train/MeanOfTransportation/1/Id58",
+          "text": "The ALV X-1 has 2 rocket stages.",
+          "gold_triples": [
+            "ALV_X-1 | rocketStages | 2"
+          ]
+        },
+        {
+          "index": 2088,
+          "id": "train/MeanOfTransportation/1/Id56",
+          "text": "The diameter of the ALV X-1 is 1.524 metres.",
+          "gold_triples": [
+            "ALV_X-1 | diameter | 1.524 (metres)"
+          ]
+        }
+      ],
+      "question_a": "How many rocket stages does ALV X-1 have, and what is the diameter of ALV X-1?",
+      "question_b": "For ALV X-1, give its stage count and its diameter.",
+      "expected_facets": [
+        {
+          "aspect": "stages",
+          "answers": [
+            "2"
+          ]
+        },
+        {
+          "aspect": "diameter",
+          "answers": [
+            "1.524"
+          ]
+        }
+      ]
+    }
+  ]
+}

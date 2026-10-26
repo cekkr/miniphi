@@ -228,7 +228,18 @@ lookups are schema-required; citation/role failures trigger bounded retrieval
 repair. Graph commands opt into whole-document, schema-validated MLX reasoning
 JSON routing, preserving raw fields and source metadata. The two-edge WebNLG live
 test passed with Qwen, an untaught control and Cheetah restart on 2026-10-26;
-broader extraction remains incomplete (5/20 endpoint pairs in the measured slice).
+broader extraction remains incomplete (5/20 endpoint pairs in that earlier measured slice).
+`graph-ask --decompose` now adds schema-bound atomic questions, closed-book prior
+answers/self-confidence and separately grounded graph answers. Confidence never
+licenses a write or answer. Focus references and bounded lexical name completion
+keep model wording from minting new roots; partial source extraction and redundant
+citations have bounded repairs. The twenty-concept delayed-retrieval study and its
+complete exchanges are in [`docs/webnlg_learning.md`](docs/webnlg_learning.md).
+Rephrased source-answer coverage improved from 17/30 to 26/30 after explicit
+repairs (16/20 complete examples). The accepted-path check still admits a wrong
+ship-builder role, and conservative location types plus model abstention leave
+three other misses. The soup-to-plant-family query declined; confidence and
+connected citations do not establish semantic correctness.
 
 ---
 

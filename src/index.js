@@ -3148,6 +3148,7 @@ Usage:
   node src/index.js cheetah-learn eval --teach-limit 20 --eval-limit 8
   node src/index.js cheetah-learn webnlg --limit 20 --model qwen3-4b-thinking-2507-mlx
   node src/index.js cheetah-learn graph-ask "In which country is Aarhus Airport located?"
+  node src/index.js cheetah-learn graph-ask "What instrument does Aaron Deer play and where does Aaron Deer come from?" --decompose --max-rounds 6
   node src/index.js cheetah-learn wikipedia --dataset-path E:\\Models\\datasets\\wiki-data-2021 --base-url http://192.168.56.1:1234 --model smollm2-360m-instruct --cheetah-database wikidata --limit 100 --probe-every 10
   node scripts/run-cheetah-wikipedia-learning.js --help
 

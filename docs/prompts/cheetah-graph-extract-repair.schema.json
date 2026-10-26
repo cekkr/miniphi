@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cheetah-graph-extract-repair@v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "facts",
+    "needs_more_context",
+    "missing_snippets",
+    "stop_reason"
+  ],
+  "properties": {
+    "facts": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "relation",
+          "object",
+          "quote"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "relation": {
+            "type": "string",
+            "pattern": "^[a-z][a-z_]{0,63}$"
+          },
+          "object": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "needs_more_context": {
+      "type": "boolean"
+    },
+    "missing_snippets": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string"
+      }
+    },
+    "stop_reason": {
+      "type": "string"
+    }
+  }
+}

@@ -238,7 +238,7 @@ and restart results. Extraction coverage and longer reasoning remain incomplete.
 
 ##### Recorded learning prompts and answer sequence
 
-The teaching task begins: **“Extract directed subject/relation/object claims from
+In this recorded run, the teaching task began: **“Extract directed subject/relation/object claims from
 SOURCE only.”** The following are selected fields from two separate recorded
 prompts. Each real request also carries the exact
 [`cheetah-graph-extract` schema](docs/prompts/cheetah-graph-extract.schema.json) and
@@ -295,6 +295,31 @@ MINIPHI_LMSTUDIO_INTEGRATION=1 MINIPHI_CHEETAH_INTEGRATION=1 \
 The test starts its own isolated Cheetah server. For manual teaching/query commands,
 resumable slices and reopening the learned database, see the
 [WebNLG guide](docs/cheetah-webnlg-learning.md). Results may vary between model calls.
+
+##### Twenty-concept learning and delayed retrieval study
+
+The [extended WebNLG study](docs/webnlg_learning.md) follows **20 distinct concepts
+across all 16 dataset categories**, with 30 predeclared answer facets. It records
+closed-book self-confidence and question decomposition, graph gaps before teaching,
+source-backed writes, a Cheetah restart, rephrased retrieval, and an explicit repair
+continuation preserving the original failures. Every prompt, JSON response and
+Cheetah exchange is included. Confidence is a diagnostic; accepted graph evidence
+determines whether a memory gap remains.
+
+Rephrased retrieval rose from **17/30 to 26/30 source-answer facets** after repairs
+(16/20 complete examples; 386 model calls including retries). Four facets remain
+missed, including a wrongly accepted engine answer to a ship-builder question.
+The cross-concept soup-to-plant-family query declined; its full trace is included.
+
+Compound questions can use the same runtime directly:
+
+```bash
+miniphi cheetah-learn graph-ask "What instrument does Aaron Deer play and where does Aaron Deer come from?" --decompose --max-rounds 6 --cheetah-database webnlg_study --json
+```
+
+The study guide explains how to reopen its saved database and repeat the experiment.
+Its source-answer metric and selected examples differ from the earlier 20-row
+endpoint benchmark above.
 
 ##### Other knowledge workflows: layered Wikipedia memory
 

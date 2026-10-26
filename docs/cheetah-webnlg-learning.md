@@ -136,3 +136,12 @@ CHEETAH_HEADLESS=1 CHEETAH_LISTEN_ADDR=127.0.0.1:4455 \
   CHEETAH_DATA_DIR="$PWD/.miniphi/cheetah/webnlg-data" \
   thirds/cheetah/cheetah-server
 ```
+
+For twenty varied concepts, confidence diagnostics, compound-question decomposition
+and fully recorded delayed/rephrased retests, see
+[`webnlg_learning.md`](webnlg_learning.md). Use `graph-ask --decompose --json` to
+expose the same per-concept assessment and independently grounded recall in the CLI.
+Self-confidence never supplies evidence or authorizes a fact write. Current runtime
+repairs include focused entity references, bounded Cheetah lexical name completion,
+predicate/direction discovery, partial-extraction repair and normalization of valid
+cited subpaths. The older measurements above remain historical recorded results.

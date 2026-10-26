@@ -6,6 +6,7 @@ import path from "node:path";
 import PromptSchemaRegistry from "../src/libs/prompt-schema-registry.js";
 import { learnGraphText, reasonGraph, graphEntityId, filterGraphClaims } from "../src/libs/cheetah-graph-learning.js";
 import { runWebNlgLearning, scoreWebNlgClaims } from "../src/libs/cheetah-webnlg-runner.js";
+import { assessGraphKnowledge, answerGraphConcepts } from "../src/libs/cheetah-knowledge-assessment.js";
 
 const schemaRegistry = new PromptSchemaRegistry();
 const payload = (value) => ({ ok: true, fields: { payload: Buffer.from(JSON.stringify(value)).toString("base64"), next_cursor: "*" } });
@@ -189,4 +190,109 @@ test("partial writes fail rather than reporting successful learning", async () =
   client.execute = async (commands) => commands[0].startsWith("GRAPH_EDGE_SET_BATCH")
     ? [{ ok: true, fields: { applied: "1", failed: "1" } }] : original(commands);
   await assert.rejects(() => learnGraphText(text, { handler: handler([extract(facts)]), cheetahClient: client, schemaRegistry }), /partial graph write/);
+});
+
+const assessment = (concepts) => ({ concepts, needs_more_context: true, missing_snippets: [], stop_reason: "completed" });
+const concept = (entity, aspect, question, prior_answer = "", self_confidence = 0) => ({ id: "c1", entity, aspect, question, prior_answer, self_confidence, basis: "Diagnostic only" });
+
+test("decomposition uses bounded cardinality schemas and repairs malformed subquestions", async () => {
+  const h = handler([assessment([concept("Alice", "workplace", "We are given a task to decompose the question")])]);
+  const result = await assessGraphKnowledge("Where does Alice work?", { handler: h, schemaRegistry });
+  assert.equal(h.prompts[0].schema_id, "cheetah-knowledge-assessment-single");
+  assert.equal(h.prompts[0].requested_concept_count, 1);
+  assert(result.concepts[0].question.includes("Alice"));
+  assert.equal(result.concepts[0].questionRepair, "entity-missing-or-meta-instruction");
+  const pair = handler([assessment([concept("Alice", "workplace", "Where does Alice work?"), concept("Alice", "city", "Where is Alice located?")])]);
+  await assessGraphKnowledge("Where does Alice work and where is Alice located?", { handler: pair, schemaRegistry });
+  assert.equal(pair.prompts[0].schema_id, "cheetah-knowledge-assessment-pair");
+});
+
+test("high closed-book confidence never turns a missing graph fact into knowledge", async () => {
+  const client = memoryClient();
+  const closedBook = handler([assessment([concept("Iraq", "currency", "What is the currency of Iraq?", "Iraqi dinar", 1)])]);
+  const h = handler([query("Iraq"), { ...answer("Iraqi dinar", ["e1"]), self_confidence: 1, reasoning_summary: "I recognize the answer" }]);
+  const result = await answerGraphConcepts("What is the currency of Iraq?", { assessmentHandler: closedBook, handler: h, cheetahClient: client, schemaRegistry });
+  assert.equal(result.assessment.concepts[0].self_confidence, 1);
+  assert.equal(result.results[0].recalled.grounded, false);
+  assert.equal(result.needsLearning, true);
+  assert.equal(client.edges.size, 0);
+  assert(!JSON.stringify(h.prompts).includes('"prior_answer"'));
+});
+
+test("rejects out-of-range confidence and names absent from the original question", async () => {
+  for (const value of [concept("Mars", "location", "Where is Mars?", "Space", 1), concept("Alice", "location", "Where is Alice?", "Rome", 100)]) {
+    const result = await assessGraphKnowledge("Where is Alice?", { handler: handler([assessment([value])]), schemaRegistry });
+    assert.equal(result.concepts.length, 0);
+    assert.equal(result.stopReason, "invalid-response");
+  }
+});
+
+test("an empty extraction gets one source-checked repair, never a gold import", async () => {
+  const h = handler([extract([]), extract([facts[0]])]);
+  const client = memoryClient();
+  const learned = await learnGraphText(text, { handler: h, cheetahClient: client, schemaRegistry, entityHints: ["Alice", "Invented person"] });
+  assert.equal(learned.written, 1);
+  assert.equal(h.prompts[1].schema_id, "cheetah-graph-extract-repair");
+  assert.deepEqual(h.prompts[0].entity_hints, ["Alice"]);
+  assert.equal(h.prompts[1].source_text, text);
+});
+
+test("natural predicate hints and inverse adjacency discover the actual stored edge", async () => {
+  const client = await taught();
+  const first = query("Alice"); first.lookups[0].relation = "works at";
+  const direct = await reasonGraph("Where does Alice work?", { handler: handler([first, answer("North Corp", ["e1"])]), cheetahClient: client, schemaRegistry });
+  assert.equal(direct.answer, "North Corp");
+  const wrong = query("Rome"); wrong.lookups[0].relation = "company_location";
+  const reverse = await reasonGraph("Which company is located in Rome?", { handler: handler([wrong, answer("North Corp", ["e1"])]), cheetahClient: client, schemaRegistry });
+  assert.equal(reverse.answer, "North Corp");
+  assert.deepEqual(reverse.trace.filter(t => t.command?.startsWith("GRAPH_QUERY")).length, 3);
+  assert.equal(reverse.evidence[0].start, "Rome");
+});
+
+test("focused query references resolve exact question names without model retyping", async () => {
+  const client = await taught();
+  const h = handler([query("focus"), answer("North Corp", ["e1"])]);
+  const result = await reasonGraph("Where does Alice work?", { handler: h, cheetahClient: client, schemaRegistry, focusEntity: "Alice" });
+  assert.equal(result.answer, "North Corp");
+  assert.equal(h.prompts[0].schema_id, "cheetah-focused-query");
+  assert.deepEqual(h.prompts[0].entity_candidates, [{ id: "focus", name: "Alice" }]);
+});
+
+test("partial extraction repairs rejected names without losing accepted claims", async () => {
+  const bad = { ...facts[1], subject: "North Corpp" };
+  const h = handler([extract([facts[0], bad]), extract([facts[1]])]);
+  const result = await learnGraphText(text, { handler: h, cheetahClient: memoryClient(), schemaRegistry });
+  assert.equal(result.written, 2);
+  assert.equal(result.rejected[0].reason, "endpoint-not-in-quote");
+  assert.equal(h.prompts.length, 2);
+});
+
+test("question-backed entity hints reject role phrases as graph identities", async () => {
+  const source = "The population of Antioch California is 102372.";
+  const bad = { subject: "The population of Antioch California", relation: "population", object: "102372", quote: source };
+  const good = { ...bad, subject: "Antioch California" };
+  const result = await learnGraphText(source, { handler: handler([extract([bad]), extract([good])]), cheetahClient: memoryClient(), schemaRegistry, entityHints: ["Antioch California"] });
+  assert.equal(result.claims[0].subject, "Antioch California");
+  assert.equal(result.rejected[0].reason, "decorated-subject-anchor");
+});
+
+test("lexical recall completes a clause-shaped anchor only to a stored question name", async () => {
+  const client = await taught();
+  const original = client.execute;
+  client.execute = async commands => commands[0].startsWith("GRAPH_RECALL")
+    ? [payload({ associations: [{ id: graphEntityId("Alice") }, { id: graphEntityId("North Corp") }] })] : original(commands);
+  const h = handler([query("focus"), answer("North Corp", ["e1"])]);
+  const result = await reasonGraph("Where does Alice work?", { handler: h, cheetahClient: client, schemaRegistry, focusEntity: "Where does Alice work" });
+  assert.equal(result.answer, "North Corp");
+  assert.deepEqual(h.prompts[0].entity_candidates, [{ id: "focus", name: "Alice" }]);
+});
+
+test("normalizes redundant/reordered citations using only the edges the model cited", async () => {
+  const client = await taught();
+  const result = await reasonGraph("Where is Alice's workplace located?", { handler: handler([query("Alice"), lookup("North Corp"), answer("Rome", ["e2", "e1"])]), cheetahClient: client, schemaRegistry });
+  assert.equal(result.answer, "Rome");
+  assert.deepEqual(result.evidenceIds, ["e1", "e2"]);
+  assert.equal(result.citationRepair, "connected-subpath-of-cited-evidence");
+  const invalid = await reasonGraph("Where does Alice work?", { handler: handler([query("Alice"), answer("North Corp", ["e1", "invented"])]), cheetahClient: client, schemaRegistry, maxRounds: 2 });
+  assert.equal(invalid.grounded, false);
 });

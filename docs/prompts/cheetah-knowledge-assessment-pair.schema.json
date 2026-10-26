@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cheetah-knowledge-assessment-pair@v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "concepts",
+    "needs_more_context",
+    "missing_snippets",
+    "stop_reason"
+  ],
+  "properties": {
+    "concepts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "entity",
+          "aspect",
+          "question",
+          "prior_answer",
+          "self_confidence",
+          "basis"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "entity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "aspect": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "prior_answer": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "self_confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "needs_more_context": {
+      "type": "boolean"
+    },
+    "missing_snippets": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string"
+      }
+    },
+    "stop_reason": {
+      "type": "string"
+    }
+  }
+}

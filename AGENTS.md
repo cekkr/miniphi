@@ -190,6 +190,65 @@ When you add or change CLI behavior:
 - Limits: endpoint coverage is not RDF triple F1; source overlap cannot establish
   entailment/direction; aliases/contradictions and the coding agent's integration
   remain open. Existing `ask`/`knowledge_lookup` still read the earlier shape.
+- Extended live study in `docs/webnlg_learning.md`: 20 frozen cases across all 16
+  WebNLG categories, 30 predeclared source-answer facets. Before teaching: 0/30
+  grounded, 1/30 closed-book source matches. After restart: original wording 24/30,
+  rephrased 17/30; explicit same-source repair continuation 26/30 (16/20 complete).
+  All 386 model calls, retries and 474 graph batches remain in the audit. Four
+  facets remain missed: conservative city/country type checks, botanical-order
+  abstention, and a ship-builder semantic-role false positive (engine endpoint
+  through `powered_by`). `grounded` validates a cited path, not full entailment;
+  `needsLearning` can miss a wrong-role answer. Soup-to-plant-family cross-concept
+  reasoning declined. Do not describe these open limitations as solved.
+- Extended study: `docs/webnlg_learning.md` records 20 fixed subject/aspect units,
+  all 16 WebNLG categories, 30 predeclared answer facets, and every request/response.
+  The manifest is `docs/benchmarks/webnlg-study-cases.json`; the JSON audit is
+  `docs/benchmarks/webnlg-learning-study-2026-10-26.json`. Gold triples/answer aliases
+  are evaluator-only. Keep initial failures and the explicit repair continuation
+  visible; do not compare its answer-coverage metric directly with the earlier
+  first-20-row endpoint metric.
+- `src/libs/cheetah-knowledge-assessment.js` implements closed-book diagnostics,
+  bounded atomic-question decomposition and independent per-concept graph recall.
+  CLI: `graph-ask "<compound question>" --decompose [--max-rounds 6] --json`.
+  `prior_answer`/`self_confidence`/`basis` are untrusted self-reports. A missing
+  accepted graph answer sets `memoryGap`/`needsLearning` regardless of confidence;
+  prior guesses never enter retrieval evidence or graph writes. A distinct
+  assessment system prompt permits the diagnostic without changing the normal
+  source-only teach/recall policy. `buildLmStudioHandler` accepts this internal
+  system-prompt override and bounded token/timeout options.
+- New schemas: `cheetah-knowledge-assessment[-single|-pair]@v1`,
+  `cheetah-focused-query@v1`, `cheetah-concept-reason@v1`, and
+  `cheetah-graph-extract-repair@v1`. Simple/explicitly conjoined requests use
+  one/two-concept cardinality (at most three otherwise); this is a bounded helper,
+  not a general grammar parser. Malformed subquestions are explicitly repaired
+  from the original question and its entity/aspect, with the original preserved.
+- Focused lookups select `focus` / `eN_subject` / `eN_object` references instead
+  of retyping names. When a proposed focus has no exact node, one bounded
+  `GRAPH_RECALL` (8 seeds, 8 candidates, 1 hop, 256 budget) plus at most 8 node
+  hydrations may resolve it to a stored name that occurs in the original parent
+  question. No model prior answer can supply a new root. Natural predicate spaces
+  normalize to underscores; invalid hints degrade to untyped lookup. A typed or
+  wrong-direction miss can use at most three adjacency queries per requested
+  lookup, all built upstream and fully traced.
+- `learnGraphText` supports source-validated `entityHints` and one repair for
+  empty **or partly rejected** extraction. Accepted first-pass claims survive;
+  all rejected proposals remain in the audit. A decorated hinted subject such as
+  `The population of Antioch California` is rejected rather than silently filed
+  under the wrong anchor; a repair must return a source-backed entity name.
+  Retrieval may normalize redundant/reordered citations to a connected subpath
+  using only model-cited, actually returned edges. `proposedEvidenceIds` and
+  `citationRepair` distinguish that repair; invented ids or absent paths fail.
+- Instrumentation: `scripts/run-webnlg-learning-study.js` probes every case
+  before teaching, records all LM Studio bodies/responses and canonical Cheetah
+  requests/decoded responses, restarts Cheetah, then runs original and rephrased
+  questions with fresh histories. `--continue-study <study.json> --output <dir>`
+  adds a recorded source/identity repair pass plus another restart/rephrased
+  retest on the same fixed examples. The original JSON and failed results remain.
+  `scripts/render-webnlg-learning-study.js` renders observations only; never
+  change predictions or cases there to improve results. Model calls are serial,
+  work is checkpointed per case/stage, runtime/manifest/model identity gates
+  resume, and the default whole-run cap is 60 minutes. Data stays under the
+  original run's `data/`; repair outputs contain their initial-study pointer.
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
 - `--model auto` queries the live model inventory (native `GET /api/v1/models`, then bounded native-v0/OpenAI-compatible fallbacks) via `src/libs/model-catalog.js`, classifies the task intent (coding/writing/analysis/research), and picks the best installed chat model. Fresh `benchmark models` category scores are primary evidence; inventory purpose/context/load/tool/memory/quantization heuristics are the fallback and tie-break. After at least one fresh benchmark, headless `run`/`analyze-file`/`workspace` flows with no explicit configured model implicitly enable Auto; an explicit CLI/config/env model remains authoritative. `node src/index.js models [--task ...] [--json]` prints the normalized ranking and benchmark evidence. The interactive UI ranks `Auto` after task entry and also offers every exact discovered chat model.
 - The REST client follows the current [LM Studio REST reference](https://lmstudio.ai/docs/developer/rest) for native v1 inventory and explicit lifecycle calls. `models --load <model> [--context-length <n>]` and `models --unload <instance-id>` map to exact v1 load/unload contracts; MiniPhi never implicitly unloads an operator-loaded instance. Schema-bound inference remains on the proven chat-completions route because every prompt must retain `response_format=json_schema`.

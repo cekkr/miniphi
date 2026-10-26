@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   buildNodeGet, buildNodeSet, buildEdgeGet, buildEdgeSetBatch,
-  buildTraversal, decodeCheetahPayload,
+  buildTraversal, buildRecall, decodeCheetahPayload,
 } from "./cheetah-binder.js";
 import { logEpisode, recordOpenQuestion } from "./cheetah-knowledge-client.js";
 import { classifyLmStudioError } from "./lmstudio-error-utils.js";
 import { estimateTokens } from "./context-graph.js";
+import { contentWords } from "./cheetah-memory-layers.js";
 
 function failureReason(error) {
   if (error.message === "session-timeout") return "session-timeout";
@@ -57,7 +58,7 @@ async function execute(client, commands, trace, deadline) {
 
 // Handler supplies response_format and persists full exchanges (reasoning,
 // response text, tool_calls and tool_definitions). Validate again at this boundary.
-async function promptStep({ handler, schemaRegistry, schemaId, payload, trace, deadline }) {
+export async function runGraphPrompt({ handler, schemaRegistry, schemaId, payload, trace, deadline }) {
   checkDeadline(deadline);
   const schema = schemaRegistry.getSchema(schemaId);
   if (!schema) throw new Error(`Missing schema ${schemaId}`);
@@ -86,7 +87,7 @@ async function promptStep({ handler, schemaRegistry, schemaId, payload, trace, d
 }
 
 /** Source overlap is a conservative claim filter, not a proof of entailment. */
-export function filterGraphClaims(facts, text) {
+export function filterGraphClaims(facts, text, { entityHints = [] } = {}) {
   const accepted = [], rejected = [];
   const source = graphName(text);
   for (const fact of facts ?? []) {
@@ -94,6 +95,7 @@ export function filterGraphClaims(facts, text) {
     const quote = graphName(fact.quote);
     if (!quote || !source.includes(quote)) reason = "quote-not-in-source";
     else if (!containsName(quote, fact.subject) || !containsName(quote, fact.object)) reason = "endpoint-not-in-quote";
+    else if (entityHints.some((hint) => containsName(fact.subject, hint) && graphName(fact.subject) !== graphName(hint))) reason = "decorated-subject-anchor";
     else if (graphName(fact.subject) === graphName(fact.object)) reason = "self-claim";
     else if (/\b(?:not|never|no|may|might|possibly|perhaps|could)\b/u.test(quote)) reason = "uncertain-or-negated-quote";
     else {
@@ -108,25 +110,41 @@ export function filterGraphClaims(facts, text) {
 
 export async function learnGraphText(text, {
   handler, cheetahClient, schemaRegistry, sourceId = "text", deadline = Date.now() + 300000,
+  entityHints = [], repairEmpty = true,
 } = {}) {
   const trace = [];
   if (typeof text !== "string" || !text.trim() || Buffer.byteLength(text, "utf8") > 4000) throw new Error("Graph source must contain 1..4000 UTF-8 bytes");
   checkDeadline(deadline);
   const episode = await logEpisode(cheetahClient, text);
+  const hints = entityHints.filter((name) => typeof name === "string" && name.length <= 200 && containsName(text, name)).slice(0, 8);
+  const extractionRejections = [];
   let response;
   try {
-    response = await promptStep({ handler, schemaRegistry, trace, deadline,
+    const payload = {
+      task: "Decompose SOURCE into atomic directed subject/relation/object claims. Subject and object are complete entity names or literal values, never a whole clause such as 'X has a population'. Copy both from one exact quote. When a hinted entity occurs within your subject, use that exact hinted name without articles or role phrases. Preserve full qualifiers of object names and currencies. Relations are snake_case verbs OR roles written in that quote (located_in, author, population, motto, stages). A role can run against word order: in 'Y is the author of X', store X -> author -> Y. Extract every explicit statement, including numbers and noun-based facts. No background knowledge, negated or speculative claims. Empty facts only if no supported claim exists. stop_reason=completed; needs_more_context=false; missing_snippets=[].",
+      source_id: sourceId, source_text: text, entity_hints: hints,
+    };
+    response = await runGraphPrompt({ handler, schemaRegistry, trace, deadline,
       schemaId: "cheetah-graph-extract",
-      payload: {
-        task: "Extract directed subject/relation/object claims from SOURCE only. Copy subject and object from one exact quote. Extract ALL subjects, not only the first. Relations are snake_case verbs or roles written in that quote (e.g. located_in, born_in, language, leader). Save explicit noun-based facts too. No background knowledge. No negated or speculative claims. Empty facts only if unsupported. stop_reason=completed; needs_more_context=false; missing_snippets=[].",
-        source_id: sourceId, source_text: text,
-      },
+      payload,
     });
+    const first = filterGraphClaims(response.facts, text, { entityHints: hints });
+    extractionRejections.push(...first.rejected);
+    if (repairEmpty && (first.accepted.length === 0 || first.rejected.length > 0) && !/\b(?:not|never|might|perhaps)\b/iu.test(text)) {
+      const repair = await runGraphPrompt({ handler, schemaRegistry, trace, deadline,
+        schemaId: "cheetah-graph-extract-repair",
+        payload: { ...payload, task: `${payload.task} Some previous claims were empty or failed source/identity checks. Re-read the source and repair the rejected claims. Extract at least one supported atomic claim; use a role noun from the source instead of bare 'is'/'has'.`,
+          previous_candidates: response.facts.slice(0, 4).map(({ quote, ...fact }) => fact),
+          rejection_reasons: first.rejected.map((fact) => fact.reason) },
+      });
+      response = { ...repair, facts: [...first.accepted, ...repair.facts] };
+    }
   } catch (error) {
     const stopReason = failureReason(error);
     return { sourceId, written: 0, updated: 0, rejected: [], trace, episode, stopReason, stopReasonCode: stopReason, fallback: true, error: error.message };
   }
-  const filtered = filterGraphClaims(response.facts, text);
+  const filtered = filterGraphClaims(response.facts, text, { entityHints: hints });
+  extractionRejections.push(...filtered.rejected);
   // Probe exact edges before writing. Familiarity in model weights is irrelevant.
   const claims = [...new Map(filtered.accepted.map((fact) => [
     JSON.stringify([graphEntityId(fact.subject), fact.relation, graphEntityId(fact.object)]), fact,
@@ -154,19 +172,26 @@ export async function learnGraphText(text, {
     written = Number(result.fields?.applied ?? 0);
     if (written !== fresh.length || Number(result.fields?.failed ?? 0) > 0) throw new Error("Cheetah partial graph write");
   }
-  return { sourceId, episode, claims, rejected: filtered.rejected, written, known: claims.length - fresh.length,
+  const rejected = [...new Map(extractionRejections.map(fact => [JSON.stringify(fact), fact])).values()];
+  return { sourceId, episode, claims, rejected, written, known: claims.length - fresh.length,
     trace, fallback: false, stopReason: null, stopReasonCode: null };
 }
 
 function supportedPath(answer, ids, evidence, roots) {
-  if (!answer || !ids.length || new Set(ids).size !== ids.length) return false;
-  let frontier = new Set(roots);
-  for (const id of ids) {
-    const edge = evidence.find((item) => item.id === id);
-    if (!edge || !frontier.has(graphName(edge.start))) return false;
-    frontier = new Set([graphName(edge.end)]);
+  if (!answer || !ids.length || ids.some(id => !evidence.some(e => e.id === id))) return null;
+  const cited = evidence.filter(e => ids.includes(e.id));
+  const queue = [...roots].map(node => ({ node, path: [] }));
+  const visited = new Set();
+  while (queue.length) {
+    const current = queue.shift();
+    if (current.path.length && current.node === graphName(answer)) return current.path;
+    if (visited.has(current.node)) continue;
+    visited.add(current.node);
+    for (const edge of cited) if (graphName(edge.start) === current.node) {
+      queue.push({ node: graphName(edge.end), path: [...current.path, edge.id] });
+    }
   }
-  return frontier.has(graphName(answer));
+  return null;
 }
 
 function matchesRequestedKind(question, ids, evidence) {
@@ -181,32 +206,69 @@ function matchesRequestedKind(question, ids, evidence) {
 /** Model-directed discovery followed by exact, cited edge-chain answers. */
 export async function reasonGraph(question, {
   handler, cheetahClient, schemaRegistry, maxRounds = 4, deadline = Date.now() + 600000,
+  rootQuestion = question, focusEntity = null, aspect = null, diagnosticConfidence = false,
 } = {}) {
   if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 8) throw new Error("maxRounds must be 1..8");
   if (typeof question !== "string" || !question.trim() || question.length > 1000) throw new Error("Question must contain 1..1000 characters");
   const trace = [], evidence = [], observations = [], roots = new Set(), seen = new Set();
   let stopReason = "max-turns", proposed = null, rounds = 0, requireLookup = true;
   try {
+    if (focusEntity) {
+      const [exact] = await execute(cheetahClient, [buildNodeGet(graphEntityId(focusEntity))], trace, deadline);
+      if (!exact.ok) {
+        // Recover a partial or clause-shaped model anchor from names actually
+        // stored in Cheetah. A candidate must still occur in the user's parent
+        // question, so a model's prior guess cannot invent a new graph root.
+        const seeds = [...new Set(contentWords(rootQuestion))].slice(0, 8);
+        if (seeds.length) {
+          const [recall] = await execute(cheetahClient, [buildRecall({ seeds, hops: 1, limit: 8,
+            branchLimit: 16, budget: 256, direction: "both", includeSeeds: true, references: false })], trace, deadline);
+          const ids = (decodeCheetahPayload(recall)?.associations ?? []).map(item => item.id).filter(id => id?.startsWith("knowledge:")).slice(0, 8);
+          const nodes = ids.length ? await execute(cheetahClient, ids.map(buildNodeGet), trace, deadline) : [];
+          const candidates = nodes.map(decodeCheetahPayload).filter(node => node?.props?.name &&
+            node.id === graphEntityId(node.props.name) && containsName(rootQuestion, node.props.name));
+          candidates.sort((a, b) => b.props.name.length - a.props.name.length);
+          if (candidates.length) {
+            observations.push({ entity_completion: { proposed: focusEntity, resolved: candidates[0].props.name, basis: "stored-name-in-parent-question" } });
+            focusEntity = candidates[0].props.name;
+          }
+        }
+      }
+    }
     for (let round = 0; round < maxRounds; round += 1) {
       rounds += 1;
-      proposed = await promptStep({ handler, schemaRegistry, trace, deadline,
-        schemaId: requireLookup ? "cheetah-graph-query" : "cheetah-graph-reason",
+      const entityCandidates = new Map();
+      if (focusEntity && containsName(rootQuestion, focusEntity)) entityCandidates.set("focus", focusEntity);
+      for (const item of evidence) {
+        entityCandidates.set(`${item.id}_subject`, item.subject);
+        entityCandidates.set(`${item.id}_object`, item.object);
+      }
+      const focusedQuery = Boolean(entityCandidates.has("focus"));
+      proposed = await runGraphPrompt({ handler, schemaRegistry, trace, deadline,
+        schemaId: requireLookup ? focusedQuery ? "cheetah-focused-query" : "cheetah-graph-query" : diagnosticConfidence ? "cheetah-concept-reason" : "cheetah-graph-reason",
         payload: {
           task: requireLookup
             ? (round === 0
               ? "Choose a graph lookup for the named entity in QUESTION. Copy its name from QUESTION. relation='' discovers all stored relations. direction=out normally; in if asking who has a relation TO that entity. The database has not been read yet: request a lookup, never assume it is empty. needs_more_context=true; missing_snippets=[]; stop_reason=completed."
               : "Your answer lacked a connected citation chain. Fetch the missing relation by looking up an AVAILABLE ENDPOINT below, using its exact name, relation='' and direction=out. Do not repeat a previous lookup. needs_more_context=true; missing_snippets=[]; stop_reason=completed.")
             : "Answer ONLY from graph evidence. relation='' discovers available edges; direction=out normally, in for reverse questions. To answer a chain question, request the returned intermediate entity next. A location is not necessarily the requested country; fetch that location's relations if its country is still missing. Only names in QUESTION or returned evidence may be looked up. No background knowledge. When ready, answer_entity is the exact final endpoint name, evidence_ids is the ordered connected chain from the question entity to that answer, lookups=[], needs_more_context=false. If unknown, answer_entity=''. No prose answers. stop_reason=completed; missing_snippets=[].",
-          question, round: round + 1, rounds_remaining: maxRounds - round - 1, evidence, observations,
+          question, parent_question: rootQuestion, focus_entity: focusEntity, requested_aspect: aspect,
+          confidence_instruction: diagnosticConfidence ? "Report self_confidence between 0 and 1 for support by these retrieved items, plus a short reasoning_summary naming the missing or supporting evidence. Confidence alone never licenses an answer." : undefined,
+          entity_reference_instruction: focusedQuery ? "In lookups[].entity use a candidate id from entity_candidates (initially focus), not a retyped name. MiniPhi resolves that id to the exact name. To follow an intermediate endpoint, choose its eN_object or eN_subject id." : undefined,
+          entity_candidates: focusedQuery ? [...entityCandidates].map(([id, name]) => ({ id, name })) : undefined,
+          round: round + 1, rounds_remaining: maxRounds - round - 1, evidence, observations,
           available_endpoints: [...new Set(evidence.map((edge) => edge.end))],
         },
       });
       requireLookup = false;
-      if (proposed.answer_entity && !proposed.needs_more_context &&
-          supportedPath(proposed.answer_entity, proposed.evidence_ids, evidence, roots) &&
-          matchesRequestedKind(question, proposed.evidence_ids, evidence)) {
-        const endpoint = evidence.find((entry) => entry.id === proposed.evidence_ids.at(-1)).end;
-        return { question, answer: endpoint, grounded: true, evidenceIds: proposed.evidence_ids,
+      const citationPath = proposed.answer_entity ? supportedPath(proposed.answer_entity, proposed.evidence_ids, evidence, roots) : null;
+      if (proposed.answer_entity && !proposed.needs_more_context && citationPath &&
+          matchesRequestedKind(question, citationPath, evidence)) {
+        const endpoint = evidence.find((entry) => entry.id === citationPath.at(-1)).end;
+        return { question, answer: endpoint, grounded: true, evidenceIds: citationPath,
+          proposedEvidenceIds: proposed.evidence_ids,
+          citationRepair: JSON.stringify(citationPath) === JSON.stringify(proposed.evidence_ids) ? null : "connected-subpath-of-cited-evidence",
+          modelConfidence: proposed.self_confidence ?? null, reasoningSummary: proposed.reasoning_summary ?? null,
           evidence, rounds, trace, stopReason: null, stopReasonCode: null };
       }
       if (!proposed.lookups.length) {
@@ -221,25 +283,45 @@ export async function reasonGraph(question, {
       if (round === maxRounds - 1) break;
       let progress = false;
       for (const lookup of proposed.lookups) {
-        const name = graphName(lookup.entity);
-        const isRoot = containsName(question, lookup.entity);
+        const resolvedEntity = entityCandidates.get(lookup.entity) ?? lookup.entity;
+        const name = graphName(resolvedEntity);
+        const isRoot = containsName(rootQuestion, resolvedEntity);
         const allowed = isRoot || evidence.some((edge) => [edge.subject, edge.object].some((value) => graphName(value) === name));
-        const signature = JSON.stringify([name, lookup.relation, lookup.direction]);
+        // Predicate wording is a model hint, not protocol syntax. Normalize
+        // harmless spacing; malformed hints degrade to untyped discovery.
+        const normalizedRelation = String(lookup.relation ?? "").trim().toLowerCase().replace(/\s+/gu, "_");
+        const relation = /^[a-z][a-z_]{0,63}$/.test(normalizedRelation) ? normalizedRelation : "";
+        const signature = JSON.stringify([name, relation, lookup.direction]);
         if (!allowed || seen.has(signature)) { observations.push({ lookup, rejected: allowed ? "repeated-lookup" : "entity-not-observed" }); continue; }
         seen.add(signature);
         if (isRoot) roots.add(name);
-        if (lookup.relation && !/^[a-z][a-z_]{0,63}$/.test(lookup.relation)) { observations.push({ lookup, rejected: "invalid-relation" }); continue; }
-        const id = graphEntityId(lookup.entity);
-        const [response] = await execute(cheetahClient, [buildTraversal({ id, type: lookup.relation || null, direction: lookup.direction, limit: 16 })], trace, deadline);
-        const edges = decodeCheetahPayload(response);
+        const id = graphEntityId(resolvedEntity);
+        let direction = lookup.direction;
+        let [response] = await execute(cheetahClient, [buildTraversal({ id, type: relation || null, direction, limit: 16 })], trace, deadline);
+        let edges = decodeCheetahPayload(response);
+        // A small model invents predicate spellings and often follows the wrong
+        // direction on copular/passive statements. Discover actual adjacency
+        // before treating a typed miss as missing knowledge. At most 3 queries.
+        const discovery = [];
+        if ((!Array.isArray(edges) || !edges.length) && relation) {
+          [response] = await execute(cheetahClient, [buildTraversal({ id, direction, limit: 16 })], trace, deadline);
+          edges = decodeCheetahPayload(response);
+          discovery.push("untyped");
+        }
+        if (!Array.isArray(edges) || !edges.length) {
+          direction = direction === "in" ? "out" : "in";
+          [response] = await execute(cheetahClient, [buildTraversal({ id, direction, limit: 16 })], trace, deadline);
+          edges = decodeCheetahPayload(response);
+          discovery.push("reverse");
+        }
         const returned = [];
         let omitted = 0;
         for (const edge of Array.isArray(edges) ? edges : []) {
           const p = edge.props;
           if (!edge.id || !p?.subject || !p?.object || !p?.quote || p.grounding !== "source-overlap") continue;
           if (edge.from !== graphEntityId(p.subject) || edge.to !== graphEntityId(p.object) || edge.type !== p.relation) continue;
-          const start = lookup.direction === "in" ? p.object : p.subject;
-          const end = lookup.direction === "in" ? p.subject : p.object;
+          const start = direction === "in" ? p.object : p.subject;
+          const end = direction === "in" ? p.subject : p.object;
           if (graphName(start) !== name) continue;
           let item = evidence.find((entry) => entry.edgeId === edge.id && entry.start === start);
           if (!item) {
@@ -250,7 +332,7 @@ export async function reasonGraph(question, {
           }
           returned.push(item.id);
         }
-        observations.push({ lookup, returned, evidence_omitted: omitted,
+        observations.push({ lookup, resolved_entity: resolvedEntity, actual_direction: direction, discovery, returned, evidence_omitted: omitted,
           truncated: omitted > 0 || (response.fields?.next_cursor !== "*" && Boolean(response.fields?.next_cursor)) });
         progress = true;
       }
@@ -268,5 +350,6 @@ export async function reasonGraph(question, {
     stopReason = "analysis-error";
   }
   return { question, answer: "I don't know.", grounded: false, evidence, evidenceIds: [], rounds, trace, observations,
+    modelConfidence: proposed?.self_confidence ?? null, reasoningSummary: proposed?.reasoning_summary ?? null,
     proposed, openQuestion, stopReason, stopReasonCode: stopReason };
 }
