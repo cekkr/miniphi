@@ -7,6 +7,7 @@ import { DEFAULT_CONTEXT_LENGTH, DEFAULT_MODEL_KEY } from "./model-presets.js";
 import {
   buildJsonSchemaResponseFormat,
   summarizeJsonSchemaValidation,
+  validateJsonObjectAgainstSchema,
 } from "./json-schema-utils.js";
 import {
   buildStopReasonInfo,
@@ -59,6 +60,9 @@ export class LMStudioHandler {
     this.promptRecorder = options?.promptRecorder ?? null;
     this.performanceTracker = options?.performanceTracker ?? null;
     this.schemaRegistry = options?.schemaRegistry ?? null;
+    // Opt-in for MLX runtimes that route the entire constrained JSON document
+    // into reasoning_content. Never mine a JSON fragment out of deliberation.
+    this.acceptReasoningJson = options?.acceptReasoningJson === true;
     this.noTokenTimeoutMs = options?.noTokenTimeoutMs ?? null;
     // Optional generation cap. Unset means the historical `max_tokens: -1`
     // ("as much as the model wants"), which is right for open-ended coding
@@ -269,6 +273,9 @@ export class LMStudioHandler {
       let requestSnapshot = null;
       let result = "";
       let responseToolCalls = null;
+      let restRawText = null;
+      let structuredOutputSource = null;
+      let responseUsage = null;
       let schemaValidation = null;
       let schemaFailureDetails = null;
       let predictionHandle = null;
@@ -399,6 +406,9 @@ export class LMStudioHandler {
             () => {},
           );
           result = restResult?.text ?? "";
+          restRawText = restResult?.rawText ?? "";
+          structuredOutputSource = restResult?.structuredOutputSource ?? "content";
+          responseUsage = restResult?.usage ?? null;
           responseToolCalls = restResult?.toolCalls ?? null;
           if (restResult?.reasoning) {
             capturedThoughts.push(restResult.reasoning);
@@ -517,7 +527,9 @@ export class LMStudioHandler {
 
         const responseSnapshot = {
           text: result,
-          rawResponseText: result,
+          rawResponseText: restRawText ?? result,
+          structuredOutputSource,
+          usage: responseUsage,
           reasoning: capturedThoughts,
           startedAt,
           finishedAt,
@@ -913,8 +925,26 @@ export class LMStudioHandler {
       choice?.message?.reasoning ??
       choice?.delta?.reasoning_content ??
       null;
+    let structuredText = text;
+    let structuredOutputSource = "content";
+    if (this.acceptReasoningJson && !String(text).trim() && typeof reasoning === "string" &&
+        choice?.finish_reason === "stop" && !choice?.message?.tool_calls?.length &&
+        responseFormat?.type === "json_schema" && responseFormat.json_schema?.schema) {
+      try {
+        // JSON.parse deliberately refuses fences, preambles and mixed prose.
+        JSON.parse(reasoning);
+        const outcome = validateJsonObjectAgainstSchema(responseFormat.json_schema.schema, reasoning);
+        if (outcome.status === "ok") {
+          structuredText = reasoning;
+          structuredOutputSource = "reasoning_content";
+        }
+      } catch { /* ordinary empty-response handling remains authoritative */ }
+    }
     return {
-      text,
+      text: structuredText,
+      rawText: text,
+      structuredOutputSource,
+      usage: response?.usage ?? null,
       reasoning: typeof reasoning === "string" && reasoning.trim() ? reasoning : null,
       toolCalls: choice?.message?.tool_calls ?? null,
     };

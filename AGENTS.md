@@ -123,6 +123,66 @@ When you add or change CLI behavior:
 - Graph state persists to `.miniphi/agent-sessions/<id>/context-graph.json` (stable node ids); `result.json` carries `context` stats (nodes per layer, reforms, ops applied/rejected/no-op, budget, focus).
 
 ## Runtime posture
+
+### WebNLG structured knowledge experiment (2026-10-26)
+- `cheetah-learn webnlg|graph-ask` defaults to `qwen3-4b-thinking-2507-mlx` and
+  `miniphi_webnlg`, independent of the previous `teach|ask` defaults. Runtime owners:
+  `src/libs/cheetah-graph-learning.js` (multi-subject source-overlap extraction,
+  exact-edge probe/dedup, quoted provenance, bounded model-directed graph queries)
+  and `src/libs/cheetah-webnlg-runner.js` (training-only targets, post-extraction gold
+  endpoint scoring, dataset/database/model/offset-bound checkpoints).
+- Contracts: `cheetah-graph-extract@v1` / `cheetah-graph-query@v1` /
+  `cheetah-graph-reason@v1` under
+  `docs/prompts/`; exact JSON payload + schema in every prompt, strict
+  `response_format=json_schema`, independent adapter validation, scalar MLX types,
+  required `needs_more_context` and `missing_snippets`. The first lookup uses a
+  nonempty query schema; invalid final answers can trigger another query within
+  the same round cap. Country/city/capital/language/leader/currency questions
+  require the terminal quote/relation to identify the requested role, preventing
+  an intermediate location from masquerading as a country. PromptRecorder keeps
+  raw responses, reasoning, usage and tool calls/definitions. No gold RDF enters prompts.
+- `LMStudioHandler.acceptReasoningJson` is opt-in, enabled only by these graph
+  commands: MLX may route the entire schema-constrained document into
+  `reasoning_content` and leave `content` empty. Accept only a whole JSON document
+  matching the exact requested schema, finish `stop`, and no tool calls. Never
+  mine fragments from reasoning/prose or accept truncated output. Instrumentation
+  preserves original `rawResponseText`, reasoning, accepted `text`, usage and
+  `structuredOutputSource`. Regression: `lmstudio-handler-reasoning-json.test.js`.
+- Entities use case/whitespace-normalized, punctuation-preserving SHA-256 names
+  under `knowledge:`; separate from `topic:` layered memory and `ctx_*` session
+  context. `graph-ask` can look up only question names or observed endpoints,
+  rejects repeated queries, and returns an exact endpoint supported by an ordered
+  connected citation chain. Unknowns become open questions; no fabricated prose
+  fallback. All query grammar comes from upstream `buildTraversal` through
+  `src/libs/cheetah-binder.js`.
+- Flags: `webnlg --dataset-path <dir> --limit <entries> --offset <index>
+  --checkpoint <file> --no-resume --session-timeout <seconds> --question <text>`;
+  default dataset `thirds/cheetah/studies/datasets/web_nlg`, limit 20, offset 0,
+  timeout 900 s, checkpoint `.miniphi/cheetah/webnlg/<database>.json`.
+  `graph-ask "<question>"`; both accept `--max-rounds 1..8` (default 4), existing
+  connection/model flags, `--json`, `--no-save`. At most two lookups per turn,
+  sixteen edges per lookup, four handler attempts per prompt; failed extraction
+  retains the episode and does not advance input. Partial batches are errors.
+  The checkpoint keeps cumulative counters, the last 50 records/20 answers;
+  complete per-row receipts live at `<checkpoint>.rows/<index>.json`. Graph
+  evidence is capped at 16 records and prompt size is checked against the loaded
+  model window (conservative 4000-token window when unknown), with schema/system
+  and output reserves. Oversize prompts stop `context-overflow` before inference.
+- Test owner: `unit-tests-js/cheetah-graph-learning.test.js` covers multi-subject
+  writes, duplicates, source gates, strict JSON, two-edge/reverse traversal,
+  invented/disconnected citations, unknowns, timeouts and gold-isolated resume.
+  Operator details and live exit gate: `docs/cheetah-webnlg-learning.md`.
+- Live proof (2026-10-26): exact `qwen3-4b-thinking-2507-mlx` at local port 1234,
+  Cheetah binary protocol, text-only train entries 3/278. The repeatable
+  `cheetah-webnlg.live.test.js` passed extraction, two-edge country reasoning,
+  untaught-control decline, and the same answer after Cheetah restart in 30.5 s.
+  Twenty-entry coverage run: 8 new claims, 1 known, 4 rejected, 7 empty outputs;
+  5/20 gold endpoint pairs matched. This is partial extraction coverage, not
+  full-corpus learning or RDF F1. A separate language-source probe extracted no
+  claims and its three-hop question correctly remained unanswered.
+- Limits: endpoint coverage is not RDF triple F1; source overlap cannot establish
+  entailment/direction; aliases/contradictions and the coding agent's integration
+  remain open. Existing `ask`/`knowledge_lookup` still read the earlier shape.
 - Default LM Studio endpoint: `http://127.0.0.1:1234` (REST) with WebSocket fallback; default model `mistralai/devstral-small-2-2512` (swap to `ibm/granite-4-h-tiny` or `microsoft/phi-4-reasoning-plus` via `--model` or `defaults.model`).
 - `--model auto` queries the live model inventory (native `GET /api/v1/models`, then bounded native-v0/OpenAI-compatible fallbacks) via `src/libs/model-catalog.js`, classifies the task intent (coding/writing/analysis/research), and picks the best installed chat model. Fresh `benchmark models` category scores are primary evidence; inventory purpose/context/load/tool/memory/quantization heuristics are the fallback and tie-break. After at least one fresh benchmark, headless `run`/`analyze-file`/`workspace` flows with no explicit configured model implicitly enable Auto; an explicit CLI/config/env model remains authoritative. `node src/index.js models [--task ...] [--json]` prints the normalized ranking and benchmark evidence. The interactive UI ranks `Auto` after task entry and also offers every exact discovered chat model.
 - The REST client follows the current [LM Studio REST reference](https://lmstudio.ai/docs/developer/rest) for native v1 inventory and explicit lifecycle calls. `models --load <model> [--context-length <n>]` and `models --unload <instance-id>` map to exact v1 load/unload contracts; MiniPhi never implicitly unloads an operator-loaded instance. Schema-bound inference remains on the proven chat-completions route because every prompt must retain `response_format=json_schema`.
@@ -131,7 +191,7 @@ When you add or change CLI behavior:
 - REST authentication is optional through `LMSTUDIO_API_TOKEN` or `lmStudio.rest.apiToken`; authorization headers are redacted from execution-register instrumentation.
 - `LMSTUDIO_REST_URL` is an operator override and takes precedence over configured REST endpoints; this keeps live tests and remote-host workflows from silently querying a checked-in loopback URL.
 - Transport default: REST-first (`lmStudio.transport: "rest"`); override with `lmStudio.transport: "ws"` or env `MINIPHI_FORCE_REST=1` for forced REST.
-- CLI entrypoints: `ui` (interactive agent, also the default for bare `miniphi` / free-form tasks on a TTY), `run`, `analyze-file`, `workspace` (`miniphi "<task>" --headless`), `recompose`, `benchmark models|general|recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, `cheetah-learn teach|ask|chat|questions|eval|wikipedia` (see "Cheetah-learn" below), `bootstrap-agents [dir]` (writes a project's `AGENTS.md` from `docs/guidelines/AGENTS.bootstrap.md` plus a deterministic survey; `--no-model` for survey-only, `--sections`, `--protocol`, `--force`), and helper/command-library browsers.
+- CLI entrypoints: `ui` (interactive agent, also the default for bare `miniphi` / free-form tasks on a TTY), `run`, `analyze-file`, `workspace` (`miniphi "<task>" --headless`), `recompose`, `benchmark models|general|recompose|analyze|plan scaffold`, `cache-prune`, `migrate-stop-reasons`, `lmstudio-health`, `web-browse`, `nitpick`, `cheetah-learn teach|ask|chat|questions|eval|wikipedia|webnlg|graph-ask` (see "Cheetah-learn" below), `bootstrap-agents [dir]` (writes a project's `AGENTS.md` from `docs/guidelines/AGENTS.bootstrap.md` plus a deterministic survey; `--no-model` for survey-only, `--sections`, `--protocol`, `--force`), and helper/command-library browsers.
 - UI routing (`src/ui/route.js` `decideUiLaunch`): on a TTY, bare `miniphi`, the `ui` command, and a free-form task open the Ink UI; `--headless`/`--no-ui`, a non-TTY (scripts/CI), and every explicit subcommand run headless. This keeps direct arguments always available while the UI is the primary interface. Bare UI starts on a home screen with Start task plus an Easy benchmark action and fresh cached score table; a seeded task goes directly to task/model selection. The UI path (`launchInteractiveUi` in `src/index.js`) scans native v1, asks for the task, presents benchmark-informed `Auto` plus manual model choices, then asks for the reasoning profile and previews model/decomposer budgets before starting; the resolved model/load/reasoning snapshot is persisted in session/result JSON. It builds its own lightweight REST client (never a static `context_length`) and dynamic-imports `src/ui/launch.js` so Ink/React never load on headless runs.
 - Audit trails live in `.miniphi/` (`executions/` incl. `task-execution.json`, `prompt-exchanges/`, `helpers/`, `history/`, `indices/` incl. `prompt-router.json`, `web-index.json`, `nitpick-index.json`, `recompose/<session>/edits`, `recompose/<session>/step-events.jsonl`); helper scripts are versioned with stdout/stderr logs. `prompt-trace/<session>/` is the complete prompt/subprompt debug log (`index.jsonl`, `NNNN-<kind>.json`, `transcript.md`, `media/`, `summary.json`) written by `PromptTrace` for every model exchange, including subprompts; `page-understanding/<page>/` holds the screenshots and region crops those exchanges refer to.
 - Health probes (`lmstudio-health`) write snapshots to `.miniphi/health/lmstudio-status.json` (timeout configurable via `lmStudio.health.timeoutMs`).

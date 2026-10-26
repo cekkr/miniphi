@@ -192,6 +192,14 @@ itself and records it under `transport` in `context-engine.json`; set `binary: f
 
 #### Optional: teach a small "ignorant" model with Cheetah (`cheetah-learn`)
 
+For the local WebNLG text-to-graph experiment, use `miniphi cheetah-learn webnlg
+--limit 20`, then `miniphi cheetah-learn graph-ask "Where is Aarhus Airport
+located?"`. These actions default to `qwen3-4b-thinking-2507-mlx` at the local LM
+Studio endpoint and database `miniphi_webnlg`. The model extracts quoted claims
+from training text, then requests graph lookups and cites connected edges to answer.
+See the [WebNLG guide](docs/cheetah-webnlg-learning.md) for setup, resumable slices,
+validation and limits.
+
 This is a **different** use of Cheetah from the context engine above (a separate database,
 `miniphi_knowledge` by default instead of the project-derived context mirror): here Cheetah is the model's
 long-term memory of real-world facts, not the coding agent's own session context.
@@ -484,7 +492,7 @@ These are the commands most people start with:
   CI-oriented strict dry-run check for malformed JSON/legacy stop-reason artifacts.
 - `miniphi recompose` / `miniphi benchmark ...`  
   Development and benchmarking harness (see `WHY_SAMPLES.md`). Recompose defaults to auto (uses LM Studio when reachable); use `--recompose-mode live|offline` to override. `benchmark models` produces model-selection evidence; `benchmark general --live-lm` enables live LM Studio planning + assessment calls with strict JSON validation, compact retry fallbacks for navigator/decomposer/assessment timeouts/context overflow, and adaptive per-stage timeout budgets persisted in summary metadata.
-- `miniphi cheetah-learn teach|ask|chat|questions|eval|wikipedia`
+- `miniphi cheetah-learn teach|ask|chat|questions|eval|wikipedia|webnlg|graph-ask`
   Optional: teach a small "ignorant" model facts via Cheetah (from Hugging Face or a checkpointed local Wikipedia dump) and query them back, grounded only in retrieved source memory — see [Optional: teach a small "ignorant" model with Cheetah](#optional-teach-a-small-ignorant-model-with-cheetah-cheetah-learn).
 - `miniphi bootstrap-agents [dir]`
   Write that project's own `AGENTS.md` — the handbook every later run reads — from the construction

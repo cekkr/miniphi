@@ -216,6 +216,20 @@ optional read-only `knowledge_lookup` action, over a separately selected databas
 (`miniphi_knowledge` by default, `wikidata` for the local Wikipedia workflow). Groundedness is
 adjudicated by the adapter, never taken from the model's own `grounded` field.
 
+The optional `webnlg` / `graph-ask` actions use a separate `miniphi_webnlg` database
+and `knowledge:<sha256>` entity shape. `cheetah-graph-learning.js` extracts multiple
+source-quoted claims, probes before writing, and lets the model request bounded
+single-hop queries to assemble a cited chain across turns. Gold RDF stays outside
+prompts. `cheetah-webnlg-runner.js` checkpoints training input; see
+[`docs/cheetah-webnlg-learning.md`](docs/cheetah-webnlg-learning.md). The older
+`ask` / agent `knowledge_lookup` do not query this new shape. Source overlap is a
+claim filter, not semantic entailment or a current-world truth guarantee. First
+lookups are schema-required; citation/role failures trigger bounded retrieval
+repair. Graph commands opt into whole-document, schema-validated MLX reasoning
+JSON routing, preserving raw fields and source metadata. The two-edge WebNLG live
+test passed with Qwen, an untaught control and Cheetah restart on 2026-10-26;
+broader extraction remains incomplete (5/20 endpoint pairs in the measured slice).
+
 ---
 
 ## 8. Optional capabilities and how they are gated

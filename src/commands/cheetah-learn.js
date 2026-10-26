@@ -24,6 +24,10 @@ import CheetahRunReport from "../libs/cheetah-run-report.js";
 import PromptRecorder from "../libs/prompt-recorder.js";
 import { runWikipediaLearning } from "../libs/cheetah-wikipedia-runner.js";
 import { parseNumericSetting } from "../libs/cli-utils.js";
+import { runWebNlgLearning } from "../libs/cheetah-webnlg-runner.js";
+import { reasonGraph } from "../libs/cheetah-graph-learning.js";
+import { resolveContextWindow } from "../libs/model-catalog.js";
+import { deriveContextBudget, estimateTokens } from "../libs/context-graph.js";
 
 // Kept out of global auto-selection by design: this command defaults to a
 // deliberately small, "ignorant" model driven entirely by Cheetah, while
@@ -43,12 +47,16 @@ function optionsString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder = null }) {
+export function buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder = null, promptTimeoutMs, maxOutputTokens, reasoningEffort, acceptReasoningJson = false }) {
   const handler = new LMStudioHandler(undefined, {
     systemPrompt: CHEETAH_LEARN_SYSTEM_PROMPT,
     schemaRegistry,
     modelKey,
     promptRecorder,
+    promptTimeoutMs,
+    maxOutputTokens,
+    reasoningEffort,
+    acceptReasoningJson,
   });
   handler.setRestClient(restClient, { preferRestTransport: true });
   handler.setTransportPreference({
@@ -564,7 +572,8 @@ export async function handleCheetahLearnCommand({
   restBaseUrl,
 }) {
   const action = (positionals[0] ?? options.action ?? "ask").toLowerCase();
-  const modelKey = optionsString(options.model) ?? DEFAULT_SMALL_MODEL_KEY;
+  const graphMode = ["webnlg", "graph-ask"].includes(action);
+  const modelKey = optionsString(options.model) ?? (graphMode ? "qwen3-4b-thinking-2507-mlx" : DEFAULT_SMALL_MODEL_KEY);
   const requestedContextLength = parseNumericSetting(options["context-length"], "--context-length");
   const overrideBaseUrl =
     optionsString(options["base-url"]) ?? optionsString(options.host) ?? restBaseUrl ?? undefined;
@@ -581,7 +590,7 @@ export async function handleCheetahLearnCommand({
     ) ?? { defaultModel: modelKey },
   );
   const schemaRegistry = new PromptSchemaRegistry();
-  const cheetahClient = buildCheetahClient(options);
+  const cheetahClient = buildCheetahClient(graphMode ? { ...options, "cheetah-database": optionsString(options["cheetah-database"]) ?? "miniphi_webnlg" } : options);
   const emitJson = Boolean(options.json);
   const noSave = Boolean(options["no-save"]);
   const runReport = new CheetahRunReport();
@@ -618,9 +627,40 @@ export async function handleCheetahLearnCommand({
         return await runEval(shared);
       case "wikipedia":
         return await runWikipedia(shared);
+      case "webnlg":
+      case "graph-ask": {
+        const contextWindow = await resolveContextWindow({ restClient, modelId: modelKey });
+        const loadedWindow = contextWindow?.loadedContextLength ?? 4000;
+        const maxOutputTokens = Math.min(4096, Math.floor(loadedWindow * 0.4));
+        const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder,
+          promptTimeoutMs: 180000, maxOutputTokens, acceptReasoningJson: true });
+        handler.graphPromptBudgetTokens = deriveContextBudget({ contextLength: loadedWindow,
+          reservedTokens: estimateTokens(handler.systemPrompt) + estimateTokens(schemaRegistry.getSchema("cheetah-graph-reason").text),
+          reservedOutputTokens: maxOutputTokens });
+        const maxRounds = parseNumericSetting(options["max-rounds"], "--max-rounds") ?? 4;
+        const question = action === "graph-ask" ? positionals.slice(1).join(" ").trim() : optionsString(options.question);
+        if (action === "graph-ask" && !question) throw new Error("graph-ask requires a question");
+        const result = action === "graph-ask"
+          ? await reasonGraph(question, { handler, cheetahClient, schemaRegistry, maxRounds })
+          : await runWebNlgLearning({
+            datasetPath: optionsString(options["dataset-path"]) ?? path.join(process.cwd(), "thirds/cheetah/studies/datasets/web_nlg"),
+            checkpointFile: noSave ? null : path.resolve(optionsString(options.checkpoint) ?? path.join(process.cwd(), ".miniphi/cheetah/webnlg", `${cheetahClient.database}.json`)),
+            handler, cheetahClient, schemaRegistry, modelKey, question, maxRounds,
+            limit: parseNumericSetting(options.limit, "--limit") ?? 20,
+            offset: parseNumericSetting(options.offset, "--offset") ?? 0,
+            sessionTimeoutMs: (parseNumericSetting(options["session-timeout"], "--session-timeout") ?? 900) * 1000,
+            resume: !options["no-resume"],
+            onProgress: emitJson ? undefined : ({ index, result }) => console.log(`[cheetah-learn][webnlg] ${index}: ${result.written} new, ${result.known} known, ${result.rejected.length} rejected`),
+          });
+        if (!noSave) await runReport.saveRun({ id: `${action}-${Date.now()}`, mode: action, params: { modelKey, database: cheetahClient.database }, results: result });
+        if (emitJson) console.log(JSON.stringify(result, null, 2));
+        else if (action === "graph-ask") console.log(`${result.answer} (grounded=${result.grounded}; rounds=${result.rounds})`);
+        else console.log(`[cheetah-learn][webnlg] processed=${result.session.processed} next=${result.nextIndex} stop=${result.stopReason ?? "completed"}`);
+        return result;
+      }
       default:
         throw new Error(
-          `Unsupported cheetah-learn action "${action}". Expected teach, ask, chat, questions, eval, or wikipedia.`,
+          `Unsupported cheetah-learn action "${action}". Expected teach, ask, chat, questions, eval, wikipedia, webnlg, or graph-ask.`,
         );
     }
   } finally {

@@ -56,6 +56,8 @@ export const {
   buildNodeGet,
   buildNodeSet,
   buildRecall,
+  buildTraversal,
+  buildEdgeGet,
   encodeJsonArgument,
 } = binder.graph;
 

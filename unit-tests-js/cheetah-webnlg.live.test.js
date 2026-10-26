@@ -1,0 +1,60 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import net from "node:net";
+import path from "node:path";
+import fs from "node:fs/promises";
+import { CheetahTcpClient, startCheetahServer } from "../src/libs/cheetah-binder.js";
+import { LMStudioRestClient } from "../src/libs/lmstudio-api.js";
+import PromptSchemaRegistry from "../src/libs/prompt-schema-registry.js";
+import PromptRecorder from "../src/libs/prompt-recorder.js";
+import { buildLmStudioHandler } from "../src/commands/cheetah-learn.js";
+import { runWebNlgLearning } from "../src/libs/cheetah-webnlg-runner.js";
+import { reasonGraph } from "../src/libs/cheetah-graph-learning.js";
+
+const enabled = process.env.MINIPHI_LMSTUDIO_INTEGRATION === "1" && process.env.MINIPHI_CHEETAH_INTEGRATION === "1";
+
+test("real WebNLG text extraction, model-directed chain, untaught control and restart", { skip: !enabled, timeout: 900000 }, async (t) => {
+  const root = path.resolve(".miniphi/cheetah/webnlg", `live-${Date.now()}`);
+  await fs.mkdir(root, { recursive: true });
+  const listener = net.createServer();
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const port = listener.address().port;
+  await new Promise((resolve) => listener.close(resolve));
+  const serverOptions = { port, dataDir: path.join(root, "data"), binaryPath: path.resolve("thirds/cheetah/cheetah-server"), build: false };
+  let server = await startCheetahServer(serverOptions);
+  let cheetahClient = new CheetahTcpClient({ port, database: "webnlg_live", timeoutMs: 5000 });
+  t.after(async () => { await cheetahClient.close(); await server.stop(); });
+  const schemaRegistry = new PromptSchemaRegistry();
+  const modelKey = process.env.MINIPHI_LIVE_MODEL ?? "qwen3-4b-thinking-2507-mlx";
+  const restClient = new LMStudioRestClient({ baseUrl: process.env.LMSTUDIO_REST_URL ?? "http://127.0.0.1:1234", defaultModel: modelKey });
+  const recorder = new PromptRecorder(root);
+  await recorder.prepare();
+  const handler = buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder: recorder, acceptReasoningJson: true, maxOutputTokens: 4096, promptTimeoutMs: 180000 });
+  const shared = { datasetPath: path.resolve("thirds/cheetah/studies/datasets/web_nlg"), handler, cheetahClient, schemaRegistry, modelKey, limit: 1 };
+  for (const offset of [3, 278]) {
+    const learned = await runWebNlgLearning({ ...shared, offset, checkpointFile: path.join(root, `${offset}.json`) });
+    assert.equal(learned.stopReason, null, learned.error);
+    assert.equal(learned.totals.written, 1, JSON.stringify(learned.records.at(-1)));
+    assert.equal(learned.totals.matchingPairs, 1);
+  }
+  const question = "In which country is Aarhus Airport located?";
+  const ask = () => reasonGraph(question, { handler, cheetahClient, schemaRegistry, maxRounds: 6 });
+  const before = await ask();
+  await fs.writeFile(path.join(root, "before.json"), JSON.stringify(before, null, 2));
+  assert.equal(before.answer, "Denmark");
+  assert.equal(before.grounded, true);
+  assert.equal(before.evidenceIds.length, 2);
+  const control = await reasonGraph("In which country is NeverTaught Airfield ZQ7419 located?", { handler, cheetahClient, schemaRegistry });
+  await fs.writeFile(path.join(root, "control.json"), JSON.stringify(control, null, 2));
+  assert.equal(control.grounded, false);
+  assert(control.openQuestion);
+  await cheetahClient.close();
+  await server.stop();
+  server = await startCheetahServer(serverOptions);
+  cheetahClient = new CheetahTcpClient({ port, database: "webnlg_live", timeoutMs: 5000 });
+  const after = await ask();
+  await fs.writeFile(path.join(root, "after.json"), JSON.stringify(after, null, 2));
+  assert.equal(after.answer, "Denmark");
+  assert.equal(after.evidenceIds.length, 2);
+  t.diagnostic(`Complete audit: ${root}`);
+});
