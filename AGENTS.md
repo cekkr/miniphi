@@ -221,9 +221,18 @@ When you add or change CLI behavior:
   probes, every request/response and runtime fingerprints remain in the report.
   This world-knowledge experiment is separate from session context and `topic:`
   memory. Historical model-vocabulary reports are preserved as earlier evidence.
-  The renderer publishes the guide, compressed full audit, readable summary and
-  README score block together; `--guide <custom-path>` skips the default README
-  update unless `--readme <path>` is explicitly supplied.
+  The renderer publishes the guide, compressed full audit, readable summary,
+  current full transcript and README score block together. `--guide <custom-path>`
+  skips the default README update unless `--readme <path>` is explicitly supplied. It also skips the
+  default transcript for custom guides unless `--transcript <path>` is supplied.
+  `scripts/render-webnlg-exchanges.js --state <report.json[.gz]> --output <file>`
+  renders the full current transcript directly from a tracked archive without LM
+  Studio, Cheetah or the installed WordNet corpus. The renderer preserves all
+  stages/events, raw responses and tool instrumentation; only duplicate schema
+  copies/encoded payload fields get explicit lossless presentation references.
+  `docs/webnlg_learning.md` is current; `docs/webnlg_learning_legacy.md` preserves
+  the earlier before-teaching study. The older study renderer defaults to the
+  legacy filename, so regenerating history cannot silently replace current logs.
 - `cheetah-learn webnlg|graph-ask` defaults to `qwen3-4b-thinking-2507-mlx` and
   `miniphi_webnlg`, independent of the previous `teach|ask` defaults. Runtime owners:
   `src/libs/cheetah-graph-learning.js` (multi-subject source-overlap extraction,
@@ -289,17 +298,17 @@ When you add or change CLI behavior:
 - Limits: endpoint coverage is not RDF triple F1; source overlap cannot establish
   entailment/direction; aliases/contradictions and the coding agent's integration
   remain open. Existing `ask`/`knowledge_lookup` still read the earlier shape.
-- Extended live study in `docs/webnlg_learning.md`: 20 frozen cases across all 16
+- Historical live study in `docs/webnlg_learning_legacy.md`: 20 frozen cases across all 16
   WebNLG categories, 30 predeclared source-answer facets. Before teaching: 0/30
   grounded, 1/30 closed-book source matches. After restart: original wording 24/30,
   rephrased 17/30; explicit same-source repair continuation 26/30 (16/20 complete).
   All 386 model calls, retries and 474 graph batches remain in the audit. Four
-  facets remain missed: conservative city/country type checks, botanical-order
+  facets were missed in that historical run: conservative city/country type checks, botanical-order
   abstention, and a ship-builder semantic-role false positive (engine endpoint
   through `powered_by`). `grounded` validates a cited path, not full entailment;
   `needsLearning` can miss a wrong-role answer. Soup-to-plant-family cross-concept
   reasoning declined. Do not describe these open limitations as solved.
-- Extended study: `docs/webnlg_learning.md` records 20 fixed subject/aspect units,
+- Historical study: `docs/webnlg_learning_legacy.md` records 20 fixed subject/aspect units,
   all 16 WebNLG categories, 30 predeclared answer facets, and every request/response.
   The manifest is `docs/benchmarks/webnlg-study-cases.json`; the JSON audit is
   `docs/benchmarks/webnlg-learning-study-2026-10-26.json`. Gold triples/answer aliases

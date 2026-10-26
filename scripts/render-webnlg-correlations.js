@@ -5,6 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { renderWebNlgExchangeMarkdown, formatWebNlgTime } from "./lib/webnlg-exchange-markdown.js";
 const args = Object.fromEntries(process.argv.slice(2).reduce((out, token, i, all) => {
   if (token.startsWith("--")) out.push([token.slice(2), all[i + 1]?.startsWith("--") ? true : all[i + 1] ?? true]);
   return out;
@@ -69,12 +70,12 @@ const shipExample = ship ? ["A concrete change in different-wording retrieval:",
   }))])),
 }, null, 2), "```", ""] : [];
 const continuation = report.reusedLearning ? [
-  `This is a retrieval continuation: it copied the completed database from the earlier WordNet run (${report.reusedLearning.startedAt} → ${report.reusedLearning.finishedAt}), retained its learning records and restarted Cheetah. No source was retaught. The active runtime hashes are in this report; original teaching hashes are under reusedLearning.`, "",
+  `This is a retrieval continuation: it copied the completed database from the earlier WordNet run (${formatWebNlgTime(report.reusedLearning.startedAt)} → ${formatWebNlgTime(report.reusedLearning.finishedAt)}), retained its learning records and restarted Cheetah. No source was retaught. The active runtime hashes are in this report; original teaching hashes are under reusedLearning.`, "",
   "The [earlier WordNet audit](benchmarks/webnlg-correlations-wordnet-initial-2026-10-26.json.gz) recorded **27/30** ordinary versus **25/30** correlated question-B facets (98 versus 74 calls), and **6/7** versus **5/7** additional vocabulary facets. The final continuation tests concrete observed-answer JSON choices plus removal of lexical mechanics from the model context, on those same saved facts. Both retrieval arms use the updated runtime. This is not a new learning score or a repeated-trial accuracy estimate.", "",
 ] : [];
 const savedData = path.relative(process.cwd(), path.join(path.dirname(path.resolve(args.state)), "data")).split(path.sep).join("/");
 const rows = ["<!-- graph-correlation-results:start -->", "### Measured WordNet results", "",
-  `Run: ${report.startedAt} → ${report.finishedAt}; exact model \`${report.model}\`, loaded context ${report.loadedContextTokens} tokens.`, "",
+  `Run: ${formatWebNlgTime(report.startedAt)} → ${formatWebNlgTime(report.finishedAt)}; exact model \`${report.model}\`, loaded context ${report.loadedContextTokens} tokens.`, "",
   ...continuation,
   "This run taught all twenty sources once, adding WordNet cues without an LM vocabulary call, then restarted Cheetah. Both retrieval arms used identical factual edges and fresh model histories; order alternated by case. Question B and evaluator aliases are unchanged. Four additional vocabulary questions were fixed before inference and excluded from learning. The older 17/30 → 26/30 history and model-vocabulary pilot are separate experiments.", "",
   "| Measurement | Ordinary graph discovery | Correlated context |", "| --- | --- | --- |",
@@ -109,6 +110,19 @@ const rows = ["<!-- graph-correlation-results:start -->", "### Measured WordNet 
 const marker = /<!-- graph-correlation-results:start -->[\s\S]*?<!-- graph-correlation-results:end -->\n?/;
 assert(marker.test(guide) || guide.includes("## What remains unreliable"));
 await fs.writeFile(guideFile, marker.test(guide) ? guide.replace(marker, rows) : guide.replace("## What remains unreliable", `${rows}\n## What remains unreliable`));
+// The full current transcript is published with the default guide. A custom
+// guide remains isolated unless its transcript destination is explicit.
+if (!args.guide || args.transcript) {
+  const transcript = path.resolve(args.transcript ?? "docs/webnlg_learning.md");
+  const { markdown } = renderWebNlgExchangeMarkdown(report, {
+    guideLink: path.relative(path.dirname(transcript), guideFile).split(path.sep).join("/"),
+    auditLink: path.relative(path.dirname(transcript), output).split(path.sep).join("/"),
+    legacyLink: path.relative(path.dirname(transcript), path.resolve("docs/webnlg_learning_legacy.md")).split(path.sep).join("/"),
+    stateArgument: path.relative(process.cwd(), output), outputArgument: path.relative(process.cwd(), transcript),
+  });
+  await fs.mkdir(path.dirname(transcript), { recursive: true });
+  await fs.writeFile(transcript, markdown);
+}
 // Keep the everyday overview synchronized when publishing the default guide.
 if (!args.guide || args.readme) {
   const readmeFile = path.resolve(args.readme ?? "README.md");

@@ -9,7 +9,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((out, token, i, all
   return out;
 }, []));
 const stateFile = path.resolve(args.state ?? ".miniphi/cheetah/webnlg-study/cohort-20/study.json");
-const output = path.resolve(args.output ?? "docs/webnlg_learning.md");
+const output = path.resolve(args.output ?? "docs/webnlg_learning_legacy.md");
 const jsonOutput = path.resolve(args["json-output"] ?? "docs/benchmarks/webnlg-learning-study-2026-10-26.json");
 const state = JSON.parse(await fs.readFile(stateFile, "utf8"));
 const cases = Object.values(state.cases);
@@ -113,7 +113,8 @@ function answerStage(c, phase, label) {
   }));
   exchanges(record);
 }
-add("# WebNLG learning and delayed retrieval with a small language model", "",
+add("# Historical WebNLG learning and delayed retrieval with a small language model", "",
+  "This is the preserved earlier study. The [current WordNet and predefined-JSON transcript](webnlg_learning.md) contains the newer recorded requests and responses.", "",
   "For selected concepts, a compact worked example and current prompt contracts, read the [practical guide](cheetah-webnlg-learning.md). This file retains the complete recorded exchanges.", "",
   "The later optional [associative-vocabulary workflow](cheetah-webnlg-learning.md#associative-vocabulary-learning) uses independent WordNet/OMW vocabulary to learn retrieval cues and correlate entity/aspect words through Cheetah. Its separate results do not replace the historical measurements in this transcript.", "",
   ...(!hasResponseTemplates ? ["These recorded prompts already included exact JSON schemas, but predate the concrete response templates added to the runtime afterward. The practical guide describes that later change; the historical requests and measurements below are preserved.", ""] : []),

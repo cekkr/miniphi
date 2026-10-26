@@ -3,10 +3,12 @@
 MiniPhi can teach a small local model to extract facts into Cheetah, then answer a
 newly worded question from that saved graph. Here, **learning changes the database,
 not the model's weights**. This guide explains the process with selected real
-examples. [The complete twenty-example transcript](webnlg_learning.md) contains
-every prompt, response, write and failed attempt; the
-[JSON audit](benchmarks/webnlg-learning-study-2026-10-26.json) preserves exact wire
-requests.
+examples. The [current twenty-example transcript](webnlg_learning.md) shows every
+new predefined JSON prompt, LM Studio response, WordNet lookup and Cheetah
+exchange. Its [current JSON audit](benchmarks/webnlg-correlations-wordnet-2026-10-26.json.gz)
+preserves the exact serialized requests. The [historical transcript](webnlg_learning_legacy.md)
+and [original audit](benchmarks/webnlg-learning-study-2026-10-26.json) retain the
+before-teaching probes and earlier failures.
 
 The recorded model was `qwen3-4b-thinking-2507-mlx`, served by LM Studio at
 `http://127.0.0.1:1234`, with an 8192-token loaded context. Sources came from the
@@ -14,7 +16,7 @@ local English WebNLG training export in `thirds/cheetah/studies/datasets/web_nlg
 Only human-written target sentences were taught. Gold RDF and answer aliases were
 kept outside model prompts for evaluation.
 
-## What happened in the twenty-example study
+## What happened in the original twenty-example study
 
 Twenty concepts span all sixteen dataset categories and contain thirty requested
 answer facets. All questions were asked before teaching. MiniPhi then taught all
@@ -390,9 +392,9 @@ WordNet are evaluated separately below.
 <!-- graph-correlation-results:start -->
 ### Measured WordNet results
 
-Run: 2026-10-26T20:42:48.323Z → 2026-10-26T21:02:11.986Z; exact model `qwen3-4b-thinking-2507-mlx`, loaded context 8192 tokens.
+Run: 2026-10-26 21:42:48 Europe/Rome → 2026-10-26 22:02:11 Europe/Rome; exact model `qwen3-4b-thinking-2507-mlx`, loaded context 8192 tokens.
 
-This is a retrieval continuation: it copied the completed database from the earlier WordNet run (2026-10-26T20:13:52.668Z → 2026-10-26T20:38:14.537Z), retained its learning records and restarted Cheetah. No source was retaught. The active runtime hashes are in this report; original teaching hashes are under reusedLearning.
+This is a retrieval continuation: it copied the completed database from the earlier WordNet run (2026-10-26 21:13:52 Europe/Rome → 2026-10-26 21:38:14 Europe/Rome), retained its learning records and restarted Cheetah. No source was retaught. The active runtime hashes are in this report; original teaching hashes are under reusedLearning.
 
 The [earlier WordNet audit](benchmarks/webnlg-correlations-wordnet-initial-2026-10-26.json.gz) recorded **27/30** ordinary versus **25/30** correlated question-B facets (98 versus 74 calls), and **6/7** versus **5/7** additional vocabulary facets. The final continuation tests concrete observed-answer JSON choices plus removal of lexical mechanics from the model context, on those same saved facts. Both retrieval arms use the updated runtime. This is not a new learning score or a repeated-trial accuracy estimate.
 
@@ -557,7 +559,7 @@ taxonomic-order answers now pass. The separate “shipwright” wording still mi
 the builder in both modes (6/7 additional vocabulary facets). These are observed
 results on this cohort; the following failures belong to the earlier transcript.
 
-The twenty-example transcript deliberately retains the four missed facets:
+The [historical twenty-example transcript](webnlg_learning_legacy.md) deliberately retains the four missed facets:
 
 | Failure | What it shows |
 | --- | --- |

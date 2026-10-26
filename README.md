@@ -303,7 +303,7 @@ concepts, a worked teach/retrieve example, results and the current response JSON
 templates. The shared runtime builder supplies different shapes for assessment,
 extraction, graph lookup, answering and context-reference selection.
 
-The [extended WebNLG study](docs/webnlg_learning.md) follows **20 distinct concepts
+The [historical WebNLG study](docs/webnlg_learning_legacy.md) follows **20 distinct concepts
 across all 16 dataset categories**, with 30 predeclared answer facets. It records
 closed-book self-confidence and question decomposition, graph gaps before teaching,
 source-backed writes, a Cheetah restart, rephrased retrieval, and an explicit repair
@@ -311,10 +311,16 @@ continuation preserving the original failures. Every prompt, JSON response and
 Cheetah exchange is included. Confidence is a diagnostic; accepted graph evidence
 determines whether a memory gap remains.
 
-Rephrased retrieval rose from **17/30 to 26/30 source-answer facets** after repairs
-(16/20 complete examples; 386 model calls including retries). Four facets remain
-missed, including a wrongly accepted engine answer to a ship-builder question.
-The cross-concept soup-to-plant-family query declined; its full trace is included.
+In that historical run, rephrased retrieval rose from **17/30 to 26/30
+source-answer facets** after repairs (16/20 complete examples; 386 model calls
+including retries). Four facets remained missed, including a wrongly accepted
+engine answer to a ship-builder question. The cross-concept soup-to-plant-family
+query declined; its full trace is preserved.
+
+The [current full transcript](docs/webnlg_learning.md) shows the newer WordNet
+learning and retrieval exchanges for all twenty concepts: active JSON schemas,
+predefined answer structures, raw LM Studio responses, canonical Cheetah requests
+and decoded results. The shorter guide remains the starting point for browsing.
 
 Compound questions can use the same runtime directly:
 

@@ -255,12 +255,15 @@ broader extraction remains incomplete (5/20 endpoint pairs in that earlier measu
 answers/self-confidence and separately grounded graph answers. Confidence never
 licenses a write or answer. Focus references and bounded lexical name completion
 keep model wording from minting new roots; partial source extraction and redundant
-citations have bounded repairs. The twenty-concept delayed-retrieval study and its
-complete exchanges are in [`docs/webnlg_learning.md`](docs/webnlg_learning.md).
-Rephrased source-answer coverage improved from 17/30 to 26/30 after explicit
-repairs (16/20 complete examples). The accepted-path check still admits a wrong
-ship-builder role, and conservative location types plus model abstention leave
-three other misses. The soup-to-plant-family query declined; confidence and
+citations have bounded repairs. The current twenty-concept WordNet/predefined-JSON exchanges are in
+[`docs/webnlg_learning.md`](docs/webnlg_learning.md): 28/30 source-answer facets
+versus 26/30 ordinary discovery on the same saved facts. Its renderer preserves
+all 81 stages/1446 exchanges and runs offline from the tracked compressed audit.
+The earlier delayed-retrieval study is preserved in
+[`docs/webnlg_learning_legacy.md`](docs/webnlg_learning_legacy.md); that historical
+run improved from 17/30 to 26/30 after explicit repairs (16/20 complete examples).
+In that earlier run, the accepted-path check admitted a wrong ship-builder role,
+and conservative location types plus model abstention left three other misses. The soup-to-plant-family query declined; confidence and
 connected citations do not establish semantic correctness.
 
 ---
