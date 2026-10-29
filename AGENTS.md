@@ -155,6 +155,59 @@ When you add or change CLI behavior:
 
 ## Runtime posture
 
+### General optional graph knowledge runtime (2026-10-29)
+- `src/libs/knowledge-runtime.js` reuses `learnGraphText`, `answerGraphConcepts`,
+  source/citation/context repairs and optional WordNet correlations for any selected model.
+  `src/libs/cheetah-model-handler.js` owns the common REST/schema handler factory;
+  `cheetah-learn` re-exports it for existing clients. No model id is hard-coded in the runtime.
+- Opt-in: `knowledge.enabled=true` or `MINIPHI_KNOWLEDGE=1`. One successful
+  `SYSTEM_STATS` probe gates wiring; failure closes the client and persists a fallback diagnostic.
+  Connection keys: `knowledge.cheetah.{host,port,database,timeoutMs,binary}`; existing
+  `MINIPHI_KNOWLEDGE_{HOST,PORT,DATABASE,TIMEOUT_MS,BINARY}` override them.
+  Default database is `miniphi_webnlg`, independent of `knowledgeLookup`'s `topic:` facts
+  and `context.engine`'s session mirror. Disabled mode has no probe or added model calls.
+- Runtime limits: `knowledge.maxActions` (default 6, cap 16), `maxRounds` (4, cap 8),
+  `timeoutMs` (120000, cap 600000) and the caller's session deadline. Prompts use only the
+  loaded model window, falling back to 4000. Every exchange declares the exact existing graph
+  schema, including active enum/citation constraints; repairs remain bounded and JSON-only.
+- The agent actions `knowledge_check {question}`, `knowledge_learn {source_id}`, and
+  `knowledge_questions {}` are auto-run only when the runtime is present. A check reports
+  remembered priors/confidence as diagnostics, retrieves source-backed per-concept answers,
+  records unresolved questions, and resolves an exact matching earlier question on success.
+  Its result enters `contract` with TTL 2 so the next prompt sees the corrective context.
+- `read_file` on a file not written by this session, and structured web provider results,
+  expose short session-local `knowledge_sources` IDs (`source:s1`, etc.). Only caller-observed sources of kind workspace/web/validation
+  can be registered; model-authored source text and invented IDs are rejected. Up to four
+  UTF-8 pages (4000 bytes each) per observation, at most 64 source entries, are retained.
+  Extraction's source-overlap checks are a filter, not semantic entailment or current truth.
+- Headless `LMStudioHandler` enriches task-bearing JSON prompts or explicit
+  `metadata.knowledgeQuestion`, preserving the original response contract. Analyzer input
+  (`payload.data`) supplies one bounded learning page unless `knowledge.learnFromInputs=false`.
+  Checks are cached by actual model/question/graph revision; nested graph handlers never own
+  a runtime, preventing recursion. Only spare prompt budget is used (at most 800 tokens),
+  with whole-JSON fallback rather than sliced citation paths. Adaptive routing forwards the
+  runtime to the chosen handler. Other direct REST helpers retain their existing contracts.
+- `knowledge.correlate=true`, `wordnetDirectory`, and `wordnetLanguages` (eng,ita,fra,spa)
+  reuse the installed local WordNet lexicon and its existing failure fallback; no inference download.
+- `ErrorLearner` and remembered-answer disagreements store model-scoped `model-limit:`
+  diagnostics linked from `model:<hash>` via `observed_limit`, all `factual:false`.
+  They cannot become `knowledge:` source evidence. Relevant rules are retrieved for that
+  exact model only. A disagreement is a diagnostic, not proof that a model's prior is false.
+  Error lessons send observed failures/research in a JSON request with the exact response schema
+  and retain reasoning/tool metadata. Model-picker changes also update the lesson and subtask helpers.
+- `.miniphi/knowledge/<session>/runtime.json` stores results, full graph traces, limits and
+  canonical stop codes/details. PromptRecorder (and the UI PromptTrace) retain every raw response,
+  reasoning, request/active schema, usage, tool_calls and tool_definitions, including failed attempts.
+  Successful stop markers normalize to null; the owning caller closes the runtime's client.
+- Regression: `unit-tests-js/knowledge-runtime.test.js`; live matrix:
+  `MINIPHI_LMSTUDIO_INTEGRATION=1 MINIPHI_CHEETAH_INTEGRATION=1 node --test unit-tests-js/knowledge-runtime.live.test.js`
+  (`MINIPHI_LIVE_MODELS` overrides the comma-separated Qwen/GPT-OSS defaults).
+  On 2026-10-29, Qwen failed with `Model is unloaded` and GPT-OSS with LM Studio's
+  insufficient-resources guard. The general integration is offline-covered, not live-proven.
+  The real Cheetah protocol test passes with schema-scripted model responses, including
+  source-edge writes, cited retrieval and non-factual diagnostic recall. The configured full
+  suite passed 545 tests using a temporary REST configuration and installed headless Chrome.
+
 ### WebNLG structured knowledge experiment (2026-10-26)
 - `webnlg --correlate` enables optional WordNet vocabulary learning;
   `graph-ask --correlate` enables associative recall (`--decompose` keeps each
@@ -249,8 +302,8 @@ When you add or change CLI behavior:
   require the terminal quote/relation to identify the requested role, preventing
   an intermediate location from masquerading as a country. PromptRecorder keeps
   raw responses, reasoning, usage and tool calls/definitions. No gold RDF enters prompts.
-- `LMStudioHandler.acceptReasoningJson` is opt-in, enabled only by these graph
-  commands: MLX may route the entire schema-constrained document into
+- `LMStudioHandler.acceptReasoningJson` is opt-in, enabled by these graph
+  commands and the optional knowledge runtime: MLX may route the entire schema-constrained document into
   `reasoning_content` and leave `content` empty. Accept only a whole JSON document
   matching the exact requested schema, finish `stop`, and no tool calls. Never
   mine fragments from reasoning/prose or accept truncated output. Instrumentation

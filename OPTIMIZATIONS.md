@@ -239,6 +239,11 @@ Exit criteria:
 - Session timeouts and retry caps are enforced uniformly across handlers and analyzers.
 
 Status:
+- General optional graph knowledge now shares the tested extraction/assessment/retrieval contracts
+  across the interactive agent and task-bearing headless prompts (`knowledge-runtime.js`).
+  Routing uses the selected model; diagnostics remain outside factual edges; request/response/tool
+  instrumentation and canonical stop codes persist. The live integration exit criterion remains open:
+  Qwen/GPT-OSS model-loading/resource failures prevented the 2026-10-29 proof run.
 - In progress. Shared error classification now lives in `src/libs/lmstudio-error-utils.js` and is
   used by `lmstudio-handler`, `api-navigator`, and `prompt-decomposer`; LM Studio bootstrap +
   compatibility checks moved into `src/libs/lmstudio-runtime.js`, and endpoint/transport resolution

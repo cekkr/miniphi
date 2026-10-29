@@ -57,6 +57,8 @@ const PLAN_GATHERING_ACTIONS = new Set([
   "search_text",
   "web_research",
   "knowledge_lookup",
+  "knowledge_check",
+  "knowledge_questions",
   "page_inspect",
   "page_understand",
   "visual_review",
@@ -162,6 +164,8 @@ const VISUAL_REVIEW_GUIDE = `A vision-capable model is available this session. U
 // that would just report "unavailable".
 const KNOWLEDGE_LOOKUP_GUIDE = `A knowledge base (taught via the separate "cheetah-learn" command, e.g. from Wikipedia text) is available this session. Use knowledge_lookup (subject: an entity/topic name, e.g. "Springfield") before asserting a real-world fact you are not certain of; it runs automatically and returns structured JSON (resolved, facts, evidence) grounded in what was actually taught. resolved=false means nothing is recorded there - say so rather than guessing.`;
 
+const KNOWLEDGE_GUIDE = `Optional graph knowledge is available for your selected model. Use knowledge_check (question) to split factual questions, check your remembered answer against source-backed Cheetah evidence, and retrieve a corrected cited answer. Treat confidence and model_limits as diagnostics. When knowledge is missing, read a workspace source or use web_research, then knowledge_learn (source_id copied from knowledge_sources) and knowledge_check again. Only observed source text can be learned. knowledge_questions lists unresolved questions. If sources cannot settle a gap, ask the operator a specific question in your summary and finish with needs_more_context=true. Never invent a fact to close a gap. These actions share a bounded budget; use their returned evidence in the next prompt.`;
+
 // Only appended when page tooling was wired (see AgentSession.pageInspect /
 // pageUnderstand). Both are auto-run and read-only.
 // Only appended when a checkpoint history is wired.
@@ -197,6 +201,7 @@ export default class AgentSession extends EventEmitter {
     this.visionReview = typeof options?.visionReview === "function" ? options.visionReview : null;
     this.knowledgeLookup =
       typeof options?.knowledgeLookup === "function" ? options.knowledgeLookup : null;
+    this.knowledgeRuntime = options?.knowledgeRuntime ?? null;
     // Read-only page tooling. Wired only when the caller provides it, following
     // the same "probe once, wire only if healthy, otherwise never advertise the
     // action" pattern web_research/visual_review/knowledge_lookup use.
@@ -440,6 +445,12 @@ export default class AgentSession extends EventEmitter {
       Number.isFinite(contextLength) && contextLength > 0
         ? Math.floor(contextLength)
         : null;
+    this.knowledgeRuntime?.configure({ model: this.model, contextLength: this.contextLength });
+    if (this.errorLearner) this.errorLearner.model = this.model;
+    if (this.subpromptComposer) {
+      this.subpromptComposer.model = this.model;
+      this.subpromptComposer.contextLength = this.contextLength;
+    }
     if (!this._hasExplicitContextBudget) {
       this.contextBudgetTokens = deriveContextBudget({
         contextLength: this.contextLength,
@@ -541,6 +552,7 @@ export default class AgentSession extends EventEmitter {
         ? PAGE_TOOLS_GUIDE
         : null,
       typeof this.knowledgeLookup === "function" ? KNOWLEDGE_LOOKUP_GUIDE : null,
+      this.knowledgeRuntime ? KNOWLEDGE_GUIDE : null,
       this.checkpoints ? CHECKPOINT_GUIDE : null,
     ].filter(Boolean);
     const parts = [
@@ -1800,6 +1812,10 @@ export default class AgentSession extends EventEmitter {
       // A gathering subtask is finished by having gathered something.
       this._gatheredThisTurn = true;
     }
+    const knowledgeSources = status === "executed" && action.type === "read_file" &&
+      !this.appliedEdits.some(edit => edit.action?.path === action.path && edit.status === "written")
+      ? this.knowledgeRuntime?.observe({ text: output, source: action.path, kind: "workspace" }) ?? [] : [];
+    if (knowledgeSources.length) output += `\n${JSON.stringify({ knowledge_sources: knowledgeSources })}`;
     const result = { turn, action: { type: action.type, path: action.path, term: action.term }, status, output };
     this.emit("action-result", result);
     this._remember({
@@ -1857,6 +1873,7 @@ export default class AgentSession extends EventEmitter {
     this.emit("action-start", { turn, action, description: describeAction(action) });
 
     let output = "";
+    const knowledgeSources = [];
     let status = "executed";
     if (typeof this.webResearch !== "function") {
       status = "unavailable";
@@ -1868,6 +1885,13 @@ export default class AgentSession extends EventEmitter {
     } else {
       try {
         const report = await this.webResearch(action.query, { maxResults: action.maxResults });
+        // Only provider output is source material; the model's query is not.
+        for (const item of Array.isArray(report?.results) ? report.results : []) {
+          const text = [item.text, item.content, item.snippet].find(value => typeof value === "string" && value.trim());
+          if (item.url && text) {
+            knowledgeSources.push(...this.knowledgeRuntime?.observe({ text, source: item.url, kind: "web" }) ?? []);
+          }
+        }
         output =
           typeof report === "string"
             ? report
@@ -1896,7 +1920,8 @@ export default class AgentSession extends EventEmitter {
       this._gatheredThisTurn = true;
       this._webResearchCompleted = true;
     }
-    const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS);
+    const boundedOutput = String(output).slice(0, MAX_RESEARCH_OUTPUT_CHARS) +
+      (knowledgeSources.length ? `\n${JSON.stringify({ knowledge_sources: knowledgeSources })}` : "");
     const result = {
       turn,
       action: { type: action.type, query: action.query, maxResults: action.maxResults },
@@ -1995,6 +2020,7 @@ export default class AgentSession extends EventEmitter {
   }
 
   async _handleKnowledgeLookup({ action, turn }) {
+    if (action.type !== "knowledge_lookup") return this._handleGraphKnowledge({ action, turn });
     const signature = `${action.type}:${action.subject}`;
     if (this._actionSignatures.has(signature)) {
       const result = { turn, action: { type: action.type, subject: action.subject }, status: "duplicate" };
@@ -2059,6 +2085,22 @@ export default class AgentSession extends EventEmitter {
       importance: 0.75,
       kind: "knowledge",
     });
+    await this._appendTranscript({ kind: "knowledge", ...result });
+  }
+
+  async _handleGraphKnowledge({ action, turn }) {
+    this.emit("action-start", { turn, action, description: describeAction(action) });
+    const operation = { knowledge_check: "check", knowledge_learn: "learn", knowledge_questions: "questions" }[action.type];
+    const request = { question: action.question, sourceId: action.sourceId, model: this.model, sessionDeadline: this.sessionDeadline };
+    const response = this.knowledgeRuntime ? await this.knowledgeRuntime[operation](request) :
+      { ok: false, stop_reason: "analysis-error", stop_reason_code: "analysis-error", stop_reason_detail: "unavailable", error: "Graph knowledge is not configured" };
+    // ContextGraph owns compaction. Keep JSON and complete citation chains intact.
+    const result = { turn, action, status: response.ok ? "executed" : this.knowledgeRuntime ? "failed" : "unavailable", output: JSON.stringify(response) };
+    if (response.ok) { this._progressThisTurn = true; this._gatheredThisTurn = true; }
+    this.emit("action-result", result);
+    this._remember({ layer: action.type === "knowledge_check" ? "contract" : "evidence",
+      label: describeAction(action), text: result.output, importance: 0.9,
+      ...(action.type === "knowledge_check" ? { ttlTurns: 2 } : {}), kind: "knowledge" });
     await this._appendTranscript({ kind: "knowledge", ...result });
   }
 
@@ -2933,6 +2975,7 @@ export default class AgentSession extends EventEmitter {
           }
         : null,
       lessons: this.errorLearner?.stats?.() ?? null,
+      knowledge: this.knowledgeRuntime?.stats?.() ?? null,
       promptTrace: this.trace?.stats?.() ?? null,
     };
     await this.trace?.finalize?.({ sessionId: this.sessionId, stopReason });

@@ -1906,6 +1906,7 @@ async function main() {
       wsBaseUrl: resolvedLmStudioWsBase,
       routerConfig,
       reasoning,
+      sessionDeadline,
     });
   if (
     Number.isFinite(lmStudioRuntime?.resolvedContextLength) &&
@@ -3025,6 +3026,7 @@ const describeWorkspace = (dir, options = undefined) =>
       }
     }
     try {
+      await phi4.knowledgeRuntime?.close();
       await phi4.eject();
     } catch {
       // no-op

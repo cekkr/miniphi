@@ -121,6 +121,7 @@ export class ErrorLearner {
       typeof options?.model === "string" && options.model.trim() ? options.model.trim() : null;
     this.localMemory = options?.localMemory ?? null;
     this.knowledgeClient = options?.knowledgeClient ?? null;
+    this.knowledgeRuntime = options?.knowledgeRuntime ?? null;
     this.webResearch = typeof options?.webResearch === "function" ? options.webResearch : null;
     this.trace = options?.trace ?? NULL_PROMPT_TRACE;
     this.logger = typeof options?.logger === "function" ? options.logger : null;
@@ -281,6 +282,10 @@ export class ErrorLearner {
     this._lessons.push(entry);
     this._stats.lessons += 1;
 
+    // A model's inferred rule is diagnostic memory, never a factual graph edge.
+    await this.knowledgeRuntime?.recordLesson({ model: this.knowledgeRuntime.model ?? this.model,
+      kind: observation.kind, detail: observation.detail, rule: entry.rule }).catch(() => {});
+
     if (entry.durable) {
       await this._persist(entry);
     } else {
@@ -308,19 +313,15 @@ export class ErrorLearner {
       "Exact JSON schema:",
       schemaBlock,
     ].join("\n");
-    const user = [
-      mission ? `The run's mission: ${String(mission).slice(0, 600)}` : null,
-      `Failure kind: ${observation.kind}`,
-      `Seen ${observation.count} time(s)${observation.path ? ` on ${observation.path}` : ""}.`,
-      `Reported detail:\n${observation.detail}`,
-      observation.samples.length
-        ? `Surrounding evidence:\n${observation.samples.join("\n---\n")}`
-        : null,
-      research ? `Web research results:\n${research}` : null,
-      "State the lesson as JSON now.",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+    const user = JSON.stringify({
+      task: "Derive a diagnostic rule from this observed recurring failure. State the lesson as JSON matching response_schema.",
+      schema_id: ERROR_LESSON_SCHEMA_ID,
+      response_schema: this.schemaRegistry.getSchema(ERROR_LESSON_SCHEMA_ID).definition,
+      mission: mission ? String(mission).slice(0, 600) : null,
+      failure: { kind: observation.kind, count: observation.count, path: observation.path ?? null,
+        detail: observation.detail, samples: observation.samples },
+      research,
+    });
 
     const sampling = resolveSampling("summary");
     const messages = [
@@ -367,9 +368,13 @@ export class ErrorLearner {
         top_p: sampling.top_p,
         max_tokens: this.maxTokens,
         samplingProfile: sampling.samplingProfile,
+        tool_definitions: [],
       },
       response: {
         text,
+        reasoning: completion?.choices?.[0]?.message?.reasoning_content ?? null,
+        tool_calls: completion?.choices?.[0]?.message?.tool_calls ?? null,
+        tool_definitions: [],
         finish_reason: completion?.choices?.[0]?.finish_reason ?? null,
         usage: completion?.usage ?? null,
       },

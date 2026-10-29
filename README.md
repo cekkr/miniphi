@@ -16,7 +16,7 @@ Because a local model's context window is small (LM Studio typically loads model
 - **Drafting edits:** propose patches, refactors, docs updates, or helper scripts based on the repo snapshot.
 - **Nitpicking loops:** pit two local models against each other to improve long-form drafts.
 - **Web research (optional):** let the agent search for current libraries and capture page text via headless browsing.
-- **Small-model knowledge experiments (optional):** teach a deliberately small, "ignorant" model facts from plain text via Cheetah and query them back, grounded only in what it actually learned — see `cheetah-learn` below.
+- **Graph knowledge for any selected model (optional):** learn from observed sources, check remembered answers against Cheetah evidence, retain model-specific error diagnostics, and rebuild response context. The same pipeline also powers the small-model `cheetah-learn` experiments below.
 
 > miniPhi is intentionally **local-first**. It’s not a hosted chatbot: you run LM Studio and you own the artifacts it writes.
 
@@ -435,6 +435,45 @@ regular run never pays a reachability check. Turn it on with:
 
 or `MINIPHI_KNOWLEDGE_LOOKUP=1`. The agent will then check recorded facts before asserting
 something it isn't sure of, whenever a `cheetah-server` is actually reachable.
+
+#### Optional graph learning and checking for any model
+
+The graph pipeline tested with small Qwen models is also available to the normal agent and
+headless analysis with any selected LM Studio model. Start Cheetah as described above, then add:
+
+```json
+{ "knowledge": { "enabled": true } }
+```
+
+Or enable it for one run:
+
+```bash
+MINIPHI_KNOWLEDGE=1 miniphi ui --model auto --task "Check the project documentation before updating the code"
+MINIPHI_KNOWLEDGE=1 miniphi analyze-file --model auto --file README.md --task "Check the facts in this document"
+```
+
+The agent gains three optional actions: `knowledge_check` decomposes a question and retrieves a
+cited graph answer; `knowledge_learn` saves claims from a source ID returned by an actual file read
+or web search; `knowledge_questions` retrieves unresolved questions. A check compares the model's
+remembered answer with source evidence and puts the corrected context into its next turn. Repeated
+runtime failures also supply model-specific diagnostic lessons. Missing evidence remains a gap the
+agent can research or ask you to clarify.
+
+Headless `run`, `workspace`, and `analyze-file` reuse this capability through their shared model
+handler: one bounded page of observed analyzer input can be learned, then cited context enriches the
+task prompt within its available budget. Set `knowledge.learnFromInputs: false` for checking only.
+Each response keeps its original JSON schema. Adaptive routing uses the model actually selected.
+
+Facts use `miniphi_webnlg` by default, so existing WebNLG teaching is reusable. Set
+`knowledge.cheetah.database` to choose another graph database. This setting is independent of
+`context.engine` and the older `knowledgeLookup` topic store. Optional `knowledge.correlate: true`
+reuses installed WordNet vocabulary; it never downloads a corpus during inference. Full requests,
+responses, reasoning and tool metadata are saved under `.miniphi/prompt-exchanges/`; operation results
+and graph traces are under `.miniphi/knowledge/<session>/runtime.json`.
+
+The integration has offline regression coverage and passes a real Cheetah protocol test with
+scripted model JSON. The live Qwen/GPT-OSS test on 2026-10-29 was
+blocked by LM Studio model loading/resource failures; this general integration is not yet live-proven.
 
 ### Common workflows
 

@@ -24,6 +24,7 @@ import { createPromptTrace } from "../libs/prompt-trace.js";
 import { composeGuidelines } from "../libs/project-guidelines.js";
 import SubpromptComposer from "../libs/subprompt-composer.js";
 import ErrorLearner from "../libs/error-learning.js";
+import { createKnowledgeRuntime } from "../libs/knowledge-runtime.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -138,6 +139,8 @@ export async function launchAgentUi(options = undefined) {
   // has nowhere to persist to.
   const sessionId = `agent-${Date.now()}`;
   const trace = createPromptTrace({ baseDir, sessionId });
+  const knowledgeRuntime = await createKnowledgeRuntime({ client, configData, model,
+    contextLength, schemaRegistry, trace, baseDir, sessionId, sessionDeadline });
   const pageUnderstand = visionModel
     ? createPageUnderstandAction({
         restClient: client,
@@ -179,6 +182,8 @@ export async function launchAgentUi(options = undefined) {
       localMemory,
       baseDir,
       trace,
+      knowledgeRuntime,
+      webResearch: webResearch ?? ((query, researchOptions) => researcher.search(query, researchOptions)),
     }),
     client,
     cwd,
@@ -190,6 +195,7 @@ export async function launchAgentUi(options = undefined) {
       ((query, researchOptions) => researcher.search(query, researchOptions)),
     visionReview,
     knowledgeLookup,
+    knowledgeRuntime,
     sessionDeadline,
     model,
     temperature,
@@ -221,6 +227,7 @@ export async function launchAgentUi(options = undefined) {
       initialReasoningProfile=${reasoningProfile}
     />`,
   );
-  await app.waitUntilExit();
+  try { await app.waitUntilExit(); }
+  finally { await knowledgeRuntime?.close(); }
   return session;
 }

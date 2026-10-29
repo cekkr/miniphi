@@ -17,7 +17,7 @@ const VENDORED_PATH = /(?:^|\/)(node_modules|\.git|vendor|dist|build|\.venv|__py
 export const READONLY_ACTION_TYPES = new Set(["read_file", "list_dir", "search_text"]);
 export const RESEARCH_ACTION_TYPES = new Set(["web_research"]);
 export const VISUAL_ACTION_TYPES = new Set(["visual_review"]);
-export const KNOWLEDGE_ACTION_TYPES = new Set(["knowledge_lookup"]);
+export const KNOWLEDGE_ACTION_TYPES = new Set(["knowledge_lookup", "knowledge_check", "knowledge_learn", "knowledge_questions"]);
 // Read-only page tooling: structure "as written" and "as rendered"
 // (page_inspect), and the vision region decomposition (page_understand).
 export const PAGE_ACTION_TYPES = new Set(["page_inspect", "page_understand"]);
@@ -172,6 +172,8 @@ export function describeAction(action) {
     action.term ??
     action.query ??
     action.subject ??
+    action.question ??
+    action.sourceId ??
     action.command ??
     "";
   return `${action.type}${target ? ` ${target}` : ""}`.trim();
@@ -342,6 +344,20 @@ export function normalizeAgentAction(rawAction, cwd) {
     action.subject = subject.slice(0, 200);
     return { ok: true, action, category };
   }
+
+  if (type === "knowledge_check") {
+    const question = typeof rawAction.question === "string" ? rawAction.question.trim() : "";
+    if (!question || question.length > 1000) return { ok: false, error: "knowledge_check requires a question of 1..1000 characters" };
+    action.question = question;
+    return { ok: true, action, category };
+  }
+  if (type === "knowledge_learn") {
+    const sourceId = typeof rawAction.source_id === "string" ? rawAction.source_id.trim() : "";
+    if (!/^source:s[1-9][0-9]{0,5}$/u.test(sourceId)) return { ok: false, error: "knowledge_learn requires an observed source_id" };
+    action.sourceId = sourceId;
+    return { ok: true, action, category };
+  }
+  if (type === "knowledge_questions") return { ok: true, action, category };
 
   if (PAGE_ACTION_TYPES.has(type)) {
     // Same two-target shape as visual_review, and the same loopback-only rule

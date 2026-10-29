@@ -179,6 +179,7 @@ Persistence per session: `.miniphi/agent-sessions/<id>/` holds `session.json`,
 | Durable `.miniphi` memory | [`src/libs/local-context-memory.js`](src/libs/local-context-memory.js) |
 | Cheetah session-context mirror | [`src/libs/cheetah-context-engine.js`](src/libs/cheetah-context-engine.js) |
 | Cheetah world-knowledge teach/recall | [`src/libs/cheetah-knowledge-client.js`](src/libs/cheetah-knowledge-client.js), [`src/libs/cheetah-learner.js`](src/libs/cheetah-learner.js) |
+| Optional model-independent graph knowledge | [`src/libs/knowledge-runtime.js`](src/libs/knowledge-runtime.js), [`src/libs/cheetah-model-handler.js`](src/libs/cheetah-model-handler.js) |
 | Cheetah transport (only import site) | [`src/libs/cheetah-binder.js`](src/libs/cheetah-binder.js) |
 | LM Studio transport + reasoning | [`src/libs/lmstudio-api.js`](src/libs/lmstudio-api.js), [`src/libs/reasoning-profile.js`](src/libs/reasoning-profile.js) |
 | Model inventory, Auto, context window | [`src/libs/model-catalog.js`](src/libs/model-catalog.js) |
@@ -238,6 +239,19 @@ optional read-only `knowledge_lookup` action, over a separately selected databas
 (`miniphi_knowledge` by default, `wikidata` for the local Wikipedia workflow). Groundedness is
 adjudicated by the adapter, never taken from the model's own `grounded` field.
 
+`knowledge.enabled` / `MINIPHI_KNOWLEDGE=1` additionally exposes the newer source-backed
+`knowledge:` graph pipeline to any selected model through `knowledge-runtime.js`. The UI provides
+`knowledge_check`, `knowledge_learn` (observed source IDs only), and `knowledge_questions`.
+The shared headless handler learns one page of observed analyzer input (unless
+`knowledge.learnFromInputs=false`) and enriches task prompts within their spare loaded-window budget.
+Adaptive routing forwards the same runtime to the chosen model's handler. Facts use
+`miniphi_webnlg` by default; diagnostic rules use model-scoped `model-limit:` nodes with
+`factual:false`, never source evidence. Corrections enter the agent's retained `contract` with TTL 2.
+The older topic lookup and the session context engine remain independently configured.
+Audit: `.miniphi/knowledge/<session>/runtime.json` plus complete prompt exchanges.
+Offline-covered and real Cheetah protocol-tested with scripted model JSON; the 2026-10-29
+live Qwen/GPT-OSS probe failed at model loading/resources.
+
 The optional `webnlg` / `graph-ask` actions use a separate `miniphi_webnlg` database
 and `knowledge:<sha256>` entity shape. `cheetah-graph-learning.js` extracts multiple
 source-quoted claims, probes before writing, and lets the model request bounded
@@ -275,6 +289,7 @@ connected citations do not establish semantic correctness.
 | Web research | a researcher is injected | `web_research` |
 | Vision review | the live catalog reports a `vision` model | `visual_review` (workspace `path` **or** loopback `url`) |
 | Knowledge lookup | `knowledgeLookup.enabled` **and** one `SYSTEM_STATS` probe succeeds | `knowledge_lookup` |
+| Graph learning/checking | `knowledge.enabled` **and** one `SYSTEM_STATS` probe succeeds | `knowledge_check`, `knowledge_learn`, `knowledge_questions`; headless prompt enrichment |
 | Page structure | a `pageInspect` function is injected | `page_inspect` (workspace `path` **or** loopback `url`) |
 | Page understanding | a `pageUnderstand` function is injected (needs a `vision` model) | `page_understand` |
 | Cheetah context | `context.engine: "cheetah"` | (no action; changes selection) |

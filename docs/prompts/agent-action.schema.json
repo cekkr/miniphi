@@ -51,13 +51,16 @@
               "page_inspect",
               "page_understand",
               "knowledge_lookup",
+              "knowledge_check",
+              "knowledge_learn",
+              "knowledge_questions",
               "write_file",
               "edit_file",
               "run_cmd",
               "revert_changes",
               "finish"
             ],
-            "description": "The action kind. read_file/list_dir/search_text/web_research/visual_review/page_inspect/page_understand/knowledge_lookup are auto-run; write_file/edit_file/run_cmd/revert_changes require operator approval; finish ends the session."
+            "description": "The action kind. read_file/list_dir/search_text/web_research/visual_review/page_inspect/page_understand/knowledge_lookup are auto-run; write_file/edit_file/run_cmd/revert_changes require operator approval; finish ends the session. Optional knowledge_check checks remembered answers against cited graph evidence; knowledge_learn saves claims from an observed source_id; knowledge_questions lists unresolved questions. These run automatically only when knowledge is enabled."
           },
           "reason": {
             "type": "string",
@@ -136,6 +139,16 @@
           "checkpoint": {
             "type": "string",
             "description": "For revert_changes: the checkpoint id to restore, as listed in the change-history block. Omit it to restore the best-scoring state MiniPhi has recorded, which is usually what you want after a change made things worse."
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "For knowledge_check: a factual question to decompose, check in Cheetah and repair with cited source context. Unknowns become open questions; self confidence is diagnostic."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "For knowledge_learn: copy an exact source_id returned by a successful read_file or web_research. Never invent a source or supply your own remembered answer as source text."
           }
         }
       }

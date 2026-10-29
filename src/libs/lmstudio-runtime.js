@@ -125,6 +125,7 @@ async function createLmStudioRuntime({
   wsBaseUrl = null,
   routerConfig = null,
   reasoning = null,
+  sessionDeadline = null,
 }) {
   const transportPreference = resolveLmStudioTransportPreference(configData);
   const forceRestTransport = transportPreference.forceRest;
@@ -264,6 +265,12 @@ async function createLmStudioRuntime({
       restClient.setDefaultReasoning(reasoning);
     }
     phi4.setRestClient(restClient, { preferRestTransport });
+  }
+  if (restClient && /^(true|1|on|yes)$/iu.test(String(process.env.MINIPHI_KNOWLEDGE ?? configData?.knowledge?.enabled))) {
+    const { createKnowledgeRuntime } = await import("./knowledge-runtime.js");
+    phi4.knowledgeRuntime = await createKnowledgeRuntime({ client: restClient, configData,
+      model: modelKey, schemaRegistry, sessionDeadline, baseDir: path.join(process.cwd(), ".miniphi"),
+      sessionId: `headless-${Date.now()}` });
   }
   if (!forceRestTransport) {
     try {

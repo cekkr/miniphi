@@ -2,7 +2,6 @@ import readline from "readline";
 import path from "node:path";
 import { LMStudioRestClient } from "../libs/lmstudio-api.js";
 import { buildRestClientOptions } from "../libs/lmstudio-client-options.js";
-import LMStudioHandler from "../libs/lmstudio-handler.js";
 import PromptSchemaRegistry from "../libs/prompt-schema-registry.js";
 import { CheetahTcpClient, normalizeBinaryTransport } from "../libs/cheetah-binder.js";
 import {
@@ -30,6 +29,8 @@ import { resolveContextWindow } from "../libs/model-catalog.js";
 import { deriveContextBudget, estimateTokens } from "../libs/context-graph.js";
 import { answerGraphConcepts, KNOWLEDGE_ASSESSMENT_SYSTEM_PROMPT } from "../libs/cheetah-knowledge-assessment.js";
 import { getWordNetLexicon } from "../libs/wordnet-lexicon.js";
+import { buildLmStudioHandler } from "../libs/cheetah-model-handler.js";
+export { buildLmStudioHandler } from "../libs/cheetah-model-handler.js";
 
 // Kept out of global auto-selection by design: this command defaults to a
 // deliberately small, "ignorant" model driven entirely by Cheetah, while
@@ -38,35 +39,8 @@ import { getWordNetLexicon } from "../libs/wordnet-lexicon.js";
 // coding-task ranking, a different concern from this workflow.
 const DEFAULT_SMALL_MODEL_KEY = "qwen2.5-coder-0.5b-instruct";
 
-const CHEETAH_LEARN_SYSTEM_PROMPT = [
-  "You serve an external database that starts out empty, no matter how famous or obvious a subject is.",
-  "You never answer factual questions from your own training knowledge, and you never skip saving a fact just because it feels obvious to you - only what the database already has counts as 'known'.",
-  "You only work from what is explicitly given to you in each prompt: a text snippet to learn from plus what the database already records, or facts retrieved from the database to answer a question from.",
-  "Always reply with strict JSON matching the requested schema only - no commentary, no markdown fences.",
-].join(" ");
-
 function optionsString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-export function buildLmStudioHandler({ restClient, schemaRegistry, modelKey, promptRecorder = null, promptTimeoutMs, maxOutputTokens, reasoningEffort, acceptReasoningJson = false, systemPrompt = CHEETAH_LEARN_SYSTEM_PROMPT }) {
-  const handler = new LMStudioHandler(undefined, {
-    systemPrompt,
-    schemaRegistry,
-    modelKey,
-    promptRecorder,
-    promptTimeoutMs,
-    maxOutputTokens,
-    reasoningEffort,
-    acceptReasoningJson,
-  });
-  handler.setRestClient(restClient, { preferRestTransport: true });
-  handler.setTransportPreference({
-    forceRest: true,
-    preferRestTransport: true,
-    reason: "cheetah-learn is REST-only (fixed small model, no interactive load)",
-  });
-  return handler;
 }
 
 export function buildCheetahClient(options) {

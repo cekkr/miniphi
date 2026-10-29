@@ -363,6 +363,7 @@ export default class AdaptiveLMStudioHandler {
     let result = "";
     let errorMessage = null;
     try {
+      handler.knowledgeRuntime = this.knowledgeRuntime ?? null;
       result = await handler.chatStream(routedPrompt, onToken, onThink, onError, routedTrace);
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : String(error);

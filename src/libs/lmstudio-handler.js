@@ -91,6 +91,7 @@ export class LMStudioHandler {
     };
     this.lastPromptExchange = null;
     this.lastPerformanceSummary = null;
+    this.knowledgeRuntime = options?.knowledgeRuntime ?? null;
   }
 
   /**
@@ -237,6 +238,25 @@ export class LMStudioHandler {
   async chatStream(prompt, onToken, onThink, onError, traceOptions = undefined) {
     if (!prompt || !prompt.trim()) {
       throw new Error("Prompt is required.");
+    }
+
+    if (this.knowledgeRuntime && traceOptions?.metadata?.knowledge !== false) {
+      let payload;
+      try { payload = JSON.parse(prompt); } catch { payload = null; }
+      const question = traceOptions?.metadata?.knowledgeQuestion ?? payload?.task ?? payload?.payload?.task ??
+        traceOptions?.metadata?.task ?? traceOptions?.metadata?.taskLabel;
+      // Nested graph handlers have no knowledgeRuntime, preventing recursion.
+      // Reserve only the unused part of the loaded prompt window for evidence.
+      const window = await this.knowledgeRuntime.contextWindow(this.modelKey,
+        traceOptions?.metadata?.sessionDeadline).catch(() => 4000);
+      const used = Math.ceil((prompt.length + JSON.stringify(this.chatHistory).length) / 4);
+      const spare = Math.floor(window * 0.85) - used - (this.maxOutputTokens ?? Math.floor(window * 0.4)) - 256;
+      if (typeof question === "string" && spare >= 200) {
+        this.knowledgeRuntime.promptRecorder = this.promptRecorder ?? this.knowledgeRuntime.promptRecorder;
+        prompt = await this.knowledgeRuntime.enrichPrompt(prompt, { question, model: this.modelKey,
+          sessionDeadline: traceOptions?.metadata?.sessionDeadline,
+          maxTokens: Math.min(800, spare) }).catch(() => prompt);
+      }
     }
 
     let attempt = 0;
