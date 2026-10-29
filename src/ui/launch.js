@@ -24,7 +24,8 @@ import { createPromptTrace } from "../libs/prompt-trace.js";
 import { composeGuidelines } from "../libs/project-guidelines.js";
 import SubpromptComposer from "../libs/subprompt-composer.js";
 import ErrorLearner from "../libs/error-learning.js";
-import { createKnowledgeRuntime } from "../libs/knowledge-runtime.js";
+import { createKnowledgeRuntime, resolveKnowledgeConfig } from "../libs/knowledge-runtime.js";
+import { createUiKnowledgeControl } from "./knowledge-control.js";
 
 /**
  * Boots the interactive MiniPhi agent UI. Dynamically imported from the CLI so
@@ -210,6 +211,7 @@ export async function launchAgentUi(options = undefined) {
   });
   // Wire the UI approver after construction so it can emit on the session.
   session.approver = createUiApprover(session);
+  const knowledgeControl = createUiKnowledgeControl({ session, configData });
 
   const startPhase = initialTask ? "prompt" : "home";
   const app = render(
@@ -225,9 +227,12 @@ export async function launchAgentUi(options = undefined) {
       runEasyBenchmark=${(onProgress) =>
         benchmarkRunner.run({ onProgress })}
       initialReasoningProfile=${reasoningProfile}
+      configureKnowledge=${knowledgeControl}
+      initialKnowledgeStatus=${resolveKnowledgeConfig(configData).enabled && !knowledgeRuntime
+        ? "Cheetah unavailable. Start Cheetah and press g to retry." : null}
     />`,
   );
   try { await app.waitUntilExit(); }
-  finally { await knowledgeRuntime?.close(); }
+  finally { await knowledgeControl.close(); }
   return session;
 }

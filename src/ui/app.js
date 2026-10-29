@@ -12,7 +12,7 @@ import { buildUiModelSelection } from "./model-selection.js";
 
 function describePayloadAction(action) {
   if (!action || typeof action !== "object") return "action";
-  const target = action.path ?? action.term ?? action.command ?? "";
+  const target = action.path ?? action.term ?? action.question ?? action.sourceId ?? action.subject ?? action.query ?? action.command ?? "";
   return `${action.type ?? "?"}${target ? ` ${target}` : ""}`.trim();
 }
 
@@ -33,6 +33,8 @@ export default function App({
   benchmarkIndex = null,
   runEasyBenchmark = null,
   initialReasoningProfile = "high",
+  configureKnowledge = null,
+  initialKnowledgeStatus = null,
 }) {
   const { exit } = useApp();
   const [phase, setPhase] = useState(initialTask ? "prompt" : startPhase);
@@ -41,6 +43,9 @@ export default function App({
   const [log, setLog] = useState([]);
   const [running, setRunning] = useState(false);
   const [tick, setTick] = useState(0);
+  const [knowledge, setKnowledge] = useState({ enabled: Boolean(session.knowledgeRuntime), status: initialKnowledgeStatus ?? (session.knowledgeRuntime ? "Ready" : "Off") });
+  const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+  const knowledgeBusyRef = useRef(false);
   const [pending, setPending] = useState(null);
   const [result, setResult] = useState(null);
   const [benchmarks, setBenchmarks] = useState(benchmarkIndex);
@@ -82,6 +87,15 @@ export default function App({
     };
     const onActionResult = (payload) => {
       appendLog({ kind: "action", text: describePayloadAction(payload.action), status: payload.status });
+      if (payload.action?.type === "knowledge_check" && payload.output) {
+        try {
+          const checked = JSON.parse(payload.output);
+          const grounded = (checked.concepts ?? []).filter(concept => concept.grounded).length;
+          appendLog({ kind: "status", text: checked.ok
+            ? `Knowledge check: ${grounded} grounded answer(s)${checked.needs_more_context ? "; more sources needed" : ""}.`
+            : `Knowledge check: ${checked.error ?? checked.stop_reason_detail ?? "unavailable"}` });
+        } catch { /* Non-JSON tool output remains visible in the action log. */ }
+      }
     };
     const onEditProposed = ({ proposal }) => {
       appendLog({ kind: "status", text: `proposing ${proposal.type} ${proposal.path}` });
@@ -234,7 +248,26 @@ export default function App({
       <${ReasoningPicker}
         selectedValue=${initialReasoningProfile}
         model=${reasoningModel}
+        knowledgeEnabled=${knowledge.enabled}
+        knowledgeStatus=${knowledge.status}
+        knowledgeBusy=${knowledgeBusy}
+        onToggleKnowledge=${async () => {
+          if (knowledgeBusyRef.current) return;
+          knowledgeBusyRef.current = true;
+          setKnowledgeBusy(true);
+          try {
+            setKnowledge(configureKnowledge
+              ? await configureKnowledge(!knowledge.enabled)
+              : { enabled: false, status: "Graph knowledge setup is unavailable." });
+          } catch (error) {
+            setKnowledge({ enabled: Boolean(session.knowledgeRuntime), status: error.message });
+          } finally {
+            knowledgeBusyRef.current = false;
+            setKnowledgeBusy(false);
+          }
+        }}
         onSubmit=${(reasoning) => {
+          if (knowledgeBusyRef.current) return;
           session.configureReasoning(reasoning);
           setPhase("running");
         }}
@@ -245,6 +278,7 @@ export default function App({
   if (phase === "running") {
     return html`<${Box} flexDirection="column">${header}
       <${ProgressPane} task=${task} log=${log} running=${running} tick=${tick} />
+      <${Text} dimColor>Graph knowledge: ${knowledge.enabled ? "On" : "Off"}</${Text}>
       ${pending
         ? html`<${Box} marginTop=${1}>
             <${PermissionModal}
@@ -264,6 +298,7 @@ export default function App({
   const applied = (result?.edits ?? []).filter((e) => e.status === "written" || e.status === "unchanged");
   return html`<${Box} flexDirection="column">${header}
     <${ProgressPane} task=${task} log=${log} running=${false} summary=${result?.summary ?? ""} />
+    <${Text} dimColor>Graph knowledge: ${knowledge.enabled ? "On" : "Off"}${result?.knowledge ? ` · ${result.knowledge.actions} operation(s) · ${result.knowledge.learned} source(s) learned` : ""}</${Text}>
     <${Box} flexDirection="column" marginTop=${1}>
       <${Text} color=${result?.status === "completed" ? "green" : "yellow"}>
         ${result?.status === "completed" ? "✔ completed" : `stopped (${result?.stopReason ?? "unknown"})`} · ${editCount} edit(s)

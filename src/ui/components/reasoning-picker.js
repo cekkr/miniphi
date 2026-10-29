@@ -21,6 +21,10 @@ export default function ReasoningPicker({
   selectedValue = "high",
   model = null,
   onSubmit,
+  knowledgeEnabled = false,
+  knowledgeStatus = "Off",
+  knowledgeBusy = false,
+  onToggleKnowledge = null,
 }) {
   const initialIndex = Math.max(0, REASONING_PROFILE_NAMES.indexOf(selectedValue));
   const [cursor, setCursor] = useState(initialIndex);
@@ -28,7 +32,12 @@ export default function ReasoningPicker({
   const resolution = resolveReasoningProfile({ profile, model, source: "ui" });
 
   useInput((input, key) => {
+    if (input.toLowerCase() === "g" && !knowledgeBusy) {
+      onToggleKnowledge?.();
+      return;
+    }
     if (key.return) {
+      if (knowledgeBusy) return;
       onSubmit?.(resolution);
       return;
     }
@@ -76,8 +85,12 @@ export default function ReasoningPicker({
         </${Text}>
       </${Box}>
       <${Box} marginTop=${1}>
-        <${Text} dimColor>↑/↓ move · Enter select</${Text}>
+        <${Text} color=${knowledgeEnabled ? "green" : "yellow"}>
+          Graph knowledge: ${knowledgeEnabled ? "On" : "Off"}${knowledgeBusy ? " · Checking Cheetah…" : knowledgeStatus === "Off" ? "" : ` · ${knowledgeStatus}`}
+        </${Text}>
       </${Box}>
+      <${Text} dimColor>Learn from sources, check answers, and remember model lessons.</${Text}>
+      <${Text} dimColor>↑/↓ move · g toggle graph knowledge · Enter start</${Text}>
     </${Box}>
   `;
 }

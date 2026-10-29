@@ -426,6 +426,18 @@ export default class AgentSession extends EventEmitter {
    * operator chooses Auto/manual from the live catalog. Once context exists,
    * changing models would invalidate prompt-budget assumptions and is rejected.
    */
+  configureKnowledge(runtime) {
+    if (this.context.nodes.size > 0) throw new Error("Graph knowledge cannot change after the task has started.");
+    this.knowledgeRuntime = runtime ?? null;
+    this.knowledgeRuntime?.configure({ model: this.model, contextLength: this.contextLength });
+    if (this.errorLearner) this.errorLearner.knowledgeRuntime = this.knowledgeRuntime;
+    this._fixedPromptTokens = this._estimateFixedPromptTokens();
+    if (!this._hasExplicitContextBudget) {
+      this.contextBudgetTokens = deriveContextBudget({ contextLength: this.contextLength, reservedTokens: this._fixedPromptTokens });
+      this.context.budgetTokens = this.contextBudgetTokens;
+    }
+  }
+
   configureModel({ model, contextLength = null, selection = null } = {}) {
     if (this.context.nodes.size > 0) {
       throw new Error("The session model cannot change after the task has started.");

@@ -439,7 +439,13 @@ something it isn't sure of, whenever a `cheetah-server` is actually reachable.
 #### Optional graph learning and checking for any model
 
 The graph pipeline tested with small Qwen models is also available to the normal agent and
-headless analysis with any selected LM Studio model. Start Cheetah as described above, then add:
+headless analysis with any selected LM Studio model. In the CLI UI, press **g** on the reasoning
+screen to toggle **Graph knowledge** before starting a task. Enabling checks Cheetah and shows
+Ready or an unavailable message; the task waits for that check. The activity log shows knowledge
+questions and grounded-answer counts, and the completion screen reports operations and learned
+sources. The toggle applies to this session; configuration/environment settings supply its default.
+
+Start Cheetah as described above. To enable knowledge by default, add:
 
 ```json
 { "knowledge": { "enabled": true } }

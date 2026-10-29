@@ -242,6 +242,9 @@ adjudicated by the adapter, never taken from the model's own `grounded` field.
 `knowledge.enabled` / `MINIPHI_KNOWLEDGE=1` additionally exposes the newer source-backed
 `knowledge:` graph pipeline to any selected model through `knowledge-runtime.js`. The UI provides
 `knowledge_check`, `knowledge_learn` (observed source IDs only), and `knowledge_questions`.
+The CLI UI's reasoning screen exposes **g** to toggle graph knowledge for this session. Enabling
+probes Cheetah before starting; failure leaves it off with a retry message. The running/done views
+show status and knowledge activity. Configuration/environment settings supply the initial default.
 The shared headless handler learns one page of observed analyzer input (unless
 `knowledge.learnFromInputs=false`) and enriches task prompts within their spare loaded-window budget.
 Adaptive routing forwards the same runtime to the chosen model's handler. Facts use

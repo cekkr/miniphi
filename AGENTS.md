@@ -156,6 +156,15 @@ When you add or change CLI behavior:
 ## Runtime posture
 
 ### General optional graph knowledge runtime (2026-10-29)
+- CLI UI: `ReasoningPicker` exposes **g** to toggle graph knowledge before Enter starts the task.
+  `src/ui/knowledge-control.js` creates the runtime for the selected model on enable, overriding
+  config/env enablement for this session; disable closes it. Failed probes leave it off with a
+  retry message. Start waits while probing. `AgentSession.configureKnowledge()` updates the
+  action guide, error learner and prompt budget, and rejects changes after task context exists.
+  Running/done screens show status; knowledge-check logs include questions and grounded counts.
+  The launcher closes the session's current runtime, including one enabled from the UI.
+  Coverage: `unit-tests-js/agent-ui-knowledge.test.js` exercises keyboard flow, pending/failed
+  probes, capability gating, runtime disposal, prompt budgets and the started-session guard.
 - `src/libs/knowledge-runtime.js` reuses `learnGraphText`, `answerGraphConcepts`,
   source/citation/context repairs and optional WordNet correlations for any selected model.
   `src/libs/cheetah-model-handler.js` owns the common REST/schema handler factory;
